@@ -68,16 +68,18 @@ export function useScan(scanId: string | null, lastEvent: WsEvent | null = null)
     void fetchAll(scanId);
 
     function schedulePoll() {
-      pollTimerRef.current = setTimeout(async () => {
-        if (!mountedRef.current || !scanId) return;
-        try {
-          const s = await fetchJson<Scan>(`/api/scan/${scanId}`);
-          if (!mountedRef.current) return;
-          setScan(s);
-          if (s.status === "running") schedulePoll();
-        } catch {
-          if (mountedRef.current) schedulePoll();
-        }
+      pollTimerRef.current = setTimeout(() => {
+        void (async () => {
+          if (!mountedRef.current || !scanId) return;
+          try {
+            const s = await fetchJson<Scan>(`/api/scan/${scanId}`);
+            if (!mountedRef.current) return;
+            setScan(s);
+            if (s.status === "running") schedulePoll();
+          } catch {
+            if (mountedRef.current) schedulePoll();
+          }
+        })();
       }, 2000);
     }
 
@@ -94,6 +96,7 @@ export function useScan(scanId: string | null, lastEvent: WsEvent | null = null)
     if (!lastEvent || !scanId) return;
 
     if (lastEvent.type === "node_updated") {
+      if (lastEvent.node.scanId !== scanId) return;
       setGraph((prev) => {
         if (!prev) return prev;
         const exists = prev.nodes.find((n) => n.id === lastEvent.node.id);
@@ -103,13 +106,16 @@ export function useScan(scanId: string | null, lastEvent: WsEvent | null = null)
         return { ...prev, nodes };
       });
     } else if (lastEvent.type === "finding_added") {
+      if (lastEvent.finding.scanId !== scanId) return;
       setFindings((prev) => {
         if (prev.find((f) => f.id === lastEvent.finding.id)) return prev;
         return [...prev, lastEvent.finding];
       });
     } else if (lastEvent.type === "scan_status") {
+      if (lastEvent.scan.id !== scanId) return;
       setScan(lastEvent.scan);
     } else if (lastEvent.type === "report_ready") {
+      if (lastEvent.report.scanId !== scanId) return;
       setReport(lastEvent.report);
     }
   }, [lastEvent, scanId]);

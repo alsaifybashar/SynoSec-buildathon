@@ -13,6 +13,7 @@ export function DetailPage({
   onSave,
   onDismiss,
   saveLabel = "Save",
+  actions,
   sidebar,
   children
 }: {
@@ -24,6 +25,7 @@ export function DetailPage({
   onSave: () => void | Promise<void>;
   onDismiss: () => void;
   saveLabel?: string;
+  actions?: ReactNode;
   sidebar?: ReactNode;
   children: ReactNode;
 }) {
@@ -31,18 +33,22 @@ export function DetailPage({
     <div className="space-y-6 pb-6">
       <PageHeader title={title} breadcrumbs={breadcrumbs} />
 
-      <div className="m-3 flex flex-wrap items-center gap-2 pt-6">
-        <Button type="button" variant="outline" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Button>
-        <Button type="button" onClick={() => void onSave()} disabled={!isDirty || isSaving}>
-          {saveLabel}
-        </Button>
-        <Button type="button" variant="outline" onClick={onDismiss} disabled={!isDirty || isSaving}>
-          Dismiss
-        </Button>
-      </div>
+      {actions ? (
+        <div className="m-3 flex flex-wrap items-center gap-2 pt-6">{actions}</div>
+      ) : (
+        <div className="m-3 flex flex-wrap items-center gap-2 pt-6">
+          <Button type="button" variant="outline" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
+          <Button type="button" onClick={() => void onSave()} disabled={!isDirty || isSaving}>
+            {saveLabel}
+          </Button>
+          <Button type="button" variant="outline" onClick={onDismiss} disabled={!isDirty || isSaving}>
+            Dismiss
+          </Button>
+        </div>
+      )}
 
       {sidebar ? (
         <div className="m-3 grid gap-4 lg:grid-cols-[2fr_1fr]">
