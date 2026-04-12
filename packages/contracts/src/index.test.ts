@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applicationSchema,
   briefResponseSchema,
+  createScanRequestSchema,
   createApplicationBodySchema,
   demoResponseSchema,
   healthResponseSchema,
@@ -81,5 +82,27 @@ describe("contracts", () => {
     const result = updateApplicationBodySchema.safeParse({});
 
     expect(result.success).toBe(false);
+  });
+
+  it("accepts a scan request with local llm overrides", () => {
+    const result = createScanRequestSchema.safeParse({
+      scope: {
+        targets: ["localhost:8888"],
+        exclusions: [],
+        layers: ["L3", "L4", "L7"],
+        maxDepth: 2,
+        maxDurationMinutes: 5,
+        rateLimitRps: 5,
+        allowActiveExploits: false
+      },
+      llm: {
+        provider: "local",
+        model: "Qwen/Qwen3-4B",
+        baseUrl: "http://127.0.0.1:8000",
+        apiPath: "/api/chat/raw"
+      }
+    });
+
+    expect(result.success).toBe(true);
   });
 });

@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { DfsNode, OsiLayer } from "@synosec/contracts";
 import { BaseAgent, type AgentContext, type AgentResult } from "./base-agent.js";
 
@@ -26,8 +25,6 @@ interface L7ClaudeResponse {
 export class L7Agent extends BaseAgent {
   readonly agentId = "l7-application-agent";
   readonly layer: OsiLayer = "L7";
-
-  private client = new Anthropic({ apiKey: process.env["ANTHROPIC_API_KEY"] });
 
   async execute(node: DfsNode, context: AgentContext): Promise<AgentResult> {
     await this.audit(context.scanId, "l7-scan-start", node.id, {
@@ -108,17 +105,13 @@ Produce 3-7 findings of varied severity. Make findings realistic and specific. C
     let parsed: L7ClaudeResponse;
 
     try {
-      const response = await this.client.messages.create({
-        model: process.env["CLAUDE_MODEL"] ?? "claude-sonnet-4-6",
-        max_tokens: 3000,
+      parsed = await this.generateJson<L7ClaudeResponse>({
         system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }]
+        user: userPrompt,
+        maxTokens: 3000
       });
-
-      const text = response.content[0]?.type === "text" ? response.content[0].text : "";
-      parsed = JSON.parse(text) as L7ClaudeResponse;
     } catch (err: unknown) {
-      console.error("L7Agent Claude error:", err instanceof Error ? err.message : err);
+      console.error("L7Agent LLM error:", err instanceof Error ? err.message : err);
       parsed = {
         findings: [
           {

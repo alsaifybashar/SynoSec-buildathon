@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { DfsNode, OsiLayer } from "@synosec/contracts";
 import { BaseAgent, type AgentContext, type AgentResult } from "./base-agent.js";
 
@@ -27,8 +26,6 @@ interface L3ClaudeResponse {
 export class L3Agent extends BaseAgent {
   readonly agentId = "l3-network-agent";
   readonly layer: OsiLayer = "L3";
-
-  private client = new Anthropic({ apiKey: process.env["ANTHROPIC_API_KEY"] });
 
   async execute(node: DfsNode, context: AgentContext): Promise<AgentResult> {
     await this.audit(context.scanId, "l3-scan-start", node.id, {
@@ -75,17 +72,13 @@ Produce 2-4 findings. Include at least one finding per technique used. Make the 
     let parsed: L3ClaudeResponse;
 
     try {
-      const response = await this.client.messages.create({
-        model: process.env["CLAUDE_MODEL"] ?? "claude-sonnet-4-6",
-        max_tokens: 2048,
+      parsed = await this.generateJson<L3ClaudeResponse>({
         system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }]
+        user: userPrompt,
+        maxTokens: 2048
       });
-
-      const text = response.content[0]?.type === "text" ? response.content[0].text : "";
-      parsed = JSON.parse(text) as L3ClaudeResponse;
     } catch (err: unknown) {
-      console.error("L3Agent Claude error:", err instanceof Error ? err.message : err);
+      console.error("L3Agent LLM error:", err instanceof Error ? err.message : err);
       // Fallback findings
       parsed = {
         findings: [

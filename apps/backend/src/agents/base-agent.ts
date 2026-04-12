@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import type { AuditEntry, DfsNode, Finding, OsiLayer, ScanScope } from "@synosec/contracts";
 import { createAuditEntry } from "../db/neo4j.js";
+import type { LlmClient } from "../llm/client.js";
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -24,6 +25,8 @@ export interface AgentResult {
 // ---------------------------------------------------------------------------
 
 export abstract class BaseAgent {
+  constructor(protected readonly llmClient: LlmClient) {}
+
   abstract readonly agentId: string;
   abstract readonly layer: OsiLayer;
 
@@ -66,6 +69,15 @@ export abstract class BaseAgent {
       details
     };
     await createAuditEntry(entry);
+  }
+
+  protected async generateJson<T>(params: {
+    system: string;
+    user: string;
+    maxTokens: number;
+  }): Promise<T> {
+    const text = await this.llmClient.generateText(params);
+    return JSON.parse(text) as T;
   }
 
   abstract execute(node: DfsNode, context: AgentContext): Promise<AgentResult>;

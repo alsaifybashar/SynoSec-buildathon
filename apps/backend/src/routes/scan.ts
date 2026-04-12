@@ -72,7 +72,7 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
 
     await createScan(scan);
 
-    const orchestrator = new Orchestrator(broadcast);
+    const orchestrator = new Orchestrator(broadcast, parsed.data.llm);
     activeOrchestrators.set(scan.id, orchestrator);
 
     // Fire and forget — don't await

@@ -198,6 +198,17 @@ export const scanScopeSchema = z.object({
 });
 export type ScanScope = z.infer<typeof scanScopeSchema>;
 
+export const llmProviderSchema = z.enum(["anthropic", "local"]);
+export type LlmProvider = z.infer<typeof llmProviderSchema>;
+
+export const scanLlmConfigSchema = z.object({
+  provider: llmProviderSchema.default("anthropic"),
+  model: z.string().trim().min(1).optional(),
+  baseUrl: z.string().trim().url().optional(),
+  apiPath: z.string().trim().min(1).optional()
+});
+export type ScanLlmConfig = z.infer<typeof scanLlmConfigSchema>;
+
 export const nodeStatusSchema = z.enum(["pending", "in-progress", "complete", "skipped"]);
 export type NodeStatus = z.infer<typeof nodeStatusSchema>;
 
@@ -303,7 +314,8 @@ export const reportSchema = z.object({
 export type Report = z.infer<typeof reportSchema>;
 
 export const createScanRequestSchema = z.object({
-  scope: scanScopeSchema
+  scope: scanScopeSchema,
+  llm: scanLlmConfigSchema.optional()
 });
 export type CreateScanRequest = z.infer<typeof createScanRequestSchema>;
 

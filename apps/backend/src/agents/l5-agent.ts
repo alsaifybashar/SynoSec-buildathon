@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { DfsNode, OsiLayer } from "@synosec/contracts";
 import { BaseAgent, type AgentContext, type AgentResult } from "./base-agent.js";
 
@@ -31,8 +30,6 @@ interface L5ClaudeResponse {
 export class L5Agent extends BaseAgent {
   readonly agentId = "l5-session-agent";
   readonly layer: OsiLayer = "L5";
-
-  private client = new Anthropic({ apiKey: process.env["ANTHROPIC_API_KEY"] });
 
   async execute(node: DfsNode, context: AgentContext): Promise<AgentResult> {
     await this.audit(context.scanId, "l5-scan-start", node.id, {
@@ -104,17 +101,13 @@ Produce 2-4 findings. Make evidence look like real tool output. Flag anonymous a
     let parsed: L5ClaudeResponse;
 
     try {
-      const response = await this.client.messages.create({
-        model: process.env["CLAUDE_MODEL"] ?? "claude-sonnet-4-6",
-        max_tokens: 2048,
+      parsed = await this.generateJson<L5ClaudeResponse>({
         system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }]
+        user: userPrompt,
+        maxTokens: 2048
       });
-
-      const text = response.content[0]?.type === "text" ? response.content[0].text : "";
-      parsed = JSON.parse(text) as L5ClaudeResponse;
     } catch (err: unknown) {
-      console.error("L5Agent Claude error:", err instanceof Error ? err.message : err);
+      console.error("L5Agent LLM error:", err instanceof Error ? err.message : err);
       parsed = {
         findings: [
           {

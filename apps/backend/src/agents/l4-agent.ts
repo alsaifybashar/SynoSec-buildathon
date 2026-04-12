@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { DfsNode, OsiLayer } from "@synosec/contracts";
 import { BaseAgent, type AgentContext, type AgentResult } from "./base-agent.js";
 
@@ -35,8 +34,6 @@ interface L4ClaudeResponse {
 export class L4Agent extends BaseAgent {
   readonly agentId = "l4-transport-agent";
   readonly layer: OsiLayer = "L4";
-
-  private client = new Anthropic({ apiKey: process.env["ANTHROPIC_API_KEY"] });
 
   async execute(node: DfsNode, context: AgentContext): Promise<AgentResult> {
     await this.audit(context.scanId, "l4-scan-start", node.id, {
@@ -83,17 +80,13 @@ Produce 3-6 findings. The open ports list should realistically reflect what migh
     let parsed: L4ClaudeResponse;
 
     try {
-      const response = await this.client.messages.create({
-        model: process.env["CLAUDE_MODEL"] ?? "claude-sonnet-4-6",
-        max_tokens: 2048,
+      parsed = await this.generateJson<L4ClaudeResponse>({
         system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }]
+        user: userPrompt,
+        maxTokens: 2048
       });
-
-      const text = response.content[0]?.type === "text" ? response.content[0].text : "";
-      parsed = JSON.parse(text) as L4ClaudeResponse;
     } catch (err: unknown) {
-      console.error("L4Agent Claude error:", err instanceof Error ? err.message : err);
+      console.error("L4Agent LLM error:", err instanceof Error ? err.message : err);
       parsed = {
         findings: [
           {

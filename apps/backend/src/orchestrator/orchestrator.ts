@@ -1,6 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { randomUUID } from "crypto";
-import type { DfsNode, Finding, Scan, WsEvent } from "@synosec/contracts";
+import type { DfsNode, Finding, Scan, ScanLlmConfig, WsEvent } from "@synosec/contracts";
 import {
   createAuditEntry,
   createFinding,
@@ -16,6 +15,7 @@ import { L7Agent } from "../agents/l7-agent.js";
 import { DfsQueue } from "./dfs-graph.js";
 import { generateReport } from "./report.js";
 import { reportStore } from "../seed/demo-data.js";
+import { createLlmClient, type LlmClient } from "../llm/client.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,9 +31,14 @@ const abortSignals = new Map<string, boolean>();
 
 export class Orchestrator {
   private queue = new DfsQueue();
-  private client = new Anthropic({ apiKey: process.env["ANTHROPIC_API_KEY"] });
+  private llmClient: LlmClient;
 
-  constructor(private broadcast: (event: WsEvent) => void) {}
+  constructor(
+    private broadcast: (event: WsEvent) => void,
+    private readonly llmConfig?: ScanLlmConfig
+  ) {
+    this.llmClient = createLlmClient(llmConfig);
+  }
 
   async run(scan: Scan): Promise<void> {
     const maxDepth = Number(process.env["SCAN_MAX_DEPTH"] ?? scan.scope.maxDepth ?? 3);
@@ -75,7 +80,13 @@ export class Orchestrator {
       actor: "orchestrator",
       action: "scan-started",
       scopeValid: true,
-      details: { targets: scan.scope.targets, maxDepth, rootNodesCreated: rootNodes.length }
+      details: {
+        targets: scan.scope.targets,
+        maxDepth,
+        rootNodesCreated: rootNodes.length,
+        llmProvider: this.llmClient.provider,
+        llmModel: this.llmClient.model
+      }
     });
 
     let nodesComplete = 0;
@@ -272,7 +283,7 @@ export class Orchestrator {
 
     // Step 6: Generate report and store it
     try {
-      const report = await generateReport(scan.id, this.broadcast);
+      const report = await generateReport(scan.id, this.broadcast, this.llmConfig);
       reportStore.set(scan.id, report);
     } catch (err: unknown) {
       console.error("Report generation error:", err instanceof Error ? err.message : err);
@@ -288,15 +299,15 @@ export class Orchestrator {
   private getAgent(layer: SupportedLayer) {
     switch (layer) {
       case "L3":
-        return new L3Agent();
+        return new L3Agent(this.llmClient);
       case "L4":
-        return new L4Agent();
+        return new L4Agent(this.llmClient);
       case "L5":
-        return new L5Agent();
+        return new L5Agent(this.llmClient);
       case "L6":
-        return new L6Agent();
+        return new L6Agent(this.llmClient);
       case "L7":
-        return new L7Agent();
+        return new L7Agent(this.llmClient);
       default:
         return null;
     }
@@ -316,20 +327,12 @@ export class Orchestrator {
         .map((f) => `[${f.severity.toUpperCase()}] ${f.title}: ${f.description}`)
         .join("\n");
 
-      const response = await this.client.messages.create({
-        model: process.env["CLAUDE_MODEL"] ?? "claude-sonnet-4-6",
-        max_tokens: 1024,
+      const response = await this.llmClient.generateText({
         system: "You are a senior penetration tester doing a second-opinion review of flagged vulnerabilities. Be critical and verify if the findings are genuine.",
-        messages: [
-          {
-            role: "user",
-            content: `Validate these HIGH/CRITICAL findings on target ${node.target} (${node.layer} layer):\n\n${summary}\n\nFor each finding, respond with JSON array where each item has:\n{ "title": "...", "validated": true|false, "reason": "brief reason" }\nReturn ONLY valid JSON array.`
-          }
-        ]
+        user: `Validate these HIGH/CRITICAL findings on target ${node.target} (${node.layer} layer):\n\n${summary}\n\nFor each finding, respond with JSON array where each item has:\n{ "title": "...", "validated": true|false, "reason": "brief reason" }\nReturn ONLY valid JSON array.`,
+        maxTokens: 1024
       });
-
-      const text = response.content[0]?.type === "text" ? response.content[0].text : "";
-      const validations = JSON.parse(text) as Array<{ title: string; validated: boolean; reason: string }>;
+      const validations = JSON.parse(response) as Array<{ title: string; validated: boolean; reason: string }>;
 
       await createAuditEntry({
         id: randomUUID(),
@@ -380,21 +383,11 @@ export class Orchestrator {
         .map((f) => `[${f.severity}] ${f.title} on ${f.nodeId}`)
         .join("\n");
 
-      const response = await this.client.messages.create({
-        model: process.env["CLAUDE_MODEL"] ?? "claude-sonnet-4-6",
-        max_tokens: 512,
+      return await this.llmClient.generateText({
         system: "You are an AI penetration testing orchestrator. Analyze findings and prioritize next steps.",
-        messages: [
-          {
-            role: "user",
-            content: `Round ${round} analysis. Current findings:\n${summary || "No findings yet."}\n\nAnalyze these findings. Which targets/services pose the highest risk? What should the next phase of testing focus on? Reply in 2-3 sentences.`
-          }
-        ]
+        user: `Round ${round} analysis. Current findings:\n${summary || "No findings yet."}\n\nAnalyze these findings. Which targets/services pose the highest risk? What should the next phase of testing focus on? Reply in 2-3 sentences.`,
+        maxTokens: 512
       });
-
-      return response.content[0]?.type === "text"
-        ? response.content[0].text
-        : `Round ${round} complete. Continuing scan with highest-risk nodes prioritized.`;
     } catch (err: unknown) {
       console.error("Orchestrator analysis error:", err instanceof Error ? err.message : err);
       return `Round ${round} complete. Continuing scan with highest-risk nodes prioritized.`;
