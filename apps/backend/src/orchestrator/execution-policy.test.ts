@@ -15,7 +15,10 @@ describe("execution policy", () => {
     maxDepth: 2,
     maxDurationMinutes: 5,
     rateLimitRps: 5,
-    allowActiveExploits: false
+    allowActiveExploits: false,
+    graceEnabled: true,
+    graceRoundInterval: 3,
+    cyberRangeMode: "simulation"
   };
 
   it("restricts all runs to tool-backed layers", () => {

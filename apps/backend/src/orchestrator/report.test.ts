@@ -35,7 +35,10 @@ describe("generateReport", () => {
         maxDepth: 2,
         maxDurationMinutes: 5,
         rateLimitRps: 5,
-        allowActiveExploits: false
+        allowActiveExploits: false,
+        graceEnabled: true,
+        graceRoundInterval: 3,
+        cyberRangeMode: "simulation"
       },
       status: "complete",
       currentRound: 0,
@@ -64,9 +67,7 @@ describe("generateReport", () => {
     });
 
     const events: Array<{ type: string; report?: Report }> = [];
-    const report = await reportModule.generateReport("scan-1", (event) => events.push(event), {
-      provider: "local"
-    });
+    const report = await reportModule.generateReport("scan-1", (event) => events.push(event));
 
     expect(report.topRisks[0]?.nodeTarget).toBe("localhost:8888");
     expect(report.executiveSummary).toContain("localhost:8888");

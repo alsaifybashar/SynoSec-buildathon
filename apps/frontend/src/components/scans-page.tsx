@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   ChevronRight,
@@ -10,15 +10,16 @@ import {
 } from "lucide-react";
 import {
   apiRoutes,
-  severityOrder,
   type AuditEntry,
   type DfsNode,
   type Finding,
+  type Observation,
   type OsiLayer,
   type Report,
   type Scan,
   type ScanStatus,
-  type Severity
+  type Severity,
+  type ToolRun
 } from "@synosec/contracts";
 import { toast } from "sonner";
 import { ScanConfig } from "./ScanConfig";
@@ -26,7 +27,7 @@ import { DetailField, DetailFieldGroup, DetailPage, DetailSidebarItem } from "./
 import { ListPage, type ListPageColumn, type ListPageFilter } from "./list-page";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { useScan } from "../hooks/useScan";
 import { useScanWebSocket } from "../hooks/useScanWebSocket";
 import { fetchJson } from "../lib/api";
@@ -57,6 +58,209 @@ const layerLabels: Record<OsiLayer, string> = {
   L7: "Application"
 };
 
+function sentenceCase(value: string) {
+  return value
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (match, index) => (index === 0 ? match.toUpperCase() : match.toLowerCase()));
+}
+
+function adapterLabel(adapter: ToolRun["adapter"]) {
+  switch (adapter) {
+    case "service_scan":
+      return "Service discovery";
+    case "network_scan":
+      return "Host discovery";
+    case "http_probe":
+      return "HTTP checks";
+    case "web_fingerprint":
+      return "Technology fingerprint";
+    case "content_discovery":
+      return "Content discovery";
+    case "tls_audit":
+      return "TLS review";
+    case "session_audit":
+      return "Session review";
+    case "db_injection_check":
+      return "Database injection check";
+    default:
+      return sentenceCase(adapter);
+  }
+}
+
+function toolRunOutcomeLabel(status: ToolRun["status"]) {
+  switch (status) {
+    case "completed":
+      return "passed";
+    case "denied":
+      return "skipped";
+    case "failed":
+      return "failed";
+    case "running":
+      return "running";
+    case "pending":
+      return "pending";
+    default:
+      return status;
+  }
+}
+
+function describeToolRun(toolRun: ToolRun) {
+  const target = `${toolRun.target}${toolRun.port ? `:${toolRun.port}` : ""}`;
+
+  switch (toolRun.adapter) {
+    case "service_scan":
+      return `Checked exposed services on ${target}.`;
+    case "network_scan":
+      return `Checked whether ${target} responds on the network.`;
+    case "http_probe":
+      return `Checked HTTP responses and basic application routes on ${target}.`;
+    case "web_fingerprint":
+      return `Checked what web stack is exposed on ${target}.`;
+    case "content_discovery":
+      return `Checked for common content and administrative paths on ${target}.`;
+    case "tls_audit":
+      return `Checked TLS and certificate behavior on ${target}.`;
+    case "session_audit":
+      return `Checked remote session exposure on ${target}.`;
+    case "db_injection_check":
+      return `Checked for database injection risk on ${target}.`;
+    default:
+      return `Checked ${target} with ${toolRun.tool}.`;
+  }
+}
+
+function summarizeScanOutcome(scan: Scan, findings: Finding[], toolRuns: ToolRun[]) {
+  const failedRuns = toolRuns.filter((toolRun) => toolRun.status === "failed").length;
+  const skippedRuns = toolRuns.filter((toolRun) => toolRun.status === "denied").length;
+  const highestSeverity = ["critical", "high", "medium", "low", "info"].find((severity) =>
+    findings.some((finding) => finding.severity === severity)
+  );
+
+  if (scan.status === "failed") {
+    return "The scan stopped early because a required tool execution failed.";
+  }
+
+  if (findings.length === 0 && toolRuns.length === 0) {
+    return "No checks have completed yet.";
+  }
+
+  const severityText = highestSeverity ? ` Highest observed severity: ${highestSeverity}.` : "";
+  const skippedText = skippedRuns > 0 ? ` ${skippedRuns} checks were skipped by policy.` : "";
+  const failedText = failedRuns > 0 ? ` ${failedRuns} checks failed during execution.` : "";
+
+  return `Completed ${toolRuns.length} checks and produced ${findings.length} findings.${severityText}${skippedText}${failedText}`;
+}
+
+function summarizeLayerChecks(nodes: DfsNode[], toolRunsByNodeId: Map<string, ToolRun[]>) {
+  const runs = nodes.flatMap((node) => toolRunsByNodeId.get(node.id) ?? []);
+  const passed = runs.filter((toolRun) => toolRun.status === "completed").length;
+  const failed = runs.filter((toolRun) => toolRun.status === "failed").length;
+  const skipped = runs.filter((toolRun) => toolRun.status === "denied").length;
+  const running = runs.filter((toolRun) => toolRun.status === "running" || toolRun.status === "pending").length;
+
+  if (runs.length === 0) {
+    return "No checks ran in this layer.";
+  }
+
+  const parts = [];
+  if (passed > 0) parts.push(`${passed} passed`);
+  if (failed > 0) parts.push(`${failed} failed`);
+  if (skipped > 0) parts.push(`${skipped} skipped`);
+  if (running > 0) parts.push(`${running} running`);
+  return parts.join(" · ");
+}
+
+function summarizeNodeOutcome(node: DfsNode, toolRuns: ToolRun[], findings: Finding[]) {
+  const failedRuns = toolRuns.filter((toolRun) => toolRun.status === "failed").length;
+  const skippedRuns = toolRuns.filter((toolRun) => toolRun.status === "denied").length;
+
+  if (failedRuns > 0) {
+    return `This node has ${failedRuns} failed check${failedRuns === 1 ? "" : "s"} and needs review.`;
+  }
+
+  if (findings.length > 0) {
+    return `This node produced ${findings.length} finding${findings.length === 1 ? "" : "s"} from ${toolRuns.length} completed or attempted checks.`;
+  }
+
+  if (skippedRuns > 0 && toolRuns.length === skippedRuns) {
+    return "All checks for this node were skipped by policy.";
+  }
+
+  if (toolRuns.length === 0) {
+    return "No checks were run for this node.";
+  }
+
+  return `Checks completed for this node without generating findings.`;
+}
+
+function summarizeAuditEntry(entry: AuditEntry) {
+  const details = entry.details;
+
+  switch (entry.action) {
+    case "scan-started":
+      return "Scan started with the requested scope and execution policy.";
+    case "tool-run-authorized":
+      return `${adapterLabel(String(details["adapter"] ?? "") as ToolRun["adapter"])} was allowed to run.`;
+    case "tool-run-denied":
+      return `${adapterLabel(String(details["adapter"] ?? "") as ToolRun["adapter"])} was skipped. ${String(details["reason"] ?? "")}`.trim();
+    case "tool-run-failed":
+      return `${adapterLabel(String(details["adapter"] ?? "") as ToolRun["adapter"])} failed. ${String(details["error"] ?? "")}`.trim();
+    case "scan-failed-broker-execution":
+      return `The scan stopped because ${String(details["adapter"] ?? "a tool")} failed.`;
+    case "round-complete":
+      return String(details["summary"] ?? "A scan round completed.");
+    default:
+      return sentenceCase(entry.action);
+  }
+}
+
+function summarizeReportOutcome(report: Report) {
+  if (report.totalFindings === 0) {
+    return "The scan completed without any evidence-backed findings.";
+  }
+
+  const highestSeverity = (["critical", "high", "medium", "low", "info"] as Severity[]).find(
+    (severity) => report.findingsBySeverity[severity] > 0
+  );
+
+  return `The scan produced ${report.totalFindings} evidence-backed findings. The highest observed severity was ${highestSeverity ?? "info"}.`;
+}
+
+function reportPriorityHeading(report: Report) {
+  if (report.findingsBySeverity.critical > 0 || report.findingsBySeverity.high > 0) {
+    return "Address externally exposed high-risk issues first.";
+  }
+  if (report.findingsBySeverity.medium > 0) {
+    return "Address the reachable medium-risk issues next.";
+  }
+  if (report.totalFindings > 0) {
+    return "The remaining issues are mostly hardening and exposure findings.";
+  }
+  return "No remediation priorities were identified from this scan.";
+}
+
+function severitySummaryText(report: Report, severity: Severity) {
+  const count = report.findingsBySeverity[severity];
+  if (count === 0) {
+    return null;
+  }
+
+  switch (severity) {
+    case "critical":
+      return `${count} critical finding${count === 1 ? "" : "s"} need immediate action.`;
+    case "high":
+      return `${count} high-severity finding${count === 1 ? "" : "s"} should be addressed quickly.`;
+    case "medium":
+      return `${count} medium-severity finding${count === 1 ? "" : "s"} need follow-up review.`;
+    case "low":
+      return `${count} low-severity finding${count === 1 ? "" : "s"} indicate hardening gaps.`;
+    case "info":
+      return `${count} informational finding${count === 1 ? "" : "s"} provide context for follow-on review.`;
+    default:
+      return null;
+  }
+}
+
 function formatTimestamp(value?: string | null) {
   if (!value) return "Not available";
   return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -80,20 +284,6 @@ function riskPercent(value: number) {
   return `${Math.round(value * 100)}%`;
 }
 
-function findingsForNode(findings: Finding[], nodeId: string) {
-  return findings.filter((finding) => finding.nodeId === nodeId);
-}
-
-function groupFindingsBySeverity(findings: Finding[]) {
-  return findings.reduce<Record<Severity, Finding[]>>(
-    (acc, finding) => {
-      acc[finding.severity].push(finding);
-      return acc;
-    },
-    { critical: [], high: [], medium: [], low: [], info: [] }
-  );
-}
-
 async function fetchScans(): Promise<Scan[]> {
   return fetchJson<Scan[]>(apiRoutes.scanList);
 }
@@ -111,7 +301,7 @@ type QuickLink = {
 
 function ShortcutHint({ shortcut }: { shortcut: string }) {
   return (
-    <span className="rounded-md border border-border/70 bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+    <span className="rounded-md border border-border/70 bg-background px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
       {shortcut}
     </span>
   );
@@ -125,11 +315,11 @@ function QuickLinkButton({ link }: { link: QuickLink }) {
       onClick={() => {
         document.getElementById(link.id)?.scrollIntoView({ behavior: "smooth", block: "start" });
       }}
-      className="flex w-full items-center justify-between gap-3 rounded-xl border border-border/70 bg-background/70 px-3 py-2 text-left transition hover:border-primary/30 hover:bg-accent"
+      className="flex w-full items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/40 px-2.5 py-2 text-left transition hover:border-primary/30 hover:bg-accent"
     >
       <span className="min-w-0">
-        <span className="block text-sm font-medium text-foreground">{link.label}</span>
-        {link.meta ? <span className="block truncate text-xs text-muted-foreground">{link.meta}</span> : null}
+        <span className="block text-xs font-medium text-foreground">{link.label}</span>
+        {link.meta ? <span className="block truncate text-[10px] text-muted-foreground">{link.meta}</span> : null}
       </span>
       <ShortcutHint shortcut={link.shortcut} />
     </button>
@@ -139,194 +329,77 @@ function QuickLinkButton({ link }: { link: QuickLink }) {
 function SectionCard({
   id,
   title,
-  description,
   children
 }: {
   id: string;
   title: string;
-  description: string;
   children: ReactNode;
 }) {
   return (
     <Card id={id} className="scroll-mt-6 overflow-hidden">
-      <CardHeader className="border-b border-border/70 pb-4">
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+      <CardHeader className="border-b border-border/70 px-4 py-3">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
       </CardHeader>
-      <CardContent>{children}</CardContent>
+      <CardContent className="px-4 py-3">{children}</CardContent>
     </Card>
   );
 }
 
-function MetricCard({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "alert" }) {
-  return (
-    <div className={cn("rounded-2xl border p-4", tone === "alert" ? "border-warning/40 bg-warning/10" : "border-border/70 bg-muted/30")}>
-      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-foreground">{value}</p>
-    </div>
-  );
+function toolRunStatusVariant(status: ToolRun["status"]): "outline" | "success" | "warning" | "destructive" {
+  if (status === "completed") return "success";
+  if (status === "failed") return "destructive";
+  if (status === "denied") return "warning";
+  return "outline";
 }
 
-function NodeTable({
-  nodes,
-  findings,
-  selectedNodeId,
-  onSelectNode
+function CompactDetail({
+  label,
+  value
 }: {
-  nodes: DfsNode[];
-  findings: Finding[];
-  selectedNodeId: string | null;
-  onSelectNode: (nodeId: string | null) => void;
+  label: string;
+  value: ReactNode;
 }) {
-  if (nodes.length === 0) {
-    return <p className="text-sm text-muted-foreground">No nodes discovered for this layer yet.</p>;
-  }
-
   return (
-    <div className="overflow-x-auto rounded-2xl border border-border/70">
-      <table className="w-full min-w-[42rem] text-sm">
-        <thead className="bg-muted/40 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-          <tr>
-            <th className="px-4 py-3 text-left">Target</th>
-            <th className="px-4 py-3 text-left">Service</th>
-            <th className="px-4 py-3 text-left">Status</th>
-            <th className="px-4 py-3 text-left">Depth</th>
-            <th className="px-4 py-3 text-left">Risk</th>
-            <th className="px-4 py-3 text-left">Findings</th>
-          </tr>
-        </thead>
-        <tbody>
-          {nodes.map((node) => {
-            const nodeFindings = findingsForNode(findings, node.id);
-            const active = selectedNodeId === node.id;
-
-            return (
-              <tr
-                key={node.id}
-                className={cn("border-t border-border/70 transition", active ? "bg-primary/5" : "hover:bg-muted/30")}
-              >
-                <td className="px-4 py-3">
-                  <button type="button" onClick={() => onSelectNode(active ? null : node.id)} className="text-left">
-                    <span className="block font-medium text-foreground">{node.target}</span>
-                    <span className="block font-mono text-[11px] text-muted-foreground">{node.id}</span>
-                  </button>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">
-                  {node.service ?? (node.port ? `Port ${node.port}` : "Unknown")}
-                </td>
-                <td className="px-4 py-3">
-                  <Badge variant={node.status === "complete" ? "success" : "outline"}>{node.status}</Badge>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">{node.depth}</td>
-                <td className="px-4 py-3 text-muted-foreground">{riskPercent(node.riskScore)}</td>
-                <td className="px-4 py-3 text-muted-foreground">{nodeFindings.length}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function FindingsList({
-  findings,
-  nodesById,
-  selectedNodeId
-}: {
-  findings: Finding[];
-  nodesById: Record<string, DfsNode>;
-  selectedNodeId: string | null;
-}) {
-  const filteredFindings = selectedNodeId ? findings.filter((finding) => finding.nodeId === selectedNodeId) : findings;
-  const grouped = groupFindingsBySeverity(
-    [...filteredFindings].sort((left, right) => severityOrder[right.severity] - severityOrder[left.severity])
-  );
-
-  if (filteredFindings.length === 0) {
-    return <p className="text-sm text-muted-foreground">No findings match the current selection.</p>;
-  }
-
-  return (
-    <div className="space-y-6">
-      {(["critical", "high", "medium", "low", "info"] as Severity[]).map((severity) => {
-        const group = grouped[severity];
-        if (group.length === 0) {
-          return null;
-        }
-
-        return (
-          <div key={severity} className="space-y-3">
-            <div className="flex items-center gap-3">
-              <Badge variant={severityBadgeVariant[severity]}>{severity}</Badge>
-              <span className="text-sm text-muted-foreground">{group.length} findings</span>
-            </div>
-            {group.map((finding) => {
-              const node = nodesById[finding.nodeId];
-              return (
-                <article key={finding.id} className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-base font-semibold text-foreground">{finding.title}</h4>
-                    <Badge variant="outline">{Math.round(finding.confidence * 100)}% confidence</Badge>
-                    {finding.validated ? <Badge variant="success">validated</Badge> : null}
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{finding.description}</p>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    <span className="rounded-full bg-background px-2.5 py-1">{node?.layer ?? "Unknown layer"}</span>
-                    <span className="rounded-full bg-background px-2.5 py-1">{node?.target ?? finding.nodeId}</span>
-                    <span className="rounded-full bg-background px-2.5 py-1">{finding.technique}</span>
-                  </div>
-                  <details className="mt-4 rounded-xl border border-border/70 bg-background/80 p-3">
-                    <summary className="cursor-pointer text-sm font-medium text-foreground">Evidence</summary>
-                    <pre className="mt-3 overflow-x-auto whitespace-pre-wrap font-mono text-xs leading-6 text-muted-foreground">
-                      {finding.evidence}
-                    </pre>
-                    {finding.reproduceCommand ? (
-                      <div className="mt-3 border-t border-border/70 pt-3">
-                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Reproduce</p>
-                        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-xs leading-6 text-foreground">
-                          {finding.reproduceCommand}
-                        </pre>
-                      </div>
-                    ) : null}
-                  </details>
-                </article>
-              );
-            })}
-          </div>
-        );
-      })}
+    <div className="space-y-1">
+      <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
+      <div className="text-xs text-foreground">{value}</div>
     </div>
   );
 }
 
 function AuditTimeline({ entries, isLoading }: { entries: AuditEntry[]; isLoading: boolean }) {
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading audit trail...</p>;
+    return <p className="text-xs text-muted-foreground">Loading audit trail...</p>;
   }
 
   if (entries.length === 0) {
-    return <p className="text-sm text-muted-foreground">No audit entries available yet.</p>;
+    return <p className="text-xs text-muted-foreground">No audit entries available yet.</p>;
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {entries.map((entry) => (
-        <div key={entry.id} className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+        <details key={entry.id} className="border-b border-border/60 py-2 last:border-b-0">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className={cn("h-2.5 w-2.5 rounded-full", entry.scopeValid ? "bg-success" : "bg-warning")} />
-              <span className="font-medium text-foreground">{entry.actor}</span>
-              <Badge variant="outline">{entry.action}</Badge>
+              <span className="text-xs font-medium text-foreground">{sentenceCase(entry.actor)}</span>
+              <Badge variant="outline">{sentenceCase(entry.action)}</Badge>
             </div>
-            <span className="text-xs text-muted-foreground">{formatTimestamp(entry.timestamp)}</span>
+            <span className="text-[11px] text-muted-foreground">{formatTimestamp(entry.timestamp)}</span>
           </div>
+          <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{summarizeAuditEntry(entry)}</p>
           {Object.keys(entry.details).length > 0 ? (
-            <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-xl bg-background/80 p-3 font-mono text-xs leading-6 text-muted-foreground">
-              {JSON.stringify(entry.details, null, 2)}
-            </pre>
+            <>
+              <summary className="mt-2 cursor-pointer list-none text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                Technical details
+              </summary>
+              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg bg-background/80 p-2 font-mono text-[11px] leading-5 text-muted-foreground">
+                {JSON.stringify(entry.details, null, 2)}
+              </pre>
+            </>
           ) : null}
-        </div>
+        </details>
       ))}
     </div>
   );
@@ -334,59 +407,70 @@ function AuditTimeline({ entries, isLoading }: { entries: AuditEntry[]; isLoadin
 
 function ReportSection({ report }: { report: Report | null }) {
   if (!report) {
-    return <p className="text-sm text-muted-foreground">Report becomes available when the scan completes.</p>;
+    return <p className="text-xs text-muted-foreground">Report becomes available when the scan completes.</p>;
   }
 
+  const severitySummaries = (["critical", "high", "medium", "low", "info"] as Severity[])
+    .map((severity) => ({ severity, summary: severitySummaryText(report, severity) }))
+    .filter((entry): entry is { severity: Severity; summary: string } => entry.summary !== null);
+
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-sm leading-7 text-muted-foreground">{report.executiveSummary}</p>
-        <p className="mt-2 text-xs text-muted-foreground">Generated {formatTimestamp(report.generatedAt)}</p>
+    <div className="space-y-4 text-xs">
+      <div className="rounded-lg border border-border/60 bg-background/40 p-3">
+        <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Summary</p>
+        <p className="mt-2 text-sm leading-6 text-foreground">{summarizeReportOutcome(report)}</p>
+        <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{reportPriorityHeading(report)}</p>
+        <p className="mt-2 text-[11px] text-muted-foreground">Generated {formatTimestamp(report.generatedAt)}</p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-5">
-        {(["critical", "high", "medium", "low", "info"] as Severity[]).map((severity) => (
-          <MetricCard
-            key={severity}
-            label={severity}
-            value={String(report.findingsBySeverity[severity])}
-            tone={severity === "critical" || severity === "high" ? "alert" : "default"}
-          />
-        ))}
+      <div className="space-y-2">
+        <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">What We Found</p>
+        <div className="space-y-2">
+          {severitySummaries.length > 0 ? severitySummaries.map(({ severity, summary }) => (
+            <div key={severity} className="flex flex-wrap items-center gap-2 border-b border-border/60 py-2 last:border-b-0">
+              <Badge variant={severityBadgeVariant[severity]}>{severity}</Badge>
+              <span className="text-[11px] text-muted-foreground">{summary}</span>
+            </div>
+          )) : (
+            <p className="text-[11px] text-muted-foreground">No findings were included in the final report.</p>
+          )}
+        </div>
       </div>
 
       {report.topRisks.length > 0 ? (
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4 text-warning" />
-            <h4 className="text-base font-semibold text-foreground">Top Risks</h4>
-          </div>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">What Matters Most</p>
           {report.topRisks.map((risk, index) => (
-            <div key={`${risk.title}-${index}`} className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={severityBadgeVariant[risk.severity]}>{risk.severity}</Badge>
-                <h5 className="font-medium text-foreground">{risk.title}</h5>
+            <details key={`${risk.title}-${index}`} className="border-b border-border/60 py-2 last:border-b-0">
+              <summary className="cursor-pointer list-none">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={severityBadgeVariant[risk.severity]}>{risk.severity}</Badge>
+                  <h5 className="text-xs font-medium text-foreground">{risk.title}</h5>
+                </div>
+                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{risk.nodeTarget}</p>
+              </summary>
+              <div className="mt-2 rounded-md border border-border/60 bg-background/50 p-3">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">What to fix next</p>
+                <p className="mt-2 leading-5 text-foreground">{risk.recommendation}</p>
               </div>
-              <p className="mt-2 text-sm text-muted-foreground">{risk.nodeTarget}</p>
-              <p className="mt-3 text-sm leading-6 text-foreground">{risk.recommendation}</p>
-            </div>
+            </details>
           ))}
         </div>
       ) : null}
 
       {report.attackPaths.length > 0 ? (
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-primary" />
-            <h4 className="text-base font-semibold text-foreground">Attack Paths</h4>
-          </div>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Potential Paths</p>
           {report.attackPaths.map((path, index) => (
-            <div key={`${path.description}-${index}`} className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium text-foreground">Path {index + 1}</span>
-                <Badge variant={path.risk >= 0.6 ? "warning" : "outline"}>{riskPercent(path.risk)} risk</Badge>
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
+            <details key={`${path.description}-${index}`} className="border-b border-border/60 py-2 last:border-b-0">
+              <summary className="cursor-pointer list-none">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-foreground">Path {index + 1}</span>
+                  <Badge variant={path.risk >= 0.6 ? "warning" : "outline"}>{riskPercent(path.risk)} risk</Badge>
+                </div>
+                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{path.description}</p>
+              </summary>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
                 {path.nodeIds.map((nodeId, nodeIndex) => (
                   <span key={nodeId} className="flex items-center gap-1.5">
                     <span className="rounded-full bg-background px-2.5 py-1 font-mono text-foreground">{nodeId}</span>
@@ -394,11 +478,189 @@ function ReportSection({ report }: { report: Report | null }) {
                   </span>
                 ))}
               </div>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">{path.description}</p>
-            </div>
+            </details>
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function ObservationList({ observations }: { observations: Observation[] }) {
+  if (observations.length === 0) {
+    return <p className="text-[11px] text-muted-foreground">No observations derived from this command.</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {observations.map((observation) => (
+        <div key={observation.id} className="border-b border-border/60 py-2 last:border-b-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={severityBadgeVariant[observation.severity]}>{observation.severity}</Badge>
+            <span className="text-[11px] font-medium text-foreground">{observation.title}</span>
+            <span className="text-[11px] text-muted-foreground">{Math.round(observation.confidence * 100)}%</span>
+          </div>
+          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{observation.summary}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function NodeFindingList({ findings }: { findings: Finding[] }) {
+  if (findings.length === 0) {
+    return <p className="text-[11px] text-muted-foreground">No findings derived for this node yet.</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {findings.map((finding) => (
+        <details key={finding.id} className="border-b border-border/60 py-2 last:border-b-0">
+          <summary className="cursor-pointer list-none">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={severityBadgeVariant[finding.severity]}>{finding.severity}</Badge>
+              <span className="text-[11px] font-medium text-foreground">{finding.title}</span>
+              <span className="text-[11px] text-muted-foreground">{Math.round(finding.confidence * 100)}%</span>
+            </div>
+            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{finding.description}</p>
+          </summary>
+          <div className="mt-2 space-y-2">
+            <div>
+              <p className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Evidence</p>
+              <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-muted/30 p-2 font-mono text-[10px] leading-5 text-muted-foreground">
+                {finding.evidence}
+              </pre>
+            </div>
+            {finding.reproduceCommand ? (
+              <div>
+                <p className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Exact tool call</p>
+                <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-background p-2 font-mono text-[10px] leading-5 text-foreground">
+                  {finding.reproduceCommand}
+                </pre>
+              </div>
+            ) : null}
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
+function ToolRunList({
+  toolRuns,
+  observationsByRunId
+}: {
+  toolRuns: ToolRun[];
+  observationsByRunId: Map<string, Observation[]>;
+}) {
+  if (toolRuns.length === 0) {
+    return <p className="text-[11px] text-muted-foreground">No tool runs were queued for this node.</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {toolRuns.map((toolRun) => {
+        const runObservations = observationsByRunId.get(toolRun.id) ?? [];
+        return (
+          <details key={toolRun.id} className="border-b border-border/60 py-2 last:border-b-0">
+            <summary className="cursor-pointer list-none">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={toolRunStatusVariant(toolRun.status)}>{toolRunOutcomeLabel(toolRun.status)}</Badge>
+                    <span className="text-[11px] font-medium text-foreground">{adapterLabel(toolRun.adapter)}</span>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{describeToolRun(toolRun)}</p>
+                  {toolRun.statusReason ? (
+                    <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{toolRun.statusReason}</p>
+                  ) : null}
+                </div>
+                <span className="text-[10px] text-muted-foreground">{formatTimestamp(toolRun.completedAt ?? toolRun.startedAt)}</span>
+              </div>
+            </summary>
+
+            <div className="mt-2 space-y-3">
+              <div>
+                <p className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Results</p>
+                <ObservationList observations={runObservations} />
+              </div>
+              <div>
+                <p className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Exact tool call</p>
+                <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-background p-2 font-mono text-[10px] leading-5 text-foreground">
+                  {toolRun.commandPreview}
+                </pre>
+              </div>
+              <div>
+                <p className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Raw result</p>
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted/30 p-2 font-mono text-[10px] leading-5 text-muted-foreground">
+                  {toolRun.output ?? "No output captured."}
+                </pre>
+              </div>
+            </div>
+          </details>
+        );
+      })}
+    </div>
+  );
+}
+
+function LayerEvidenceSection({
+  layer,
+  nodes,
+  toolRunsByNodeId,
+  observationsByRunId,
+  findingsByNodeId
+}: {
+  layer: OsiLayer;
+  nodes: DfsNode[];
+  toolRunsByNodeId: Map<string, ToolRun[]>;
+  observationsByRunId: Map<string, Observation[]>;
+  findingsByNodeId: Map<string, Finding[]>;
+}) {
+  if (nodes.length === 0) {
+    return <p className="text-xs text-muted-foreground">No nodes discovered for this layer.</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {nodes.map((node) => {
+        const nodeToolRuns = toolRunsByNodeId.get(node.id) ?? [];
+        const nodeFindings = findingsByNodeId.get(node.id) ?? [];
+
+        return (
+          <article key={node.id} className="border-b border-border/60 py-3 last:border-b-0">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-xs text-foreground">{node.target}</span>
+                  <Badge variant={node.status === "complete" ? "success" : "outline"}>{node.status}</Badge>
+                  {node.service ? <span className="text-[11px] text-muted-foreground">{node.service}</span> : null}
+                  {node.port ? <span className="text-[11px] text-muted-foreground">:{node.port}</span> : null}
+                </div>
+                <div className="flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+                  <span>{layerLabels[layer]}</span>
+                  <span>depth {node.depth}</span>
+                  <span>risk {riskPercent(node.riskScore)}</span>
+                  <span>{nodeToolRuns.length} runs</span>
+                  <span>{nodeFindings.length} findings</span>
+                </div>
+                <p className="text-[11px] leading-5 text-muted-foreground">{summarizeNodeOutcome(node, nodeToolRuns, nodeFindings)}</p>
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-3 lg:grid-cols-[1.35fr_0.65fr]">
+              <div>
+                <p className="mb-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Evidence</p>
+                <ToolRunList toolRuns={nodeToolRuns} observationsByRunId={observationsByRunId} />
+              </div>
+              <div>
+                <p className="mb-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Findings</p>
+                <NodeFindingList findings={nodeFindings} />
+              </div>
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -415,17 +677,16 @@ export function ScansPage({
   onNavigateToDetail: (id: string) => void;
 }) {
   const [roundSummary, setRoundSummary] = useState("");
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const reportedFailedToolRunsRef = useRef(new Set<string>());
   const { lastEvent, isConnected } = useScanWebSocket(scanId !== "new");
-  const { scan, findings, graph, report, isLoading, refetch } = useScan(scanId && scanId !== "new" ? scanId : null, lastEvent);
+  const { scan, findings, graph, report, toolRuns, observations, isLoading, refetch } = useScan(scanId && scanId !== "new" ? scanId : null, lastEvent);
   const isCreateMode = scanId === "new";
   const auditRefreshRound = lastEvent?.type === "round_complete" ? lastEvent.round : 0;
 
   useEffect(() => {
     setRoundSummary("");
-    setSelectedNodeId(null);
   }, [scanId]);
 
   useEffect(() => {
@@ -477,7 +738,7 @@ export function ScansPage({
         toast.success("Scan complete", { description: "Report is ready." });
         refetch();
       } else if (lastEvent.scan.status === "failed") {
-        toast.error("Scan failed");
+        toast.error("Scan failed", { description: "A brokered tool execution failed. Inspect the layer evidence for the exact tool run." });
       } else if (lastEvent.scan.status === "aborted") {
         toast("Scan aborted");
       }
@@ -490,8 +751,31 @@ export function ScansPage({
           description: lastEvent.finding.title
         });
       }
+      return;
+    }
+
+    if (lastEvent.type === "tool_run_completed" && lastEvent.toolRun.scanId === scanId && lastEvent.toolRun.status === "failed") {
+      reportedFailedToolRunsRef.current.add(lastEvent.toolRun.id);
+      toast.error("Tool execution failed", {
+        description: `${lastEvent.toolRun.adapter}: ${lastEvent.toolRun.statusReason ?? "Unknown broker error"}`
+      });
     }
   }, [lastEvent, refetch, scanId]);
+
+  useEffect(() => {
+    for (const toolRun of toolRuns) {
+      if (toolRun.status !== "failed") {
+        continue;
+      }
+      if (reportedFailedToolRunsRef.current.has(toolRun.id)) {
+        continue;
+      }
+      reportedFailedToolRunsRef.current.add(toolRun.id);
+      toast.error("Tool execution failed", {
+        description: `${toolRun.adapter}: ${toolRun.statusReason ?? "Unknown tool error"}`
+      });
+    }
+  }, [toolRuns]);
 
   const scanColumns = useMemo<ListPageColumn<Scan>[]>(() => [
     {
@@ -564,7 +848,36 @@ export function ScansPage({
   }, [findings]);
 
   const nodes = useMemo(() => graph?.nodes ?? [], [graph]);
-  const nodesById = useMemo(() => Object.fromEntries(nodes.map((node) => [node.id, node])), [nodes]);
+  const toolRunsByNodeId = useMemo(() => {
+    const grouped = new Map<string, ToolRun[]>();
+    for (const toolRun of toolRuns) {
+      const existing = grouped.get(toolRun.nodeId) ?? [];
+      existing.push(toolRun);
+      grouped.set(toolRun.nodeId, existing);
+    }
+    for (const [nodeId, groupedRuns] of grouped) {
+      grouped.set(nodeId, [...groupedRuns].sort((left, right) => right.startedAt.localeCompare(left.startedAt)));
+    }
+    return grouped;
+  }, [toolRuns]);
+  const observationsByRunId = useMemo(() => {
+    const grouped = new Map<string, Observation[]>();
+    for (const observation of observations) {
+      const existing = grouped.get(observation.toolRunId) ?? [];
+      existing.push(observation);
+      grouped.set(observation.toolRunId, existing);
+    }
+    return grouped;
+  }, [observations]);
+  const findingsByNodeId = useMemo(() => {
+    const grouped = new Map<string, Finding[]>();
+    for (const finding of findings) {
+      const existing = grouped.get(finding.nodeId) ?? [];
+      existing.push(finding);
+      grouped.set(finding.nodeId, existing);
+    }
+    return grouped;
+  }, [findings]);
 
   const layers = useMemo(() => {
     return scan?.scope.layers.map((layer) => ({
@@ -574,8 +887,6 @@ export function ScansPage({
         .sort((left, right) => right.riskScore - left.riskScore)
     })) ?? [];
   }, [nodes, scan?.scope.layers]);
-
-  const selectedNodeLabel = selectedNodeId ? nodesById[selectedNodeId]?.target ?? selectedNodeId : null;
 
   const quickLinks = useMemo<QuickLink[]>(() => {
     const layerLinks = layers.map((entry, index) => ({
@@ -588,11 +899,10 @@ export function ScansPage({
     return [
       { id: "overview", label: "Overview", shortcut: "s", meta: `${scan?.scope.targets.length ?? 0} targets` },
       ...layerLinks,
-      { id: "findings", label: "Findings", shortcut: "f", meta: `${findings.length} total` },
       { id: "audit", label: "Audit", shortcut: "a", meta: `${auditEntries.length} events` },
       { id: "report", label: "Report", shortcut: "r", meta: report ? `${report.totalFindings} findings` : "Pending" }
     ];
-  }, [auditEntries.length, findings.length, layers, report, scan?.scope.targets.length]);
+  }, [auditEntries.length, layers, report, scan?.scope.targets.length]);
 
   useEffect(() => {
     if (!scanId || scanId === "new") {
@@ -770,131 +1080,90 @@ export function ScansPage({
           ) : null}
         </div>
       }
-      sidebar={
-        <div className="space-y-5 lg:sticky lg:top-6">
-          <div className="space-y-4">
-            <DetailSidebarItem label="Status">
-              <Badge variant={scanStatusBadgeVariant[scan.status]}>{scan.status}</Badge>
-            </DetailSidebarItem>
-            <DetailSidebarItem label="Realtime">{isConnected ? "Connected" : "Reconnecting"}</DetailSidebarItem>
-            <DetailSidebarItem label="Started">{formatTimestamp(scan.createdAt)}</DetailSidebarItem>
-            <DetailSidebarItem label="Completed">{formatTimestamp(scan.completedAt)}</DetailSidebarItem>
-            <DetailSidebarItem label="Targets">{scan.scope.targets.length}</DetailSidebarItem>
-            <DetailSidebarItem label="Layers">{scan.scope.layers.join(", ")}</DetailSidebarItem>
-            <DetailSidebarItem label="Depth / RPS">{scan.scope.maxDepth} / {scan.scope.rateLimitRps}</DetailSidebarItem>
-            <DetailSidebarItem label="Findings">
-              {findings.length} total
-              {(findingsBySeverity.critical ?? 0) > 0 ? ` · ${findingsBySeverity.critical} critical` : ""}
-              {(findingsBySeverity.high ?? 0) > 0 ? ` · ${findingsBySeverity.high} high` : ""}
-            </DetailSidebarItem>
-          </div>
-
-          <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
+        sidebar={
+          <div className="space-y-3 lg:sticky lg:top-6">
+          <div className="rounded-lg border border-border/70 bg-background/50 p-3">
             <div className="flex items-center gap-2">
               <Layers3 className="h-4 w-4 text-primary" />
-              <p className="text-sm font-semibold text-foreground">Jump To</p>
+              <p className="text-xs font-medium text-foreground">Jump To</p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Keyboard shortcuts: `s` overview, `1-6` layers, `f` findings, `a` audit, `r` report.
-            </p>
-            <div className="space-y-2">
+            <div className="mt-3 space-y-1.5">
               {quickLinks.map((link) => (
                 <QuickLinkButton key={link.id} link={link} />
               ))}
             </div>
-            {selectedNodeLabel ? (
-              <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-                Focused node
-                <div className="mt-1 font-mono text-foreground">{selectedNodeLabel}</div>
-              </div>
-            ) : null}
           </div>
         </div>
       }
     >
       <div className="space-y-6">
-        <SectionCard
-          id="overview"
-          title="Overview"
-          description="Scan state, scope, and current execution summary."
-        >
-          <div className="space-y-6">
-            <div className="grid gap-3 md:grid-cols-4">
-              <MetricCard label="Progress" value={summarizeProgress(scan)} />
-              <MetricCard label="Nodes" value={`${scan.nodesComplete}/${scan.nodesTotal}`} />
-              <MetricCard label="Round" value={String(scan.currentRound)} />
-              <MetricCard label="Findings" value={String(findings.length)} tone={(findingsBySeverity.critical ?? 0) > 0 ? "alert" : "default"} />
+        <SectionCard id="overview" title="Overview">
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border/60 bg-background/40 p-3">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Summary</p>
+              <p className="mt-2 text-sm leading-6 text-foreground">{summarizeScanOutcome(scan, findings, toolRuns)}</p>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <CompactDetail label="Status" value={<Badge variant={scanStatusBadgeVariant[scan.status]}>{scan.status}</Badge>} />
+              <CompactDetail label="Progress" value={`${scan.nodesComplete}/${scan.nodesTotal} nodes · ${summarizeProgress(scan)}`} />
+              <CompactDetail label="Round" value={String(scan.currentRound)} />
+              <CompactDetail label="Evidence" value={`${toolRuns.length} runs · ${observations.length} observations · ${findings.length} findings`} />
+              <CompactDetail
+                label="Targets"
+                value={
+                  <div className="space-y-1">
+                    {scan.scope.targets.map((target) => (
+                      <div key={target} className="font-mono text-[11px] text-foreground">{target}</div>
+                    ))}
+                  </div>
+                }
+              />
+              <CompactDetail label="Layers" value={scan.scope.layers.join(", ")} />
+              <CompactDetail label="Execution" value={`depth ${scan.scope.maxDepth} · ${scan.scope.maxDurationMinutes} min · ${scan.scope.rateLimitRps} rps`} />
+              <CompactDetail label="Exploit policy" value={scan.scope.allowActiveExploits ? "active checks allowed" : "active checks disabled"} />
             </div>
 
             {roundSummary ? (
-              <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Latest Round</p>
-                <p className="mt-2 text-sm leading-6 text-foreground">{roundSummary}</p>
+              <div className="border-t border-border/60 pt-3">
+                <p className="text-xs leading-6 text-foreground">{roundSummary}</p>
               </div>
             ) : null}
 
-            <DetailFieldGroup title="Scope">
-              <DetailField label="Targets">
-                <div className="space-y-1 text-sm text-muted-foreground">
-                  {scan.scope.targets.map((target) => (
-                    <div key={target} className="font-mono text-xs text-foreground">{target}</div>
-                  ))}
-                </div>
-              </DetailField>
-              <DetailField label="Exclusions">
-                <p className="text-sm text-muted-foreground">
-                  {scan.scope.exclusions.length > 0 ? scan.scope.exclusions.join(", ") : "No explicit exclusions"}
-                </p>
-              </DetailField>
-              <DetailField label="Execution">
-                <p className="text-sm text-muted-foreground">
-                  {scan.scope.layers.join(", ")} layers, depth {scan.scope.maxDepth}, limit {scan.scope.maxDurationMinutes} minutes
-                </p>
-              </DetailField>
-              <DetailField label="Active exploits">
-                <p className="text-sm text-muted-foreground">{scan.scope.allowActiveExploits ? "Allowed" : "Disabled"}</p>
-              </DetailField>
-            </DetailFieldGroup>
+            <div className="border-t border-border/60 pt-3">
+              <p className="mb-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Checks Reviewed</p>
+              <div className="space-y-2">
+                {layers.map((entry) => (
+                  <div key={entry.layer} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 py-2 last:border-b-0">
+                    <div>
+                      <p className="text-xs font-medium text-foreground">{entry.layer} {layerLabels[entry.layer]}</p>
+                      <p className="text-[11px] text-muted-foreground">{summarizeLayerChecks(entry.nodes, toolRunsByNodeId)}</p>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">{entry.nodes.length} node{entry.nodes.length === 1 ? "" : "s"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </SectionCard>
 
         {layers.map((entry) => (
-          <SectionCard
-            key={entry.layer}
-            id={`layer-${entry.layer}`}
-            title={`${entry.layer} ${layerLabels[entry.layer]}`}
-            description="Nodes are grouped directly by the collected layer data, with per-node findings counts."
-          >
-            <NodeTable
+          <SectionCard key={entry.layer} id={`layer-${entry.layer}`} title={`${entry.layer} ${layerLabels[entry.layer]}`}>
+            <LayerEvidenceSection
+              layer={entry.layer}
               nodes={entry.nodes}
-              findings={findings}
-              selectedNodeId={selectedNodeId}
-              onSelectNode={setSelectedNodeId}
+              toolRunsByNodeId={toolRunsByNodeId}
+              observationsByRunId={observationsByRunId}
+              findingsByNodeId={findingsByNodeId}
             />
           </SectionCard>
         ))}
 
-        <SectionCard
-          id="findings"
-          title="Findings"
-          description={selectedNodeLabel ? `Filtered to ${selectedNodeLabel}. Select the same node again to clear the focus.` : "Direct findings view built from the current scan payload."}
-        >
-          <FindingsList findings={findings} nodesById={nodesById} selectedNodeId={selectedNodeId} />
-        </SectionCard>
-
-        <SectionCard
-          id="audit"
-          title="Audit"
-          description="Audit entries are shown inline for fast review without switching views."
-        >
+        <SectionCard id="audit" title="Audit">
           <AuditTimeline entries={auditEntries} isLoading={auditLoading} />
         </SectionCard>
 
-        <SectionCard
-          id="report"
-          title="Report"
-          description="Report sections are rendered directly from the generated report payload."
-        >
+        <SectionCard id="report" title="Report">
           <ReportSection report={report} />
         </SectionCard>
       </div>

@@ -1,4 +1,4 @@
-import type { Workflow } from "@prisma/client";
+import type { Workflow } from "../../generated/prisma/index.js";
 import type { Workflow as ContractWorkflow } from "@synosec/contracts";
 
 export function mapWorkflowRow(row: Workflow): ContractWorkflow {

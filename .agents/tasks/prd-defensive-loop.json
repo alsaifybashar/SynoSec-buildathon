@@ -1,0 +1,133 @@
+{
+  "product": {
+    "name": "Minimal Defensive Security Iteration Loop",
+    "slug": "defensive-loop",
+    "version": "1.0",
+    "owner": "autonomous-agent",
+    "status": "draft"
+  },
+  "problem": "Security work often stops at detection. Teams need a lightweight loop that can accept findings, choose the most valuable defensive next step, execute a bounded iteration, and preserve the outcome so the next iteration starts with better context.",
+  "users": [
+    {
+      "role": "Security engineer",
+      "needs": [
+        "A compact way to review prioritized findings",
+        "Clear evidence for what was checked, changed, or deferred",
+        "Confidence that each iteration reduces risk instead of just generating more alerts"
+      ]
+    },
+    {
+      "role": "Platform or backend engineer",
+      "needs": [
+        "Actionable defensive tasks that are small enough to implement safely",
+        "Traceable acceptance criteria for each hardening step",
+        "Low operational overhead for running the loop repeatedly"
+      ]
+    }
+  ],
+  "goals": [
+    "Run a repeatable defensive loop that starts from available findings or system context",
+    "Prioritize one bounded hardening action at a time using explicit risk-based rules",
+    "Capture evidence, residual risk, and next-step recommendations after each iteration",
+    "Keep the workflow minimal enough for buildathon speed while still being defensible"
+  ],
+  "nonGoals": [
+    "Full autonomous penetration testing across all targets",
+    "Completely automatic remediation without human-reviewable evidence",
+    "Broad enterprise policy management, ticketing, or compliance automation",
+    "Complex multi-tenant orchestration beyond a single project environment"
+  ],
+  "principles": [
+    "Prefer small verified defensive changes over large speculative ones",
+    "Make every iteration auditable",
+    "Bias toward reducing exploitability, blast radius, or exposure first",
+    "Stop when the next step is unclear, unsafe, or not sufficiently evidenced"
+  ],
+  "successMetrics": [
+    "A user can run one full defensive iteration from findings intake to recorded outcome without manual document editing",
+    "Each completed iteration produces a prioritized action, execution evidence, and a residual-risk summary",
+    "The loop can continue from prior state without losing findings, decisions, or completed work"
+  ],
+  "qualityGates": [
+    "Every story must preserve a minimal end-to-end loop: intake, prioritization, action, evidence, and next-step output.",
+    "Security decisions must be explainable in plain language and tied to observed findings or known asset context.",
+    "The loop must avoid unsafe autonomous behavior such as destructive actions or irreversible remediation without explicit evidence and scope.",
+    "Outputs must be deterministic enough that a human can review what happened and why before trusting another iteration.",
+    "Any user-visible workflow must remain minimal and understandable for a buildathon demo."
+  ],
+  "stories": [
+    {
+      "id": "S1",
+      "title": "Define the defensive loop contract",
+      "description": "Establish the minimal workflow and data model for one defensive iteration. The product must clearly define what inputs are accepted, what decision is made, what action is executed, and what artifacts are recorded for later iterations.",
+      "acceptanceCriteria": [
+        "The loop explicitly defines its stages: intake, prioritize, act, verify, record, and handoff.",
+        "Required inputs are documented, including findings, target identity, asset context, and prior iteration state when available.",
+        "Required outputs are documented, including chosen action, evidence, residual risk, and recommended next step.",
+        "Failure states are documented for missing evidence, ambiguous scope, or unsafe actions."
+      ],
+      "dependsOn": [],
+      "status": "open"
+    },
+    {
+      "id": "S2",
+      "title": "Prioritize defensive next action",
+      "description": "Create a simple prioritization model that converts raw findings or observations into one bounded defensive action per iteration. The model should favor actions that reduce real exposure quickly and avoid noisy or low-impact work.",
+      "acceptanceCriteria": [
+        "The system can rank candidate defensive actions using explicit factors such as severity, exploitability, exposure, confidence, and implementation safety.",
+        "The loop selects exactly one primary action for the iteration and records why alternatives were not chosen.",
+        "Low-confidence or unverifiable findings are marked for follow-up instead of being treated as confirmed risk.",
+        "The prioritization output is human-reviewable and suitable for demo presentation."
+      ],
+      "dependsOn": [
+        "S1"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "S3",
+      "title": "Execute one bounded hardening iteration",
+      "description": "Support a single defensive iteration that applies one small, high-confidence security improvement or mitigation. The iteration must remain scoped, reversible in intent, and linked back to the prioritized decision.",
+      "acceptanceCriteria": [
+        "The selected action is constrained to a single bounded change or mitigation for the current iteration.",
+        "The loop defines how to verify the action completed successfully without broadening scope.",
+        "Unsafe or ambiguous actions are blocked and recorded instead of executed.",
+        "The iteration output includes enough detail for a human to understand what changed or what was deliberately skipped."
+      ],
+      "dependsOn": [
+        "S2"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "S4",
+      "title": "Record evidence and residual risk",
+      "description": "After each iteration, store the evidence needed to justify the action and determine what remains unresolved. This should make the next iteration faster and prevent repeated work or unsupported claims.",
+      "acceptanceCriteria": [
+        "The loop records source findings, the chosen action, verification evidence, and final outcome for the iteration.",
+        "Residual risks and deferred items are captured in a structured, reviewable format.",
+        "The record distinguishes between fixed issues, mitigated issues, unverified issues, and intentionally skipped issues.",
+        "A future iteration can start from the recorded output without reconstructing prior context manually."
+      ],
+      "dependsOn": [
+        "S3"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "S5",
+      "title": "Close the loop with next-step guidance",
+      "description": "Provide a compact end-of-iteration summary that tells the operator what to do next. The summary should make the loop feel complete for a demo while still setting up the next pass in a disciplined way.",
+      "acceptanceCriteria": [
+        "The iteration ends with a concise summary of what risk was reduced, what evidence supports that claim, and what remains.",
+        "The loop recommends the next best defensive action or states clearly why it cannot continue safely.",
+        "The summary is short enough for a buildathon demo and precise enough for technical review.",
+        "The final output reinforces that the product is a defensive iteration loop, not just a scanner or report generator."
+      ],
+      "dependsOn": [
+        "S4"
+      ],
+      "status": "open"
+    }
+  ]
+}

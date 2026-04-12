@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { ArrowLeft, CircleHelp } from "lucide-react";
 import { Button } from "./ui/button";
-import { Card, CardContent } from "./ui/card";
 import { PageHeader } from "./page-header";
 
 export function DetailPage({
@@ -52,17 +51,11 @@ export function DetailPage({
 
       {sidebar ? (
         <div className="m-3 grid gap-4 lg:grid-cols-[2fr_1fr]">
-          <Card>
-            <CardContent className="space-y-2 p-6">{children}</CardContent>
-          </Card>
-          <Card className="self-start bg-muted/40">
-            <CardContent className="space-y-4 p-5">{sidebar}</CardContent>
-          </Card>
+          <div className="space-y-2 px-1">{children}</div>
+          <div className="self-start px-1">{sidebar}</div>
         </div>
       ) : (
-        <Card className="m-3">
-          <CardContent className="space-y-2 p-6">{children}</CardContent>
-        </Card>
+        <div className="m-3 px-1">{children}</div>
       )}
     </div>
   );

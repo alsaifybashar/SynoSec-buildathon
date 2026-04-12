@@ -204,6 +204,47 @@ export function ReportView({ report }: ReportViewProps) {
           </div>
         </div>
       )}
+
+      {report.attackChains.length > 0 && (
+        <div>
+          <SectionTitle>Attack Chains</SectionTitle>
+          <div className="space-y-4">
+            {report.attackChains.map((chain) => (
+              <div key={chain.id} className="rounded-lg border border-emerald-500/20 bg-gray-900 p-4">
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-white">{chain.title}</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {chain.startTarget} → {chain.endTarget}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-mono text-sm text-emerald-300">
+                      {Math.round(chain.compositeRisk * 100)}% risk
+                    </p>
+                    <p className="font-mono text-xs text-gray-500">
+                      {Math.round(chain.confidence * 100)}% confidence
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mb-3 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300">
+                    {chain.technique}
+                  </span>
+                  <span className="rounded-full border border-gray-700 bg-gray-950 px-2.5 py-1 font-mono text-xs text-gray-300">
+                    {chain.chainLength} steps
+                  </span>
+                </div>
+
+                <p className="text-sm leading-relaxed text-gray-300">
+                  {chain.narrative ?? "GRACE inferred a likely exploit sequence across linked findings."}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

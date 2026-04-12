@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: "0.0.0.0",
       port: frontendPort,
-      strictPort: true,
+      strictPort: false,
       proxy: {
         "/api": proxyTarget,
         "/ws": {

@@ -1,6 +1,7 @@
 import http from "node:http";
 import net from "node:net";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { ScanScope } from "@synosec/contracts";
 
 const mockCreateAuditEntry = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
@@ -70,14 +71,17 @@ describe("scan tools", () => {
       scheme: "https"
     });
 
-    const scope = {
+    const scope: ScanScope = {
       targets: ["localhost:8888"],
       exclusions: [],
       layers: ["L3", "L4", "L7"],
       maxDepth: 2,
       maxDurationMinutes: 5,
       rateLimitRps: 5,
-      allowActiveExploits: false
+      allowActiveExploits: false,
+      graceEnabled: true,
+      graceRoundInterval: 3,
+      cyberRangeMode: "simulation" as const
     };
 
     expect(isTargetInScope("localhost", scope)).toBe(true);
@@ -94,7 +98,10 @@ describe("scan tools", () => {
         maxDepth: 2,
         maxDurationMinutes: 5,
         rateLimitRps: 5,
-        allowActiveExploits: false
+        allowActiveExploits: false,
+        graceEnabled: true,
+        graceRoundInterval: 3,
+        cyberRangeMode: "simulation" as const
       },
       actor: "test-agent",
       targetNodeId: "node-1"
@@ -117,7 +124,10 @@ describe("scan tools", () => {
         maxDepth: 2,
         maxDurationMinutes: 5,
         rateLimitRps: 5,
-        allowActiveExploits: false
+        allowActiveExploits: false,
+        graceEnabled: true,
+        graceRoundInterval: 3,
+        cyberRangeMode: "simulation" as const
       },
       actor: "test-agent",
       targetNodeId: "node-2"
@@ -141,7 +151,10 @@ describe("scan tools", () => {
         maxDepth: 2,
         maxDurationMinutes: 5,
         rateLimitRps: 5,
-        allowActiveExploits: false
+        allowActiveExploits: false,
+        graceEnabled: true,
+        graceRoundInterval: 3,
+        cyberRangeMode: "simulation" as const
       },
       actor: "test-agent",
       targetNodeId: "node-3"
@@ -159,7 +172,10 @@ describe("scan tools", () => {
         maxDepth: 2,
         maxDurationMinutes: 5,
         rateLimitRps: 5,
-        allowActiveExploits: false
+        allowActiveExploits: false,
+        graceEnabled: true,
+        graceRoundInterval: 3,
+        cyberRangeMode: "simulation" as const
       })
     ).toBe(true);
     expect(
@@ -170,7 +186,10 @@ describe("scan tools", () => {
         maxDepth: 2,
         maxDurationMinutes: 5,
         rateLimitRps: 5,
-        allowActiveExploits: false
+        allowActiveExploits: false,
+        graceEnabled: true,
+        graceRoundInterval: 3,
+        cyberRangeMode: "simulation" as const
       })
     ).toBe(false);
   });

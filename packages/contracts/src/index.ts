@@ -12,9 +12,12 @@ export const apiRoutes = {
   scanGet: "/api/scan/:id",
   scanFindings: "/api/scan/:id/findings",
   scanGraph: "/api/scan/:id/graph",
+  scanChains: "/api/scan/:id/chains",
   scanReport: "/api/scan/:id/report",
   scanAbort: "/api/scan/:id/abort",
   scanAudit: "/api/scan/:id/audit",
+  scanToolRuns: "/api/scan/:id/tool-runs",
+  scanEvidence: "/api/scan/:id/evidence",
   scanSeed: "/api/scan/seed"
 } as const;
 
@@ -203,7 +206,10 @@ export const scanScopeSchema = z.object({
   maxDepth: z.number().int().min(1).max(8).default(3),
   maxDurationMinutes: z.number().int().min(1).max(60).default(10),
   rateLimitRps: z.number().int().min(1).max(50).default(5),
-  allowActiveExploits: z.boolean().default(false)
+  allowActiveExploits: z.boolean().default(false),
+  graceEnabled: z.boolean().default(true),
+  graceRoundInterval: z.number().int().min(1).max(10).default(3),
+  cyberRangeMode: z.enum(["simulation", "live"]).default("simulation")
 });
 export type ScanScope = z.infer<typeof scanScopeSchema>;
 
@@ -247,6 +253,15 @@ export const severityOrder: Record<Severity, number> = {
   critical: 4
 };
 
+export const validationStatusSchema = z.enum([
+  "unverified",
+  "single_source",
+  "cross_validated",
+  "reproduced",
+  "rejected"
+]);
+export type ValidationStatus = z.infer<typeof validationStatusSchema>;
+
 export const findingSchema = z.object({
   id: z.string(),
   nodeId: z.string(),
@@ -260,9 +275,163 @@ export const findingSchema = z.object({
   technique: z.string(),
   reproduceCommand: z.string().optional(),
   validated: z.boolean().default(false),
+  validationStatus: validationStatusSchema.optional(),
+  evidenceRefs: z.array(z.string()).optional(),
+  sourceToolRuns: z.array(z.string()).optional(),
+  confidenceReason: z.string().optional(),
   createdAt: z.string().datetime()
 });
 export type Finding = z.infer<typeof findingSchema>;
+
+// ---------------------------------------------------------------------------
+// GRACE — Graph-Reasoning Agents + Cyber Range Evaluation
+// ---------------------------------------------------------------------------
+
+export const techniqueNodeSchema = z.object({
+  id: z.string(),
+  mitreId: z.string(),
+  name: z.string(),
+  tactic: z.string()
+});
+export type TechniqueNode = z.infer<typeof techniqueNodeSchema>;
+
+export const chainLinkSchema = z.object({
+  fromFindingId: z.string(),
+  toFindingId: z.string(),
+  probability: z.number().min(0).max(1),
+  order: z.number().int().min(0)
+});
+export type ChainLink = z.infer<typeof chainLinkSchema>;
+
+export const vulnerabilityChainSchema = z.object({
+  id: z.string(),
+  scanId: z.string(),
+  title: z.string(),
+  compositeRisk: z.number().min(0).max(1),
+  technique: z.string(),
+  findingIds: z.array(z.string()),
+  links: z.array(chainLinkSchema),
+  startTarget: z.string(),
+  endTarget: z.string(),
+  chainLength: z.number().int().min(1),
+  confidence: z.number().min(0).max(1),
+  narrative: z.string().optional(),
+  createdAt: z.string().datetime()
+});
+export type VulnerabilityChain = z.infer<typeof vulnerabilityChainSchema>;
+
+export const graceAgentContextSchema = z.object({
+  detectedChains: z.array(vulnerabilityChainSchema),
+  prioritizedTargets: z.array(z.string()),
+  knownOpenPorts: z.record(z.array(z.number().int())),
+  confirmedServices: z.record(z.array(z.string()))
+});
+export type GraceAgentContext = z.infer<typeof graceAgentContextSchema>;
+
+export const graceChainDetectionSchema = z.object({
+  startTarget: z.string(),
+  trigger: z.string(),
+  endTarget: z.string(),
+  impact: z.string(),
+  chainConfidence: z.number().min(0).max(1)
+});
+export type GraceChainDetection = z.infer<typeof graceChainDetectionSchema>;
+
+export const graceReportSchema = z.object({
+  scanId: z.string(),
+  detectedChains: z.array(vulnerabilityChainSchema),
+  chainDetections: z.array(graceChainDetectionSchema),
+  prioritizedTargets: z.array(z.string()),
+  orphanedHighRiskFindingIds: z.array(z.string()),
+  generatedAt: z.string().datetime()
+});
+export type GraceReport = z.infer<typeof graceReportSchema>;
+
+// ---------------------------------------------------------------------------
+// Tool execution + evidence
+// ---------------------------------------------------------------------------
+
+export const toolRiskTierSchema = z.enum(["passive", "active", "controlled-exploit"]);
+export type ToolRiskTier = z.infer<typeof toolRiskTierSchema>;
+
+export const toolAdapterSchema = z.enum([
+  "network_scan",
+  "service_scan",
+  "session_audit",
+  "tls_audit",
+  "http_probe",
+  "web_fingerprint",
+  "db_injection_check",
+  "content_discovery"
+]);
+export type ToolAdapter = z.infer<typeof toolAdapterSchema>;
+
+export const toolRunStatusSchema = z.enum(["pending", "running", "completed", "failed", "denied"]);
+export type ToolRunStatus = z.infer<typeof toolRunStatusSchema>;
+
+export const toolRequestSchema = z.object({
+  tool: z.string().min(1),
+  adapter: toolAdapterSchema,
+  target: z.string().min(1),
+  port: z.number().int().optional(),
+  service: z.string().optional(),
+  layer: osiLayerSchema,
+  riskTier: toolRiskTierSchema,
+  justification: z.string().min(1),
+  parameters: z.record(z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])).default({})
+});
+export type ToolRequest = z.infer<typeof toolRequestSchema>;
+
+export const toolRunSchema = z.object({
+  id: z.string(),
+  scanId: z.string(),
+  nodeId: z.string(),
+  agentId: z.string(),
+  adapter: toolAdapterSchema,
+  tool: z.string(),
+  target: z.string(),
+  port: z.number().int().optional(),
+  status: toolRunStatusSchema,
+  riskTier: toolRiskTierSchema,
+  justification: z.string(),
+  commandPreview: z.string(),
+  startedAt: z.string().datetime(),
+  completedAt: z.string().datetime().optional(),
+  statusReason: z.string().optional(),
+  output: z.string().optional(),
+  exitCode: z.number().int().optional()
+});
+export type ToolRun = z.infer<typeof toolRunSchema>;
+
+export const observationSchema = z.object({
+  id: z.string(),
+  scanId: z.string(),
+  nodeId: z.string(),
+  toolRunId: z.string(),
+  adapter: toolAdapterSchema,
+  target: z.string(),
+  port: z.number().int().optional(),
+  key: z.string(),
+  title: z.string(),
+  summary: z.string(),
+  severity: severitySchema,
+  confidence: z.number().min(0).max(1),
+  evidence: z.string(),
+  technique: z.string(),
+  relatedKeys: z.array(z.string()).default([]),
+  createdAt: z.string().datetime()
+});
+export type Observation = z.infer<typeof observationSchema>;
+
+export const evidenceResponseSchema = z.object({
+  toolRuns: z.array(toolRunSchema),
+  observations: z.array(observationSchema)
+});
+export type EvidenceResponse = z.infer<typeof evidenceResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// Scan
+// ---------------------------------------------------------------------------
 
 export const scanStatusSchema = z.enum(["pending", "running", "complete", "aborted", "failed"]);
 export type ScanStatus = z.infer<typeof scanStatusSchema>;
@@ -318,6 +487,7 @@ export const reportSchema = z.object({
     })
   ),
   attackPaths: z.array(attackPathSchema),
+  attackChains: z.array(vulnerabilityChainSchema).default([]),
   generatedAt: z.string().datetime()
 });
 export type Report = z.infer<typeof reportSchema>;
@@ -342,12 +512,28 @@ export type GraphResponse = z.infer<typeof graphResponseSchema>;
 export const wsEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("node_updated"), node: dfsNodeSchema }),
   z.object({ type: z.literal("finding_added"), finding: findingSchema }),
+  z.object({ type: z.literal("tool_run_started"), toolRun: toolRunSchema }),
+  z.object({ type: z.literal("tool_run_completed"), toolRun: toolRunSchema }),
+  z.object({ type: z.literal("observation_added"), observation: observationSchema }),
+  z.object({
+    type: z.literal("finding_validated"),
+    findingId: z.string(),
+    validationStatus: validationStatusSchema,
+    reason: z.string()
+  }),
   z.object({ type: z.literal("scan_status"), scan: scanSchema }),
   z.object({
     type: z.literal("round_complete"),
     round: z.number(),
     summary: z.string()
   }),
-  z.object({ type: z.literal("report_ready"), report: reportSchema })
+  z.object({ type: z.literal("report_ready"), report: reportSchema }),
+  z.object({ type: z.literal("chain_detected"), chain: vulnerabilityChainSchema }),
+  z.object({
+    type: z.literal("grace_analysis_complete"),
+    round: z.number(),
+    chainsFound: z.number().int(),
+    prioritizedTargets: z.array(z.string())
+  })
 ]);
 export type WsEvent = z.infer<typeof wsEventSchema>;

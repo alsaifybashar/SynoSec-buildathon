@@ -1,11 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Finding, GraphResponse, Report, Scan, WsEvent } from "@synosec/contracts";
+import type {
+  EvidenceResponse,
+  Finding,
+  GraphResponse,
+  Observation,
+  Report,
+  Scan,
+  ToolRun,
+  VulnerabilityChain,
+  WsEvent
+} from "@synosec/contracts";
 
 interface UseScanResult {
   scan: Scan | null;
   findings: Finding[];
   graph: GraphResponse | null;
   report: Report | null;
+  chains: VulnerabilityChain[];
+  prioritizedTargets: string[];
+  toolRuns: ToolRun[];
+  observations: Observation[];
   isLoading: boolean;
   refetch: () => void;
 }
@@ -21,6 +35,10 @@ export function useScan(scanId: string | null, lastEvent: WsEvent | null = null)
   const [findings, setFindings] = useState<Finding[]>([]);
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [report, setReport] = useState<Report | null>(null);
+  const [chains, setChains] = useState<VulnerabilityChain[]>([]);
+  const [prioritizedTargets, setPrioritizedTargets] = useState<string[]>([]);
+  const [toolRuns, setToolRuns] = useState<ToolRun[]>([]);
+  const [observations, setObservations] = useState<Observation[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
@@ -29,19 +47,27 @@ export function useScan(scanId: string | null, lastEvent: WsEvent | null = null)
     if (!mountedRef.current) return;
     setIsLoading(true);
     try {
-      const [scanData, findingsData, graphData] = await Promise.all([
+      const [scanData, findingsData, graphData, chainsData, evidenceData] = await Promise.all([
         fetchJson<Scan>(`/api/scan/${id}`),
         fetchJson<Finding[]>(`/api/scan/${id}/findings`),
         fetchJson<GraphResponse>(`/api/scan/${id}/graph`),
+        fetchJson<VulnerabilityChain[]>(`/api/scan/${id}/chains`),
+        fetchJson<EvidenceResponse>(`/api/scan/${id}/evidence`)
       ]);
       if (!mountedRef.current) return;
       setScan(scanData);
       setFindings(findingsData);
       setGraph(graphData);
+      setChains(chainsData);
+      setToolRuns(evidenceData.toolRuns);
+      setObservations(evidenceData.observations);
 
       if (scanData.status === "complete") {
         const reportData = await fetchJson<Report>(`/api/scan/${id}/report`);
-        if (mountedRef.current) setReport(reportData);
+        if (mountedRef.current) {
+          setReport(reportData);
+          setChains(reportData.attackChains.length > 0 ? reportData.attackChains : chainsData);
+        }
       }
     } catch {
       // silently keep old data on error
@@ -62,6 +88,10 @@ export function useScan(scanId: string | null, lastEvent: WsEvent | null = null)
       setFindings([]);
       setGraph(null);
       setReport(null);
+      setChains([]);
+      setPrioritizedTargets([]);
+      setToolRuns([]);
+      setObservations([]);
       return;
     }
 
@@ -111,14 +141,46 @@ export function useScan(scanId: string | null, lastEvent: WsEvent | null = null)
         if (prev.find((f) => f.id === lastEvent.finding.id)) return prev;
         return [...prev, lastEvent.finding];
       });
+    } else if (lastEvent.type === "chain_detected") {
+      setChains((prev) => {
+        if (prev.find((chain) => chain.id === lastEvent.chain.id)) return prev;
+        return [lastEvent.chain, ...prev];
+      });
+    } else if (lastEvent.type === "tool_run_started" || lastEvent.type === "tool_run_completed") {
+      setToolRuns((prev) => {
+        const existingIndex = prev.findIndex((toolRun) => toolRun.id === lastEvent.toolRun.id);
+        if (existingIndex === -1) return [lastEvent.toolRun, ...prev];
+        const next = [...prev];
+        next[existingIndex] = lastEvent.toolRun;
+        return next;
+      });
+    } else if (lastEvent.type === "observation_added") {
+      setObservations((prev) => {
+        if (prev.find((observation) => observation.id === lastEvent.observation.id)) return prev;
+        return [lastEvent.observation, ...prev];
+      });
+    } else if (lastEvent.type === "grace_analysis_complete") {
+      setPrioritizedTargets(lastEvent.prioritizedTargets);
     } else if (lastEvent.type === "scan_status") {
       if (lastEvent.scan.id !== scanId) return;
       setScan(lastEvent.scan);
     } else if (lastEvent.type === "report_ready") {
       if (lastEvent.report.scanId !== scanId) return;
       setReport(lastEvent.report);
+      setChains(lastEvent.report.attackChains);
     }
   }, [lastEvent, scanId]);
 
-  return { scan, findings, graph, report, isLoading, refetch };
+  return {
+    scan,
+    findings,
+    graph,
+    report,
+    chains,
+    prioritizedTargets,
+    toolRuns,
+    observations,
+    isLoading,
+    refetch
+  };
 }

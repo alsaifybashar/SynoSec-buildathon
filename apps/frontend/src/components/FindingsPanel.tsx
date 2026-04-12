@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Terminal } from "lucide-react";
-import type { Finding, Severity } from "@synosec/contracts";
+import type { Finding, Severity, VulnerabilityChain } from "@synosec/contracts";
 import { severityOrder } from "@synosec/contracts";
 
 export interface FindingsPanelProps {
   findings: Finding[];
   selectedNodeId?: string | null;
+  selectedChain?: VulnerabilityChain | null;
 }
 
 const SEVERITY_COLORS: Record<Severity, { badge: string; dot: string; border: string }> = {
@@ -79,12 +80,32 @@ function FindingRow({ finding }: { finding: Finding }) {
           <p className="text-sm leading-relaxed text-gray-300">{finding.description}</p>
 
           {/* Technique */}
-          <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
-              Technique
-            </p>
-            <span className="font-mono text-xs text-green-400">{finding.technique}</span>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                Technique
+              </p>
+              <span className="font-mono text-xs text-green-400">{finding.technique}</span>
+            </div>
+
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                Validation
+              </p>
+              <span className="font-mono text-xs text-emerald-300">
+                {finding.validationStatus ?? (finding.validated ? "validated" : "unverified")}
+              </span>
+            </div>
           </div>
+
+          {finding.confidenceReason && (
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                Confidence Reason
+              </p>
+              <p className="text-xs leading-relaxed text-gray-400">{finding.confidenceReason}</p>
+            </div>
+          )}
 
           {/* Evidence */}
           <div>
@@ -118,11 +139,13 @@ function FindingRow({ finding }: { finding: Finding }) {
   );
 }
 
-export function FindingsPanel({ findings, selectedNodeId }: FindingsPanelProps) {
+export function FindingsPanel({ findings, selectedNodeId, selectedChain }: FindingsPanelProps) {
   const [severityFilter, setSeverityFilter] = useState<Severity | "all">("all");
+  const selectedChainIds = new Set(selectedChain?.findingIds ?? []);
 
   const displayed = findings
     .filter((f) => !selectedNodeId || f.nodeId === selectedNodeId)
+    .filter((f) => selectedChainIds.size === 0 || selectedChainIds.has(f.id))
     .filter((f) => severityFilter === "all" || f.severity === severityFilter)
     .sort((a, b) => severityOrder[b.severity] - severityOrder[a.severity]);
 
@@ -180,6 +203,12 @@ export function FindingsPanel({ findings, selectedNodeId }: FindingsPanelProps) 
         {selectedNodeId && (
           <p className="mt-2 font-mono text-xs text-gray-500">
             Filtered to node: {selectedNodeId}
+          </p>
+        )}
+
+        {selectedChain && (
+          <p className="mt-1 font-mono text-xs text-emerald-300">
+            Chain: {selectedChain.title}
           </p>
         )}
       </div>

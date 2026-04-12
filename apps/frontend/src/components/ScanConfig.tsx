@@ -24,7 +24,7 @@ const DEPTH_OPTIONS = [1, 2, 3, 4, 5];
 const DURATION_OPTIONS = [5, 10, 15, 30];
 
 export function ScanConfig({ onScanStarted }: ScanConfigProps) {
-  const [targetsText, setTargetsText] = useState(localDemoTargetDefaults.internalTarget);
+  const [targetsText, setTargetsText] = useState<string>(localDemoTargetDefaults.internalTarget);
   const [layers, setLayers] = useState<Set<OsiLayer>>(new Set(["L3", "L4", "L5", "L6", "L7"]));
   const [maxDepth, setMaxDepth] = useState(3);
   const [maxDuration, setMaxDuration] = useState(10);
@@ -33,7 +33,7 @@ export function ScanConfig({ onScanStarted }: ScanConfigProps) {
   const [isStarting, setIsStarting] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
 
-  const QUICK_TARGETS = [
+  const QUICK_TARGETS: Array<{ label: string; value: string }> = [
     { label: "Compose Demo", value: localDemoTargetDefaults.internalTarget },
     { label: "Host Service", value: localDemoTargetDefaults.hostGatewayTarget },
     { label: "Container Host", value: localDemoTargetDefaults.internalHost },

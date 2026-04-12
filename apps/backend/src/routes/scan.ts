@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { createScanRequestSchema } from "@synosec/contracts";
-import type { Scan, WsEvent } from "@synosec/contracts";
+import type { AuditEntry, EvidenceResponse, Scan, ToolAdapter, ToolRun, ToolRiskTier, WsEvent } from "@synosec/contracts";
 
 // Typed route param helper
 type IdParam = { id: string };
@@ -14,11 +14,15 @@ import {
   getFindingsForScan,
   getGraphForScan,
   getScan,
+  getVulnerabilityChains,
   listScans
 } from "../db/neo4j.js";
 import { Orchestrator } from "../orchestrator/orchestrator.js";
 import { normalizeScopeForRun } from "../orchestrator/execution-policy.js";
-import { reportStore, seedDemoScan } from "../seed/demo-data.js";
+import { evidenceStore } from "../broker/evidence-store.js";
+import { reportStore } from "../runtime/report-store.js";
+import { seedDemoScan } from "../seed/demo-data.js";
+import { parseScanTarget } from "../tools/scan-tools.js";
 
 // ---------------------------------------------------------------------------
 // Active orchestrators — keyed by scanId
@@ -28,6 +32,161 @@ const activeOrchestrators = new Map<string, Orchestrator>();
 
 const neo4jUnavailableMessage =
   "Neo4j is not available. Start the Neo4j service or configure NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD correctly.";
+
+const knownToolAdapters = new Set<ToolAdapter>([
+  "network_scan",
+  "service_scan",
+  "session_audit",
+  "tls_audit",
+  "http_probe",
+  "web_fingerprint",
+  "db_injection_check",
+  "content_discovery"
+]);
+
+const knownRiskTiers = new Set<ToolRiskTier>(["passive", "active", "controlled-exploit"]);
+
+function buildCommandPreview(toolRun: Pick<ToolRun, "adapter" | "tool" | "target" | "port">): string {
+  const parsedTarget = parseScanTarget(toolRun.target);
+  const host = parsedTarget.host;
+  const port = toolRun.port ?? parsedTarget.port;
+  const scheme = parsedTarget.scheme ?? (port === 443 || port === 8443 ? "https" : "http");
+  const baseUrl = `${scheme}://${host}${port ? `:${port}` : ""}`;
+
+  switch (toolRun.adapter) {
+    case "network_scan":
+      return `nmap -sn ${host}`;
+    case "service_scan":
+      return `nmap -sV ${host}${port ? ` -p ${port}` : ""}`;
+    case "session_audit":
+      return toolRun.tool === "smbclient"
+        ? `smbclient -L ${host} -N`
+        : `ssh-audit ${host}`;
+    case "tls_audit":
+      return `sslscan ${host}:${port ?? 443}`;
+    case "http_probe":
+      return `curl -I ${baseUrl}`;
+    case "web_fingerprint":
+      return `whatweb ${baseUrl}`;
+    case "db_injection_check":
+      return `sqlmap -u ${baseUrl}/ --batch`;
+    case "content_discovery":
+      return `ffuf -u ${baseUrl}/FUZZ`;
+    default:
+      return `${toolRun.tool} ${host}${port ? `:${port}` : ""}`;
+  }
+}
+
+function synthesizeToolRunsFromAudit(scanId: string, auditEntries: AuditEntry[], scanStatus?: Scan["status"]): ToolRun[] {
+  const synthesized = new Map<string, ToolRun>();
+
+  for (const entry of auditEntries) {
+    if (
+      entry.action !== "tool-run-authorized"
+      && entry.action !== "tool-run-denied"
+      && entry.action !== "tool-run-failed"
+    ) {
+      continue;
+    }
+
+    const rawAdapter = typeof entry.details["adapter"] === "string" ? entry.details["adapter"] : undefined;
+    const tool = typeof entry.details["tool"] === "string" ? entry.details["tool"] : undefined;
+    const target = typeof entry.details["target"] === "string" ? entry.details["target"] : undefined;
+    const adapter = rawAdapter && knownToolAdapters.has(rawAdapter as ToolAdapter)
+      ? rawAdapter as ToolAdapter
+      : undefined;
+    if (!adapter || !tool || !target) {
+      continue;
+    }
+
+    const rawRiskTier = typeof entry.details["riskTier"] === "string" ? entry.details["riskTier"] : "passive";
+    const riskTier = knownRiskTiers.has(rawRiskTier as ToolRiskTier)
+      ? rawRiskTier as ToolRiskTier
+      : "passive";
+    const statusReason = typeof entry.details["reason"] === "string"
+      ? entry.details["reason"]
+      : typeof entry.details["error"] === "string"
+        ? entry.details["error"]
+        : undefined;
+    const toolRunId = typeof entry.details["toolRunId"] === "string"
+      ? entry.details["toolRunId"]
+      : `${entry.targetNodeId ?? "node"}:${adapter}:${tool}:${target}`;
+    const existing = synthesized.get(toolRunId);
+    const base: ToolRun = existing ?? {
+      id: toolRunId,
+      scanId,
+      nodeId: entry.targetNodeId ?? "unknown-node",
+      agentId: entry.actor,
+      adapter,
+      tool,
+      target,
+      status: "running",
+      riskTier,
+      justification: statusReason ?? "Recovered from audit trail.",
+      commandPreview: buildCommandPreview({
+        adapter,
+        tool,
+        target,
+        ...(typeof entry.details["port"] === "number" ? { port: entry.details["port"] } : {})
+      }),
+      startedAt: entry.timestamp
+    };
+
+    if (entry.action === "tool-run-authorized") {
+      synthesized.set(toolRunId, base);
+      continue;
+    }
+
+    synthesized.set(toolRunId, {
+      ...base,
+      status: entry.action === "tool-run-denied" ? "denied" : "failed",
+      completedAt: entry.timestamp,
+      ...(statusReason ? { statusReason } : {}),
+      ...(entry.action === "tool-run-failed"
+        ? {
+            output: [
+              "Recovered from audit trail.",
+              `adapter=${adapter}`,
+              `tool=${tool}`,
+              `target=${target}`,
+              statusReason ?? "Unknown broker error"
+            ].join("\n")
+          }
+        : {})
+    });
+  }
+
+  const synthesizedRuns = [...synthesized.values()].map((toolRun) => {
+    if (toolRun.status !== "running" && toolRun.status !== "pending") {
+      return toolRun;
+    }
+
+    if (scanStatus !== "complete") {
+      return toolRun;
+    }
+
+    return {
+      ...toolRun,
+      status: "completed" as const,
+      completedAt: toolRun.startedAt,
+      statusReason: "Recovered from audit trail after scan completion.",
+      output: toolRun.output ?? "Recovered from audit trail after scan completion."
+    };
+  });
+
+  return synthesizedRuns.sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+}
+
+async function getToolRunsForScanWithAuditFallback(scanId: string): Promise<ToolRun[]> {
+  const toolRuns = evidenceStore.getToolRunsForScan(scanId);
+  if (toolRuns.length > 0) {
+    return toolRuns;
+  }
+
+  const scan = await getScan(scanId);
+  const auditEntries = await getAuditForScan(scanId);
+  return synthesizeToolRunsFromAudit(scanId, auditEntries, scan?.status);
+}
 
 async function requireNeo4j(res: Response): Promise<boolean> {
   try {
@@ -166,6 +325,18 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
     res.json(graph);
   });
 
+  // GET /api/scan/:id/chains — GRACE vulnerability chains
+  router.get("/api/scan/:id/chains", async (req: ReqWithId, res: Response) => {
+    const { id } = req.params;
+    if (!id) {
+      res.status(400).json({ error: "Missing scan id" });
+      return;
+    }
+
+    const chains = await getVulnerabilityChains(id);
+    res.json(chains);
+  });
+
   // GET /api/scan/:id/report
   router.get("/api/scan/:id/report", async (req: ReqWithId, res: Response) => {
     if (!(await requireNeo4j(res))) {
@@ -245,6 +416,30 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
 
     const audit = await getAuditForScan(id);
     res.json(audit);
+  });
+
+  router.get("/api/scan/:id/tool-runs", async (req: ReqWithId, res: Response) => {
+    const { id } = req.params;
+    if (!id) {
+      res.status(400).json({ error: "Missing scan id" });
+      return;
+    }
+
+    res.json(await getToolRunsForScanWithAuditFallback(id));
+  });
+
+  router.get("/api/scan/:id/evidence", async (req: ReqWithId, res: Response) => {
+    const { id } = req.params;
+    if (!id) {
+      res.status(400).json({ error: "Missing scan id" });
+      return;
+    }
+
+    const payload: EvidenceResponse = {
+      toolRuns: await getToolRunsForScanWithAuditFallback(id),
+      observations: evidenceStore.getObservationsForScan(id)
+    };
+    res.json(payload);
   });
 
   return router;

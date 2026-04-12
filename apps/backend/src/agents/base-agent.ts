@@ -1,12 +1,15 @@
 import { randomUUID } from "crypto";
-import type { AuditEntry, DfsNode, Finding, OsiLayer, ScanScope } from "@synosec/contracts";
+import type {
+  AuditEntry,
+  DfsNode,
+  Finding,
+  OsiLayer,
+  ScanScope,
+  ToolRequest
+} from "@synosec/contracts";
 import { createAuditEntry } from "../db/neo4j.js";
 import type { LlmClient } from "../llm/client.js";
 import { ScanToolRunner } from "../tools/scan-tools.js";
-
-// ---------------------------------------------------------------------------
-// Interfaces
-// ---------------------------------------------------------------------------
 
 export interface AgentContext {
   scanId: string;
@@ -16,14 +19,10 @@ export interface AgentContext {
 }
 
 export interface AgentResult {
-  findings: Omit<Finding, "id" | "createdAt">[];
+  requestedToolRuns: ToolRequest[];
   childNodes: Omit<DfsNode, "id" | "createdAt" | "scanId" | "parentId">[];
   agentSummary: string;
 }
-
-// ---------------------------------------------------------------------------
-// Base class
-// ---------------------------------------------------------------------------
 
 export abstract class BaseAgent {
   constructor(protected readonly llmClient: LlmClient) {}
@@ -32,19 +31,16 @@ export abstract class BaseAgent {
   abstract readonly layer: OsiLayer;
 
   protected validateScope(target: string, scope: ScanScope): boolean {
-    // Check exclusions first
     for (const exclusion of scope.exclusions) {
       if (target === exclusion || target.startsWith(exclusion)) {
         return false;
       }
     }
 
-    // Check target is within scope
     for (const scopeTarget of scope.targets) {
       if (target === scopeTarget || target.startsWith(scopeTarget)) {
         return true;
       }
-      // Also allow reverse: if scope target is broader (CIDR prefix match)
       if (scopeTarget.startsWith(target)) {
         return true;
       }

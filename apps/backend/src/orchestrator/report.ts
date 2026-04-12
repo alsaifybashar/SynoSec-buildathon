@@ -1,4 +1,4 @@
-import type { Report, ScanLlmConfig, WsEvent } from "@synosec/contracts";
+import type { Report, ScanLlmConfig, VulnerabilityChain, WsEvent } from "@synosec/contracts";
 import { getAttackPaths, getFindingsForScan, getGraphForScan, getScan } from "../db/neo4j.js";
 
 // ---------------------------------------------------------------------------
@@ -78,7 +78,8 @@ function buildDeterministicReportData(
 export async function generateReport(
   scanId: string,
   broadcast: (event: WsEvent) => void,
-  llmConfig?: ScanLlmConfig
+  llmConfig?: ScanLlmConfig,
+  attackChains: VulnerabilityChain[] = []
 ): Promise<Report> {
   const [findings, attackPaths, scan, graph] = await Promise.all([
     getFindingsForScan(scanId),
@@ -107,6 +108,7 @@ export async function generateReport(
     findingsBySeverity,
     topRisks: claudeResult.topRisks.slice(0, 5),
     attackPaths,
+    attackChains,
     generatedAt: new Date().toISOString()
   };
 

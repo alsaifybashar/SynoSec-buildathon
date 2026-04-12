@@ -25,7 +25,10 @@ export async function seedDemoScan(): Promise<string> {
       maxDepth: 3,
       maxDurationMinutes: 10,
       rateLimitRps: 5,
-      allowActiveExploits: false
+      allowActiveExploits: false,
+      graceEnabled: true,
+      graceRoundInterval: 3,
+      cyberRangeMode: "simulation" as const
     },
     status: "complete",
     currentRound: 3,
@@ -544,6 +547,7 @@ Immediate remediation is required for the SQL injection and unauthenticated admi
         description: `Network access → ${localDemoTargetDefaults.internalHost}:3306 → MySQL without authentication → full database access`
       }
     ],
+    attackChains: [],
     generatedAt: now.toISOString()
   };
 

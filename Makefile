@@ -1,4 +1,4 @@
-.PHONY: help dev build test database docker-up docker-down docker-logs seed
+.PHONY: help dev build test database docker-up docker-down docker-logs seed smoke-e2e
 
 help:
 	@printf "\033[1;32m╔══════════════════════════════════╗\033[0m\n"
@@ -12,6 +12,7 @@ help:
 	@printf "\033[33m  make dev\033[0m         Start local dev (no Docker)\n"
 	@printf "\033[33m  make build\033[0m       Build all workspace packages\n"
 	@printf "\033[33m  make seed\033[0m        Seed demo data into running backend\n"
+	@printf "\033[33m  make smoke-e2e\033[0m  Run the Docker E2E smoke scan and print workflow evidence\n"
 
 docker-up:
 	docker compose up --build -d --remove-orphans
@@ -47,3 +48,6 @@ test:
 
 seed:
 	curl -s -X POST http://localhost:$${BACKEND_PORT:-3001}/api/scan/seed | python3 -m json.tool
+
+smoke-e2e:
+	bash scripts/e2e-smoke.sh

@@ -18,4 +18,20 @@
 5. Synkronisera resultaten med ai och resterande agenter.
 6. Bestämma bästa möjliga resultat för nästa steg. 
 7. Avsluta när alla noder har utforskats.
+
+## Smoke test
+
+Run the Docker E2E smoke test:
+
+```bash
+make smoke-e2e
+```
+
+The smoke run starts the stack, scans `synosec-target:8888`, and prints:
+
+- the derived graph nodes
+- tool-run authorization/denial state
+- findings discovered
+- audit highlights that illustrate the workflow
+- the generated report summary
  

@@ -15,7 +15,14 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { DfsNode, Finding, GraphResponse, OsiLayer, Severity } from "@synosec/contracts";
+import type {
+  DfsNode,
+  Finding,
+  GraphResponse,
+  OsiLayer,
+  Severity,
+  VulnerabilityChain
+} from "@synosec/contracts";
 
 // ─── Layer colours ────────────────────────────────────────────────────────────
 const LAYER_BORDER: Record<OsiLayer, string> = {
@@ -31,10 +38,13 @@ const LAYER_BORDER: Record<OsiLayer, string> = {
 interface SynoSecNodeData extends Record<string, unknown> {
   node: DfsNode;
   hasHighRisk: boolean;
+  isChainNode: boolean;
+  isPrioritized: boolean;
+  chainTechnique?: string;
 }
 
 function SynoSecNode({ data }: NodeProps) {
-  const { node, hasHighRisk } = data as unknown as SynoSecNodeData;
+  const { node, hasHighRisk, isChainNode, isPrioritized, chainTechnique } = data as SynoSecNodeData;
   const borderColor = LAYER_BORDER[node.layer] ?? "#6b7280";
   const riskPct = Math.round(node.riskScore * 100);
 
@@ -48,8 +58,10 @@ function SynoSecNode({ data }: NodeProps) {
   return (
     <div
       style={{
-        border: `2px solid ${hasHighRisk ? "#ef4444" : borderColor}`,
-        boxShadow: hasHighRisk
+        border: `2px solid ${isChainNode ? "#10b981" : hasHighRisk ? "#ef4444" : borderColor}`,
+        boxShadow: isChainNode
+          ? "0 0 0 2px rgba(16,185,129,0.25), 0 0 16px 2px rgba(16,185,129,0.25)"
+          : hasHighRisk
           ? "0 0 12px 2px rgba(239,68,68,0.4)"
           : `0 0 8px 0px ${borderColor}40`,
       }}
@@ -63,7 +75,10 @@ function SynoSecNode({ data }: NodeProps) {
         >
           {node.layer}
         </span>
-        <span className={`h-2 w-2 rounded-full ${statusDot[node.status] ?? "bg-gray-600"}`} />
+        <div className="flex items-center gap-1">
+          {isPrioritized && <span className="rounded bg-emerald-500/15 px-1 py-0.5 text-[9px] font-bold text-emerald-300">GRACE</span>}
+          <span className={`h-2 w-2 rounded-full ${statusDot[node.status] ?? "bg-gray-600"}`} />
+        </div>
       </div>
 
       {/* Target */}
@@ -73,6 +88,12 @@ function SynoSecNode({ data }: NodeProps) {
       {(node.service ?? node.port) && (
         <p className="mt-0.5 truncate font-mono text-[10px] text-gray-500">
           {[node.service, node.port ? `:${node.port}` : ""].filter(Boolean).join("")}
+        </p>
+      )}
+
+      {chainTechnique && (
+        <p className="mt-1 truncate rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[9px] text-emerald-300">
+          {chainTechnique}
         </p>
       )}
 
@@ -107,7 +128,10 @@ const nodeTypes = { synosec: SynoSecNode };
 function buildLayout(
   rawNodes: DfsNode[],
   rawEdges: Array<{ source: string; target: string }>,
-  highRiskIds: Set<string>
+  highRiskIds: Set<string>,
+  chainNodeIds: Set<string>,
+  prioritizedTargets: Set<string>,
+  chainTechniqueByNodeId: Map<string, string>
 ): { nodes: Node[]; edges: Edge[] } {
   // Group by depth
   const byDepth = new Map<number, DfsNode[]>();
@@ -134,18 +158,29 @@ function buildLayout(
     id: n.id,
     type: "synosec",
     position: positions.get(n.id) ?? { x: 0, y: 0 },
-    data: { node: n, hasHighRisk: highRiskIds.has(n.id) } as SynoSecNodeData,
+    data: {
+      node: n,
+      hasHighRisk: highRiskIds.has(n.id),
+      isChainNode: chainNodeIds.has(n.id),
+      isPrioritized: prioritizedTargets.has(n.target),
+      chainTechnique: chainTechniqueByNodeId.get(n.id)
+    } as SynoSecNodeData,
   }));
 
   const edges: Edge[] = rawEdges.map((e) => {
     const sourceNode = rawNodes.find((n) => n.id === e.source);
     const isActive = sourceNode?.status === "in-progress";
+    const isChainEdge = chainNodeIds.has(e.source) && chainNodeIds.has(e.target);
     return {
       id: `${e.source}-${e.target}`,
       source: e.source,
       target: e.target,
-      animated: isActive,
-      style: { stroke: isActive ? "#22c55e" : "#374151", strokeWidth: 1.5 },
+      animated: isActive || isChainEdge,
+      style: {
+        stroke: isChainEdge ? "#10b981" : isActive ? "#22c55e" : "#374151",
+        strokeWidth: isChainEdge ? 2.5 : 1.5,
+        strokeDasharray: isChainEdge ? "6 4" : undefined
+      },
     };
   });
 
@@ -156,12 +191,22 @@ function buildLayout(
 interface DfsGraphInnerProps {
   graph: GraphResponse;
   findings: Finding[];
+  chains: VulnerabilityChain[];
+  selectedChainId: string | null;
+  prioritizedTargets: string[];
   onNodeClick: (node: DfsNode) => void;
 }
 
 const HIGH_SEVERITIES: Severity[] = ["high", "critical"];
 
-function DfsGraphInner({ graph, findings, onNodeClick }: DfsGraphInnerProps) {
+function DfsGraphInner({
+  graph,
+  findings,
+  chains,
+  selectedChainId,
+  prioritizedTargets,
+  onNodeClick
+}: DfsGraphInnerProps) {
   const { fitView } = useReactFlow();
 
   const highRiskIds = useMemo(() => {
@@ -172,9 +217,46 @@ function DfsGraphInner({ graph, findings, onNodeClick }: DfsGraphInnerProps) {
     return ids;
   }, [findings]);
 
+  const activeChains = useMemo(
+    () => (selectedChainId ? chains.filter((chain) => chain.id === selectedChainId) : chains),
+    [chains, selectedChainId]
+  );
+
+  const chainNodeIds = useMemo(() => {
+    const nodeIds = new Set<string>();
+    for (const chain of activeChains) {
+      for (const findingId of chain.findingIds) {
+        const finding = findings.find((candidate) => candidate.id === findingId);
+        if (finding) nodeIds.add(finding.nodeId);
+      }
+    }
+    return nodeIds;
+  }, [activeChains, findings]);
+
+  const chainTechniqueByNodeId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const chain of activeChains) {
+      for (const findingId of chain.findingIds) {
+        const finding = findings.find((candidate) => candidate.id === findingId);
+        if (finding && !map.has(finding.nodeId)) {
+          map.set(finding.nodeId, chain.technique);
+        }
+      }
+    }
+    return map;
+  }, [activeChains, findings]);
+
   const { nodes: layoutNodes, edges: layoutEdges } = useMemo(
-    () => buildLayout(graph.nodes, graph.edges, highRiskIds),
-    [graph, highRiskIds]
+    () =>
+      buildLayout(
+        graph.nodes,
+        graph.edges,
+        highRiskIds,
+        chainNodeIds,
+        new Set(prioritizedTargets),
+        chainTechniqueByNodeId
+      ),
+    [graph, highRiskIds, chainNodeIds, prioritizedTargets, chainTechniqueByNodeId]
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(layoutNodes);
@@ -215,7 +297,7 @@ function DfsGraphInner({ graph, findings, onNodeClick }: DfsGraphInnerProps) {
       <MiniMap
         className="!border-gray-700 !bg-gray-900"
         nodeColor={(n) => {
-          const d = n.data as unknown as SynoSecNodeData;
+          const d = n.data as SynoSecNodeData;
           return LAYER_BORDER[d.node.layer] ?? "#6b7280";
         }}
         maskColor="rgba(0,0,0,0.5)"
@@ -228,6 +310,9 @@ function DfsGraphInner({ graph, findings, onNodeClick }: DfsGraphInnerProps) {
 export interface DfsGraphProps {
   graph: GraphResponse;
   findings: Finding[];
+  chains: VulnerabilityChain[];
+  selectedChainId: string | null;
+  prioritizedTargets: string[];
   onNodeClick: (node: DfsNode) => void;
 }
 
