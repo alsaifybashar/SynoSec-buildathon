@@ -1,8 +1,16 @@
-import { useState } from "react";
-import { AppWindow, LayoutDashboard, Network, Workflow } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  AlertTriangle,
+  ClipboardList,
+  FileText,
+  LayoutDashboard,
+  List,
+  Network,
+  Shield,
+} from "lucide-react";
 import { toast } from "sonner";
-import { apiRoutes, type BriefResponse } from "@synosec/contracts";
-import { Button } from "./components/ui/button";
+import type { DfsNode, Scan } from "@synosec/contracts";
+import { Skeleton } from "./components/ui/skeleton";
 import {
   Sidebar,
   SidebarContent,
@@ -10,93 +18,307 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuText,
-  SidebarProvider
+  SidebarProvider,
+  SidebarTrigger,
 } from "./components/ui/sidebar";
 import { Toaster } from "./components/ui/toaster";
-import { Display, Eyebrow, Lead } from "./components/ui/typography";
+import { DfsGraph } from "./components/DfsGraph";
+import { FindingsPanel } from "./components/FindingsPanel";
+import { ReportView } from "./components/ReportView";
+import { ScanConfig } from "./components/ScanConfig";
+import { ScanStatus } from "./components/ScanStatus";
+import { AuditLog } from "./components/AuditLog";
+import { useScan } from "./hooks/useScan";
+import { useScanWebSocket } from "./hooks/useScanWebSocket";
 import { cn } from "./lib/utils";
 
-type NavigationItem = {
-  id: "dashboard" | "runtimes" | "applications" | "workflows";
+type ActiveView = "config" | "graph" | "findings" | "report" | "history" | "audit";
+
+type NavItem = {
+  id: ActiveView;
   label: string;
   icon: typeof LayoutDashboard;
+  requiresScan?: boolean;
 };
 
-const navigationItems: NavigationItem[] = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "runtimes", label: "Runtimes", icon: Network },
-  { id: "applications", label: "Applications", icon: AppWindow },
-  { id: "workflows", label: "Workflows", icon: Workflow }
+const NAV_ITEMS: NavItem[] = [
+  { id: "config", label: "Dashboard", icon: LayoutDashboard },
+  { id: "history", label: "Scans", icon: List },
+  { id: "graph", label: "Graph", icon: Network, requiresScan: true },
+  { id: "findings", label: "Findings", icon: AlertTriangle, requiresScan: true },
+  { id: "report", label: "Report", icon: FileText, requiresScan: true },
+  { id: "audit", label: "Audit Log", icon: ClipboardList, requiresScan: true },
 ];
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+async function fetchScans(): Promise<Scan[]> {
+  const res = await fetch("/api/scans");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<Scan[]>;
+}
 
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
-  }
+async function abortScan(id: string): Promise<void> {
+  const res = await fetch(`/api/scan/${id}/abort`, { method: "POST" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
 
-  return (await response.json()) as T;
+function ScanHistoryView({
+  onSelect,
+}: {
+  onSelect: (id: string) => void;
+}) {
+  const [scans, setScans] = useState<Scan[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchScans()
+      .then(setScans)
+      .catch(() => setScans([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const STATUS_COLORS: Record<string, string> = {
+    running: "text-green-400",
+    complete: "text-green-600",
+    pending: "text-gray-400",
+    aborted: "text-orange-400",
+    failed: "text-red-400",
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl px-4 py-6">
+      <h2 className="mb-4 text-xl font-bold text-white">Scan History</h2>
+      {loading ? (
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-16 w-full rounded-lg bg-gray-800" />
+          ))}
+        </div>
+      ) : !scans || scans.length === 0 ? (
+        <p className="text-sm text-gray-500">No scans found. Start a new scan from Dashboard.</p>
+      ) : (
+        <div className="space-y-2">
+          {scans.map((scan) => (
+            <button
+              key={scan.id}
+              type="button"
+              onClick={() => onSelect(scan.id)}
+              className="w-full rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 text-left hover:bg-gray-800 focus:outline-none"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs text-gray-400">{scan.id}</span>
+                <span
+                  className={`text-xs font-semibold uppercase ${STATUS_COLORS[scan.status] ?? "text-gray-400"}`}
+                >
+                  {scan.status}
+                </span>
+              </div>
+              <div className="mt-1 flex gap-3 text-xs text-gray-500">
+                <span>
+                  {scan.scope.targets.slice(0, 2).join(", ")}
+                  {scan.scope.targets.length > 2 ? ` +${scan.scope.targets.length - 2}` : ""}
+                </span>
+                <span>Round {scan.currentRound}</span>
+                <span>
+                  {scan.nodesComplete}/{scan.nodesTotal} nodes
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function App() {
-  const [activeItem, setActiveItem] = useState<NavigationItem["id"]>("dashboard");
-  const [loadingBrief, setLoadingBrief] = useState(false);
+  const [activeScanId, setActiveScanId] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<ActiveView>("config");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [roundSummary, setRoundSummary] = useState("");
 
-  async function handleBackendButtonClick() {
-    setLoadingBrief(true);
+  const { lastEvent, isConnected } = useScanWebSocket();
+  const { scan, findings, graph, report, isLoading, refetch } = useScan(activeScanId, lastEvent);
 
+  // Process WS events for toast notifications and round summaries
+  useEffect(() => {
+    if (!lastEvent) return;
+    if (lastEvent.type === "round_complete") {
+      setRoundSummary(lastEvent.summary);
+      toast.info(`Round ${lastEvent.round} complete`, {
+        description: lastEvent.summary.slice(0, 80),
+      });
+    } else if (lastEvent.type === "scan_status") {
+      const s = lastEvent.scan.status;
+      if (s === "complete") {
+        toast.success("Scan complete", { description: "Report is ready" });
+        refetch();
+      } else if (s === "failed") {
+        toast.error("Scan failed");
+      } else if (s === "aborted") {
+        toast("Scan aborted");
+      }
+    } else if (lastEvent.type === "finding_added") {
+      const { severity } = lastEvent.finding;
+      if (severity === "critical" || severity === "high") {
+        toast.warning(`${severity.toUpperCase()} finding`, {
+          description: lastEvent.finding.title,
+        });
+      }
+    }
+  }, [lastEvent, refetch]);
+
+  function handleScanStarted(id: string) {
+    setActiveScanId(id);
+    setSelectedNodeId(null);
+    setRoundSummary("");
+    setActiveView("graph");
+  }
+
+  function handleNodeClick(node: DfsNode) {
+    setSelectedNodeId(node.id);
+    setActiveView("findings");
+  }
+
+  async function handleAbort() {
+    if (!activeScanId) return;
     try {
-      const brief = await fetchJson<BriefResponse>(apiRoutes.brief);
-      toast.success("Backend connected", {
-        description: brief.headline
+      await abortScan(activeScanId);
+      toast("Abort requested");
+    } catch (err) {
+      toast.error("Failed to abort", {
+        description: err instanceof Error ? err.message : "Unknown error",
       });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      toast.error("Backend request failed", {
-        description: message
-      });
-    } finally {
-      setLoadingBrief(false);
     }
   }
 
-  function handleNavigation(item: NavigationItem) {
-    if (item.id === "dashboard") {
-      setActiveItem("dashboard");
+  function navigate(view: ActiveView) {
+    if (view !== "history" && view !== "config" && !activeScanId) {
+      toast("No active scan", { description: "Start or load a scan first" });
       return;
     }
+    setActiveView(view);
+  }
 
-    toast("Coming soon", {
-      description: `${item.label} is coming soon.`
-    });
+  // ─── Main content ────────────────────────────────────────────────────────────
+  function renderContent() {
+    switch (activeView) {
+      case "config":
+        return (
+          <div className="flex flex-1 items-start justify-center px-6 py-10">
+            <ScanConfig onScanStarted={handleScanStarted} />
+          </div>
+        );
+
+      case "history":
+        return (
+          <div className="flex-1 overflow-y-auto">
+            <ScanHistoryView
+              onSelect={(id) => {
+                setActiveScanId(id);
+                setActiveView("graph");
+              }}
+            />
+          </div>
+        );
+
+      case "graph":
+        if (!graph || isLoading) {
+          return (
+            <div className="flex flex-1 items-center justify-center">
+              <div className="text-center text-gray-500">
+                <Network className="mx-auto mb-3 h-10 w-10 opacity-30" />
+                <p className="text-sm">Loading graph…</p>
+              </div>
+            </div>
+          );
+        }
+        return (
+          <div className="flex-1">
+            <DfsGraph graph={graph} findings={findings} onNodeClick={handleNodeClick} />
+          </div>
+        );
+
+      case "findings":
+        return (
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <FindingsPanel findings={findings} selectedNodeId={selectedNodeId} />
+          </div>
+        );
+
+      case "report":
+        if (!report) {
+          return (
+            <div className="flex flex-1 items-center justify-center">
+              <div className="text-center text-gray-500">
+                <FileText className="mx-auto mb-3 h-10 w-10 opacity-30" />
+                <p className="text-sm">
+                  {scan?.status === "complete"
+                    ? "Generating report…"
+                    : "Report will be available when scan completes"}
+                </p>
+              </div>
+            </div>
+          );
+        }
+        return (
+          <div className="flex-1 overflow-y-auto">
+            <ReportView report={report} />
+          </div>
+        );
+
+      case "audit":
+        return (
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <AuditLog scanId={activeScanId} />
+          </div>
+        );
+    }
   }
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen bg-background xl:flex">
-        <Sidebar className="border-border bg-card">
+      <div className="flex min-h-screen bg-gray-950 text-gray-100">
+        {/* ── Sidebar ── */}
+        <Sidebar className="border-r border-gray-800 bg-gray-950">
           <div className="flex h-full flex-col">
-            <div className="border-b border-border px-4 py-6">
-              <Eyebrow>SynoSec</Eyebrow>
-              <p className="mt-2 text-lg font-semibold">Frontend</p>
+            {/* Brand */}
+            <div className="flex items-center gap-3 border-b border-gray-800 px-4 py-5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-green-500/30 bg-green-500/10">
+                <Shield className="h-4 w-4 text-green-400" />
+              </div>
+              <div>
+                <p className="text-sm font-bold tracking-wide text-white">SynoSec</p>
+                <p className="text-[10px] uppercase tracking-widest text-gray-500">
+                  AI PenTest Platform
+                </p>
+              </div>
+              <div className="ml-auto">
+                <SidebarTrigger />
+              </div>
             </div>
 
+            {/* Nav */}
             <SidebarContent className="flex-1 px-2 py-4">
               <SidebarGroup>
                 <SidebarMenu>
-                  {navigationItems.map((item) => {
+                  {NAV_ITEMS.map((item) => {
                     const Icon = item.icon;
-                    const isActive = item.id === activeItem;
+                    const isActive = item.id === activeView;
+                    const isDisabled = item.requiresScan && !activeScanId;
 
                     return (
                       <SidebarMenuItem
                         key={item.id}
                         className={cn(
-                          "rounded-lg border border-transparent",
-                          isActive && "border-border bg-accent text-accent-foreground"
+                          "rounded-lg border border-transparent transition-colors",
+                          isActive
+                            ? "border-green-500/30 bg-green-500/10 text-green-400"
+                            : isDisabled
+                            ? "cursor-not-allowed opacity-40"
+                            : "text-gray-400 hover:bg-gray-800 hover:text-gray-200"
                         )}
-                        onClick={() => handleNavigation(item)}
+                        onClick={() => navigate(item.id)}
                       >
                         <Icon className="h-4 w-4" />
                         <SidebarMenuText>{item.label}</SidebarMenuText>
@@ -106,24 +328,37 @@ export default function App() {
                 </SidebarMenu>
               </SidebarGroup>
             </SidebarContent>
+
+            {/* WS status */}
+            <div className="border-t border-gray-800 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`h-2 w-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"}`}
+                />
+                <span className="text-xs text-gray-500">
+                  {isConnected ? "Connected" : "Reconnecting…"}
+                </span>
+              </div>
+            </div>
           </div>
         </Sidebar>
 
-        <main className="flex flex-1 items-center justify-center p-6 md:p-10">
-          <div className="w-full max-w-2xl text-center">
-            <Eyebrow>Dashboard</Eyebrow>
-            <Display className="max-w-none">Dashboard</Display>
-            <Lead className="mx-auto mt-4">
-              Minimal SPA shell with sidebar navigation. Additional sections are stubbed and will surface as they are implemented.
-            </Lead>
-
-            <div className="mt-10 flex justify-center">
-              <Button onClick={() => void handleBackendButtonClick()} disabled={loadingBrief} size="lg">
-                {loadingBrief ? "Connecting..." : "Call backend"}
-              </Button>
+        {/* ── Main ── */}
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {/* Header bar (only when a scan is active) */}
+          {scan && (
+            <div className="border-b border-gray-800 bg-gray-950 px-6 py-3">
+              <ScanStatus
+                scan={scan}
+                onAbort={() => void handleAbort()}
+                roundSummary={roundSummary}
+              />
             </div>
-          </div>
-        </main>
+          )}
+
+          {/* Content area */}
+          <div className="flex flex-1 flex-col overflow-hidden">{renderContent()}</div>
+        </div>
 
         <Toaster />
       </div>

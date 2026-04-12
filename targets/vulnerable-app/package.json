@@ -1,0 +1,8 @@
+{
+  "name": "synosec-vulnerable-target",
+  "version": "1.0.0",
+  "description": "Intentionally vulnerable app for safe demo scanning. NEVER expose to production.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "express": "^4.18.0" }
+}

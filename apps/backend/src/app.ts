@@ -7,8 +7,10 @@ import {
   healthResponseSchema,
   type BriefResponse,
   type DemoResponse,
-  type HealthResponse
+  type HealthResponse,
+  type WsEvent
 } from "@synosec/contracts";
+import { createScanRouter } from "./routes/scan.js";
 
 const demoResponse: DemoResponse = {
   scanMode: "depth-first",
@@ -41,10 +43,11 @@ function buildBriefResponse(): BriefResponse {
   };
 }
 
-export function createApp(): Express {
+export function createApp(broadcast: (event: WsEvent) => void = () => {}): Express {
   const app = express();
 
   app.use(cors());
+  app.use(express.json());
 
   app.get(apiRoutes.health, (_request, response) => {
     const payload: HealthResponse = {
@@ -63,6 +66,9 @@ export function createApp(): Express {
   app.get(apiRoutes.brief, (_request, response) => {
     response.json(briefResponseSchema.parse(buildBriefResponse()));
   });
+
+  // Mount scan router with broadcast capability
+  app.use(createScanRouter(broadcast));
 
   return app;
 }
