@@ -55,31 +55,9 @@ export class L4Agent extends BaseAgent {
     } catch (err: unknown) {
       console.error("L4Agent tool error:", err instanceof Error ? err.message : err);
       parsed = {
-        findings: [
-          {
-            title: "SSH Service Detected",
-            severity: "info",
-            confidence: 0.99,
-            description: `SSH service running on ${node.target}:22`,
-            evidence: `$ nmap -sV -p 22,80,443 ${node.target}\n22/tcp open  ssh     OpenSSH 7.9p1 Debian 10+deb10u2\n80/tcp open  http    Apache httpd 2.4.38`,
-            technique: "TCP SYN scan",
-            reproduceCommand: `nmap -sV -p- ${node.target}`
-          },
-          {
-            title: "HTTP Service Detected",
-            severity: "info",
-            confidence: 0.99,
-            description: `HTTP service running on ${node.target}:80`,
-            evidence: `80/tcp open  http    Apache httpd 2.4.38 ((Debian))`,
-            technique: "Banner grab",
-            reproduceCommand: `curl -I http://${node.target}`
-          }
-        ],
-        openPorts: [
-          { port: 22, protocol: "tcp", service: "ssh", version: "OpenSSH 7.9", risk: 0.3 },
-          { port: 80, protocol: "tcp", service: "http", version: "Apache 2.4.38", risk: 0.5 }
-        ],
-        agentSummary: `Port scan of ${node.target} found SSH and HTTP services.`
+        findings: [],
+        openPorts: [],
+        agentSummary: `Transport scan of ${node.target} did not produce verifiable findings.`
       };
     }
 
@@ -135,17 +113,6 @@ export class L4Agent extends BaseAgent {
           status: "pending",
           depth: node.depth + 1
         });
-      } else if (p === 22) {
-        // SSH → L5 Session
-        childNodes.push({
-          target: node.target,
-          layer: "L5",
-          service: "ssh",
-          port: p,
-          riskScore: 0.4,
-          status: "pending",
-          depth: node.depth + 1
-        });
       } else if ([3306, 5432, 27017].includes(p)) {
         // Databases → L7 with high risk
         childNodes.push({
@@ -154,17 +121,6 @@ export class L4Agent extends BaseAgent {
           service: openPort.service,
           port: p,
           riskScore: 0.8,
-          status: "pending",
-          depth: node.depth + 1
-        });
-      } else if (p === 445) {
-        // SMB → L5 Session layer
-        childNodes.push({
-          target: node.target,
-          layer: "L5",
-          service: "smb",
-          port: p,
-          riskScore: 0.7,
           status: "pending",
           depth: node.depth + 1
         });
@@ -265,7 +221,7 @@ export class L4Agent extends BaseAgent {
         title: `${service.toUpperCase()} Service Detected`,
         severity: service === "telnet" ? "high" : "info",
         confidence: 0.99,
-        description: `${service.toUpperCase()} service running on ${node.target}:${port}`,
+        description: `${service.toUpperCase()} service running on ${node.target}`,
         evidence,
         technique,
         reproduceCommand

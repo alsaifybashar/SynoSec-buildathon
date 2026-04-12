@@ -1,16 +1,10 @@
 import type { OsiLayer, ScanLlmConfig, ScanScope } from "@synosec/contracts";
 
-const localToolBackedLayers: OsiLayer[] = ["L4", "L6", "L7"];
-
-export function isLocalToolGroundedRun(llmConfig?: ScanLlmConfig): boolean {
-  return llmConfig?.provider === "local";
-}
+const toolBackedLayers: OsiLayer[] = ["L4", "L6", "L7"];
 
 export function getSupportedLayersForRun(llmConfig?: ScanLlmConfig): OsiLayer[] {
-  if (isLocalToolGroundedRun(llmConfig)) {
-    return [...localToolBackedLayers];
-  }
-  return ["L3", "L4", "L5", "L6", "L7"];
+  void llmConfig;
+  return [...toolBackedLayers];
 }
 
 export function normalizeScopeForRun(scope: ScanScope, llmConfig?: ScanLlmConfig): ScanScope {
@@ -24,9 +18,10 @@ export function normalizeScopeForRun(scope: ScanScope, llmConfig?: ScanLlmConfig
 }
 
 export function getInitialLayerForScope(scope: ScanScope): OsiLayer {
-  return scope.layers[0] ?? "L3";
+  return scope.layers[0] ?? "L4";
 }
 
 export function shouldRunSecondaryLlmPasses(llmConfig?: ScanLlmConfig): boolean {
-  return !isLocalToolGroundedRun(llmConfig);
+  void llmConfig;
+  return false;
 }

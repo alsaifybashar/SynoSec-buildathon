@@ -7,7 +7,7 @@ help:
 	@printf "\033[33m  make docker-up\033[0m   Start full stack (Docker Compose)\n"
 	@printf "\033[33m  make docker-down\033[0m Stop and remove containers\n"
 	@printf "\033[33m  make docker-logs\033[0m Follow all container logs\n"
-	@printf "\033[35m  make database\033[0m    Start Postgres and Neo4j, then generate Prisma client, push schema, and seed data\n"
+	@printf "\033[35m  make database\033[0m    Start Postgres and Neo4j, clear persisted scan graph data, then generate Prisma client, push schema, and seed app data\n"
 	@printf "\033[36m  make test\033[0m        Run tests for all workspace services\n"
 	@printf "\033[33m  make dev\033[0m         Start local dev (no Docker)\n"
 	@printf "\033[33m  make build\033[0m       Build all workspace packages\n"
@@ -33,6 +33,8 @@ dev:
 
 database:
 	docker compose up -d postgres neo4j
+	until docker compose exec -T neo4j cypher-shell -u neo4j -p synosec-dev "RETURN 1" >/dev/null 2>&1; do sleep 1; done
+	docker compose exec -T neo4j cypher-shell -u neo4j -p synosec-dev "MATCH (n) WHERE n:Scan OR n:DfsNode OR n:Finding OR n:AuditEntry DETACH DELETE n"
 	DATABASE_URL=postgres://synosec:synosec@localhost:$${POSTGRES_PORT:-55432}/synosec pnpm --filter @synosec/backend prisma:generate
 	DATABASE_URL=postgres://synosec:synosec@localhost:$${POSTGRES_PORT:-55432}/synosec pnpm --filter @synosec/backend prisma:push
 	DATABASE_URL=postgres://synosec:synosec@localhost:$${POSTGRES_PORT:-55432}/synosec pnpm --filter @synosec/backend prisma:seed

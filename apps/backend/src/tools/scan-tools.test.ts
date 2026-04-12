@@ -8,7 +8,7 @@ vi.mock("../db/neo4j.js", () => ({
   createAuditEntry: mockCreateAuditEntry
 }));
 
-const { ScanToolRunner, isTargetInScope, parseScanTarget } = await import("./scan-tools.js");
+const { ScanToolRunner, isExecutionTargetAllowed, isTargetInScope, parseScanTarget } = await import("./scan-tools.js");
 
 describe("scan tools", () => {
   let httpServer: http.Server;
@@ -147,6 +147,31 @@ describe("scan tools", () => {
       targetNodeId: "node-3"
     });
 
-    await expect(tools.fetchHttpHeaders(`http://127.0.0.1:${httpPort}`)).rejects.toThrow(/out of scope/i);
+    await expect(tools.fetchHttpHeaders("http://example.com")).rejects.toThrow(/out of scope/i);
+  });
+
+  it("allows demo target aliases for execution without widening scope", () => {
+    expect(
+      isExecutionTargetAllowed("localhost:8888", {
+        targets: ["synosec-target:8888"],
+        exclusions: [],
+        layers: ["L4", "L7"],
+        maxDepth: 2,
+        maxDurationMinutes: 5,
+        rateLimitRps: 5,
+        allowActiveExploits: false
+      })
+    ).toBe(true);
+    expect(
+      isExecutionTargetAllowed("example.com:8888", {
+        targets: ["synosec-target:8888"],
+        exclusions: [],
+        layers: ["L4", "L7"],
+        maxDepth: 2,
+        maxDurationMinutes: 5,
+        rateLimitRps: 5,
+        allowActiveExploits: false
+      })
+    ).toBe(false);
   });
 });

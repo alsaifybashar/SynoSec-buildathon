@@ -199,7 +199,7 @@ export const osiLayerLabels: Record<OsiLayer, string> = {
 export const scanScopeSchema = z.object({
   targets: z.array(z.string().min(1)).min(1).max(20),
   exclusions: z.array(z.string()).default([]),
-  layers: z.array(osiLayerSchema).min(1).default(["L3", "L4", "L7"]),
+  layers: z.array(osiLayerSchema).min(1).default(["L4", "L6", "L7"]),
   maxDepth: z.number().int().min(1).max(8).default(3),
   maxDurationMinutes: z.number().int().min(1).max(60).default(10),
   rateLimitRps: z.number().int().min(1).max(50).default(5),

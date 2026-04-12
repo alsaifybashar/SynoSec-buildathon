@@ -6,8 +6,7 @@ import { createApp } from "./app/create-app.js";
 import { createApplicationsRepositoryFromEnvironment } from "./modules/applications/create-applications-repository.js";
 import { createRuntimesRepositoryFromEnvironment } from "./modules/runtimes/create-runtimes-repository.js";
 import { createWorkflowsRepositoryFromEnvironment } from "./modules/workflows/create-workflows-repository.js";
-import { closeNeo4jDriver, ensureNeo4jAvailable, initNeo4jSchema, listScans } from "./db/neo4j.js";
-import { seedDemoScan } from "./seed/demo-data.js";
+import { closeNeo4jDriver, ensureNeo4jAvailable, initNeo4jSchema } from "./db/neo4j.js";
 
 const port = Number(process.env["BACKEND_PORT"] ?? "3001");
 const clients = new Set<WebSocket>();
@@ -46,11 +45,6 @@ wss.on("connection", (socket) => {
 try {
   await ensureNeo4jAvailable();
   await initNeo4jSchema();
-
-  const existingScans = await listScans();
-  if (existingScans.length === 0) {
-    await seedDemoScan();
-  }
 } catch (error) {
   console.warn("Neo4j unavailable. Scan features will return 503 until the graph database is reachable.");
   console.warn(error instanceof Error ? error.message : error);

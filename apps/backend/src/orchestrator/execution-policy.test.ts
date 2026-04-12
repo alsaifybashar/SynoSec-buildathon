@@ -18,16 +18,14 @@ describe("execution policy", () => {
     allowActiveExploits: false
   };
 
-  it("keeps all layers for non-local runs", () => {
-    expect(getSupportedLayersForRun({ provider: "anthropic" })).toEqual(["L3", "L4", "L5", "L6", "L7"]);
+  it("restricts all runs to tool-backed layers", () => {
+    expect(getSupportedLayersForRun({ provider: "anthropic" })).toEqual(["L4", "L6", "L7"]);
     expect(normalizeScopeForRun(fullScope, { provider: "anthropic" }).layers).toEqual([
-      "L3",
       "L4",
-      "L5",
       "L6",
       "L7"
     ]);
-    expect(shouldRunSecondaryLlmPasses({ provider: "anthropic" })).toBe(true);
+    expect(shouldRunSecondaryLlmPasses({ provider: "anthropic" })).toBe(false);
   });
 
   it("restricts local runs to tool-backed layers", () => {

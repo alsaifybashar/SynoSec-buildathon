@@ -57,27 +57,8 @@ export class L7Agent extends BaseAgent {
     } catch (err: unknown) {
       console.error("L7Agent tool error:", err instanceof Error ? err.message : err);
       parsed = {
-        findings: [
-          {
-            title: "Missing Security Headers",
-            severity: "low",
-            confidence: 0.99,
-            description: `${node.target} is missing critical HTTP security headers including HSTS and Content-Security-Policy.`,
-            evidence: `$ curl -I http://${node.target}\nHTTP/1.1 200 OK\nServer: Apache/2.4.38\nX-Powered-By: PHP/7.4.3\n[Missing: Strict-Transport-Security, Content-Security-Policy, X-Frame-Options]`,
-            technique: "Header audit",
-            reproduceCommand: `curl -I http://${node.target}`
-          },
-          {
-            title: "Server Version Disclosure",
-            severity: "info",
-            confidence: 0.99,
-            description: `Server is leaking version information in HTTP response headers.`,
-            evidence: `Server: Apache/2.4.38 (Debian)\nX-Powered-By: PHP/7.4.3`,
-            technique: "Tech fingerprint",
-            reproduceCommand: `curl -I http://${node.target}`
-          }
-        ],
-        agentSummary: `Application security test of ${node.target} completed with ${isTelnet ? "critical insecure protocol findings" : "web security findings"}.`
+        findings: [],
+        agentSummary: `Application checks for ${node.target} did not produce verifiable findings.`
       };
     }
 

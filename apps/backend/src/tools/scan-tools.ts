@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { spawn } from "node:child_process";
+import { localDemoTargetDefaults } from "@synosec/contracts";
 import { createAuditEntry } from "../db/neo4j.js";
 import type { AuditEntry, ScanScope } from "@synosec/contracts";
 
@@ -58,7 +59,13 @@ export class ScanToolRunner {
     this.assertHostAllowed(host);
     this.assertPortAllowed(port);
     const timeoutSeconds = Math.max(1, Math.ceil(commandTimeoutMs / 1000));
-    const result = await this.execute("check_tcp_port", [ncBinary, "-zvw", String(timeoutSeconds), host, String(port)]);
+    const result = await this.executeTcpWithFallbacks("check_tcp_port", host, (candidateHost) => [
+      ncBinary,
+      "-zvw",
+      String(timeoutSeconds),
+      candidateHost,
+      String(port)
+    ]);
     return {
       ...result,
       open: result.ok
@@ -69,7 +76,13 @@ export class ScanToolRunner {
     this.assertHostAllowed(host);
     this.assertPortAllowed(port);
     const timeoutSeconds = Math.max(1, Math.ceil(commandTimeoutMs / 1000));
-    const result = await this.execute("grab_tcp_banner", [ncBinary, "-w", String(timeoutSeconds), host, String(port)]);
+    const result = await this.executeTcpWithFallbacks("grab_tcp_banner", host, (candidateHost) => [
+      ncBinary,
+      "-w",
+      String(timeoutSeconds),
+      candidateHost,
+      String(port)
+    ]);
     const banner = firstNonEmptyLine(result.stdout);
     return {
       ...result,
@@ -80,16 +93,17 @@ export class ScanToolRunner {
   async fetchHttpHeaders(url: string): Promise<HttpFetchResult> {
     this.assertUrlAllowed(url);
     const timeoutSeconds = Math.max(1, Math.ceil(commandTimeoutMs / 1000));
-    const result = await this.execute("fetch_http_headers", [
+    const parsed = new URL(url);
+    const result = await this.executeUrlWithFallbacks("fetch_http_headers", parsed, (candidateUrl) => [
       curlBinary,
       "-skI",
       "--max-time",
       String(timeoutSeconds),
-      url
+      candidateUrl
     ]);
     return {
       ...result,
-      url,
+      url: result.argv.at(-1) ?? url,
       statusCode: parseStatusCode(result.stdout),
       headers: parseHttpHeaders(result.stdout)
     };
@@ -99,7 +113,8 @@ export class ScanToolRunner {
     const normalized = new URL(path, ensureTrailingSlash(url)).toString();
     this.assertUrlAllowed(normalized);
     const timeoutSeconds = Math.max(1, Math.ceil(commandTimeoutMs / 1000));
-    const result = await this.execute("fetch_http_path", [
+    const parsed = new URL(normalized);
+    const result = await this.executeUrlWithFallbacks("fetch_http_path", parsed, (candidateUrl) => [
       curlBinary,
       "-sk",
       "-D",
@@ -108,11 +123,11 @@ export class ScanToolRunner {
       "/dev/null",
       "--max-time",
       String(timeoutSeconds),
-      normalized
+      candidateUrl
     ]);
     return {
       ...result,
-      url: normalized,
+      url: result.argv.at(-1) ?? normalized,
       statusCode: parseStatusCode(result.stdout),
       headers: parseHttpHeaders(result.stdout)
     };
@@ -121,15 +136,15 @@ export class ScanToolRunner {
   async inspectTls(host: string, port: number): Promise<TlsInspectionResult> {
     this.assertHostAllowed(host);
     this.assertPortAllowed(port);
-    const result = await this.execute("inspect_tls", [
+    const result = await this.executeTcpWithFallbacks("inspect_tls", host, (candidateHost) => [
       opensslBinary,
       "s_client",
       "-brief",
       "-showcerts",
       "-connect",
-      `${host}:${port}`,
+      `${candidateHost}:${port}`,
       "-servername",
-      host
+      candidateHost
     ]);
     const combined = `${result.stdout}\n${result.stderr}`;
     return {
@@ -139,10 +154,69 @@ export class ScanToolRunner {
   }
 
   private async execute(adapter: string, argv: string[]): Promise<ToolResult> {
-    const startedAt = Date.now();
     const result = await runProcess(argv, commandTimeoutMs, maxOutputBytes);
     await this.audit(adapter, result);
     return result;
+  }
+
+  private async executeTcpWithFallbacks(
+    adapter: string,
+    host: string,
+    buildArgv: (candidateHost: string) => string[]
+  ): Promise<ToolResult> {
+    let lastResult: ToolResult | null = null;
+
+    for (const candidateHost of getExecutionHostCandidates(host)) {
+      const result = await this.execute(adapter, buildArgv(candidateHost));
+      if (result.ok) {
+        return result;
+      }
+      lastResult = result;
+      if (!shouldRetryWithAlternateHost(result)) {
+        break;
+      }
+    }
+
+    return lastResult ?? {
+      ok: false,
+      exitCode: null,
+      timedOut: false,
+      stdout: "",
+      stderr: `No tool result for ${host}`,
+      argv: buildArgv(host),
+      durationMs: 0
+    };
+  }
+
+  private async executeUrlWithFallbacks(
+    adapter: string,
+    parsedUrl: URL,
+    buildArgv: (candidateUrl: string) => string[]
+  ): Promise<ToolResult> {
+    let lastResult: ToolResult | null = null;
+
+    for (const candidateHost of getExecutionHostCandidates(parsedUrl.hostname)) {
+      const candidateUrl = new URL(parsedUrl.toString());
+      candidateUrl.hostname = candidateHost;
+      const result = await this.execute(adapter, buildArgv(candidateUrl.toString()));
+      if (result.ok && parseStatusCode(result.stdout) != null) {
+        return result;
+      }
+      lastResult = result;
+      if (!shouldRetryWithAlternateHost(result)) {
+        break;
+      }
+    }
+
+    return lastResult ?? {
+      ok: false,
+      exitCode: null,
+      timedOut: false,
+      stdout: "",
+      stderr: `No HTTP response for ${parsedUrl.toString()}`,
+      argv: buildArgv(parsedUrl.toString()),
+      durationMs: 0
+    };
   }
 
   private async audit(adapter: string, result: ToolResult): Promise<void> {
@@ -168,7 +242,7 @@ export class ScanToolRunner {
   }
 
   private assertHostAllowed(host: string): void {
-    if (!isTargetInScope(host, this.context.scope)) {
+    if (!isExecutionTargetAllowed(host, this.context.scope)) {
       throw new Error(`Target ${host} is out of scope for tool execution`);
     }
   }
@@ -176,7 +250,7 @@ export class ScanToolRunner {
   private assertUrlAllowed(url: string): void {
     const parsed = new URL(url);
     const target = parsed.port ? `${parsed.hostname}:${parsed.port}` : parsed.hostname;
-    if (!isTargetInScope(target, this.context.scope)) {
+    if (!isExecutionTargetAllowed(target, this.context.scope)) {
       throw new Error(`Target ${target} is out of scope for tool execution`);
     }
   }
@@ -229,6 +303,23 @@ export function isTargetInScope(target: string, scope: ScanScope): boolean {
   return false;
 }
 
+export function isExecutionTargetAllowed(target: string, scope: ScanScope): boolean {
+  if (isTargetInScope(target, scope)) {
+    return true;
+  }
+
+  const targetHost = normalizeScopeToken(target);
+  for (const scopeTarget of scope.targets) {
+    const scopeHost = normalizeScopeToken(scopeTarget);
+    const aliases = new Set(getExecutionHostCandidates(scopeHost).map(normalizeScopeToken));
+    if (aliases.has(targetHost)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function normalizeScopeToken(value: string): string {
   try {
     const parsed = parseScanTarget(value);
@@ -236,6 +327,27 @@ function normalizeScopeToken(value: string): string {
   } catch {
     return value.replace(/:\d+$/, "");
   }
+}
+
+function getExecutionHostCandidates(host: string): string[] {
+  const candidates = [host];
+  const demoHosts = new Set([
+    localDemoTargetDefaults.internalHost,
+    "localhost",
+    "127.0.0.1",
+    "host.docker.internal"
+  ]);
+
+  if (demoHosts.has(host)) {
+    candidates.push(
+      localDemoTargetDefaults.internalHost,
+      "localhost",
+      "127.0.0.1",
+      "host.docker.internal"
+    );
+  }
+
+  return [...new Set(candidates)];
 }
 
 function ensureTrailingSlash(url: string): string {
@@ -271,6 +383,14 @@ function firstNonEmptyLine(text: string): string | null {
     }
   }
   return null;
+}
+
+function looksLikeNameResolutionFailure(text: string): boolean {
+  return /could not resolve host|name or service not known|nodename nor servname provided|temporary failure in name resolution/i.test(text);
+}
+
+function shouldRetryWithAlternateHost(result: ToolResult): boolean {
+  return result.timedOut || looksLikeNameResolutionFailure(result.stderr);
 }
 
 async function runProcess(argv: string[], timeoutMs: number, outputLimitBytes: number): Promise<ToolResult> {
