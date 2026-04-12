@@ -1,13 +1,12 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { ArrowUpDown, ChevronRight, Plus, Search } from "lucide-react";
+import { ArrowUpDown, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { Skeleton } from "./ui/skeleton";
 import { Spinner } from "./ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
-import { Display } from "./ui/typography";
+import { PageHeader } from "./page-header";
 import { cn } from "../lib/utils";
 
 type LoadableState<T> =
@@ -16,6 +15,7 @@ type LoadableState<T> =
   | { state: "error"; message: string };
 
 type SortDirection = "asc" | "desc";
+const MINIMUM_LOADING_MS = 300;
 
 export type ListPageColumn<T> = {
   id: string;
@@ -40,7 +40,9 @@ export function ListPage<T extends { id: string }>({
   columns,
   loadData,
   filter,
-  emptyMessage
+  emptyMessage,
+  onAddRecord,
+  onRowClick
 }: {
   title: string;
   recordLabel: string;
@@ -48,6 +50,8 @@ export function ListPage<T extends { id: string }>({
   loadData: () => Promise<T[]>;
   filter?: ListPageFilter<T>;
   emptyMessage: string;
+  onAddRecord?: () => void;
+  onRowClick?: (row: T) => void;
 }) {
   const [dataState, setDataState] = useState<LoadableState<T>>({ state: "loading" });
   const [searchQuery, setSearchQuery] = useState("");
@@ -56,6 +60,11 @@ export function ListPage<T extends { id: string }>({
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
+  async function loadRecords() {
+    const [records] = await Promise.all([loadData(), new Promise((resolve) => window.setTimeout(resolve, MINIMUM_LOADING_MS))]);
+    return records;
+  }
+
   useEffect(() => {
     let active = true;
 
@@ -63,7 +72,7 @@ export function ListPage<T extends { id: string }>({
       setDataState({ state: "loading" });
 
       try {
-        const records = await loadData();
+        const records = await loadRecords();
 
         if (!active) {
           return;
@@ -144,34 +153,39 @@ export function ListPage<T extends { id: string }>({
     });
   }
 
-  function handleAddRecord() {
+  function handleDefaultAddRecord() {
     toast("Coming soon", {
       description: `Add ${recordLabel.toLowerCase()} is coming soon.`
     });
   }
 
-  function handleRowClick() {
+  function handleDefaultRowClick() {
     toast("Coming soon", {
       description: `${recordLabel} detail is coming soon.`
     });
   }
 
+  async function retryLoad() {
+    setDataState({ state: "loading" });
+
+    try {
+      const records = await loadRecords();
+      setDataState({ state: "loaded", data: records });
+    } catch (error) {
+      setDataState({
+        state: "error",
+        message: error instanceof Error ? error.message : "Failed to load records."
+      });
+    }
+  }
+
   return (
     <div className="space-y-6 pb-6">
-      <div className="m-3 space-y-2.5">
-        <div className="space-y-1.5">
-          <Display className="max-w-none text-3xl md:text-5xl">{title}</Display>
-        </div>
+      <PageHeader title={title} breadcrumbs={["Start", title]} />
 
-        <nav className="flex items-center gap-2 text-sm text-muted-foreground" aria-label="Breadcrumb">
-          <span>Start</span>
-          <ChevronRight className="h-4 w-4" />
-          <span className="font-medium text-foreground">{title}</span>
-        </nav>
-
-        <div className="flex flex-col gap-2.5 pt-6">
+      <div className="m-3 flex flex-col gap-2.5 pt-6">
           <div>
-            <Button onClick={handleAddRecord}>
+            <Button onClick={onAddRecord ?? handleDefaultAddRecord}>
               <Plus className="h-4 w-4" />
               Add {recordLabel}
             </Button>
@@ -214,22 +228,40 @@ export function ListPage<T extends { id: string }>({
               </div>
             ) : null}
           </div>
-        </div>
       </div>
 
       <section className="bg-background">
         <div>
           {dataState.state === "loading" ? (
-            <div className="space-y-3 px-6 pb-6">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-            </div>
+            <Table className="bg-background">
+              <TableHeader>
+                <TableRow>
+                  {columns.map((column) => (
+                    <TableHead key={column.id} className={cn("border-b border-r border-t border-border bg-muted/35 last:border-r-0", column.className)}>
+                      {column.header}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  {columns.map((column, columnIndex) => (
+                    <TableCell key={`${column.id}-loading`} className={cn("border-r border-border last:border-r-0", column.className)}>
+                      {columnIndex === 0 ? (
+                        <div className="flex items-center justify-center text-muted-foreground">
+                          <Spinner className="h-3.5 w-3.5" />
+                        </div>
+                      ) : null}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableBody>
+            </Table>
           ) : dataState.state === "error" ? (
             <div className="mx-6 mb-6 flex flex-col gap-4 rounded-xl border border-destructive/20 bg-destructive/5 p-4">
               <p className="text-sm text-destructive">{dataState.message}</p>
               <div>
-                <Button onClick={() => void loadData().then((records) => setDataState({ state: "loaded", data: records })).catch((error) => setDataState({ state: "error", message: error instanceof Error ? error.message : "Failed to load records." }))}>
+                <Button onClick={() => void retryLoad()}>
                   <Spinner className="text-primary-foreground" />
                   Retry
                 </Button>
@@ -253,8 +285,8 @@ export function ListPage<T extends { id: string }>({
               </TableHeader>
               <TableBody>
                 {visibleRows.map((row) => (
-                <TableRow key={row.id} className="cursor-pointer" onClick={() => handleRowClick()}>
-                  {columns.map((column) => (
+                  <TableRow key={row.id} className="cursor-pointer" onClick={() => (onRowClick ? onRowClick(row) : handleDefaultRowClick())}>
+                    {columns.map((column) => (
                       <TableCell key={column.id} className={cn("border-r border-border last:border-r-0", column.className)}>
                         {column.cell(row)}
                       </TableCell>

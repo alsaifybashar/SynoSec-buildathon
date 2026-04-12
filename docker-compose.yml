@@ -1,4 +1,15 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "${POSTGRES_PORT:-55432}:5432"
+    environment:
+      POSTGRES_DB: synosec
+      POSTGRES_USER: synosec
+      POSTGRES_PASSWORD: synosec
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   backend:
     build:
       context: .
@@ -13,7 +24,10 @@ services:
     working_dir: /workspace
     environment:
       BACKEND_PORT: 3001
-    command: sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/backend dev"
+      DATABASE_URL: postgres://synosec:synosec@postgres:5432/synosec
+    depends_on:
+      - postgres
+    command: sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/backend prisma:generate && pnpm --filter @synosec/backend prisma:push && pnpm --filter @synosec/backend dev"
 
   frontend:
     build:
@@ -35,8 +49,8 @@ services:
     command: sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/frontend dev -- --host 0.0.0.0"
 
 volumes:
+  postgres_data:
   backend_node_modules:
   contracts_node_modules:
   frontend_node_modules:
   root_node_modules:
-

@@ -3,7 +3,8 @@ import { z } from "zod";
 export const apiRoutes = {
   health: "/api/health",
   demo: "/api/demo",
-  brief: "/api/brief"
+  brief: "/api/brief",
+  applications: "/api/applications"
 } as const;
 
 export const healthResponseSchema = z.object({
@@ -36,3 +37,42 @@ export const briefResponseSchema = z.object({
 });
 
 export type BriefResponse = z.infer<typeof briefResponseSchema>;
+
+export const applicationEnvironmentSchema = z.enum(["production", "staging", "development"]);
+export type ApplicationEnvironment = z.infer<typeof applicationEnvironmentSchema>;
+
+export const applicationStatusSchema = z.enum(["active", "investigating", "archived"]);
+export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
+
+export const applicationSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  baseUrl: z.string().url().nullable(),
+  environment: applicationEnvironmentSchema,
+  status: applicationStatusSchema,
+  lastScannedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type Application = z.infer<typeof applicationSchema>;
+
+export const listApplicationsResponseSchema = z.object({
+  applications: z.array(applicationSchema)
+});
+export type ListApplicationsResponse = z.infer<typeof listApplicationsResponseSchema>;
+
+const applicationBodyBaseSchema = z.object({
+  name: z.string().trim().min(1),
+  baseUrl: z.union([z.string().trim().url(), z.literal(""), z.null()]).transform((value) => value || null),
+  environment: applicationEnvironmentSchema,
+  status: applicationStatusSchema,
+  lastScannedAt: z.union([z.string().datetime(), z.null()])
+});
+
+export const createApplicationBodySchema = applicationBodyBaseSchema;
+export type CreateApplicationBody = z.infer<typeof createApplicationBodySchema>;
+
+export const updateApplicationBodySchema = applicationBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
+  message: "At least one field is required."
+});
+export type UpdateApplicationBody = z.infer<typeof updateApplicationBodySchema>;
