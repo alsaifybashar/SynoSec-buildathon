@@ -5,6 +5,39 @@ Started: Mon Apr 13 00:40:18 CEST 2026
 - (add reusable patterns here)
 
 ---
+## [2026-04-13 01:05:30 CEST] - S4: Record evidence and residual risk
+Thread: 
+Run: 20260413-004709-513536 (iteration 3)
+Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-3.log
+Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-3.md
+- Guardrails reviewed: yes
+- No-commit run: false
+- Commit: da2b5d8d Record evidence and residual risk
+- Post-commit status: `clean`
+- Verification:
+  - Command: `pnpm --filter @synosec/contracts test` -> PASS
+  - Command: `pnpm --filter @synosec/contracts build` -> PASS
+  - Command: `pnpm build` -> PASS
+  - Command: `pnpm test` -> PASS
+  - Command: `pnpm lint` -> FAIL (existing ESLint typed-lint issue in `apps/backend/src/generated/prisma/client.js`)
+- Files changed:
+  - .ralph/activity.log
+  - .ralph/progress.md
+  - docs/defensive-loop-contract.md
+  - packages/contracts/src/index.test.ts
+  - packages/contracts/src/index.ts
+- What was implemented
+- Added explicit `finalOutcome`, per-source `issueOutcomes`, and a structured `carryForward` state to the defensive iteration record so each run preserves evidence, residual risk, and next-iteration context.
+- Classified iteration sources as `fixed`, `mitigated`, `unverified`, or intentionally `skipped`, with deterministic evidence references and carry-forward behavior.
+- Extended contract tests and operator-facing documentation so the recording model is reviewable and reusable in later iterations without rebuilding prior context.
+- **Learnings for future iterations:**
+  - Patterns discovered
+  - The shared contracts package is still the right integration point for workflow-state changes that later stories may surface in backend or frontend code.
+  - Gotchas encountered
+  - The documented `ralph log` helper path is missing in this workspace, so activity logging had to be appended manually.
+  - Useful context
+  - `carryForward` now provides a direct seed for the next loop iteration, including target context, resolved issues, outstanding issues, residual risk, and the recommended next step.
+---
 ## [2026-04-13 00:59:13 CEST] - S3: Execute one bounded hardening iteration
 Thread: 019d83e0-a12b-7421-80a6-13a4141127e6
 Run: 20260413-004709-513536 (iteration 2)
