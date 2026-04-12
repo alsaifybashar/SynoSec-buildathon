@@ -34,9 +34,7 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuText,
-  SidebarProvider,
-  SidebarTrigger,
-  useSidebar
+  SidebarProvider
 } from "./components/ui/sidebar";
 import { Skeleton } from "./components/ui/skeleton";
 import { Toaster } from "./components/ui/toaster";
@@ -662,27 +660,6 @@ function ScansPage({ activeScanId, onScanSelected }: ScanPageProps) {
 }
 
 function ThemeSwitcher({ value, onValueChange }: { value: ThemeId; onValueChange: (theme: ThemeId) => void }) {
-  const { collapsed } = useSidebar();
-
-  if (collapsed) {
-    return (
-      <Select value={value} onValueChange={(nextValue) => onValueChange(nextValue as ThemeId)}>
-        <SelectTrigger aria-label="Select theme" className="h-10 w-10 rounded-xl border-border bg-background/80 px-0">
-          <span className="flex w-full items-center justify-center">
-            <Palette className="h-4 w-4" />
-          </span>
-        </SelectTrigger>
-        <SelectContent align="end">
-          {themes.map((theme) => (
-            <SelectItem key={theme.id} value={theme.id}>
-              {theme.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    );
-  }
-
   return (
     <div className="space-y-3">
       <SidebarGroupLabel>Theme</SidebarGroupLabel>
@@ -825,9 +802,8 @@ export default function App() {
       <div className="flex min-h-screen text-foreground" style={{ backgroundImage: "var(--app-shell-background)" }}>
         <Sidebar className="border-r border-border/80 bg-card/70">
           <div className="flex h-full flex-col px-4 py-6">
-            <div className="relative px-2 py-2 text-center">
+            <div className="px-2 py-2 text-center">
               <p className="font-['Space_Grotesk'] text-[1.75rem] font-bold tracking-[-0.04em] text-foreground">SynoSec</p>
-              <div className="absolute inset-x-0 bottom-0 border-b border-border" aria-hidden="true" />
             </div>
 
             <SidebarContent className="mt-6 flex-1">
@@ -852,11 +828,8 @@ export default function App() {
               </SidebarGroup>
             </SidebarContent>
 
-            <div className="mt-6 space-y-4 border-t border-border pt-4">
+            <div className="mt-6 space-y-4 pt-4">
               <ThemeSwitcher value={theme} onValueChange={setTheme} />
-              <div className="flex justify-center">
-                <SidebarTrigger />
-              </div>
             </div>
           </div>
         </Sidebar>
