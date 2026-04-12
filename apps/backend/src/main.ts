@@ -4,6 +4,8 @@ import type { WsEvent } from "@synosec/contracts";
 import "./core/env/load-env.js";
 import { createApp } from "./app/create-app.js";
 import { createApplicationsRepositoryFromEnvironment } from "./modules/applications/create-applications-repository.js";
+import { createRuntimesRepositoryFromEnvironment } from "./modules/runtimes/create-runtimes-repository.js";
+import { createWorkflowsRepositoryFromEnvironment } from "./modules/workflows/create-workflows-repository.js";
 import { closeNeo4jDriver, ensureNeo4jAvailable, initNeo4jSchema, listScans } from "./db/neo4j.js";
 import { seedDemoScan } from "./seed/demo-data.js";
 
@@ -22,6 +24,8 @@ function broadcast(event: WsEvent): void {
 
 const app = createApp({
   applicationsRepository: createApplicationsRepositoryFromEnvironment(),
+  runtimesRepository: createRuntimesRepositoryFromEnvironment(),
+  workflowsRepository: createWorkflowsRepositoryFromEnvironment(),
   broadcast
 });
 const server = http.createServer(app);

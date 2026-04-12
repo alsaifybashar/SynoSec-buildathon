@@ -19,6 +19,50 @@ enum ApplicationStatus {
   archived
 }
 
+enum RuntimeServiceType {
+  gateway
+  api
+  worker
+  database
+  queue
+  storage
+  other
+}
+
+enum RuntimeProvider {
+  aws
+  gcp
+  azure
+  on_prem
+  docker
+  vercel
+  other
+}
+
+enum RuntimeStatus {
+  healthy
+  degraded
+  retired
+}
+
+enum WorkflowTrigger {
+  manual
+  schedule
+  event
+}
+
+enum WorkflowStatus {
+  draft
+  active
+  paused
+}
+
+enum WorkflowTargetMode {
+  application
+  runtime
+  manual
+}
+
 model Application {
   id            String                 @id @db.Uuid
   name          String
@@ -28,6 +72,41 @@ model Application {
   lastScannedAt DateTime?              @map("last_scanned_at")
   createdAt     DateTime               @default(now()) @map("created_at")
   updatedAt     DateTime               @updatedAt @map("updated_at")
+  runtimes      Runtime[]
+  workflows     Workflow[]
 
   @@map("applications")
+}
+
+model Runtime {
+  id            String             @id @db.Uuid
+  name          String
+  serviceType   RuntimeServiceType @map("service_type")
+  provider      RuntimeProvider
+  environment   ApplicationEnvironment
+  region        String
+  status        RuntimeStatus
+  applicationId String?            @db.Uuid @map("application_id")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+  application   Application?       @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([applicationId])
+  @@map("runtimes")
+}
+
+model Workflow {
+  id            String             @id @db.Uuid
+  name          String
+  trigger       WorkflowTrigger
+  status        WorkflowStatus
+  maxDepth      Int                @map("max_depth")
+  targetMode    WorkflowTargetMode @map("target_mode")
+  applicationId String?            @db.Uuid @map("application_id")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+  application   Application?       @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([applicationId])
+  @@map("workflows")
 }

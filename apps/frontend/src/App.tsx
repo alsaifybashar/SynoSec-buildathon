@@ -17,8 +17,10 @@ import { AuditLog } from "./components/AuditLog";
 import { DfsGraph } from "./components/DfsGraph";
 import { FindingsPanel } from "./components/FindingsPanel";
 import { ReportView } from "./components/ReportView";
+import { RuntimesPage } from "./components/runtimes-page";
 import { ScanConfig } from "./components/ScanConfig";
 import { ScanStatus } from "./components/ScanStatus";
+import { WorkflowsPage } from "./components/workflows-page";
 import { DetailField, DetailPage } from "./components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "./components/list-page";
 import { Button } from "./components/ui/button";
@@ -783,34 +785,12 @@ export default function App() {
     }
 
     if (route.section === "runtimes") {
-      if (route.detailId) {
-        const runtime = runtimeRecords.find((candidate) => candidate.id === route.detailId) ?? runtimeRecords[0];
-
-        if (!runtime) {
-          return null;
-        }
-
-        return (
-          <StaticDetailPage
-            sectionTitle="Runtimes"
-            recordLabel="Runtime"
-            record={runtime}
-            fieldConfig={runtimeFieldConfig}
-            onBack={() => navigateToPath(navigationPaths.runtimes)}
-          />
-        );
-      }
-
       return (
-        <ListPage
-          title="Runtimes"
-          recordLabel="Runtime"
-          columns={runtimeColumns}
-          loadData={() => delay(runtimeRecords)}
-          filter={runtimeFilter}
-          emptyMessage="No runtimes matched the current search and filter."
-          onAddRecord={() => navigateToPath("/runtimes/new")}
-          onRowClick={(row) => navigateToPath(`/runtimes/${row.id}`)}
+        <RuntimesPage
+          {...(route.detailId ? { runtimeId: route.detailId } : {})}
+          onNavigateToList={() => navigateToPath(navigationPaths.runtimes)}
+          onNavigateToCreate={() => navigateToPath("/runtimes/new")}
+          onNavigateToDetail={(id) => navigateToPath(`/runtimes/${id}`)}
         />
       );
     }
@@ -830,34 +810,12 @@ export default function App() {
       return <ScansPage activeScanId={activeScanId} onScanSelected={navigateToScan} />;
     }
 
-    if (route.detailId) {
-      const workflow = workflowRecords.find((candidate) => candidate.id === route.detailId) ?? workflowRecords[0];
-
-      if (!workflow) {
-        return null;
-      }
-
-      return (
-        <StaticDetailPage
-          sectionTitle="Workflows"
-          recordLabel="Workflow"
-          record={workflow}
-          fieldConfig={workflowFieldConfig}
-          onBack={() => navigateToPath(navigationPaths.workflows)}
-        />
-      );
-    }
-
     return (
-      <ListPage
-        title="Workflows"
-        recordLabel="Workflow"
-        columns={workflowColumns}
-        loadData={() => delay(workflowRecords)}
-        filter={workflowFilter}
-        emptyMessage="No workflows matched the current search and filter."
-        onAddRecord={() => navigateToPath("/workflows/new")}
-        onRowClick={(row) => navigateToPath(`/workflows/${row.id}`)}
+      <WorkflowsPage
+        {...(route.detailId ? { workflowId: route.detailId } : {})}
+        onNavigateToList={() => navigateToPath(navigationPaths.workflows)}
+        onNavigateToCreate={() => navigateToPath("/workflows/new")}
+        onNavigateToDetail={(id) => navigateToPath(`/workflows/${id}`)}
       />
     );
   }

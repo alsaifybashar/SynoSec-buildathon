@@ -5,6 +5,8 @@ export const apiRoutes = {
   demo: "/api/demo",
   brief: "/api/brief",
   applications: "/api/applications",
+  runtimes: "/api/runtimes",
+  workflows: "/api/workflows",
   scanCreate: "/api/scan",
   scanList: "/api/scans",
   scanGet: "/api/scan/:id",
@@ -82,6 +84,96 @@ export const updateApplicationBodySchema = applicationBodyBaseSchema.partial().r
   message: "At least one field is required."
 });
 export type UpdateApplicationBody = z.infer<typeof updateApplicationBodySchema>;
+
+export const runtimeServiceTypeSchema = z.enum(["gateway", "api", "worker", "database", "queue", "storage", "other"]);
+export type RuntimeServiceType = z.infer<typeof runtimeServiceTypeSchema>;
+
+export const runtimeProviderSchema = z.enum(["aws", "gcp", "azure", "on-prem", "docker", "vercel", "other"]);
+export type RuntimeProvider = z.infer<typeof runtimeProviderSchema>;
+
+export const runtimeStatusSchema = z.enum(["healthy", "degraded", "retired"]);
+export type RuntimeStatus = z.infer<typeof runtimeStatusSchema>;
+
+export const runtimeSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  serviceType: runtimeServiceTypeSchema,
+  provider: runtimeProviderSchema,
+  environment: applicationEnvironmentSchema,
+  region: z.string().min(1),
+  status: runtimeStatusSchema,
+  applicationId: z.string().uuid().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type Runtime = z.infer<typeof runtimeSchema>;
+
+export const listRuntimesResponseSchema = z.object({
+  runtimes: z.array(runtimeSchema)
+});
+export type ListRuntimesResponse = z.infer<typeof listRuntimesResponseSchema>;
+
+const runtimeBodyBaseSchema = z.object({
+  name: z.string().trim().min(1),
+  serviceType: runtimeServiceTypeSchema,
+  provider: runtimeProviderSchema,
+  environment: applicationEnvironmentSchema,
+  region: z.string().trim().min(1),
+  status: runtimeStatusSchema,
+  applicationId: z.union([z.string().uuid(), z.literal(""), z.null()]).transform((value) => value || null)
+});
+
+export const createRuntimeBodySchema = runtimeBodyBaseSchema;
+export type CreateRuntimeBody = z.infer<typeof createRuntimeBodySchema>;
+
+export const updateRuntimeBodySchema = runtimeBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
+  message: "At least one field is required."
+});
+export type UpdateRuntimeBody = z.infer<typeof updateRuntimeBodySchema>;
+
+export const workflowTriggerSchema = z.enum(["manual", "schedule", "event"]);
+export type WorkflowTrigger = z.infer<typeof workflowTriggerSchema>;
+
+export const workflowStatusSchema = z.enum(["draft", "active", "paused"]);
+export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
+
+export const workflowTargetModeSchema = z.enum(["application", "runtime", "manual"]);
+export type WorkflowTargetMode = z.infer<typeof workflowTargetModeSchema>;
+
+export const workflowSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  trigger: workflowTriggerSchema,
+  status: workflowStatusSchema,
+  maxDepth: z.number().int().min(1).max(8),
+  targetMode: workflowTargetModeSchema,
+  applicationId: z.string().uuid().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type Workflow = z.infer<typeof workflowSchema>;
+
+export const listWorkflowsResponseSchema = z.object({
+  workflows: z.array(workflowSchema)
+});
+export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
+
+const workflowBodyBaseSchema = z.object({
+  name: z.string().trim().min(1),
+  trigger: workflowTriggerSchema,
+  status: workflowStatusSchema,
+  maxDepth: z.number().int().min(1).max(8),
+  targetMode: workflowTargetModeSchema,
+  applicationId: z.union([z.string().uuid(), z.literal(""), z.null()]).transform((value) => value || null)
+});
+
+export const createWorkflowBodySchema = workflowBodyBaseSchema;
+export type CreateWorkflowBody = z.infer<typeof createWorkflowBodySchema>;
+
+export const updateWorkflowBodySchema = workflowBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
+  message: "At least one field is required."
+});
+export type UpdateWorkflowBody = z.infer<typeof updateWorkflowBodySchema>;
 
 export const osiLayerSchema = z.enum(["L2", "L3", "L4", "L5", "L6", "L7"]);
 export type OsiLayer = z.infer<typeof osiLayerSchema>;

@@ -6,6 +6,8 @@ import {
 } from "@synosec/contracts";
 import { createApp } from "../../app/create-app.js";
 import { MemoryApplicationsRepository } from "./memory-applications.repository.js";
+import { MemoryRuntimesRepository } from "../runtimes/memory-runtimes.repository.js";
+import { MemoryWorkflowsRepository } from "../workflows/memory-workflows.repository.js";
 
 const seedApplications = [
   {
@@ -32,7 +34,9 @@ const seedApplications = [
 
 function createTestApp() {
   return createApp({
-    applicationsRepository: new MemoryApplicationsRepository(seedApplications.map((application) => ({ ...application })))
+    applicationsRepository: new MemoryApplicationsRepository(seedApplications.map((application) => ({ ...application }))),
+    runtimesRepository: new MemoryRuntimesRepository(),
+    workflowsRepository: new MemoryWorkflowsRepository()
   });
 }
 
