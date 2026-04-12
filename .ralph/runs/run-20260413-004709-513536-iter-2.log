@@ -10074,3 +10074,2668 @@ index fa36a1a0823dc8d3f553ac141c722b3ab1362e48..91a14e66164182da15bf24e15fd89e75
 
 codex
 I’m at the commit boundary. The code/tests are settled, so I’m making the story commit now, then I’ll write the progress entry and run summary against the actual hash and finish with a final bookkeeping commit without doing any more repo-changing work afterward.
+exec
+/bin/bash -lc 'git add -A && git commit -m "Execute bounded hardening iteration" && git show -s --format="%h %s" HEAD' in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+[main 1bff66a1] Execute bounded hardening iteration
+ 12 files changed, 12487 insertions(+), 33 deletions(-)
+ create mode 100644 .ralph/.tmp/prompt-20260413-004709-513536-2.md
+ create mode 100644 .ralph/.tmp/story-20260413-004709-513536-2.json
+ create mode 100644 .ralph/.tmp/story-20260413-004709-513536-2.md
+ rewrite .ralph/runs/run-20260413-004709-513536-iter-1.md (71%)
+ create mode 100644 .ralph/runs/run-20260413-004709-513536-iter-2.log
+1bff66a1 Execute bounded hardening iteration
+
+diff --git a/docs/defensive-loop-contract.md b/docs/defensive-loop-contract.md
+index 77388d59f24777a65cf72190e6accfa5ed74fd66..aa13ea82bef0e055013d646cb94d8ac117787940
+--- a/docs/defensive-loop-contract.md
++++ b/docs/defensive-loop-contract.md
+@@ -46,6 +46,26 @@
+ 
+ Low-confidence or ambiguous inputs are moved to follow-up instead of being prioritized as confirmed remediation work. If every input is low-confidence, the single selected action becomes bounded manual investigation rather than an autonomous production change.
+ 
++## Bounded hardening execution
++
++The `act` stage applies exactly one reversible mitigation for the selected action. The current shared contract enforces this with an execution request that includes:
++
++- one `change` record with a single `scopeRef` and `rolloutRef`
++- `reversibleIntent: true`
++- `affectsMultipleComponents: false`
++- `destructive: false`
++- a focused `verificationPlan` with explicit checks
++- reviewable `evidence` that includes verification output
++
++The loop blocks instead of executing when:
++
++- the selected action is low-confidence and only suitable for manual investigation
++- the proposed implementation broadens beyond one component or lacks a rollback path
++- the proposed change does not match the selected mitigation scope
++- verification evidence is missing, so the loop cannot claim success
++
++When execution succeeds, the record explains the exact mitigation that landed, the verification checks that passed, the residual risk, and the next bounded step. When execution is blocked, the record preserves the failure reason and states clearly that no change was applied.
++
+ ## Failure states
+ 
+ - `missing_evidence`: block the loop when verification or outcome claims cannot be backed by concrete evidence.
+@@ -61,4 +81,6 @@
+ - `defensiveIterationRecordSchema`
+ - `defensivePrioritizationSchema`
+ - `prioritizeDefensiveAction`
++- `defensiveExecutionRequestSchema`
++- `executeDefensiveIteration`
+ - `defensiveFailureStateSchema`
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+index 2671bfc1470bb9a33eb5486a7c11b606fb131ff5..316e1eb782174c7c2706c14a3f92f42468c9948c
+--- a/packages/contracts/src/index.test.ts
++++ b/packages/contracts/src/index.test.ts
+@@ -7,6 +7,7 @@
+   defensiveIterationRecordSchema,
+   defensiveLoopContract,
+   defensiveLoopStages,
++  executeDefensiveIteration,
+   prioritizeDefensiveAction,
+   demoResponseSchema,
+   healthResponseSchema,
+@@ -429,4 +430,188 @@
+ 
+     expect(result.success).toBe(false);
+   });
++
++  it("executes one bounded hardening iteration with focused verification evidence", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-003",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.93,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Restricted the admin ingress CIDR allowlist to approved office and VPN ranges.",
++        scopeRef: "admin-ingress.yaml allowlist policy",
++        rolloutRef: "git diff apps/infra/admin-ingress.yaml",
++        reversibleIntent: true,
++        affectsMultipleComponents: false,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "The admin route is blocked from untrusted sources and still available to approved operators.",
++        checks: ["Curl from an untrusted IP is denied", "Smoke test from the approved VPN range succeeds"]
++      },
++      evidence: [
++        {
++          type: "config_diff",
++          summary: "Ingress allowlist narrowed to the approved source CIDRs.",
++          reference: "git diff apps/infra/admin-ingress.yaml"
++        },
++        {
++          type: "test_result",
++          summary: "Verification probes confirm the route now blocks untrusted access.",
++          reference: "probe-log-2026-04-13"
++        }
++      ],
++      outcomeSummary: "The ingress rule changed in one place and verification confirmed the route only serves approved sources."
++    });
++
++    expect(result.status).toBe("completed");
++    expect(result.verification.outcome).toBe("verified");
++    expect(result.chosenAction.type).toBe("access_restriction");
++    expect(result.evidence).toHaveLength(2);
++    expect(result.recommendedNextStep.continueLoop).toBe(true);
++    expect(result.handoffSummary).toContain("completed");
++  });
++
++  it("blocks an unsafe change that broadens beyond one reversible mitigation", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-004",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.93,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Updated ingress, rotated certificates, and changed admin authentication in one rollout.",
++        scopeRef: "admin-ingress.yaml and auth-service deployment",
++        rolloutRef: "change-request-42",
++        reversibleIntent: false,
++        affectsMultipleComponents: true,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "Every admin control is tightened.",
++        checks: ["Review rollout plan"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The proposed rollout includes multiple services and no rollback path.",
++          reference: "change-request-42"
++        }
++      ],
++      outcomeSummary: "Execution stopped before rollout."
++    });
++
++    expect(result.status).toBe("blocked");
++    expect(result.failure?.reason).toBe("unsafe_action");
++    expect(result.verification.outcome).toBe("blocked");
++    expect(result.handoffSummary).toContain("No change was applied");
++  });
++
++  it("blocks execution when the selected action is not high-confidence enough for autonomous mitigation", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-005",
++      input: {
++        findings: [
++          {
++            id: "finding-2",
++            title: "Suspicious privileged path",
++            severity: "high",
++            confidence: 0.6,
++            summary: "The path may allow privilege escalation.",
++            evidence: "Single unverified report",
++            source: "scanner"
++          }
++        ],
++        target: {
++          kind: "application",
++          id: "app-1",
++          displayName: "Operator Portal"
++        },
++        assetContext: {
++          assetId: "asset-2",
++          assetName: "Operator Portal",
++          criticality: "high",
++          internetExposed: true,
++          containsSensitiveData: false,
++          notes: []
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Planned to disable the suspected path.",
++        scopeRef: "operator-routing config",
++        rolloutRef: "change-request-99",
++        reversibleIntent: true,
++        affectsMultipleComponents: false,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "The path no longer responds.",
++        checks: ["Capture a reproducible failing request first"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The issue is still only supported by a single unverified report.",
++          reference: "finding-2"
++        }
++      ],
++      outcomeSummary: "Execution stopped before rollout."
++    });
++
++    expect(result.status).toBe("blocked");
++    expect(result.failure?.reason).toBe("ambiguous_scope");
++    expect(result.recommendedNextStep.summary).toContain("stronger evidence");
++  });
+ });
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index fa36a1a0823dc8d3f553ac141c722b3ab1362e48..91a14e66164182da15bf24e15fd89e75765f4c70
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -558,6 +558,33 @@
+ });
+ export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
+ 
++export const defensiveMitigationChangeSchema = z.object({
++  summary: z.string().min(1),
++  scopeRef: z.string().min(1),
++  rolloutRef: z.string().min(1),
++  reversibleIntent: z.boolean(),
++  affectsMultipleComponents: z.boolean().default(false),
++  destructive: z.boolean().default(false)
++});
++export type DefensiveMitigationChange = z.infer<typeof defensiveMitigationChangeSchema>;
++
++export const defensiveVerificationPlanSchema = z.object({
++  successCriteria: z.string().min(1),
++  checks: z.array(z.string().min(1)).min(1).max(5)
++});
++export type DefensiveVerificationPlan = z.infer<typeof defensiveVerificationPlanSchema>;
++
++export const defensiveExecutionRequestSchema = z.object({
++  iterationId: z.string().min(1),
++  input: defensiveIterationInputSchema,
++  observations: z.array(defensiveIterationObservationSchema).default([]),
++  change: defensiveMitigationChangeSchema,
++  verificationPlan: defensiveVerificationPlanSchema,
++  evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
++  outcomeSummary: z.string().min(1)
++});
++export type DefensiveExecutionRequest = z.infer<typeof defensiveExecutionRequestSchema>;
++
+ export const defensivePrioritizationSourceKindSchema = z.enum(["finding", "observation"]);
+ export type DefensivePrioritizationSourceKind = z.infer<typeof defensivePrioritizationSourceKindSchema>;
+ 
+@@ -898,6 +925,115 @@
+   return `Not selected because its weighted priority score (${candidate.priorityScore}) is lower than the selected action (${selected.priorityScore}).`;
+ };
+ 
++const matchesSelectedScope = (
++  selectedAction: DefensiveChosenAction,
++  change: DefensiveMitigationChange
++): boolean => {
++  const selectedScope = selectedAction.scope.toLowerCase();
++  const changeScope = `${change.summary} ${change.scopeRef}`.toLowerCase();
++
++  if (selectedScope.includes("access boundary")) {
++    return /(route|listener|policy|firewall|ingress|network|cidr|allowlist)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("configuration")) {
++    return /(config|setting|flag|policy|env)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("dependency") || selectedScope.includes("package")) {
++    return /(package|dependency|version|image)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("logging") || selectedScope.includes("alerting")) {
++    return /(log|alert|telemetry|monitor)/.test(changeScope);
++  }
++
++  return true;
++};
++
++const deriveCompletionResidualRisk = (
++  prioritization: DefensivePrioritization,
++  input: DefensiveIterationInput
++): DefensiveResidualRisk => {
++  const highestDeferredSeverity = prioritization.followUp
++    .map((item) => {
++      const finding = input.findings.find((candidate) => candidate.id === item.sourceId);
++
++      return finding?.severity ?? "info";
++    })
++    .sort((left, right) => severityOrder[right] - severityOrder[left])[0];
++
++  const baseLevel = input.assetContext.internetExposed && prioritization.selectedAction.action.type === "access_restriction"
++    ? "medium"
++    : "low";
++  const level = highestDeferredSeverity && severityOrder[highestDeferredSeverity] > severityOrder[baseLevel]
++    ? highestDeferredSeverity
++    : baseLevel;
++
++  return defensiveResidualRiskSchema.parse({
++    level,
++    summary: prioritization.followUp.length > 0
++      ? `The selected mitigation completed, but ${prioritization.followUp.length} deferred item${prioritization.followUp.length === 1 ? "" : "s"} still require stronger evidence.`
++      : "The selected mitigation completed and no additional deferred issues were introduced in this iteration.",
++    remainingFindingIds: prioritization.followUp.map((item) => item.sourceId),
++    needsHumanReview: prioritization.followUp.length > 0
++  });
++};
++
++const buildCompletedNextStep = (prioritization: DefensivePrioritization): DefensiveNextStep => {
++  if (prioritization.followUp.length > 0) {
++    return defensiveNextStepSchema.parse({
++      summary: "Validate the deferred item with stronger evidence before expanding the hardening scope.",
++      rationale: "The current iteration applied one safe mitigation and should not broaden scope until the follow-up evidence improves.",
++      continueLoop: true
++    });
++  }
++
++  return defensiveNextStepSchema.parse({
++    summary: "Review the next-highest ranked defensive action before starting another bounded iteration.",
++    rationale: "Only one mitigation should land per iteration, even when other candidate actions remain.",
++    continueLoop: true
++  });
++};
++
++const blockDefensiveIteration = (
++  request: DefensiveExecutionRequest,
++  prioritization: DefensivePrioritization,
++  failure: DefensiveFailureState
++): DefensiveIterationRecord => {
++  const selectedAction = prioritization.selectedAction.action;
++
++  return defensiveIterationRecordSchema.parse({
++    iterationId: request.iterationId,
++    stages: defensiveLoopStages,
++    status: "blocked",
++    input: request.input,
++    prioritization,
++    chosenAction: selectedAction,
++    verification: {
++      outcome: "blocked",
++      summary: failure.summary,
++      checks: request.verificationPlan.checks
++    },
++    evidence: request.evidence,
++    residualRisk: {
++      level: request.input.findings
++        .map((finding) => finding.severity)
++        .sort((left, right) => severityOrder[right] - severityOrder[left])[0] ?? "info",
++      summary: "The hardening iteration was blocked, so the selected risk remains in place until scope or evidence improves.",
++      remainingFindingIds: prioritization.selectedAction.sourceIds,
++      needsHumanReview: true
++    },
++    recommendedNextStep: {
++      summary: failure.operatorAction,
++      rationale: failure.summary,
++      continueLoop: false
++    },
++    handoffSummary: `${failure.summary} No change was applied.`,
++    failure
++  });
++};
++
+ export const prioritizeDefensiveAction = (
+   rawInput: DefensivePrioritizationInput
+ ): DefensivePrioritization => {
+@@ -1006,6 +1142,79 @@
+   });
+ };
+ 
++export const executeDefensiveIteration = (
++  rawRequest: DefensiveExecutionRequest
++): DefensiveIterationRecord => {
++  const request = defensiveExecutionRequestSchema.parse(rawRequest);
++  const prioritization = prioritizeDefensiveAction({
++    findings: request.input.findings,
++    observations: request.observations,
++    target: request.input.target,
++    assetContext: request.input.assetContext,
++    priorIteration: request.input.priorIteration
++  });
++  const selectedAction = prioritization.selectedAction.action;
++
++  if (prioritization.selectedAction.confidenceDisposition !== "confirmed_risk") {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "ambiguous_scope",
++      blockedStage: "act",
++      summary: "The selected action is not supported by high-confidence evidence, so autonomous hardening is blocked.",
++      operatorAction: "Reproduce the finding with stronger evidence before applying any mitigation."
++    });
++  }
++
++  if (!selectedAction.bounded || request.change.affectsMultipleComponents || request.change.destructive || !request.change.reversibleIntent) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "unsafe_action",
++      blockedStage: "act",
++      summary: "The proposed change is broader than one reversible mitigation, so the iteration stops before execution.",
++      operatorAction: "Reduce the change to one reversible control update with a clear rollback path."
++    });
++  }
++
++  if (!matchesSelectedScope(selectedAction, request.change)) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "ambiguous_scope",
++      blockedStage: "act",
++      summary: "The proposed change does not clearly match the selected action scope, so the iteration remains blocked.",
++      operatorAction: "Align the implementation to the selected mitigation scope before retrying."
++    });
++  }
++
++  const hasVerificationEvidence = request.evidence.some((artifact) => artifact.type === "test_result" || artifact.type === "command_output");
++
++  if (!hasVerificationEvidence) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "missing_evidence",
++      blockedStage: "verify",
++      summary: "Verification evidence is missing, so the loop cannot claim the mitigation completed safely.",
++      operatorAction: "Capture focused verification output for the selected mitigation before recording completion."
++    });
++  }
++
++  const residualRisk = deriveCompletionResidualRisk(prioritization, request.input);
++  const recommendedNextStep = buildCompletedNextStep(prioritization);
++
++  return defensiveIterationRecordSchema.parse({
++    iterationId: request.iterationId,
++    stages: defensiveLoopStages,
++    status: "completed",
++    input: request.input,
++    prioritization,
++    chosenAction: selectedAction,
++    verification: {
++      outcome: "verified",
++      summary: request.outcomeSummary,
++      checks: request.verificationPlan.checks
++    },
++    evidence: request.evidence,
++    residualRisk,
++    recommendedNextStep,
++    handoffSummary: `${request.change.summary} completed. ${recommendedNextStep.summary}`
++  });
++};
++
+ export const defensiveFailureReasonSchema = z.enum(["missing_evidence", "ambiguous_scope", "unsafe_action"]);
+ export type DefensiveFailureReason = z.infer<typeof defensiveFailureReasonSchema>;
+ 
+
+exec
+/bin/bash -lc "date '+%Y-%m-%d %H:%M:%S %Z'" in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+2026-04-13 00:59:13 CEST
+
+exec
+/bin/bash -lc 'git status --short' in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+ M .ralph/runs/run-20260413-004709-513536-iter-2.log
+
+exec
+/bin/bash -lc 'git show -s --format="%H%n%h %s" HEAD' in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+1bff66a192dc640a4e6aaf104e752c552bd58b84
+1bff66a1 Execute bounded hardening iteration
+
+diff --git a/docs/defensive-loop-contract.md b/docs/defensive-loop-contract.md
+index 77388d59f24777a65cf72190e6accfa5ed74fd66..aa13ea82bef0e055013d646cb94d8ac117787940
+--- a/docs/defensive-loop-contract.md
++++ b/docs/defensive-loop-contract.md
+@@ -46,6 +46,26 @@
+ 
+ Low-confidence or ambiguous inputs are moved to follow-up instead of being prioritized as confirmed remediation work. If every input is low-confidence, the single selected action becomes bounded manual investigation rather than an autonomous production change.
+ 
++## Bounded hardening execution
++
++The `act` stage applies exactly one reversible mitigation for the selected action. The current shared contract enforces this with an execution request that includes:
++
++- one `change` record with a single `scopeRef` and `rolloutRef`
++- `reversibleIntent: true`
++- `affectsMultipleComponents: false`
++- `destructive: false`
++- a focused `verificationPlan` with explicit checks
++- reviewable `evidence` that includes verification output
++
++The loop blocks instead of executing when:
++
++- the selected action is low-confidence and only suitable for manual investigation
++- the proposed implementation broadens beyond one component or lacks a rollback path
++- the proposed change does not match the selected mitigation scope
++- verification evidence is missing, so the loop cannot claim success
++
++When execution succeeds, the record explains the exact mitigation that landed, the verification checks that passed, the residual risk, and the next bounded step. When execution is blocked, the record preserves the failure reason and states clearly that no change was applied.
++
+ ## Failure states
+ 
+ - `missing_evidence`: block the loop when verification or outcome claims cannot be backed by concrete evidence.
+@@ -61,4 +81,6 @@
+ - `defensiveIterationRecordSchema`
+ - `defensivePrioritizationSchema`
+ - `prioritizeDefensiveAction`
++- `defensiveExecutionRequestSchema`
++- `executeDefensiveIteration`
+ - `defensiveFailureStateSchema`
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+index 2671bfc1470bb9a33eb5486a7c11b606fb131ff5..316e1eb782174c7c2706c14a3f92f42468c9948c
+--- a/packages/contracts/src/index.test.ts
++++ b/packages/contracts/src/index.test.ts
+@@ -7,6 +7,7 @@
+   defensiveIterationRecordSchema,
+   defensiveLoopContract,
+   defensiveLoopStages,
++  executeDefensiveIteration,
+   prioritizeDefensiveAction,
+   demoResponseSchema,
+   healthResponseSchema,
+@@ -429,4 +430,188 @@
+ 
+     expect(result.success).toBe(false);
+   });
++
++  it("executes one bounded hardening iteration with focused verification evidence", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-003",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.93,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Restricted the admin ingress CIDR allowlist to approved office and VPN ranges.",
++        scopeRef: "admin-ingress.yaml allowlist policy",
++        rolloutRef: "git diff apps/infra/admin-ingress.yaml",
++        reversibleIntent: true,
++        affectsMultipleComponents: false,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "The admin route is blocked from untrusted sources and still available to approved operators.",
++        checks: ["Curl from an untrusted IP is denied", "Smoke test from the approved VPN range succeeds"]
++      },
++      evidence: [
++        {
++          type: "config_diff",
++          summary: "Ingress allowlist narrowed to the approved source CIDRs.",
++          reference: "git diff apps/infra/admin-ingress.yaml"
++        },
++        {
++          type: "test_result",
++          summary: "Verification probes confirm the route now blocks untrusted access.",
++          reference: "probe-log-2026-04-13"
++        }
++      ],
++      outcomeSummary: "The ingress rule changed in one place and verification confirmed the route only serves approved sources."
++    });
++
++    expect(result.status).toBe("completed");
++    expect(result.verification.outcome).toBe("verified");
++    expect(result.chosenAction.type).toBe("access_restriction");
++    expect(result.evidence).toHaveLength(2);
++    expect(result.recommendedNextStep.continueLoop).toBe(true);
++    expect(result.handoffSummary).toContain("completed");
++  });
++
++  it("blocks an unsafe change that broadens beyond one reversible mitigation", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-004",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.93,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Updated ingress, rotated certificates, and changed admin authentication in one rollout.",
++        scopeRef: "admin-ingress.yaml and auth-service deployment",
++        rolloutRef: "change-request-42",
++        reversibleIntent: false,
++        affectsMultipleComponents: true,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "Every admin control is tightened.",
++        checks: ["Review rollout plan"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The proposed rollout includes multiple services and no rollback path.",
++          reference: "change-request-42"
++        }
++      ],
++      outcomeSummary: "Execution stopped before rollout."
++    });
++
++    expect(result.status).toBe("blocked");
++    expect(result.failure?.reason).toBe("unsafe_action");
++    expect(result.verification.outcome).toBe("blocked");
++    expect(result.handoffSummary).toContain("No change was applied");
++  });
++
++  it("blocks execution when the selected action is not high-confidence enough for autonomous mitigation", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-005",
++      input: {
++        findings: [
++          {
++            id: "finding-2",
++            title: "Suspicious privileged path",
++            severity: "high",
++            confidence: 0.6,
++            summary: "The path may allow privilege escalation.",
++            evidence: "Single unverified report",
++            source: "scanner"
++          }
++        ],
++        target: {
++          kind: "application",
++          id: "app-1",
++          displayName: "Operator Portal"
++        },
++        assetContext: {
++          assetId: "asset-2",
++          assetName: "Operator Portal",
++          criticality: "high",
++          internetExposed: true,
++          containsSensitiveData: false,
++          notes: []
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Planned to disable the suspected path.",
++        scopeRef: "operator-routing config",
++        rolloutRef: "change-request-99",
++        reversibleIntent: true,
++        affectsMultipleComponents: false,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "The path no longer responds.",
++        checks: ["Capture a reproducible failing request first"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The issue is still only supported by a single unverified report.",
++          reference: "finding-2"
++        }
++      ],
++      outcomeSummary: "Execution stopped before rollout."
++    });
++
++    expect(result.status).toBe("blocked");
++    expect(result.failure?.reason).toBe("ambiguous_scope");
++    expect(result.recommendedNextStep.summary).toContain("stronger evidence");
++  });
+ });
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index fa36a1a0823dc8d3f553ac141c722b3ab1362e48..91a14e66164182da15bf24e15fd89e75765f4c70
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -558,6 +558,33 @@
+ });
+ export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
+ 
++export const defensiveMitigationChangeSchema = z.object({
++  summary: z.string().min(1),
++  scopeRef: z.string().min(1),
++  rolloutRef: z.string().min(1),
++  reversibleIntent: z.boolean(),
++  affectsMultipleComponents: z.boolean().default(false),
++  destructive: z.boolean().default(false)
++});
++export type DefensiveMitigationChange = z.infer<typeof defensiveMitigationChangeSchema>;
++
++export const defensiveVerificationPlanSchema = z.object({
++  successCriteria: z.string().min(1),
++  checks: z.array(z.string().min(1)).min(1).max(5)
++});
++export type DefensiveVerificationPlan = z.infer<typeof defensiveVerificationPlanSchema>;
++
++export const defensiveExecutionRequestSchema = z.object({
++  iterationId: z.string().min(1),
++  input: defensiveIterationInputSchema,
++  observations: z.array(defensiveIterationObservationSchema).default([]),
++  change: defensiveMitigationChangeSchema,
++  verificationPlan: defensiveVerificationPlanSchema,
++  evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
++  outcomeSummary: z.string().min(1)
++});
++export type DefensiveExecutionRequest = z.infer<typeof defensiveExecutionRequestSchema>;
++
+ export const defensivePrioritizationSourceKindSchema = z.enum(["finding", "observation"]);
+ export type DefensivePrioritizationSourceKind = z.infer<typeof defensivePrioritizationSourceKindSchema>;
+ 
+@@ -898,6 +925,115 @@
+   return `Not selected because its weighted priority score (${candidate.priorityScore}) is lower than the selected action (${selected.priorityScore}).`;
+ };
+ 
++const matchesSelectedScope = (
++  selectedAction: DefensiveChosenAction,
++  change: DefensiveMitigationChange
++): boolean => {
++  const selectedScope = selectedAction.scope.toLowerCase();
++  const changeScope = `${change.summary} ${change.scopeRef}`.toLowerCase();
++
++  if (selectedScope.includes("access boundary")) {
++    return /(route|listener|policy|firewall|ingress|network|cidr|allowlist)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("configuration")) {
++    return /(config|setting|flag|policy|env)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("dependency") || selectedScope.includes("package")) {
++    return /(package|dependency|version|image)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("logging") || selectedScope.includes("alerting")) {
++    return /(log|alert|telemetry|monitor)/.test(changeScope);
++  }
++
++  return true;
++};
++
++const deriveCompletionResidualRisk = (
++  prioritization: DefensivePrioritization,
++  input: DefensiveIterationInput
++): DefensiveResidualRisk => {
++  const highestDeferredSeverity = prioritization.followUp
++    .map((item) => {
++      const finding = input.findings.find((candidate) => candidate.id === item.sourceId);
++
++      return finding?.severity ?? "info";
++    })
++    .sort((left, right) => severityOrder[right] - severityOrder[left])[0];
++
++  const baseLevel = input.assetContext.internetExposed && prioritization.selectedAction.action.type === "access_restriction"
++    ? "medium"
++    : "low";
++  const level = highestDeferredSeverity && severityOrder[highestDeferredSeverity] > severityOrder[baseLevel]
++    ? highestDeferredSeverity
++    : baseLevel;
++
++  return defensiveResidualRiskSchema.parse({
++    level,
++    summary: prioritization.followUp.length > 0
++      ? `The selected mitigation completed, but ${prioritization.followUp.length} deferred item${prioritization.followUp.length === 1 ? "" : "s"} still require stronger evidence.`
++      : "The selected mitigation completed and no additional deferred issues were introduced in this iteration.",
++    remainingFindingIds: prioritization.followUp.map((item) => item.sourceId),
++    needsHumanReview: prioritization.followUp.length > 0
++  });
++};
++
++const buildCompletedNextStep = (prioritization: DefensivePrioritization): DefensiveNextStep => {
++  if (prioritization.followUp.length > 0) {
++    return defensiveNextStepSchema.parse({
++      summary: "Validate the deferred item with stronger evidence before expanding the hardening scope.",
++      rationale: "The current iteration applied one safe mitigation and should not broaden scope until the follow-up evidence improves.",
++      continueLoop: true
++    });
++  }
++
++  return defensiveNextStepSchema.parse({
++    summary: "Review the next-highest ranked defensive action before starting another bounded iteration.",
++    rationale: "Only one mitigation should land per iteration, even when other candidate actions remain.",
++    continueLoop: true
++  });
++};
++
++const blockDefensiveIteration = (
++  request: DefensiveExecutionRequest,
++  prioritization: DefensivePrioritization,
++  failure: DefensiveFailureState
++): DefensiveIterationRecord => {
++  const selectedAction = prioritization.selectedAction.action;
++
++  return defensiveIterationRecordSchema.parse({
++    iterationId: request.iterationId,
++    stages: defensiveLoopStages,
++    status: "blocked",
++    input: request.input,
++    prioritization,
++    chosenAction: selectedAction,
++    verification: {
++      outcome: "blocked",
++      summary: failure.summary,
++      checks: request.verificationPlan.checks
++    },
++    evidence: request.evidence,
++    residualRisk: {
++      level: request.input.findings
++        .map((finding) => finding.severity)
++        .sort((left, right) => severityOrder[right] - severityOrder[left])[0] ?? "info",
++      summary: "The hardening iteration was blocked, so the selected risk remains in place until scope or evidence improves.",
++      remainingFindingIds: prioritization.selectedAction.sourceIds,
++      needsHumanReview: true
++    },
++    recommendedNextStep: {
++      summary: failure.operatorAction,
++      rationale: failure.summary,
++      continueLoop: false
++    },
++    handoffSummary: `${failure.summary} No change was applied.`,
++    failure
++  });
++};
++
+ export const prioritizeDefensiveAction = (
+   rawInput: DefensivePrioritizationInput
+ ): DefensivePrioritization => {
+@@ -1006,6 +1142,79 @@
+   });
+ };
+ 
++export const executeDefensiveIteration = (
++  rawRequest: DefensiveExecutionRequest
++): DefensiveIterationRecord => {
++  const request = defensiveExecutionRequestSchema.parse(rawRequest);
++  const prioritization = prioritizeDefensiveAction({
++    findings: request.input.findings,
++    observations: request.observations,
++    target: request.input.target,
++    assetContext: request.input.assetContext,
++    priorIteration: request.input.priorIteration
++  });
++  const selectedAction = prioritization.selectedAction.action;
++
++  if (prioritization.selectedAction.confidenceDisposition !== "confirmed_risk") {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "ambiguous_scope",
++      blockedStage: "act",
++      summary: "The selected action is not supported by high-confidence evidence, so autonomous hardening is blocked.",
++      operatorAction: "Reproduce the finding with stronger evidence before applying any mitigation."
++    });
++  }
++
++  if (!selectedAction.bounded || request.change.affectsMultipleComponents || request.change.destructive || !request.change.reversibleIntent) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "unsafe_action",
++      blockedStage: "act",
++      summary: "The proposed change is broader than one reversible mitigation, so the iteration stops before execution.",
++      operatorAction: "Reduce the change to one reversible control update with a clear rollback path."
++    });
++  }
++
++  if (!matchesSelectedScope(selectedAction, request.change)) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "ambiguous_scope",
++      blockedStage: "act",
++      summary: "The proposed change does not clearly match the selected action scope, so the iteration remains blocked.",
++      operatorAction: "Align the implementation to the selected mitigation scope before retrying."
++    });
++  }
++
++  const hasVerificationEvidence = request.evidence.some((artifact) => artifact.type === "test_result" || artifact.type === "command_output");
++
++  if (!hasVerificationEvidence) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "missing_evidence",
++      blockedStage: "verify",
++      summary: "Verification evidence is missing, so the loop cannot claim the mitigation completed safely.",
++      operatorAction: "Capture focused verification output for the selected mitigation before recording completion."
++    });
++  }
++
++  const residualRisk = deriveCompletionResidualRisk(prioritization, request.input);
++  const recommendedNextStep = buildCompletedNextStep(prioritization);
++
++  return defensiveIterationRecordSchema.parse({
++    iterationId: request.iterationId,
++    stages: defensiveLoopStages,
++    status: "completed",
++    input: request.input,
++    prioritization,
++    chosenAction: selectedAction,
++    verification: {
++      outcome: "verified",
++      summary: request.outcomeSummary,
++      checks: request.verificationPlan.checks
++    },
++    evidence: request.evidence,
++    residualRisk,
++    recommendedNextStep,
++    handoffSummary: `${request.change.summary} completed. ${recommendedNextStep.summary}`
++  });
++};
++
+ export const defensiveFailureReasonSchema = z.enum(["missing_evidence", "ambiguous_scope", "unsafe_action"]);
+ export type DefensiveFailureReason = z.infer<typeof defensiveFailureReasonSchema>;
+ 
+
+apply patch
+patch: completed
+/home/nilwi971/projects/SynoSec-buildathon/.ralph/progress.md
+/home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-2.md
+diff --git a/.ralph/progress.md b/.ralph/progress.md
+index 904bcff86854d296464810192ef200e5140461e5..32332c7385ee4b6adee1cdc752ef0eeb915fa568
+--- a/.ralph/progress.md
++++ b/.ralph/progress.md
+@@ -5,6 +5,41 @@
+ - (add reusable patterns here)
+ 
+ ---
++## [2026-04-13 00:59:13 CEST] - S3: Execute one bounded hardening iteration
++Thread: 019d83e0-a12b-7421-80a6-13a4141127e6
++Run: 20260413-004709-513536 (iteration 2)
++Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-2.log
++Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-2.md
++- Guardrails reviewed: yes
++- No-commit run: false
++- Commit: 1bff66a1 Execute bounded hardening iteration
++- Post-commit status: `.ralph/runs/run-20260413-004709-513536-iter-2.log`
++- Verification:
++  - Command: `pnpm --filter @synosec/contracts test` -> PASS
++  - Command: `pnpm --filter @synosec/contracts build` -> PASS
++  - Command: `pnpm build` -> PASS
++  - Command: `pnpm test` -> PASS
++  - Command: `pnpm lint` -> FAIL (existing ESLint typed-lint issue in `apps/backend/src/generated/prisma/client.js`)
++- Files changed:
++  - .ralph/activity.log
++  - .ralph/progress.md
++  - .ralph/runs/run-20260413-004709-513536-iter-2.log
++  - .ralph/runs/run-20260413-004709-513536-iter-2.md
++  - docs/defensive-loop-contract.md
++  - packages/contracts/src/index.test.ts
++  - packages/contracts/src/index.ts
++- What was implemented
++- Added a bounded hardening execution contract that accepts one reversible mitigation, a focused verification plan, and reviewable evidence before marking an iteration complete.
++- Added deterministic blocking paths for low-confidence, ambiguous-scope, multi-component, destructive, or unverifiable actions so unsafe work is recorded instead of executed.
++- Added coverage for one successful mitigation and blocked unsafe or weak-evidence cases, and documented the execution rules for the buildathon demo.
++- **Learnings for future iterations:**
++  - Patterns discovered
++  - Extending the shared contracts package remains the fastest way to keep the loop logic deterministic and aligned across later backend or frontend integrations.
++  - Gotchas encountered
++  - Runner-managed logs can keep changing after a commit, so the bookkeeping commit needs to be the last repo write in the turn.
++  - Useful context
++  - The new execution helper treats manual-investigation selections as blocked hardening work, which preserves the single-mitigation scope required by this story.
++---
+ ## [2026-04-13 00:53:37 CEST] - S2: Prioritize defensive next action
+ Thread: 
+ Run: 20260413-004709-513536 (iteration 1)
+diff --git a/.ralph/runs/run-20260413-004709-513536-iter-2.md b/.ralph/runs/run-20260413-004709-513536-iter-2.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8185be5bdf8317a0dff7941f86391f3da590469b
+--- /dev/null
++++ b/.ralph/runs/run-20260413-004709-513536-iter-2.md
+@@ -0,0 +1,29 @@
++# Ralph Run Summary
++
++- Run ID: 20260413-004709-513536
++- Iteration: 2
++- Mode: build
++- Story: S3: Execute one bounded hardening iteration
++- Started: 2026-04-13 00:54:38
++- Ended: 2026-04-13 00:59:13
++- Status: success
++- Log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-2.log
++
++## Outcome
++
++- Added a shared execution helper that turns the prioritized action into one bounded hardening iteration record.
++- The execution contract only allows one reversible mitigation with focused verification evidence.
++- Unsafe, ambiguous, low-confidence, or unverifiable mitigations are blocked and recorded instead of executed.
++- The resulting iteration output remains human-reviewable with chosen action, evidence, residual risk, and next-step guidance.
++
++## Verification
++
++- `pnpm --filter @synosec/contracts test` -> PASS
++- `pnpm --filter @synosec/contracts build` -> PASS
++- `pnpm build` -> PASS
++- `pnpm test` -> PASS
++- `pnpm lint` -> FAIL (existing ESLint typed-lint issue on `apps/backend/src/generated/prisma/client.js`)
++
++## Story Commit
++
++- 1bff66a1 Execute bounded hardening iteration
+diff --git a/docs/defensive-loop-contract.md b/docs/defensive-loop-contract.md
+index 77388d59f24777a65cf72190e6accfa5ed74fd66..aa13ea82bef0e055013d646cb94d8ac117787940
+--- a/docs/defensive-loop-contract.md
++++ b/docs/defensive-loop-contract.md
+@@ -46,6 +46,26 @@
+ 
+ Low-confidence or ambiguous inputs are moved to follow-up instead of being prioritized as confirmed remediation work. If every input is low-confidence, the single selected action becomes bounded manual investigation rather than an autonomous production change.
+ 
++## Bounded hardening execution
++
++The `act` stage applies exactly one reversible mitigation for the selected action. The current shared contract enforces this with an execution request that includes:
++
++- one `change` record with a single `scopeRef` and `rolloutRef`
++- `reversibleIntent: true`
++- `affectsMultipleComponents: false`
++- `destructive: false`
++- a focused `verificationPlan` with explicit checks
++- reviewable `evidence` that includes verification output
++
++The loop blocks instead of executing when:
++
++- the selected action is low-confidence and only suitable for manual investigation
++- the proposed implementation broadens beyond one component or lacks a rollback path
++- the proposed change does not match the selected mitigation scope
++- verification evidence is missing, so the loop cannot claim success
++
++When execution succeeds, the record explains the exact mitigation that landed, the verification checks that passed, the residual risk, and the next bounded step. When execution is blocked, the record preserves the failure reason and states clearly that no change was applied.
++
+ ## Failure states
+ 
+ - `missing_evidence`: block the loop when verification or outcome claims cannot be backed by concrete evidence.
+@@ -61,4 +81,6 @@
+ - `defensiveIterationRecordSchema`
+ - `defensivePrioritizationSchema`
+ - `prioritizeDefensiveAction`
++- `defensiveExecutionRequestSchema`
++- `executeDefensiveIteration`
+ - `defensiveFailureStateSchema`
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+index 2671bfc1470bb9a33eb5486a7c11b606fb131ff5..316e1eb782174c7c2706c14a3f92f42468c9948c
+--- a/packages/contracts/src/index.test.ts
++++ b/packages/contracts/src/index.test.ts
+@@ -7,6 +7,7 @@
+   defensiveIterationRecordSchema,
+   defensiveLoopContract,
+   defensiveLoopStages,
++  executeDefensiveIteration,
+   prioritizeDefensiveAction,
+   demoResponseSchema,
+   healthResponseSchema,
+@@ -429,4 +430,188 @@
+ 
+     expect(result.success).toBe(false);
+   });
++
++  it("executes one bounded hardening iteration with focused verification evidence", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-003",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.93,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Restricted the admin ingress CIDR allowlist to approved office and VPN ranges.",
++        scopeRef: "admin-ingress.yaml allowlist policy",
++        rolloutRef: "git diff apps/infra/admin-ingress.yaml",
++        reversibleIntent: true,
++        affectsMultipleComponents: false,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "The admin route is blocked from untrusted sources and still available to approved operators.",
++        checks: ["Curl from an untrusted IP is denied", "Smoke test from the approved VPN range succeeds"]
++      },
++      evidence: [
++        {
++          type: "config_diff",
++          summary: "Ingress allowlist narrowed to the approved source CIDRs.",
++          reference: "git diff apps/infra/admin-ingress.yaml"
++        },
++        {
++          type: "test_result",
++          summary: "Verification probes confirm the route now blocks untrusted access.",
++          reference: "probe-log-2026-04-13"
++        }
++      ],
++      outcomeSummary: "The ingress rule changed in one place and verification confirmed the route only serves approved sources."
++    });
++
++    expect(result.status).toBe("completed");
++    expect(result.verification.outcome).toBe("verified");
++    expect(result.chosenAction.type).toBe("access_restriction");
++    expect(result.evidence).toHaveLength(2);
++    expect(result.recommendedNextStep.continueLoop).toBe(true);
++    expect(result.handoffSummary).toContain("completed");
++  });
++
++  it("blocks an unsafe change that broadens beyond one reversible mitigation", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-004",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.93,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Updated ingress, rotated certificates, and changed admin authentication in one rollout.",
++        scopeRef: "admin-ingress.yaml and auth-service deployment",
++        rolloutRef: "change-request-42",
++        reversibleIntent: false,
++        affectsMultipleComponents: true,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "Every admin control is tightened.",
++        checks: ["Review rollout plan"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The proposed rollout includes multiple services and no rollback path.",
++          reference: "change-request-42"
++        }
++      ],
++      outcomeSummary: "Execution stopped before rollout."
++    });
++
++    expect(result.status).toBe("blocked");
++    expect(result.failure?.reason).toBe("unsafe_action");
++    expect(result.verification.outcome).toBe("blocked");
++    expect(result.handoffSummary).toContain("No change was applied");
++  });
++
++  it("blocks execution when the selected action is not high-confidence enough for autonomous mitigation", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-005",
++      input: {
++        findings: [
++          {
++            id: "finding-2",
++            title: "Suspicious privileged path",
++            severity: "high",
++            confidence: 0.6,
++            summary: "The path may allow privilege escalation.",
++            evidence: "Single unverified report",
++            source: "scanner"
++          }
++        ],
++        target: {
++          kind: "application",
++          id: "app-1",
++          displayName: "Operator Portal"
++        },
++        assetContext: {
++          assetId: "asset-2",
++          assetName: "Operator Portal",
++          criticality: "high",
++          internetExposed: true,
++          containsSensitiveData: false,
++          notes: []
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Planned to disable the suspected path.",
++        scopeRef: "operator-routing config",
++        rolloutRef: "change-request-99",
++        reversibleIntent: true,
++        affectsMultipleComponents: false,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "The path no longer responds.",
++        checks: ["Capture a reproducible failing request first"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The issue is still only supported by a single unverified report.",
++          reference: "finding-2"
++        }
++      ],
++      outcomeSummary: "Execution stopped before rollout."
++    });
++
++    expect(result.status).toBe("blocked");
++    expect(result.failure?.reason).toBe("ambiguous_scope");
++    expect(result.recommendedNextStep.summary).toContain("stronger evidence");
++  });
+ });
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index fa36a1a0823dc8d3f553ac141c722b3ab1362e48..91a14e66164182da15bf24e15fd89e75765f4c70
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -558,6 +558,33 @@
+ });
+ export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
+ 
++export const defensiveMitigationChangeSchema = z.object({
++  summary: z.string().min(1),
++  scopeRef: z.string().min(1),
++  rolloutRef: z.string().min(1),
++  reversibleIntent: z.boolean(),
++  affectsMultipleComponents: z.boolean().default(false),
++  destructive: z.boolean().default(false)
++});
++export type DefensiveMitigationChange = z.infer<typeof defensiveMitigationChangeSchema>;
++
++export const defensiveVerificationPlanSchema = z.object({
++  successCriteria: z.string().min(1),
++  checks: z.array(z.string().min(1)).min(1).max(5)
++});
++export type DefensiveVerificationPlan = z.infer<typeof defensiveVerificationPlanSchema>;
++
++export const defensiveExecutionRequestSchema = z.object({
++  iterationId: z.string().min(1),
++  input: defensiveIterationInputSchema,
++  observations: z.array(defensiveIterationObservationSchema).default([]),
++  change: defensiveMitigationChangeSchema,
++  verificationPlan: defensiveVerificationPlanSchema,
++  evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
++  outcomeSummary: z.string().min(1)
++});
++export type DefensiveExecutionRequest = z.infer<typeof defensiveExecutionRequestSchema>;
++
+ export const defensivePrioritizationSourceKindSchema = z.enum(["finding", "observation"]);
+ export type DefensivePrioritizationSourceKind = z.infer<typeof defensivePrioritizationSourceKindSchema>;
+ 
+@@ -898,6 +925,115 @@
+   return `Not selected because its weighted priority score (${candidate.priorityScore}) is lower than the selected action (${selected.priorityScore}).`;
+ };
+ 
++const matchesSelectedScope = (
++  selectedAction: DefensiveChosenAction,
++  change: DefensiveMitigationChange
++): boolean => {
++  const selectedScope = selectedAction.scope.toLowerCase();
++  const changeScope = `${change.summary} ${change.scopeRef}`.toLowerCase();
++
++  if (selectedScope.includes("access boundary")) {
++    return /(route|listener|policy|firewall|ingress|network|cidr|allowlist)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("configuration")) {
++    return /(config|setting|flag|policy|env)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("dependency") || selectedScope.includes("package")) {
++    return /(package|dependency|version|image)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("logging") || selectedScope.includes("alerting")) {
++    return /(log|alert|telemetry|monitor)/.test(changeScope);
++  }
++
++  return true;
++};
++
++const deriveCompletionResidualRisk = (
++  prioritization: DefensivePrioritization,
++  input: DefensiveIterationInput
++): DefensiveResidualRisk => {
++  const highestDeferredSeverity = prioritization.followUp
++    .map((item) => {
++      const finding = input.findings.find((candidate) => candidate.id === item.sourceId);
++
++      return finding?.severity ?? "info";
++    })
++    .sort((left, right) => severityOrder[right] - severityOrder[left])[0];
++
++  const baseLevel = input.assetContext.internetExposed && prioritization.selectedAction.action.type === "access_restriction"
++    ? "medium"
++    : "low";
++  const level = highestDeferredSeverity && severityOrder[highestDeferredSeverity] > severityOrder[baseLevel]
++    ? highestDeferredSeverity
++    : baseLevel;
++
++  return defensiveResidualRiskSchema.parse({
++    level,
++    summary: prioritization.followUp.length > 0
++      ? `The selected mitigation completed, but ${prioritization.followUp.length} deferred item${prioritization.followUp.length === 1 ? "" : "s"} still require stronger evidence.`
++      : "The selected mitigation completed and no additional deferred issues were introduced in this iteration.",
++    remainingFindingIds: prioritization.followUp.map((item) => item.sourceId),
++    needsHumanReview: prioritization.followUp.length > 0
++  });
++};
++
++const buildCompletedNextStep = (prioritization: DefensivePrioritization): DefensiveNextStep => {
++  if (prioritization.followUp.length > 0) {
++    return defensiveNextStepSchema.parse({
++      summary: "Validate the deferred item with stronger evidence before expanding the hardening scope.",
++      rationale: "The current iteration applied one safe mitigation and should not broaden scope until the follow-up evidence improves.",
++      continueLoop: true
++    });
++  }
++
++  return defensiveNextStepSchema.parse({
++    summary: "Review the next-highest ranked defensive action before starting another bounded iteration.",
++    rationale: "Only one mitigation should land per iteration, even when other candidate actions remain.",
++    continueLoop: true
++  });
++};
++
++const blockDefensiveIteration = (
++  request: DefensiveExecutionRequest,
++  prioritization: DefensivePrioritization,
++  failure: DefensiveFailureState
++): DefensiveIterationRecord => {
++  const selectedAction = prioritization.selectedAction.action;
++
++  return defensiveIterationRecordSchema.parse({
++    iterationId: request.iterationId,
++    stages: defensiveLoopStages,
++    status: "blocked",
++    input: request.input,
++    prioritization,
++    chosenAction: selectedAction,
++    verification: {
++      outcome: "blocked",
++      summary: failure.summary,
++      checks: request.verificationPlan.checks
++    },
++    evidence: request.evidence,
++    residualRisk: {
++      level: request.input.findings
++        .map((finding) => finding.severity)
++        .sort((left, right) => severityOrder[right] - severityOrder[left])[0] ?? "info",
++      summary: "The hardening iteration was blocked, so the selected risk remains in place until scope or evidence improves.",
++      remainingFindingIds: prioritization.selectedAction.sourceIds,
++      needsHumanReview: true
++    },
++    recommendedNextStep: {
++      summary: failure.operatorAction,
++      rationale: failure.summary,
++      continueLoop: false
++    },
++    handoffSummary: `${failure.summary} No change was applied.`,
++    failure
++  });
++};
++
+ export const prioritizeDefensiveAction = (
+   rawInput: DefensivePrioritizationInput
+ ): DefensivePrioritization => {
+@@ -1006,6 +1142,79 @@
+   });
+ };
+ 
++export const executeDefensiveIteration = (
++  rawRequest: DefensiveExecutionRequest
++): DefensiveIterationRecord => {
++  const request = defensiveExecutionRequestSchema.parse(rawRequest);
++  const prioritization = prioritizeDefensiveAction({
++    findings: request.input.findings,
++    observations: request.observations,
++    target: request.input.target,
++    assetContext: request.input.assetContext,
++    priorIteration: request.input.priorIteration
++  });
++  const selectedAction = prioritization.selectedAction.action;
++
++  if (prioritization.selectedAction.confidenceDisposition !== "confirmed_risk") {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "ambiguous_scope",
++      blockedStage: "act",
++      summary: "The selected action is not supported by high-confidence evidence, so autonomous hardening is blocked.",
++      operatorAction: "Reproduce the finding with stronger evidence before applying any mitigation."
++    });
++  }
++
++  if (!selectedAction.bounded || request.change.affectsMultipleComponents || request.change.destructive || !request.change.reversibleIntent) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "unsafe_action",
++      blockedStage: "act",
++      summary: "The proposed change is broader than one reversible mitigation, so the iteration stops before execution.",
++      operatorAction: "Reduce the change to one reversible control update with a clear rollback path."
++    });
++  }
++
++  if (!matchesSelectedScope(selectedAction, request.change)) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "ambiguous_scope",
++      blockedStage: "act",
++      summary: "The proposed change does not clearly match the selected action scope, so the iteration remains blocked.",
++      operatorAction: "Align the implementation to the selected mitigation scope before retrying."
++    });
++  }
++
++  const hasVerificationEvidence = request.evidence.some((artifact) => artifact.type === "test_result" || artifact.type === "command_output");
++
++  if (!hasVerificationEvidence) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "missing_evidence",
++      blockedStage: "verify",
++      summary: "Verification evidence is missing, so the loop cannot claim the mitigation completed safely.",
++      operatorAction: "Capture focused verification output for the selected mitigation before recording completion."
++    });
++  }
++
++  const residualRisk = deriveCompletionResidualRisk(prioritization, request.input);
++  const recommendedNextStep = buildCompletedNextStep(prioritization);
++
++  return defensiveIterationRecordSchema.parse({
++    iterationId: request.iterationId,
++    stages: defensiveLoopStages,
++    status: "completed",
++    input: request.input,
++    prioritization,
++    chosenAction: selectedAction,
++    verification: {
++      outcome: "verified",
++      summary: request.outcomeSummary,
++      checks: request.verificationPlan.checks
++    },
++    evidence: request.evidence,
++    residualRisk,
++    recommendedNextStep,
++    handoffSummary: `${request.change.summary} completed. ${recommendedNextStep.summary}`
++  });
++};
++
+ export const defensiveFailureReasonSchema = z.enum(["missing_evidence", "ambiguous_scope", "unsafe_action"]);
+ export type DefensiveFailureReason = z.infer<typeof defensiveFailureReasonSchema>;
+ 
+
+diff --git a/.ralph/progress.md b/.ralph/progress.md
+index 904bcff86854d296464810192ef200e5140461e5..32332c7385ee4b6adee1cdc752ef0eeb915fa568
+--- a/.ralph/progress.md
++++ b/.ralph/progress.md
+@@ -5,6 +5,41 @@
+ - (add reusable patterns here)
+ 
+ ---
++## [2026-04-13 00:59:13 CEST] - S3: Execute one bounded hardening iteration
++Thread: 019d83e0-a12b-7421-80a6-13a4141127e6
++Run: 20260413-004709-513536 (iteration 2)
++Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-2.log
++Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-2.md
++- Guardrails reviewed: yes
++- No-commit run: false
++- Commit: 1bff66a1 Execute bounded hardening iteration
++- Post-commit status: `.ralph/runs/run-20260413-004709-513536-iter-2.log`
++- Verification:
++  - Command: `pnpm --filter @synosec/contracts test` -> PASS
++  - Command: `pnpm --filter @synosec/contracts build` -> PASS
++  - Command: `pnpm build` -> PASS
++  - Command: `pnpm test` -> PASS
++  - Command: `pnpm lint` -> FAIL (existing ESLint typed-lint issue in `apps/backend/src/generated/prisma/client.js`)
++- Files changed:
++  - .ralph/activity.log
++  - .ralph/progress.md
++  - .ralph/runs/run-20260413-004709-513536-iter-2.log
++  - .ralph/runs/run-20260413-004709-513536-iter-2.md
++  - docs/defensive-loop-contract.md
++  - packages/contracts/src/index.test.ts
++  - packages/contracts/src/index.ts
++- What was implemented
++- Added a bounded hardening execution contract that accepts one reversible mitigation, a focused verification plan, and reviewable evidence before marking an iteration complete.
++- Added deterministic blocking paths for low-confidence, ambiguous-scope, multi-component, destructive, or unverifiable actions so unsafe work is recorded instead of executed.
++- Added coverage for one successful mitigation and blocked unsafe or weak-evidence cases, and documented the execution rules for the buildathon demo.
++- **Learnings for future iterations:**
++  - Patterns discovered
++  - Extending the shared contracts package remains the fastest way to keep the loop logic deterministic and aligned across later backend or frontend integrations.
++  - Gotchas encountered
++  - Runner-managed logs can keep changing after a commit, so the bookkeeping commit needs to be the last repo write in the turn.
++  - Useful context
++  - The new execution helper treats manual-investigation selections as blocked hardening work, which preserves the single-mitigation scope required by this story.
++---
+ ## [2026-04-13 00:53:37 CEST] - S2: Prioritize defensive next action
+ Thread: 
+ Run: 20260413-004709-513536 (iteration 1)
+diff --git a/.ralph/runs/run-20260413-004709-513536-iter-2.md b/.ralph/runs/run-20260413-004709-513536-iter-2.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8185be5bdf8317a0dff7941f86391f3da590469b
+--- /dev/null
++++ b/.ralph/runs/run-20260413-004709-513536-iter-2.md
+@@ -0,0 +1,29 @@
++# Ralph Run Summary
++
++- Run ID: 20260413-004709-513536
++- Iteration: 2
++- Mode: build
++- Story: S3: Execute one bounded hardening iteration
++- Started: 2026-04-13 00:54:38
++- Ended: 2026-04-13 00:59:13
++- Status: success
++- Log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-2.log
++
++## Outcome
++
++- Added a shared execution helper that turns the prioritized action into one bounded hardening iteration record.
++- The execution contract only allows one reversible mitigation with focused verification evidence.
++- Unsafe, ambiguous, low-confidence, or unverifiable mitigations are blocked and recorded instead of executed.
++- The resulting iteration output remains human-reviewable with chosen action, evidence, residual risk, and next-step guidance.
++
++## Verification
++
++- `pnpm --filter @synosec/contracts test` -> PASS
++- `pnpm --filter @synosec/contracts build` -> PASS
++- `pnpm build` -> PASS
++- `pnpm test` -> PASS
++- `pnpm lint` -> FAIL (existing ESLint typed-lint issue on `apps/backend/src/generated/prisma/client.js`)
++
++## Story Commit
++
++- 1bff66a1 Execute bounded hardening iteration
+diff --git a/docs/defensive-loop-contract.md b/docs/defensive-loop-contract.md
+index 77388d59f24777a65cf72190e6accfa5ed74fd66..aa13ea82bef0e055013d646cb94d8ac117787940
+--- a/docs/defensive-loop-contract.md
++++ b/docs/defensive-loop-contract.md
+@@ -46,6 +46,26 @@
+ 
+ Low-confidence or ambiguous inputs are moved to follow-up instead of being prioritized as confirmed remediation work. If every input is low-confidence, the single selected action becomes bounded manual investigation rather than an autonomous production change.
+ 
++## Bounded hardening execution
++
++The `act` stage applies exactly one reversible mitigation for the selected action. The current shared contract enforces this with an execution request that includes:
++
++- one `change` record with a single `scopeRef` and `rolloutRef`
++- `reversibleIntent: true`
++- `affectsMultipleComponents: false`
++- `destructive: false`
++- a focused `verificationPlan` with explicit checks
++- reviewable `evidence` that includes verification output
++
++The loop blocks instead of executing when:
++
++- the selected action is low-confidence and only suitable for manual investigation
++- the proposed implementation broadens beyond one component or lacks a rollback path
++- the proposed change does not match the selected mitigation scope
++- verification evidence is missing, so the loop cannot claim success
++
++When execution succeeds, the record explains the exact mitigation that landed, the verification checks that passed, the residual risk, and the next bounded step. When execution is blocked, the record preserves the failure reason and states clearly that no change was applied.
++
+ ## Failure states
+ 
+ - `missing_evidence`: block the loop when verification or outcome claims cannot be backed by concrete evidence.
+@@ -61,4 +81,6 @@
+ - `defensiveIterationRecordSchema`
+ - `defensivePrioritizationSchema`
+ - `prioritizeDefensiveAction`
++- `defensiveExecutionRequestSchema`
++- `executeDefensiveIteration`
+ - `defensiveFailureStateSchema`
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+index 2671bfc1470bb9a33eb5486a7c11b606fb131ff5..316e1eb782174c7c2706c14a3f92f42468c9948c
+--- a/packages/contracts/src/index.test.ts
++++ b/packages/contracts/src/index.test.ts
+@@ -7,6 +7,7 @@
+   defensiveIterationRecordSchema,
+   defensiveLoopContract,
+   defensiveLoopStages,
++  executeDefensiveIteration,
+   prioritizeDefensiveAction,
+   demoResponseSchema,
+   healthResponseSchema,
+@@ -429,4 +430,188 @@
+ 
+     expect(result.success).toBe(false);
+   });
++
++  it("executes one bounded hardening iteration with focused verification evidence", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-003",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.93,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Restricted the admin ingress CIDR allowlist to approved office and VPN ranges.",
++        scopeRef: "admin-ingress.yaml allowlist policy",
++        rolloutRef: "git diff apps/infra/admin-ingress.yaml",
++        reversibleIntent: true,
++        affectsMultipleComponents: false,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "The admin route is blocked from untrusted sources and still available to approved operators.",
++        checks: ["Curl from an untrusted IP is denied", "Smoke test from the approved VPN range succeeds"]
++      },
++      evidence: [
++        {
++          type: "config_diff",
++          summary: "Ingress allowlist narrowed to the approved source CIDRs.",
++          reference: "git diff apps/infra/admin-ingress.yaml"
++        },
++        {
++          type: "test_result",
++          summary: "Verification probes confirm the route now blocks untrusted access.",
++          reference: "probe-log-2026-04-13"
++        }
++      ],
++      outcomeSummary: "The ingress rule changed in one place and verification confirmed the route only serves approved sources."
++    });
++
++    expect(result.status).toBe("completed");
++    expect(result.verification.outcome).toBe("verified");
++    expect(result.chosenAction.type).toBe("access_restriction");
++    expect(result.evidence).toHaveLength(2);
++    expect(result.recommendedNextStep.continueLoop).toBe(true);
++    expect(result.handoffSummary).toContain("completed");
++  });
++
++  it("blocks an unsafe change that broadens beyond one reversible mitigation", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-004",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.93,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Updated ingress, rotated certificates, and changed admin authentication in one rollout.",
++        scopeRef: "admin-ingress.yaml and auth-service deployment",
++        rolloutRef: "change-request-42",
++        reversibleIntent: false,
++        affectsMultipleComponents: true,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "Every admin control is tightened.",
++        checks: ["Review rollout plan"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The proposed rollout includes multiple services and no rollback path.",
++          reference: "change-request-42"
++        }
++      ],
++      outcomeSummary: "Execution stopped before rollout."
++    });
++
++    expect(result.status).toBe("blocked");
++    expect(result.failure?.reason).toBe("unsafe_action");
++    expect(result.verification.outcome).toBe("blocked");
++    expect(result.handoffSummary).toContain("No change was applied");
++  });
++
++  it("blocks execution when the selected action is not high-confidence enough for autonomous mitigation", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-005",
++      input: {
++        findings: [
++          {
++            id: "finding-2",
++            title: "Suspicious privileged path",
++            severity: "high",
++            confidence: 0.6,
++            summary: "The path may allow privilege escalation.",
++            evidence: "Single unverified report",
++            source: "scanner"
++          }
++        ],
++        target: {
++          kind: "application",
++          id: "app-1",
++          displayName: "Operator Portal"
++        },
++        assetContext: {
++          assetId: "asset-2",
++          assetName: "Operator Portal",
++          criticality: "high",
++          internetExposed: true,
++          containsSensitiveData: false,
++          notes: []
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Planned to disable the suspected path.",
++        scopeRef: "operator-routing config",
++        rolloutRef: "change-request-99",
++        reversibleIntent: true,
++        affectsMultipleComponents: false,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "The path no longer responds.",
++        checks: ["Capture a reproducible failing request first"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The issue is still only supported by a single unverified report.",
++          reference: "finding-2"
++        }
++      ],
++      outcomeSummary: "Execution stopped before rollout."
++    });
++
++    expect(result.status).toBe("blocked");
++    expect(result.failure?.reason).toBe("ambiguous_scope");
++    expect(result.recommendedNextStep.summary).toContain("stronger evidence");
++  });
+ });
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index fa36a1a0823dc8d3f553ac141c722b3ab1362e48..91a14e66164182da15bf24e15fd89e75765f4c70
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -558,6 +558,33 @@
+ });
+ export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
+ 
++export const defensiveMitigationChangeSchema = z.object({
++  summary: z.string().min(1),
++  scopeRef: z.string().min(1),
++  rolloutRef: z.string().min(1),
++  reversibleIntent: z.boolean(),
++  affectsMultipleComponents: z.boolean().default(false),
++  destructive: z.boolean().default(false)
++});
++export type DefensiveMitigationChange = z.infer<typeof defensiveMitigationChangeSchema>;
++
++export const defensiveVerificationPlanSchema = z.object({
++  successCriteria: z.string().min(1),
++  checks: z.array(z.string().min(1)).min(1).max(5)
++});
++export type DefensiveVerificationPlan = z.infer<typeof defensiveVerificationPlanSchema>;
++
++export const defensiveExecutionRequestSchema = z.object({
++  iterationId: z.string().min(1),
++  input: defensiveIterationInputSchema,
++  observations: z.array(defensiveIterationObservationSchema).default([]),
++  change: defensiveMitigationChangeSchema,
++  verificationPlan: defensiveVerificationPlanSchema,
++  evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
++  outcomeSummary: z.string().min(1)
++});
++export type DefensiveExecutionRequest = z.infer<typeof defensiveExecutionRequestSchema>;
++
+ export const defensivePrioritizationSourceKindSchema = z.enum(["finding", "observation"]);
+ export type DefensivePrioritizationSourceKind = z.infer<typeof defensivePrioritizationSourceKindSchema>;
+ 
+@@ -898,6 +925,115 @@
+   return `Not selected because its weighted priority score (${candidate.priorityScore}) is lower than the selected action (${selected.priorityScore}).`;
+ };
+ 
++const matchesSelectedScope = (
++  selectedAction: DefensiveChosenAction,
++  change: DefensiveMitigationChange
++): boolean => {
++  const selectedScope = selectedAction.scope.toLowerCase();
++  const changeScope = `${change.summary} ${change.scopeRef}`.toLowerCase();
++
++  if (selectedScope.includes("access boundary")) {
++    return /(route|listener|policy|firewall|ingress|network|cidr|allowlist)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("configuration")) {
++    return /(config|setting|flag|policy|env)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("dependency") || selectedScope.includes("package")) {
++    return /(package|dependency|version|image)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("logging") || selectedScope.includes("alerting")) {
++    return /(log|alert|telemetry|monitor)/.test(changeScope);
++  }
++
++  return true;
++};
++
++const deriveCompletionResidualRisk = (
++  prioritization: DefensivePrioritization,
++  input: DefensiveIterationInput
++): DefensiveResidualRisk => {
++  const highestDeferredSeverity = prioritization.followUp
++    .map((item) => {
++      const finding = input.findings.find((candidate) => candidate.id === item.sourceId);
++
++      return finding?.severity ?? "info";
++    })
++    .sort((left, right) => severityOrder[right] - severityOrder[left])[0];
++
++  const baseLevel = input.assetContext.internetExposed && prioritization.selectedAction.action.type === "access_restriction"
++    ? "medium"
++    : "low";
++  const level = highestDeferredSeverity && severityOrder[highestDeferredSeverity] > severityOrder[baseLevel]
++    ? highestDeferredSeverity
++    : baseLevel;
++
++  return defensiveResidualRiskSchema.parse({
++    level,
++    summary: prioritization.followUp.length > 0
++      ? `The selected mitigation completed, but ${prioritization.followUp.length} deferred item${prioritization.followUp.length === 1 ? "" : "s"} still require stronger evidence.`
++      : "The selected mitigation completed and no additional deferred issues were introduced in this iteration.",
++    remainingFindingIds: prioritization.followUp.map((item) => item.sourceId),
++    needsHumanReview: prioritization.followUp.length > 0
++  });
++};
++
++const buildCompletedNextStep = (prioritization: DefensivePrioritization): DefensiveNextStep => {
++  if (prioritization.followUp.length > 0) {
++    return defensiveNextStepSchema.parse({
++      summary: "Validate the deferred item with stronger evidence before expanding the hardening scope.",
++      rationale: "The current iteration applied one safe mitigation and should not broaden scope until the follow-up evidence improves.",
++      continueLoop: true
++    });
++  }
++
++  return defensiveNextStepSchema.parse({
++    summary: "Review the next-highest ranked defensive action before starting another bounded iteration.",
++    rationale: "Only one mitigation should land per iteration, even when other candidate actions remain.",
++    continueLoop: true
++  });
++};
++
++const blockDefensiveIteration = (
++  request: DefensiveExecutionRequest,
++  prioritization: DefensivePrioritization,
++  failure: DefensiveFailureState
++): DefensiveIterationRecord => {
++  const selectedAction = prioritization.selectedAction.action;
++
++  return defensiveIterationRecordSchema.parse({
++    iterationId: request.iterationId,
++    stages: defensiveLoopStages,
++    status: "blocked",
++    input: request.input,
++    prioritization,
++    chosenAction: selectedAction,
++    verification: {
++      outcome: "blocked",
++      summary: failure.summary,
++      checks: request.verificationPlan.checks
++    },
++    evidence: request.evidence,
++    residualRisk: {
++      level: request.input.findings
++        .map((finding) => finding.severity)
++        .sort((left, right) => severityOrder[right] - severityOrder[left])[0] ?? "info",
++      summary: "The hardening iteration was blocked, so the selected risk remains in place until scope or evidence improves.",
++      remainingFindingIds: prioritization.selectedAction.sourceIds,
++      needsHumanReview: true
++    },
++    recommendedNextStep: {
++      summary: failure.operatorAction,
++      rationale: failure.summary,
++      continueLoop: false
++    },
++    handoffSummary: `${failure.summary} No change was applied.`,
++    failure
++  });
++};
++
+ export const prioritizeDefensiveAction = (
+   rawInput: DefensivePrioritizationInput
+ ): DefensivePrioritization => {
+@@ -1006,6 +1142,79 @@
+   });
+ };
+ 
++export const executeDefensiveIteration = (
++  rawRequest: DefensiveExecutionRequest
++): DefensiveIterationRecord => {
++  const request = defensiveExecutionRequestSchema.parse(rawRequest);
++  const prioritization = prioritizeDefensiveAction({
++    findings: request.input.findings,
++    observations: request.observations,
++    target: request.input.target,
++    assetContext: request.input.assetContext,
++    priorIteration: request.input.priorIteration
++  });
++  const selectedAction = prioritization.selectedAction.action;
++
++  if (prioritization.selectedAction.confidenceDisposition !== "confirmed_risk") {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "ambiguous_scope",
++      blockedStage: "act",
++      summary: "The selected action is not supported by high-confidence evidence, so autonomous hardening is blocked.",
++      operatorAction: "Reproduce the finding with stronger evidence before applying any mitigation."
++    });
++  }
++
++  if (!selectedAction.bounded || request.change.affectsMultipleComponents || request.change.destructive || !request.change.reversibleIntent) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "unsafe_action",
++      blockedStage: "act",
++      summary: "The proposed change is broader than one reversible mitigation, so the iteration stops before execution.",
++      operatorAction: "Reduce the change to one reversible control update with a clear rollback path."
++    });
++  }
++
++  if (!matchesSelectedScope(selectedAction, request.change)) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "ambiguous_scope",
++      blockedStage: "act",
++      summary: "The proposed change does not clearly match the selected action scope, so the iteration remains blocked.",
++      operatorAction: "Align the implementation to the selected mitigation scope before retrying."
++    });
++  }
++
++  const hasVerificationEvidence = request.evidence.some((artifact) => artifact.type === "test_result" || artifact.type === "command_output");
++
++  if (!hasVerificationEvidence) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "missing_evidence",
++      blockedStage: "verify",
++      summary: "Verification evidence is missing, so the loop cannot claim the mitigation completed safely.",
++      operatorAction: "Capture focused verification output for the selected mitigation before recording completion."
++    });
++  }
++
++  const residualRisk = deriveCompletionResidualRisk(prioritization, request.input);
++  const recommendedNextStep = buildCompletedNextStep(prioritization);
++
++  return defensiveIterationRecordSchema.parse({
++    iterationId: request.iterationId,
++    stages: defensiveLoopStages,
++    status: "completed",
++    input: request.input,
++    prioritization,
++    chosenAction: selectedAction,
++    verification: {
++      outcome: "verified",
++      summary: request.outcomeSummary,
++      checks: request.verificationPlan.checks
++    },
++    evidence: request.evidence,
++    residualRisk,
++    recommendedNextStep,
++    handoffSummary: `${request.change.summary} completed. ${recommendedNextStep.summary}`
++  });
++};
++
+ export const defensiveFailureReasonSchema = z.enum(["missing_evidence", "ambiguous_scope", "unsafe_action"]);
+ export type DefensiveFailureReason = z.infer<typeof defensiveFailureReasonSchema>;
+ 
+
+codex
+I’ve written the progress entry and the iteration summary. One final activity log entry and bookkeeping commit remain; after that I won’t run more repo-changing commands so the run finishes from a stable tree.
+exec
+/bin/bash -lc 'ralph log "Updated S3 progress log and run summary with commit 1bff66a1, verification results, and bounded-hardening execution notes."' in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+Using local templates: /home/nilwi971/projects/SynoSec-buildathon/.agents/ralph
+
+exec
+/bin/bash -lc 'ralph log "Completed S3 verification: contracts tests/build passed, workspace build/tests passed, and root lint still fails on the existing generated Prisma ESLint typed-lint issue."' in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+Using local templates: /home/nilwi971/projects/SynoSec-buildathon/.agents/ralph
+
+exec
+/bin/bash -lc 'git status --short' in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+ M .ralph/activity.log
+ M .ralph/progress.md
+ M .ralph/runs/run-20260413-004709-513536-iter-2.log
+?? .ralph/runs/run-20260413-004709-513536-iter-2.md
+
+diff --git a/.ralph/progress.md b/.ralph/progress.md
+index 904bcff86854d296464810192ef200e5140461e5..32332c7385ee4b6adee1cdc752ef0eeb915fa568
+--- a/.ralph/progress.md
++++ b/.ralph/progress.md
+@@ -5,6 +5,41 @@
+ - (add reusable patterns here)
+ 
+ ---
++## [2026-04-13 00:59:13 CEST] - S3: Execute one bounded hardening iteration
++Thread: 019d83e0-a12b-7421-80a6-13a4141127e6
++Run: 20260413-004709-513536 (iteration 2)
++Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-2.log
++Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-2.md
++- Guardrails reviewed: yes
++- No-commit run: false
++- Commit: 1bff66a1 Execute bounded hardening iteration
++- Post-commit status: `.ralph/runs/run-20260413-004709-513536-iter-2.log`
++- Verification:
++  - Command: `pnpm --filter @synosec/contracts test` -> PASS
++  - Command: `pnpm --filter @synosec/contracts build` -> PASS
++  - Command: `pnpm build` -> PASS
++  - Command: `pnpm test` -> PASS
++  - Command: `pnpm lint` -> FAIL (existing ESLint typed-lint issue in `apps/backend/src/generated/prisma/client.js`)
++- Files changed:
++  - .ralph/activity.log
++  - .ralph/progress.md
++  - .ralph/runs/run-20260413-004709-513536-iter-2.log
++  - .ralph/runs/run-20260413-004709-513536-iter-2.md
++  - docs/defensive-loop-contract.md
++  - packages/contracts/src/index.test.ts
++  - packages/contracts/src/index.ts
++- What was implemented
++- Added a bounded hardening execution contract that accepts one reversible mitigation, a focused verification plan, and reviewable evidence before marking an iteration complete.
++- Added deterministic blocking paths for low-confidence, ambiguous-scope, multi-component, destructive, or unverifiable actions so unsafe work is recorded instead of executed.
++- Added coverage for one successful mitigation and blocked unsafe or weak-evidence cases, and documented the execution rules for the buildathon demo.
++- **Learnings for future iterations:**
++  - Patterns discovered
++  - Extending the shared contracts package remains the fastest way to keep the loop logic deterministic and aligned across later backend or frontend integrations.
++  - Gotchas encountered
++  - Runner-managed logs can keep changing after a commit, so the bookkeeping commit needs to be the last repo write in the turn.
++  - Useful context
++  - The new execution helper treats manual-investigation selections as blocked hardening work, which preserves the single-mitigation scope required by this story.
++---
+ ## [2026-04-13 00:53:37 CEST] - S2: Prioritize defensive next action
+ Thread: 
+ Run: 20260413-004709-513536 (iteration 1)
+diff --git a/.ralph/runs/run-20260413-004709-513536-iter-2.md b/.ralph/runs/run-20260413-004709-513536-iter-2.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8185be5bdf8317a0dff7941f86391f3da590469b
+--- /dev/null
++++ b/.ralph/runs/run-20260413-004709-513536-iter-2.md
+@@ -0,0 +1,29 @@
++# Ralph Run Summary
++
++- Run ID: 20260413-004709-513536
++- Iteration: 2
++- Mode: build
++- Story: S3: Execute one bounded hardening iteration
++- Started: 2026-04-13 00:54:38
++- Ended: 2026-04-13 00:59:13
++- Status: success
++- Log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-2.log
++
++## Outcome
++
++- Added a shared execution helper that turns the prioritized action into one bounded hardening iteration record.
++- The execution contract only allows one reversible mitigation with focused verification evidence.
++- Unsafe, ambiguous, low-confidence, or unverifiable mitigations are blocked and recorded instead of executed.
++- The resulting iteration output remains human-reviewable with chosen action, evidence, residual risk, and next-step guidance.
++
++## Verification
++
++- `pnpm --filter @synosec/contracts test` -> PASS
++- `pnpm --filter @synosec/contracts build` -> PASS
++- `pnpm build` -> PASS
++- `pnpm test` -> PASS
++- `pnpm lint` -> FAIL (existing ESLint typed-lint issue on `apps/backend/src/generated/prisma/client.js`)
++
++## Story Commit
++
++- 1bff66a1 Execute bounded hardening iteration
+diff --git a/docs/defensive-loop-contract.md b/docs/defensive-loop-contract.md
+index 77388d59f24777a65cf72190e6accfa5ed74fd66..aa13ea82bef0e055013d646cb94d8ac117787940
+--- a/docs/defensive-loop-contract.md
++++ b/docs/defensive-loop-contract.md
+@@ -46,6 +46,26 @@
+ 
+ Low-confidence or ambiguous inputs are moved to follow-up instead of being prioritized as confirmed remediation work. If every input is low-confidence, the single selected action becomes bounded manual investigation rather than an autonomous production change.
+ 
++## Bounded hardening execution
++
++The `act` stage applies exactly one reversible mitigation for the selected action. The current shared contract enforces this with an execution request that includes:
++
++- one `change` record with a single `scopeRef` and `rolloutRef`
++- `reversibleIntent: true`
++- `affectsMultipleComponents: false`
++- `destructive: false`
++- a focused `verificationPlan` with explicit checks
++- reviewable `evidence` that includes verification output
++
++The loop blocks instead of executing when:
++
++- the selected action is low-confidence and only suitable for manual investigation
++- the proposed implementation broadens beyond one component or lacks a rollback path
++- the proposed change does not match the selected mitigation scope
++- verification evidence is missing, so the loop cannot claim success
++
++When execution succeeds, the record explains the exact mitigation that landed, the verification checks that passed, the residual risk, and the next bounded step. When execution is blocked, the record preserves the failure reason and states clearly that no change was applied.
++
+ ## Failure states
+ 
+ - `missing_evidence`: block the loop when verification or outcome claims cannot be backed by concrete evidence.
+@@ -61,4 +81,6 @@
+ - `defensiveIterationRecordSchema`
+ - `defensivePrioritizationSchema`
+ - `prioritizeDefensiveAction`
++- `defensiveExecutionRequestSchema`
++- `executeDefensiveIteration`
+ - `defensiveFailureStateSchema`
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+index 2671bfc1470bb9a33eb5486a7c11b606fb131ff5..316e1eb782174c7c2706c14a3f92f42468c9948c
+--- a/packages/contracts/src/index.test.ts
++++ b/packages/contracts/src/index.test.ts
+@@ -7,6 +7,7 @@
+   defensiveIterationRecordSchema,
+   defensiveLoopContract,
+   defensiveLoopStages,
++  executeDefensiveIteration,
+   prioritizeDefensiveAction,
+   demoResponseSchema,
+   healthResponseSchema,
+@@ -429,4 +430,188 @@
+ 
+     expect(result.success).toBe(false);
+   });
++
++  it("executes one bounded hardening iteration with focused verification evidence", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-003",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.93,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Restricted the admin ingress CIDR allowlist to approved office and VPN ranges.",
++        scopeRef: "admin-ingress.yaml allowlist policy",
++        rolloutRef: "git diff apps/infra/admin-ingress.yaml",
++        reversibleIntent: true,
++        affectsMultipleComponents: false,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "The admin route is blocked from untrusted sources and still available to approved operators.",
++        checks: ["Curl from an untrusted IP is denied", "Smoke test from the approved VPN range succeeds"]
++      },
++      evidence: [
++        {
++          type: "config_diff",
++          summary: "Ingress allowlist narrowed to the approved source CIDRs.",
++          reference: "git diff apps/infra/admin-ingress.yaml"
++        },
++        {
++          type: "test_result",
++          summary: "Verification probes confirm the route now blocks untrusted access.",
++          reference: "probe-log-2026-04-13"
++        }
++      ],
++      outcomeSummary: "The ingress rule changed in one place and verification confirmed the route only serves approved sources."
++    });
++
++    expect(result.status).toBe("completed");
++    expect(result.verification.outcome).toBe("verified");
++    expect(result.chosenAction.type).toBe("access_restriction");
++    expect(result.evidence).toHaveLength(2);
++    expect(result.recommendedNextStep.continueLoop).toBe(true);
++    expect(result.handoffSummary).toContain("completed");
++  });
++
++  it("blocks an unsafe change that broadens beyond one reversible mitigation", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-004",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.93,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Updated ingress, rotated certificates, and changed admin authentication in one rollout.",
++        scopeRef: "admin-ingress.yaml and auth-service deployment",
++        rolloutRef: "change-request-42",
++        reversibleIntent: false,
++        affectsMultipleComponents: true,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "Every admin control is tightened.",
++        checks: ["Review rollout plan"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The proposed rollout includes multiple services and no rollback path.",
++          reference: "change-request-42"
++        }
++      ],
++      outcomeSummary: "Execution stopped before rollout."
++    });
++
++    expect(result.status).toBe("blocked");
++    expect(result.failure?.reason).toBe("unsafe_action");
++    expect(result.verification.outcome).toBe("blocked");
++    expect(result.handoffSummary).toContain("No change was applied");
++  });
++
++  it("blocks execution when the selected action is not high-confidence enough for autonomous mitigation", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-005",
++      input: {
++        findings: [
++          {
++            id: "finding-2",
++            title: "Suspicious privileged path",
++            severity: "high",
++            confidence: 0.6,
++            summary: "The path may allow privilege escalation.",
++            evidence: "Single unverified report",
++            source: "scanner"
++          }
++        ],
++        target: {
++          kind: "application",
++          id: "app-1",
++          displayName: "Operator Portal"
++        },
++        assetContext: {
++          assetId: "asset-2",
++          assetName: "Operator Portal",
++          criticality: "high",
++          internetExposed: true,
++          containsSensitiveData: false,
++          notes: []
++        }
++      },
++      observations: [],
++      change: {
++        summary: "Planned to disable the suspected path.",
++        scopeRef: "operator-routing config",
++        rolloutRef: "change-request-99",
++        reversibleIntent: true,
++        affectsMultipleComponents: false,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "The path no longer responds.",
++        checks: ["Capture a reproducible failing request first"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The issue is still only supported by a single unverified report.",
++          reference: "finding-2"
++        }
++      ],
++      outcomeSummary: "Execution stopped before rollout."
++    });
++
++    expect(result.status).toBe("blocked");
++    expect(result.failure?.reason).toBe("ambiguous_scope");
++    expect(result.recommendedNextStep.summary).toContain("stronger evidence");
++  });
+ });
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index fa36a1a0823dc8d3f553ac141c722b3ab1362e48..91a14e66164182da15bf24e15fd89e75765f4c70
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -558,6 +558,33 @@
+ });
+ export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
+ 
++export const defensiveMitigationChangeSchema = z.object({
++  summary: z.string().min(1),
++  scopeRef: z.string().min(1),
++  rolloutRef: z.string().min(1),
++  reversibleIntent: z.boolean(),
++  affectsMultipleComponents: z.boolean().default(false),
++  destructive: z.boolean().default(false)
++});
++export type DefensiveMitigationChange = z.infer<typeof defensiveMitigationChangeSchema>;
++
++export const defensiveVerificationPlanSchema = z.object({
++  successCriteria: z.string().min(1),
++  checks: z.array(z.string().min(1)).min(1).max(5)
++});
++export type DefensiveVerificationPlan = z.infer<typeof defensiveVerificationPlanSchema>;
++
++export const defensiveExecutionRequestSchema = z.object({
++  iterationId: z.string().min(1),
++  input: defensiveIterationInputSchema,
++  observations: z.array(defensiveIterationObservationSchema).default([]),
++  change: defensiveMitigationChangeSchema,
++  verificationPlan: defensiveVerificationPlanSchema,
++  evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
++  outcomeSummary: z.string().min(1)
++});
++export type DefensiveExecutionRequest = z.infer<typeof defensiveExecutionRequestSchema>;
++
+ export const defensivePrioritizationSourceKindSchema = z.enum(["finding", "observation"]);
+ export type DefensivePrioritizationSourceKind = z.infer<typeof defensivePrioritizationSourceKindSchema>;
+ 
+@@ -898,6 +925,115 @@
+   return `Not selected because its weighted priority score (${candidate.priorityScore}) is lower than the selected action (${selected.priorityScore}).`;
+ };
+ 
++const matchesSelectedScope = (
++  selectedAction: DefensiveChosenAction,
++  change: DefensiveMitigationChange
++): boolean => {
++  const selectedScope = selectedAction.scope.toLowerCase();
++  const changeScope = `${change.summary} ${change.scopeRef}`.toLowerCase();
++
++  if (selectedScope.includes("access boundary")) {
++    return /(route|listener|policy|firewall|ingress|network|cidr|allowlist)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("configuration")) {
++    return /(config|setting|flag|policy|env)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("dependency") || selectedScope.includes("package")) {
++    return /(package|dependency|version|image)/.test(changeScope);
++  }
++
++  if (selectedScope.includes("logging") || selectedScope.includes("alerting")) {
++    return /(log|alert|telemetry|monitor)/.test(changeScope);
++  }
++
++  return true;
++};
++
++const deriveCompletionResidualRisk = (
++  prioritization: DefensivePrioritization,
++  input: DefensiveIterationInput
++): DefensiveResidualRisk => {
++  const highestDeferredSeverity = prioritization.followUp
++    .map((item) => {
++      const finding = input.findings.find((candidate) => candidate.id === item.sourceId);
++
++      return finding?.severity ?? "info";
++    })
++    .sort((left, right) => severityOrder[right] - severityOrder[left])[0];
++
++  const baseLevel = input.assetContext.internetExposed && prioritization.selectedAction.action.type === "access_restriction"
++    ? "medium"
++    : "low";
++  const level = highestDeferredSeverity && severityOrder[highestDeferredSeverity] > severityOrder[baseLevel]
++    ? highestDeferredSeverity
++    : baseLevel;
++
++  return defensiveResidualRiskSchema.parse({
++    level,
++    summary: prioritization.followUp.length > 0
++      ? `The selected mitigation completed, but ${prioritization.followUp.length} deferred item${prioritization.followUp.length === 1 ? "" : "s"} still require stronger evidence.`
++      : "The selected mitigation completed and no additional deferred issues were introduced in this iteration.",
++    remainingFindingIds: prioritization.followUp.map((item) => item.sourceId),
++    needsHumanReview: prioritization.followUp.length > 0
++  });
++};
++
++const buildCompletedNextStep = (prioritization: DefensivePrioritization): DefensiveNextStep => {
++  if (prioritization.followUp.length > 0) {
++    return defensiveNextStepSchema.parse({
++      summary: "Validate the deferred item with stronger evidence before expanding the hardening scope.",
++      rationale: "The current iteration applied one safe mitigation and should not broaden scope until the follow-up evidence improves.",
++      continueLoop: true
++    });
++  }
++
++  return defensiveNextStepSchema.parse({
++    summary: "Review the next-highest ranked defensive action before starting another bounded iteration.",
++    rationale: "Only one mitigation should land per iteration, even when other candidate actions remain.",
++    continueLoop: true
++  });
++};
++
++const blockDefensiveIteration = (
++  request: DefensiveExecutionRequest,
++  prioritization: DefensivePrioritization,
++  failure: DefensiveFailureState
++): DefensiveIterationRecord => {
++  const selectedAction = prioritization.selectedAction.action;
++
++  return defensiveIterationRecordSchema.parse({
++    iterationId: request.iterationId,
++    stages: defensiveLoopStages,
++    status: "blocked",
++    input: request.input,
++    prioritization,
++    chosenAction: selectedAction,
++    verification: {
++      outcome: "blocked",
++      summary: failure.summary,
++      checks: request.verificationPlan.checks
++    },
++    evidence: request.evidence,
++    residualRisk: {
++      level: request.input.findings
++        .map((finding) => finding.severity)
++        .sort((left, right) => severityOrder[right] - severityOrder[left])[0] ?? "info",
++      summary: "The hardening iteration was blocked, so the selected risk remains in place until scope or evidence improves.",
++      remainingFindingIds: prioritization.selectedAction.sourceIds,
++      needsHumanReview: true
++    },
++    recommendedNextStep: {
++      summary: failure.operatorAction,
++      rationale: failure.summary,
++      continueLoop: false
++    },
++    handoffSummary: `${failure.summary} No change was applied.`,
++    failure
++  });
++};
++
+ export const prioritizeDefensiveAction = (
+   rawInput: DefensivePrioritizationInput
+ ): DefensivePrioritization => {
+@@ -1006,6 +1142,79 @@
+   });
+ };
+ 
++export const executeDefensiveIteration = (
++  rawRequest: DefensiveExecutionRequest
++): DefensiveIterationRecord => {
++  const request = defensiveExecutionRequestSchema.parse(rawRequest);
++  const prioritization = prioritizeDefensiveAction({
++    findings: request.input.findings,
++    observations: request.observations,
++    target: request.input.target,
++    assetContext: request.input.assetContext,
++    priorIteration: request.input.priorIteration
++  });
++  const selectedAction = prioritization.selectedAction.action;
++
++  if (prioritization.selectedAction.confidenceDisposition !== "confirmed_risk") {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "ambiguous_scope",
++      blockedStage: "act",
++      summary: "The selected action is not supported by high-confidence evidence, so autonomous hardening is blocked.",
++      operatorAction: "Reproduce the finding with stronger evidence before applying any mitigation."
++    });
++  }
++
++  if (!selectedAction.bounded || request.change.affectsMultipleComponents || request.change.destructive || !request.change.reversibleIntent) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "unsafe_action",
++      blockedStage: "act",
++      summary: "The proposed change is broader than one reversible mitigation, so the iteration stops before execution.",
++      operatorAction: "Reduce the change to one reversible control update with a clear rollback path."
++    });
++  }
++
++  if (!matchesSelectedScope(selectedAction, request.change)) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "ambiguous_scope",
++      blockedStage: "act",
++      summary: "The proposed change does not clearly match the selected action scope, so the iteration remains blocked.",
++      operatorAction: "Align the implementation to the selected mitigation scope before retrying."
++    });
++  }
++
++  const hasVerificationEvidence = request.evidence.some((artifact) => artifact.type === "test_result" || artifact.type === "command_output");
++
++  if (!hasVerificationEvidence) {
++    return blockDefensiveIteration(request, prioritization, {
++      reason: "missing_evidence",
++      blockedStage: "verify",
++      summary: "Verification evidence is missing, so the loop cannot claim the mitigation completed safely.",
++      operatorAction: "Capture focused verification output for the selected mitigation before recording completion."
++    });
++  }
++
++  const residualRisk = deriveCompletionResidualRisk(prioritization, request.input);
++  const recommendedNextStep = buildCompletedNextStep(prioritization);
++
++  return defensiveIterationRecordSchema.parse({
++    iterationId: request.iterationId,
++    stages: defensiveLoopStages,
++    status: "completed",
++    input: request.input,
++    prioritization,
++    chosenAction: selectedAction,
++    verification: {
++      outcome: "verified",
++      summary: request.outcomeSummary,
++      checks: request.verificationPlan.checks
++    },
++    evidence: request.evidence,
++    residualRisk,
++    recommendedNextStep,
++    handoffSummary: `${request.change.summary} completed. ${recommendedNextStep.summary}`
++  });
++};
++
+ export const defensiveFailureReasonSchema = z.enum(["missing_evidence", "ambiguous_scope", "unsafe_action"]);
+ export type DefensiveFailureReason = z.infer<typeof defensiveFailureReasonSchema>;
+ 
+
