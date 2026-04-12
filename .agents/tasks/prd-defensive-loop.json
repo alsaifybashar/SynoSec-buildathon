@@ -121,10 +121,10 @@
       "dependsOn": [
         "S3"
       ],
-      "status": "in_progress",
+      "status": "done",
       "startedAt": "2026-04-12T23:00:00.185477+00:00",
-      "completedAt": null,
-      "updatedAt": "2026-04-12T23:00:00.185485+00:00"
+      "completedAt": "2026-04-12T23:06:14.484117+00:00",
+      "updatedAt": "2026-04-12T23:06:14.484109+00:00"
     },
     {
       "id": "S5",
@@ -139,7 +139,10 @@
       "dependsOn": [
         "S4"
       ],
-      "status": "open"
+      "status": "in_progress",
+      "startedAt": "2026-04-12T23:06:16.535472+00:00",
+      "completedAt": null,
+      "updatedAt": "2026-04-12T23:06:16.535479+00:00"
     }
   ]
 }

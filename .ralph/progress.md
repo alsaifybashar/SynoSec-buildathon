@@ -5,6 +5,41 @@ Started: Mon Apr 13 00:40:18 CEST 2026
 - (add reusable patterns here)
 
 ---
+## [2026-04-13 01:12:45 CEST] - S5: Close the loop with next-step guidance
+Thread: 019d83f2-2181-7a21-8f3d-85eebcb3b089
+Run: 20260413-004709-513536 (iteration 4)
+Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-4.log
+Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-4.md
+- Guardrails reviewed: yes
+- No-commit run: false
+- Commit: e79281a8 Close loop with next-step guidance
+- Post-commit status: `clean`
+- Verification:
+  - Command: `pnpm --filter @synosec/contracts test` -> PASS
+  - Command: `pnpm --filter @synosec/contracts typecheck` -> PASS
+  - Command: `pnpm build` -> PASS
+  - Command: `pnpm test` -> PASS
+  - Command: `pnpm lint` -> FAIL (existing ESLint typed-lint issue in `apps/backend/src/generated/prisma/client.js`)
+- Files changed:
+  - .ralph/activity.log
+  - .ralph/progress.md
+  - .ralph/runs/run-20260413-004709-513536-iter-4.log
+  - .ralph/runs/run-20260413-004709-513536-iter-4.md
+  - docs/defensive-loop-contract.md
+  - packages/contracts/src/index.test.ts
+  - packages/contracts/src/index.ts
+- What was implemented
+- Added a deterministic `closureSummary` to the defensive iteration record so each run ends with a short defensive-loop closeout that states what risk changed, what evidence supports that claim, what remains, and the next safe step.
+- Wired the closure summary into both completed and blocked execution paths so the loop either recommends the next bounded defensive action or clearly stops autonomous continuation when evidence or scope is not safe enough.
+- Updated shared-contract tests and the operator-facing contract document so the new handoff output is explicit, reviewable, and suitable for a buildathon demo.
+- **Learnings for future iterations:**
+  - Patterns discovered
+  - Shared contract helpers remain the right place for deterministic loop-close behavior that later backend or frontend surfaces can consume directly.
+  - Gotchas encountered
+  - Root `pnpm lint` still fails on generated Prisma code, so lint is useful as a regression signal but not yet a story-completion gate.
+  - Useful context
+  - `closureSummary` is intentionally compact and evidence-backed, which makes it a better demo closeout than relying on `handoffSummary` alone.
+---
 ## [2026-04-13 01:05:30 CEST] - S4: Record evidence and residual risk
 Thread: 
 Run: 20260413-004709-513536 (iteration 3)

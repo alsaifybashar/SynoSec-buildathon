@@ -23647,3 +23647,1343 @@ index 91a14e66164182da15bf24e15fd89e75765f4c70..5bebfbc8b89adc6f8f8dab12933b430f
  export type DefensiveIterationRecord = z.infer<typeof defensiveIterationRecordSchema>;
  
 
+exec
+/bin/bash -lc 'git add -A && git commit -m "Capture S4 run log" && git status --porcelain && git show -s --format="%h %s" HEAD' in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+[main f5b94ca7] Capture S4 run log
+ 1 file changed, 3398 insertions(+)
+f5b94ca7 Capture S4 run log
+
+diff --git a/.ralph/activity.log b/.ralph/activity.log
+index 4e8b8f80a6d2aea1da70d879ee538577e5702fdb..85aa21047e4b9c21039dd89dc116d2dfee6ef967
+--- a/.ralph/activity.log
++++ b/.ralph/activity.log
+@@ -25,3 +25,6 @@
+ [2026-04-13 00:59:46] Completed S3 verification: contracts tests/build passed, workspace build/tests passed, and root lint still fails on the existing generated Prisma ESLint typed-lint issue.
+ [2026-04-13 00:59:58] ITERATION 2 end (duration=320s)
+ [2026-04-13 01:00:00] ITERATION 3 start (mode=build story=S4)
++[2026-04-13 01:06:00] Implemented major S4 code changes: added explicit issue outcomes, final outcome, carry-forward state, and updated defensive-loop docs/tests for evidence and residual-risk recording.
++[2026-04-13 01:04:23] Completed S4 verification: contracts tests/build passed, workspace build/tests passed, root lint still fails on the existing generated Prisma ESLint typed-lint issue, and frontend build emitted an existing chunk-size warning only.
++[2026-04-13 01:05:30] Updated S4 progress log with commit da2b5d8d, verification results, and evidence-recording notes for future iterations.
+diff --git a/.ralph/progress.md b/.ralph/progress.md
+index 32332c7385ee4b6adee1cdc752ef0eeb915fa568..92f5d709acd1f93c77ed1f5162f04a32d89f2a10
+--- a/.ralph/progress.md
++++ b/.ralph/progress.md
+@@ -5,6 +5,39 @@
+ - (add reusable patterns here)
+ 
+ ---
++## [2026-04-13 01:05:30 CEST] - S4: Record evidence and residual risk
++Thread: 
++Run: 20260413-004709-513536 (iteration 3)
++Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-3.log
++Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-3.md
++- Guardrails reviewed: yes
++- No-commit run: false
++- Commit: da2b5d8d Record evidence and residual risk
++- Post-commit status: `clean`
++- Verification:
++  - Command: `pnpm --filter @synosec/contracts test` -> PASS
++  - Command: `pnpm --filter @synosec/contracts build` -> PASS
++  - Command: `pnpm build` -> PASS
++  - Command: `pnpm test` -> PASS
++  - Command: `pnpm lint` -> FAIL (existing ESLint typed-lint issue in `apps/backend/src/generated/prisma/client.js`)
++- Files changed:
++  - .ralph/activity.log
++  - .ralph/progress.md
++  - docs/defensive-loop-contract.md
++  - packages/contracts/src/index.test.ts
++  - packages/contracts/src/index.ts
++- What was implemented
++- Added explicit `finalOutcome`, per-source `issueOutcomes`, and a structured `carryForward` state to the defensive iteration record so each run preserves evidence, residual risk, and next-iteration context.
++- Classified iteration sources as `fixed`, `mitigated`, `unverified`, or intentionally `skipped`, with deterministic evidence references and carry-forward behavior.
++- Extended contract tests and operator-facing documentation so the recording model is reviewable and reusable in later iterations without rebuilding prior context.
++- **Learnings for future iterations:**
++  - Patterns discovered
++  - The shared contracts package is still the right integration point for workflow-state changes that later stories may surface in backend or frontend code.
++  - Gotchas encountered
++  - The documented `ralph log` helper path is missing in this workspace, so activity logging had to be appended manually.
++  - Useful context
++  - `carryForward` now provides a direct seed for the next loop iteration, including target context, resolved issues, outstanding issues, residual risk, and the recommended next step.
++---
+ ## [2026-04-13 00:59:13 CEST] - S3: Execute one bounded hardening iteration
+ Thread: 019d83e0-a12b-7421-80a6-13a4141127e6
+ Run: 20260413-004709-513536 (iteration 2)
+diff --git a/docs/defensive-loop-contract.md b/docs/defensive-loop-contract.md
+index aa13ea82bef0e055013d646cb94d8ac117787940..9e972d699cb4f224b40cd6cafe6d6e798acecb8b
+--- a/docs/defensive-loop-contract.md
++++ b/docs/defensive-loop-contract.md
+@@ -64,7 +64,18 @@
+ - the proposed change does not match the selected mitigation scope
+ - verification evidence is missing, so the loop cannot claim success
+ 
+-When execution succeeds, the record explains the exact mitigation that landed, the verification checks that passed, the residual risk, and the next bounded step. When execution is blocked, the record preserves the failure reason and states clearly that no change was applied.
++When execution succeeds, the record explains the exact mitigation that landed, the verification checks that passed, the residual risk, the per-issue outcome (`fixed`, `mitigated`, `unverified`, or `skipped`), and the next bounded step. When execution is blocked, the record preserves the failure reason, marks which issues were intentionally skipped or still unverified, and states clearly that no change was applied.
++
++## Recorded iteration state
++
++The record stage now preserves enough structure for the next iteration to start without rebuilding context by hand:
++
++- `input.findings`: the source findings that justified the iteration.
++- `chosenAction`: the selected bounded mitigation and its safety checks.
++- `evidence`: reviewable source, change, and verification artifacts.
++- `finalOutcome`: whether the iteration ended as `fixed`, `mitigated`, or `blocked`.
++- `issueOutcomes`: one entry per finding or observation showing whether it was `fixed`, `mitigated`, `unverified`, or intentionally `skipped`.
++- `carryForward`: the next-iteration seed, including the target, asset context, resolved issues, outstanding issues, residual risk, and recommended next step.
+ 
+ ## Failure states
+ 
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+index 316e1eb782174c7c2706c14a3f92f42468c9948c..50353a08e16583bc39ce1aa2cecf4470d2fab41c
+--- a/packages/contracts/src/index.test.ts
++++ b/packages/contracts/src/index.test.ts
+@@ -242,6 +242,23 @@
+           reference: "probe-log-2026-04-13"
+         }
+       ],
++      finalOutcome: {
++        status: "mitigated",
++        summary: "The route no longer responds from an untrusted source and still works from approved IP space.",
++        changeApplied: true
++      },
++      issueOutcomes: [
++        {
++          sourceId: "finding-1",
++          sourceKind: "finding",
++          title: "Public admin endpoint exposed",
++          severity: "high",
++          disposition: "mitigated",
++          summary: "The selected bounded change reduced the issue exposure, but some residual risk may remain for a later iteration.",
++          evidenceRefs: ["git diff apps/infra/admin-ingress.yaml", "probe-log-2026-04-13"],
++          carryForward: true
++        }
++      ],
+       residualRisk: {
+         level: "medium",
+         summary: "Exposure is reduced, but admin authentication hardening still needs review.",
+@@ -253,6 +270,49 @@
+         rationale: "The highest remaining risk is credential misuse rather than internet exposure.",
+         continueLoop: true
+       },
++      carryForward: {
++        iterationId: "iter-001",
++        summary: "1 issue(s) changed state and 1 item(s) carry forward into the next iteration.",
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        },
++        resolvedIssues: [],
++        outstandingIssues: [
++          {
++            sourceId: "finding-1",
++            sourceKind: "finding",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            disposition: "mitigated",
++            summary: "The selected bounded change reduced the issue exposure, but some residual risk may remain for a later iteration.",
++            evidenceRefs: ["git diff apps/infra/admin-ingress.yaml", "probe-log-2026-04-13"],
++            carryForward: true
++          }
++        ],
++        residualRisk: {
++          level: "medium",
++          summary: "Exposure is reduced, but admin authentication hardening still needs review.",
++          remainingFindingIds: ["finding-auth-1"],
++          needsHumanReview: false
++        },
++        recommendedNextStep: {
++          summary: "Review privileged admin authentication flows next.",
++          rationale: "The highest remaining risk is credential misuse rather than internet exposure.",
++          continueLoop: true
++        }
++      },
+       handoffSummary: "Ingress is restricted and the next iteration should focus on admin authentication hardening."
+     });
+ 
+@@ -414,6 +474,23 @@
+           summary: "The current report does not provide enough proof to act."
+         }
+       ],
++      finalOutcome: {
++        status: "blocked",
++        summary: "Execution was blocked before verification.",
++        changeApplied: false
++      },
++      issueOutcomes: [
++        {
++          sourceId: "finding-2",
++          sourceKind: "finding",
++          title: "Suspicious privileged path",
++          severity: "high",
++          disposition: "unverified",
++          summary: "Autonomous mitigation was blocked because the evidence was not strong enough to confirm the issue safely.",
++          evidenceRefs: [],
++          carryForward: true
++        }
++      ],
+       residualRisk: {
+         level: "high",
+         summary: "The suspected issue remains unresolved pending stronger evidence.",
+@@ -425,6 +502,47 @@
+         rationale: "The scope and exploitability are still ambiguous.",
+         continueLoop: false
+       },
++      carryForward: {
++        iterationId: "iter-002",
++        summary: "0 issue(s) changed state and 1 item(s) carry forward into the next iteration.",
++        target: {
++          kind: "application",
++          id: "app-1",
++          displayName: "Operator Portal"
++        },
++        assetContext: {
++          assetId: "asset-2",
++          assetName: "Operator Portal",
++          criticality: "high",
++          internetExposed: true,
++          containsSensitiveData: false,
++          notes: []
++        },
++        resolvedIssues: [],
++        outstandingIssues: [
++          {
++            sourceId: "finding-2",
++            sourceKind: "finding",
++            title: "Suspicious privileged path",
++            severity: "high",
++            disposition: "unverified",
++            summary: "Autonomous mitigation was blocked because the evidence was not strong enough to confirm the issue safely.",
++            evidenceRefs: [],
++            carryForward: true
++          }
++        ],
++        residualRisk: {
++          level: "high",
++          summary: "The suspected issue remains unresolved pending stronger evidence.",
++          remainingFindingIds: ["finding-2"],
++          needsHumanReview: true
++        },
++        recommendedNextStep: {
++          summary: "Reproduce the finding with stronger evidence before any change.",
++          rationale: "The scope and exploitability are still ambiguous.",
++          continueLoop: false
++        }
++      },
+       handoffSummary: "Pause autonomous action until the finding can be reproduced."
+     });
+ 
+@@ -493,11 +611,98 @@
+     expect(result.status).toBe("completed");
+     expect(result.verification.outcome).toBe("verified");
+     expect(result.chosenAction.type).toBe("access_restriction");
++    expect(result.finalOutcome.status).toBe("mitigated");
+     expect(result.evidence).toHaveLength(2);
++    expect(result.issueOutcomes[0]?.disposition).toBe("mitigated");
++    expect(result.carryForward.outstandingIssues[0]?.sourceId).toBe("finding-1");
+     expect(result.recommendedNextStep.continueLoop).toBe(true);
+     expect(result.handoffSummary).toContain("completed");
+   });
+ 
++  it("records fixed, mitigated, unverified, and skipped issue outcomes for future iterations", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-003b",
++      input: {
++        findings: [
++          {
++            id: "finding-patch-1",
++            title: "Outdated OpenSSL package",
++            severity: "critical",
++            confidence: 0.97,
++            summary: "The runtime image ships an OpenSSL package with a published fix available.",
++            evidence: "Package inventory and CVE review confirm the vulnerable version.",
++            source: "package-audit"
++          },
++          {
++            id: "finding-skip-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.91,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "runtime",
++          id: "runtime-api",
++          displayName: "API Runtime",
++          environment: "production",
++          locator: "api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-runtime-1",
++          assetName: "API Runtime",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production runtime"]
++        }
++      },
++      observations: [
++        {
++          id: "obs-verify-1",
++          title: "Possible debug endpoint",
++          severity: "medium",
++          confidence: 0.62,
++          summary: "A debug route may still be exposed.",
++          evidence: "Single unverified report from an earlier probe.",
++          source: "scanner"
++        }
++      ],
++      change: {
++        summary: "Updated the runtime image to the patched OpenSSL version.",
++        scopeRef: "api-runtime container image version",
++        rolloutRef: "git diff deploy/runtime-api.yaml",
++        reversibleIntent: true,
++        affectsMultipleComponents: false,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "The patched package version is deployed and the vulnerable version is no longer present.",
++        checks: ["Inspect deployed image digest", "Verify package inventory shows the patched version"]
++      },
++      evidence: [
++        {
++          type: "config_diff",
++          summary: "Deployment manifest now references the patched runtime image.",
++          reference: "git diff deploy/runtime-api.yaml"
++        },
++        {
++          type: "test_result",
++          summary: "Package inventory confirms the vulnerable OpenSSL version is gone.",
++          reference: "inventory-check-2026-04-13"
++        }
++      ],
++      outcomeSummary: "The runtime image was patched in one place and verification confirmed the vulnerable package version was removed."
++    });
++
++    expect(result.finalOutcome.status).toBe("fixed");
++    expect(result.issueOutcomes.map((issue) => issue.disposition)).toEqual(["fixed", "skipped", "unverified"]);
++    expect(result.carryForward.resolvedIssues[0]?.sourceId).toBe("finding-patch-1");
++    expect(result.carryForward.outstandingIssues.map((issue) => issue.sourceId)).toEqual(["finding-skip-1", "obs-verify-1"]);
++  });
++
+   it("blocks an unsafe change that broadens beyond one reversible mitigation", () => {
+     const result = executeDefensiveIteration({
+       iterationId: "iter-004",
+@@ -555,6 +760,8 @@
+     expect(result.status).toBe("blocked");
+     expect(result.failure?.reason).toBe("unsafe_action");
+     expect(result.verification.outcome).toBe("blocked");
++    expect(result.finalOutcome.status).toBe("blocked");
++    expect(result.issueOutcomes[0]?.disposition).toBe("skipped");
+     expect(result.handoffSummary).toContain("No change was applied");
+   });
+ 
+@@ -612,6 +819,8 @@
+ 
+     expect(result.status).toBe("blocked");
+     expect(result.failure?.reason).toBe("ambiguous_scope");
++    expect(result.issueOutcomes[0]?.disposition).toBe("unverified");
++    expect(result.carryForward.outstandingIssues[0]?.sourceId).toBe("finding-2");
+     expect(result.recommendedNextStep.summary).toContain("stronger evidence");
+   });
+ });
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index 91a14e66164182da15bf24e15fd89e75765f4c70..5bebfbc8b89adc6f8f8dab12933b430f25ec11b5
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -501,6 +501,9 @@
+ });
+ export type DefensiveIterationObservation = z.infer<typeof defensiveIterationObservationSchema>;
+ 
++export const defensiveIssueDispositionSchema = z.enum(["fixed", "mitigated", "unverified", "skipped"]);
++export type DefensiveIssueDisposition = z.infer<typeof defensiveIssueDispositionSchema>;
++
+ export const defensiveIterationInputSchema = z.object({
+   findings: z.array(defensiveIterationFindingSchema).min(1),
+   target: defensiveTargetIdentitySchema,
+@@ -558,6 +561,13 @@
+ });
+ export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
+ 
++export const defensiveFinalOutcomeSchema = z.object({
++  status: z.enum(["fixed", "mitigated", "blocked"]),
++  summary: z.string().min(1),
++  changeApplied: z.boolean()
++});
++export type DefensiveFinalOutcome = z.infer<typeof defensiveFinalOutcomeSchema>;
++
+ export const defensiveMitigationChangeSchema = z.object({
+   summary: z.string().min(1),
+   scopeRef: z.string().min(1),
+@@ -588,6 +598,30 @@
+ export const defensivePrioritizationSourceKindSchema = z.enum(["finding", "observation"]);
+ export type DefensivePrioritizationSourceKind = z.infer<typeof defensivePrioritizationSourceKindSchema>;
+ 
++export const defensiveIssueOutcomeSchema = z.object({
++  sourceId: z.string().min(1),
++  sourceKind: defensivePrioritizationSourceKindSchema,
++  title: z.string().min(1),
++  severity: severitySchema,
++  disposition: defensiveIssueDispositionSchema,
++  summary: z.string().min(1),
++  evidenceRefs: z.array(z.string().min(1)).default([]),
++  carryForward: z.boolean()
++});
++export type DefensiveIssueOutcome = z.infer<typeof defensiveIssueOutcomeSchema>;
++
++export const defensiveCarryForwardStateSchema = z.object({
++  iterationId: z.string().min(1),
++  summary: z.string().min(1),
++  target: defensiveTargetIdentitySchema,
++  assetContext: defensiveAssetContextSchema,
++  resolvedIssues: z.array(defensiveIssueOutcomeSchema).default([]),
++  outstandingIssues: z.array(defensiveIssueOutcomeSchema).default([]),
++  residualRisk: defensiveResidualRiskSchema,
++  recommendedNextStep: defensiveNextStepSchema
++});
++export type DefensiveCarryForwardState = z.infer<typeof defensiveCarryForwardStateSchema>;
++
+ export const defensivePrioritizationInputSchema = z
+   .object({
+     findings: z.array(defensiveIterationFindingSchema).default([]),
+@@ -996,12 +1030,167 @@
+   });
+ };
+ 
++const buildIssueOutcomes = (
++  input: DefensiveIterationInput,
++  observations: DefensiveIterationObservation[],
++  prioritization: DefensivePrioritization,
++  evidence: DefensiveEvidenceArtifact[],
++  outcome: "completed" | "blocked",
++  failure?: DefensiveFailureState
++): DefensiveIssueOutcome[] => {
++  const sourceIndex = new Map<string, DefensivePrioritizationSource>(
++    [
++      ...input.findings.map((finding) => ({ ...finding, kind: "finding" as const })),
++      ...observations.map((observation) => ({ ...observation, kind: "observation" as const }))
++    ].map((source) => [`${source.kind}:${source.id}`, source])
++  );
++  const followUpKeys = new Set(prioritization.followUp.map((item) => `${item.sourceKind}:${item.sourceId}`));
++  const selectedKeys = new Set(
++    prioritization.selectedAction.sourceIds.map((sourceId, index) => {
++      const sourceKind = prioritization.selectedAction.sourceKinds[index] ?? prioritization.selectedAction.sourceKinds[0];
++      return `${sourceKind}:${sourceId}`;
++    })
++  );
++  const evidenceRefs = evidence
++    .map((artifact) => artifact.reference)
++    .filter((reference): reference is string => typeof reference === "string" && reference.length > 0);
++
++  return Array.from(sourceIndex.entries())
++    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
++    .map(([, source]) => {
++      const sourceKey = `${source.kind}:${source.id}`;
++
++      if (followUpKeys.has(sourceKey)) {
++        return defensiveIssueOutcomeSchema.parse({
++          sourceId: source.id,
++          sourceKind: source.kind,
++          title: source.title,
++          severity: source.severity,
++          disposition: "unverified",
++          summary: "Moved to follow-up because the evidence is not strong enough to support a confirmed remediation claim in this iteration.",
++          evidenceRefs,
++          carryForward: true
++        });
++      }
++
++      if (selectedKeys.has(sourceKey)) {
++        if (outcome === "completed") {
++          const disposition = prioritization.selectedAction.action.type === "patch" ? "fixed" : "mitigated";
++
++          return defensiveIssueOutcomeSchema.parse({
++            sourceId: source.id,
++            sourceKind: source.kind,
++            title: source.title,
++            severity: source.severity,
++            disposition,
++            summary: disposition === "fixed"
++              ? "The selected bounded change removed the issue and verification evidence supports closing it for this iteration."
++              : "The selected bounded change reduced the issue exposure, but some residual risk may remain for a later iteration.",
++            evidenceRefs,
++            carryForward: disposition !== "fixed"
++          });
++        }
++
++        const disposition = failure?.reason === "ambiguous_scope"
++          && prioritization.selectedAction.confidenceDisposition !== "confirmed_risk"
++          ? "unverified"
++          : "skipped";
++
++        return defensiveIssueOutcomeSchema.parse({
++          sourceId: source.id,
++          sourceKind: source.kind,
++          title: source.title,
++          severity: source.severity,
++          disposition,
++          summary: disposition === "unverified"
++            ? "Autonomous mitigation was blocked because the evidence was not strong enough to confirm the issue safely."
++            : "The issue was intentionally skipped for this iteration because the proposed action could not be executed safely within the bounded scope.",
++          evidenceRefs,
++          carryForward: true
++        });
++      }
++
++      return defensiveIssueOutcomeSchema.parse({
++        sourceId: source.id,
++        sourceKind: source.kind,
++        title: source.title,
++        severity: source.severity,
++        disposition: "skipped",
++        summary: "The issue was intentionally left for a later iteration because another action ranked higher for immediate risk reduction.",
++        evidenceRefs,
++        carryForward: true
++      });
++    });
++};
++
++const buildCarryForwardState = (
++  iterationId: string,
++  input: DefensiveIterationInput,
++  issueOutcomes: DefensiveIssueOutcome[],
++  residualRisk: DefensiveResidualRisk,
++  recommendedNextStep: DefensiveNextStep
++): DefensiveCarryForwardState =>
++  defensiveCarryForwardStateSchema.parse({
++    iterationId,
++    summary: `${issueOutcomes.filter((issue) => issue.disposition === "fixed" || issue.disposition === "mitigated").length} issue(s) changed state and ${issueOutcomes.filter((issue) => issue.carryForward).length} item(s) carry forward into the next iteration.`,
++    target: input.target,
++    assetContext: input.assetContext,
++    resolvedIssues: issueOutcomes.filter((issue) => !issue.carryForward),
++    outstandingIssues: issueOutcomes.filter((issue) => issue.carryForward),
++    residualRisk,
++    recommendedNextStep
++  });
++
++const buildFinalOutcome = (
++  selectedAction: DefensiveChosenAction,
++  verificationSummary: string,
++  status: "completed" | "blocked"
++): DefensiveFinalOutcome =>
++  defensiveFinalOutcomeSchema.parse({
++    status: status === "blocked"
++      ? "blocked"
++      : selectedAction.type === "patch"
++        ? "fixed"
++        : "mitigated",
++    summary: verificationSummary,
++    changeApplied: status === "completed"
++  });
++
+ const blockDefensiveIteration = (
+   request: DefensiveExecutionRequest,
+   prioritization: DefensivePrioritization,
+   failure: DefensiveFailureState
+ ): DefensiveIterationRecord => {
+   const selectedAction = prioritization.selectedAction.action;
++  const residualRisk = defensiveResidualRiskSchema.parse({
++    level: request.input.findings
++      .map((finding) => finding.severity)
++      .sort((left, right) => severityOrder[right] - severityOrder[left])[0] ?? "info",
++    summary: "The hardening iteration was blocked, so the selected risk remains in place until scope or evidence improves.",
++    remainingFindingIds: prioritization.selectedAction.sourceIds,
++    needsHumanReview: true
++  });
++  const recommendedNextStep = defensiveNextStepSchema.parse({
++    summary: failure.operatorAction,
++    rationale: failure.summary,
++    continueLoop: false
++  });
++  const issueOutcomes = buildIssueOutcomes(
++    request.input,
++    request.observations,
++    prioritization,
++    request.evidence,
++    "blocked",
++    failure
++  );
++  const finalOutcome = buildFinalOutcome(selectedAction, failure.summary, "blocked");
++  const carryForward = buildCarryForwardState(
++    request.iterationId,
++    request.input,
++    issueOutcomes,
++    residualRisk,
++    recommendedNextStep
++  );
+ 
+   return defensiveIterationRecordSchema.parse({
+     iterationId: request.iterationId,
+@@ -1016,19 +1205,11 @@
+       checks: request.verificationPlan.checks
+     },
+     evidence: request.evidence,
+-    residualRisk: {
+-      level: request.input.findings
+-        .map((finding) => finding.severity)
+-        .sort((left, right) => severityOrder[right] - severityOrder[left])[0] ?? "info",
+-      summary: "The hardening iteration was blocked, so the selected risk remains in place until scope or evidence improves.",
+-      remainingFindingIds: prioritization.selectedAction.sourceIds,
+-      needsHumanReview: true
+-    },
+-    recommendedNextStep: {
+-      summary: failure.operatorAction,
+-      rationale: failure.summary,
+-      continueLoop: false
+-    },
++    finalOutcome,
++    issueOutcomes,
++    residualRisk,
++    recommendedNextStep,
++    carryForward,
+     handoffSummary: `${failure.summary} No change was applied.`,
+     failure
+   });
+@@ -1195,6 +1376,21 @@
+ 
+   const residualRisk = deriveCompletionResidualRisk(prioritization, request.input);
+   const recommendedNextStep = buildCompletedNextStep(prioritization);
++  const issueOutcomes = buildIssueOutcomes(
++    request.input,
++    request.observations,
++    prioritization,
++    request.evidence,
++    "completed"
++  );
++  const finalOutcome = buildFinalOutcome(selectedAction, request.outcomeSummary, "completed");
++  const carryForward = buildCarryForwardState(
++    request.iterationId,
++    request.input,
++    issueOutcomes,
++    residualRisk,
++    recommendedNextStep
++  );
+ 
+   return defensiveIterationRecordSchema.parse({
+     iterationId: request.iterationId,
+@@ -1209,8 +1405,11 @@
+       checks: request.verificationPlan.checks
+     },
+     evidence: request.evidence,
++    finalOutcome,
++    issueOutcomes,
+     residualRisk,
+     recommendedNextStep,
++    carryForward,
+     handoffSummary: `${request.change.summary} completed. ${recommendedNextStep.summary}`
+   });
+ };
+@@ -1243,8 +1442,11 @@
+     chosenAction: defensiveChosenActionSchema,
+     verification: defensiveVerificationSchema,
+     evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
++    finalOutcome: defensiveFinalOutcomeSchema,
++    issueOutcomes: z.array(defensiveIssueOutcomeSchema).min(1),
+     residualRisk: defensiveResidualRiskSchema,
+     recommendedNextStep: defensiveNextStepSchema,
++    carryForward: defensiveCarryForwardStateSchema,
+     handoffSummary: z.string().min(1),
+     failure: defensiveFailureStateSchema.optional()
+   })
+@@ -1277,6 +1479,14 @@
+         path: ["chosenAction"]
+       });
+     }
++
++    if (value.carryForward.iterationId !== value.iterationId) {
++      ctx.addIssue({
++        code: z.ZodIssueCode.custom,
++        message: "Carry-forward state must reference the current iteration.",
++        path: ["carryForward", "iterationId"]
++      });
++    }
+   });
+ export type DefensiveIterationRecord = z.infer<typeof defensiveIterationRecordSchema>;
+ 
+
+codex
+Implemented S4 in the shared defensive-loop contract and docs. The iteration record now stores explicit `finalOutcome`, per-source `issueOutcomes` (`fixed`, `mitigated`, `unverified`, `skipped`), and a structured `carryForward` state so the next iteration can resume without rebuilding context.
+
+Verification passed with `pnpm --filter @synosec/contracts test`, `pnpm --filter @synosec/contracts build`, `pnpm build`, and `pnpm test`. `pnpm lint` still fails on the existing typed-lint issue in `apps/backend/src/generated/prisma/client.js`. Implementation commit: `da2b5d8d Record evidence and residual risk`. Final HEAD: `f5b94ca7 Capture S4 run log`.
+
+<promise>COMPLETE</promise>
+diff --git a/.ralph/activity.log b/.ralph/activity.log
+index 4e8b8f80a6d2aea1da70d879ee538577e5702fdb..85aa21047e4b9c21039dd89dc116d2dfee6ef967
+--- a/.ralph/activity.log
++++ b/.ralph/activity.log
+@@ -25,3 +25,6 @@
+ [2026-04-13 00:59:46] Completed S3 verification: contracts tests/build passed, workspace build/tests passed, and root lint still fails on the existing generated Prisma ESLint typed-lint issue.
+ [2026-04-13 00:59:58] ITERATION 2 end (duration=320s)
+ [2026-04-13 01:00:00] ITERATION 3 start (mode=build story=S4)
++[2026-04-13 01:06:00] Implemented major S4 code changes: added explicit issue outcomes, final outcome, carry-forward state, and updated defensive-loop docs/tests for evidence and residual-risk recording.
++[2026-04-13 01:04:23] Completed S4 verification: contracts tests/build passed, workspace build/tests passed, root lint still fails on the existing generated Prisma ESLint typed-lint issue, and frontend build emitted an existing chunk-size warning only.
++[2026-04-13 01:05:30] Updated S4 progress log with commit da2b5d8d, verification results, and evidence-recording notes for future iterations.
+diff --git a/.ralph/progress.md b/.ralph/progress.md
+index 32332c7385ee4b6adee1cdc752ef0eeb915fa568..92f5d709acd1f93c77ed1f5162f04a32d89f2a10
+--- a/.ralph/progress.md
++++ b/.ralph/progress.md
+@@ -5,6 +5,39 @@
+ - (add reusable patterns here)
+ 
+ ---
++## [2026-04-13 01:05:30 CEST] - S4: Record evidence and residual risk
++Thread: 
++Run: 20260413-004709-513536 (iteration 3)
++Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-3.log
++Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-3.md
++- Guardrails reviewed: yes
++- No-commit run: false
++- Commit: da2b5d8d Record evidence and residual risk
++- Post-commit status: `clean`
++- Verification:
++  - Command: `pnpm --filter @synosec/contracts test` -> PASS
++  - Command: `pnpm --filter @synosec/contracts build` -> PASS
++  - Command: `pnpm build` -> PASS
++  - Command: `pnpm test` -> PASS
++  - Command: `pnpm lint` -> FAIL (existing ESLint typed-lint issue in `apps/backend/src/generated/prisma/client.js`)
++- Files changed:
++  - .ralph/activity.log
++  - .ralph/progress.md
++  - docs/defensive-loop-contract.md
++  - packages/contracts/src/index.test.ts
++  - packages/contracts/src/index.ts
++- What was implemented
++- Added explicit `finalOutcome`, per-source `issueOutcomes`, and a structured `carryForward` state to the defensive iteration record so each run preserves evidence, residual risk, and next-iteration context.
++- Classified iteration sources as `fixed`, `mitigated`, `unverified`, or intentionally `skipped`, with deterministic evidence references and carry-forward behavior.
++- Extended contract tests and operator-facing documentation so the recording model is reviewable and reusable in later iterations without rebuilding prior context.
++- **Learnings for future iterations:**
++  - Patterns discovered
++  - The shared contracts package is still the right integration point for workflow-state changes that later stories may surface in backend or frontend code.
++  - Gotchas encountered
++  - The documented `ralph log` helper path is missing in this workspace, so activity logging had to be appended manually.
++  - Useful context
++  - `carryForward` now provides a direct seed for the next loop iteration, including target context, resolved issues, outstanding issues, residual risk, and the recommended next step.
++---
+ ## [2026-04-13 00:59:13 CEST] - S3: Execute one bounded hardening iteration
+ Thread: 019d83e0-a12b-7421-80a6-13a4141127e6
+ Run: 20260413-004709-513536 (iteration 2)
+diff --git a/docs/defensive-loop-contract.md b/docs/defensive-loop-contract.md
+index aa13ea82bef0e055013d646cb94d8ac117787940..9e972d699cb4f224b40cd6cafe6d6e798acecb8b
+--- a/docs/defensive-loop-contract.md
++++ b/docs/defensive-loop-contract.md
+@@ -64,7 +64,18 @@
+ - the proposed change does not match the selected mitigation scope
+ - verification evidence is missing, so the loop cannot claim success
+ 
+-When execution succeeds, the record explains the exact mitigation that landed, the verification checks that passed, the residual risk, and the next bounded step. When execution is blocked, the record preserves the failure reason and states clearly that no change was applied.
++When execution succeeds, the record explains the exact mitigation that landed, the verification checks that passed, the residual risk, the per-issue outcome (`fixed`, `mitigated`, `unverified`, or `skipped`), and the next bounded step. When execution is blocked, the record preserves the failure reason, marks which issues were intentionally skipped or still unverified, and states clearly that no change was applied.
++
++## Recorded iteration state
++
++The record stage now preserves enough structure for the next iteration to start without rebuilding context by hand:
++
++- `input.findings`: the source findings that justified the iteration.
++- `chosenAction`: the selected bounded mitigation and its safety checks.
++- `evidence`: reviewable source, change, and verification artifacts.
++- `finalOutcome`: whether the iteration ended as `fixed`, `mitigated`, or `blocked`.
++- `issueOutcomes`: one entry per finding or observation showing whether it was `fixed`, `mitigated`, `unverified`, or intentionally `skipped`.
++- `carryForward`: the next-iteration seed, including the target, asset context, resolved issues, outstanding issues, residual risk, and recommended next step.
+ 
+ ## Failure states
+ 
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+index 316e1eb782174c7c2706c14a3f92f42468c9948c..50353a08e16583bc39ce1aa2cecf4470d2fab41c
+--- a/packages/contracts/src/index.test.ts
++++ b/packages/contracts/src/index.test.ts
+@@ -242,6 +242,23 @@
+           reference: "probe-log-2026-04-13"
+         }
+       ],
++      finalOutcome: {
++        status: "mitigated",
++        summary: "The route no longer responds from an untrusted source and still works from approved IP space.",
++        changeApplied: true
++      },
++      issueOutcomes: [
++        {
++          sourceId: "finding-1",
++          sourceKind: "finding",
++          title: "Public admin endpoint exposed",
++          severity: "high",
++          disposition: "mitigated",
++          summary: "The selected bounded change reduced the issue exposure, but some residual risk may remain for a later iteration.",
++          evidenceRefs: ["git diff apps/infra/admin-ingress.yaml", "probe-log-2026-04-13"],
++          carryForward: true
++        }
++      ],
+       residualRisk: {
+         level: "medium",
+         summary: "Exposure is reduced, but admin authentication hardening still needs review.",
+@@ -253,6 +270,49 @@
+         rationale: "The highest remaining risk is credential misuse rather than internet exposure.",
+         continueLoop: true
+       },
++      carryForward: {
++        iterationId: "iter-001",
++        summary: "1 issue(s) changed state and 1 item(s) carry forward into the next iteration.",
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        },
++        resolvedIssues: [],
++        outstandingIssues: [
++          {
++            sourceId: "finding-1",
++            sourceKind: "finding",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            disposition: "mitigated",
++            summary: "The selected bounded change reduced the issue exposure, but some residual risk may remain for a later iteration.",
++            evidenceRefs: ["git diff apps/infra/admin-ingress.yaml", "probe-log-2026-04-13"],
++            carryForward: true
++          }
++        ],
++        residualRisk: {
++          level: "medium",
++          summary: "Exposure is reduced, but admin authentication hardening still needs review.",
++          remainingFindingIds: ["finding-auth-1"],
++          needsHumanReview: false
++        },
++        recommendedNextStep: {
++          summary: "Review privileged admin authentication flows next.",
++          rationale: "The highest remaining risk is credential misuse rather than internet exposure.",
++          continueLoop: true
++        }
++      },
+       handoffSummary: "Ingress is restricted and the next iteration should focus on admin authentication hardening."
+     });
+ 
+@@ -414,6 +474,23 @@
+           summary: "The current report does not provide enough proof to act."
+         }
+       ],
++      finalOutcome: {
++        status: "blocked",
++        summary: "Execution was blocked before verification.",
++        changeApplied: false
++      },
++      issueOutcomes: [
++        {
++          sourceId: "finding-2",
++          sourceKind: "finding",
++          title: "Suspicious privileged path",
++          severity: "high",
++          disposition: "unverified",
++          summary: "Autonomous mitigation was blocked because the evidence was not strong enough to confirm the issue safely.",
++          evidenceRefs: [],
++          carryForward: true
++        }
++      ],
+       residualRisk: {
+         level: "high",
+         summary: "The suspected issue remains unresolved pending stronger evidence.",
+@@ -425,6 +502,47 @@
+         rationale: "The scope and exploitability are still ambiguous.",
+         continueLoop: false
+       },
++      carryForward: {
++        iterationId: "iter-002",
++        summary: "0 issue(s) changed state and 1 item(s) carry forward into the next iteration.",
++        target: {
++          kind: "application",
++          id: "app-1",
++          displayName: "Operator Portal"
++        },
++        assetContext: {
++          assetId: "asset-2",
++          assetName: "Operator Portal",
++          criticality: "high",
++          internetExposed: true,
++          containsSensitiveData: false,
++          notes: []
++        },
++        resolvedIssues: [],
++        outstandingIssues: [
++          {
++            sourceId: "finding-2",
++            sourceKind: "finding",
++            title: "Suspicious privileged path",
++            severity: "high",
++            disposition: "unverified",
++            summary: "Autonomous mitigation was blocked because the evidence was not strong enough to confirm the issue safely.",
++            evidenceRefs: [],
++            carryForward: true
++          }
++        ],
++        residualRisk: {
++          level: "high",
++          summary: "The suspected issue remains unresolved pending stronger evidence.",
++          remainingFindingIds: ["finding-2"],
++          needsHumanReview: true
++        },
++        recommendedNextStep: {
++          summary: "Reproduce the finding with stronger evidence before any change.",
++          rationale: "The scope and exploitability are still ambiguous.",
++          continueLoop: false
++        }
++      },
+       handoffSummary: "Pause autonomous action until the finding can be reproduced."
+     });
+ 
+@@ -493,11 +611,98 @@
+     expect(result.status).toBe("completed");
+     expect(result.verification.outcome).toBe("verified");
+     expect(result.chosenAction.type).toBe("access_restriction");
++    expect(result.finalOutcome.status).toBe("mitigated");
+     expect(result.evidence).toHaveLength(2);
++    expect(result.issueOutcomes[0]?.disposition).toBe("mitigated");
++    expect(result.carryForward.outstandingIssues[0]?.sourceId).toBe("finding-1");
+     expect(result.recommendedNextStep.continueLoop).toBe(true);
+     expect(result.handoffSummary).toContain("completed");
+   });
+ 
++  it("records fixed, mitigated, unverified, and skipped issue outcomes for future iterations", () => {
++    const result = executeDefensiveIteration({
++      iterationId: "iter-003b",
++      input: {
++        findings: [
++          {
++            id: "finding-patch-1",
++            title: "Outdated OpenSSL package",
++            severity: "critical",
++            confidence: 0.97,
++            summary: "The runtime image ships an OpenSSL package with a published fix available.",
++            evidence: "Package inventory and CVE review confirm the vulnerable version.",
++            source: "package-audit"
++          },
++          {
++            id: "finding-skip-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.91,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "runtime",
++          id: "runtime-api",
++          displayName: "API Runtime",
++          environment: "production",
++          locator: "api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-runtime-1",
++          assetName: "API Runtime",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production runtime"]
++        }
++      },
++      observations: [
++        {
++          id: "obs-verify-1",
++          title: "Possible debug endpoint",
++          severity: "medium",
++          confidence: 0.62,
++          summary: "A debug route may still be exposed.",
++          evidence: "Single unverified report from an earlier probe.",
++          source: "scanner"
++        }
++      ],
++      change: {
++        summary: "Updated the runtime image to the patched OpenSSL version.",
++        scopeRef: "api-runtime container image version",
++        rolloutRef: "git diff deploy/runtime-api.yaml",
++        reversibleIntent: true,
++        affectsMultipleComponents: false,
++        destructive: false
++      },
++      verificationPlan: {
++        successCriteria: "The patched package version is deployed and the vulnerable version is no longer present.",
++        checks: ["Inspect deployed image digest", "Verify package inventory shows the patched version"]
++      },
++      evidence: [
++        {
++          type: "config_diff",
++          summary: "Deployment manifest now references the patched runtime image.",
++          reference: "git diff deploy/runtime-api.yaml"
++        },
++        {
++          type: "test_result",
++          summary: "Package inventory confirms the vulnerable OpenSSL version is gone.",
++          reference: "inventory-check-2026-04-13"
++        }
++      ],
++      outcomeSummary: "The runtime image was patched in one place and verification confirmed the vulnerable package version was removed."
++    });
++
++    expect(result.finalOutcome.status).toBe("fixed");
++    expect(result.issueOutcomes.map((issue) => issue.disposition)).toEqual(["fixed", "skipped", "unverified"]);
++    expect(result.carryForward.resolvedIssues[0]?.sourceId).toBe("finding-patch-1");
++    expect(result.carryForward.outstandingIssues.map((issue) => issue.sourceId)).toEqual(["finding-skip-1", "obs-verify-1"]);
++  });
++
+   it("blocks an unsafe change that broadens beyond one reversible mitigation", () => {
+     const result = executeDefensiveIteration({
+       iterationId: "iter-004",
+@@ -555,6 +760,8 @@
+     expect(result.status).toBe("blocked");
+     expect(result.failure?.reason).toBe("unsafe_action");
+     expect(result.verification.outcome).toBe("blocked");
++    expect(result.finalOutcome.status).toBe("blocked");
++    expect(result.issueOutcomes[0]?.disposition).toBe("skipped");
+     expect(result.handoffSummary).toContain("No change was applied");
+   });
+ 
+@@ -612,6 +819,8 @@
+ 
+     expect(result.status).toBe("blocked");
+     expect(result.failure?.reason).toBe("ambiguous_scope");
++    expect(result.issueOutcomes[0]?.disposition).toBe("unverified");
++    expect(result.carryForward.outstandingIssues[0]?.sourceId).toBe("finding-2");
+     expect(result.recommendedNextStep.summary).toContain("stronger evidence");
+   });
+ });
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index 91a14e66164182da15bf24e15fd89e75765f4c70..5bebfbc8b89adc6f8f8dab12933b430f25ec11b5
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -501,6 +501,9 @@
+ });
+ export type DefensiveIterationObservation = z.infer<typeof defensiveIterationObservationSchema>;
+ 
++export const defensiveIssueDispositionSchema = z.enum(["fixed", "mitigated", "unverified", "skipped"]);
++export type DefensiveIssueDisposition = z.infer<typeof defensiveIssueDispositionSchema>;
++
+ export const defensiveIterationInputSchema = z.object({
+   findings: z.array(defensiveIterationFindingSchema).min(1),
+   target: defensiveTargetIdentitySchema,
+@@ -558,6 +561,13 @@
+ });
+ export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
+ 
++export const defensiveFinalOutcomeSchema = z.object({
++  status: z.enum(["fixed", "mitigated", "blocked"]),
++  summary: z.string().min(1),
++  changeApplied: z.boolean()
++});
++export type DefensiveFinalOutcome = z.infer<typeof defensiveFinalOutcomeSchema>;
++
+ export const defensiveMitigationChangeSchema = z.object({
+   summary: z.string().min(1),
+   scopeRef: z.string().min(1),
+@@ -588,6 +598,30 @@
+ export const defensivePrioritizationSourceKindSchema = z.enum(["finding", "observation"]);
+ export type DefensivePrioritizationSourceKind = z.infer<typeof defensivePrioritizationSourceKindSchema>;
+ 
++export const defensiveIssueOutcomeSchema = z.object({
++  sourceId: z.string().min(1),
++  sourceKind: defensivePrioritizationSourceKindSchema,
++  title: z.string().min(1),
++  severity: severitySchema,
++  disposition: defensiveIssueDispositionSchema,
++  summary: z.string().min(1),
++  evidenceRefs: z.array(z.string().min(1)).default([]),
++  carryForward: z.boolean()
++});
++export type DefensiveIssueOutcome = z.infer<typeof defensiveIssueOutcomeSchema>;
++
++export const defensiveCarryForwardStateSchema = z.object({
++  iterationId: z.string().min(1),
++  summary: z.string().min(1),
++  target: defensiveTargetIdentitySchema,
++  assetContext: defensiveAssetContextSchema,
++  resolvedIssues: z.array(defensiveIssueOutcomeSchema).default([]),
++  outstandingIssues: z.array(defensiveIssueOutcomeSchema).default([]),
++  residualRisk: defensiveResidualRiskSchema,
++  recommendedNextStep: defensiveNextStepSchema
++});
++export type DefensiveCarryForwardState = z.infer<typeof defensiveCarryForwardStateSchema>;
++
+ export const defensivePrioritizationInputSchema = z
+   .object({
+     findings: z.array(defensiveIterationFindingSchema).default([]),
+@@ -996,12 +1030,167 @@
+   });
+ };
+ 
++const buildIssueOutcomes = (
++  input: DefensiveIterationInput,
++  observations: DefensiveIterationObservation[],
++  prioritization: DefensivePrioritization,
++  evidence: DefensiveEvidenceArtifact[],
++  outcome: "completed" | "blocked",
++  failure?: DefensiveFailureState
++): DefensiveIssueOutcome[] => {
++  const sourceIndex = new Map<string, DefensivePrioritizationSource>(
++    [
++      ...input.findings.map((finding) => ({ ...finding, kind: "finding" as const })),
++      ...observations.map((observation) => ({ ...observation, kind: "observation" as const }))
++    ].map((source) => [`${source.kind}:${source.id}`, source])
++  );
++  const followUpKeys = new Set(prioritization.followUp.map((item) => `${item.sourceKind}:${item.sourceId}`));
++  const selectedKeys = new Set(
++    prioritization.selectedAction.sourceIds.map((sourceId, index) => {
++      const sourceKind = prioritization.selectedAction.sourceKinds[index] ?? prioritization.selectedAction.sourceKinds[0];
++      return `${sourceKind}:${sourceId}`;
++    })
++  );
++  const evidenceRefs = evidence
++    .map((artifact) => artifact.reference)
++    .filter((reference): reference is string => typeof reference === "string" && reference.length > 0);
++
++  return Array.from(sourceIndex.entries())
++    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
++    .map(([, source]) => {
++      const sourceKey = `${source.kind}:${source.id}`;
++
++      if (followUpKeys.has(sourceKey)) {
++        return defensiveIssueOutcomeSchema.parse({
++          sourceId: source.id,
++          sourceKind: source.kind,
++          title: source.title,
++          severity: source.severity,
++          disposition: "unverified",
++          summary: "Moved to follow-up because the evidence is not strong enough to support a confirmed remediation claim in this iteration.",
++          evidenceRefs,
++          carryForward: true
++        });
++      }
++
++      if (selectedKeys.has(sourceKey)) {
++        if (outcome === "completed") {
++          const disposition = prioritization.selectedAction.action.type === "patch" ? "fixed" : "mitigated";
++
++          return defensiveIssueOutcomeSchema.parse({
++            sourceId: source.id,
++            sourceKind: source.kind,
++            title: source.title,
++            severity: source.severity,
++            disposition,
++            summary: disposition === "fixed"
++              ? "The selected bounded change removed the issue and verification evidence supports closing it for this iteration."
++              : "The selected bounded change reduced the issue exposure, but some residual risk may remain for a later iteration.",
++            evidenceRefs,
++            carryForward: disposition !== "fixed"
++          });
++        }
++
++        const disposition = failure?.reason === "ambiguous_scope"
++          && prioritization.selectedAction.confidenceDisposition !== "confirmed_risk"
++          ? "unverified"
++          : "skipped";
++
++        return defensiveIssueOutcomeSchema.parse({
++          sourceId: source.id,
++          sourceKind: source.kind,
++          title: source.title,
++          severity: source.severity,
++          disposition,
++          summary: disposition === "unverified"
++            ? "Autonomous mitigation was blocked because the evidence was not strong enough to confirm the issue safely."
++            : "The issue was intentionally skipped for this iteration because the proposed action could not be executed safely within the bounded scope.",
++          evidenceRefs,
++          carryForward: true
++        });
++      }
++
++      return defensiveIssueOutcomeSchema.parse({
++        sourceId: source.id,
++        sourceKind: source.kind,
++        title: source.title,
++        severity: source.severity,
++        disposition: "skipped",
++        summary: "The issue was intentionally left for a later iteration because another action ranked higher for immediate risk reduction.",
++        evidenceRefs,
++        carryForward: true
++      });
++    });
++};
++
++const buildCarryForwardState = (
++  iterationId: string,
++  input: DefensiveIterationInput,
++  issueOutcomes: DefensiveIssueOutcome[],
++  residualRisk: DefensiveResidualRisk,
++  recommendedNextStep: DefensiveNextStep
++): DefensiveCarryForwardState =>
++  defensiveCarryForwardStateSchema.parse({
++    iterationId,
++    summary: `${issueOutcomes.filter((issue) => issue.disposition === "fixed" || issue.disposition === "mitigated").length} issue(s) changed state and ${issueOutcomes.filter((issue) => issue.carryForward).length} item(s) carry forward into the next iteration.`,
++    target: input.target,
++    assetContext: input.assetContext,
++    resolvedIssues: issueOutcomes.filter((issue) => !issue.carryForward),
++    outstandingIssues: issueOutcomes.filter((issue) => issue.carryForward),
++    residualRisk,
++    recommendedNextStep
++  });
++
++const buildFinalOutcome = (
++  selectedAction: DefensiveChosenAction,
++  verificationSummary: string,
++  status: "completed" | "blocked"
++): DefensiveFinalOutcome =>
++  defensiveFinalOutcomeSchema.parse({
++    status: status === "blocked"
++      ? "blocked"
++      : selectedAction.type === "patch"
++        ? "fixed"
++        : "mitigated",
++    summary: verificationSummary,
++    changeApplied: status === "completed"
++  });
++
+ const blockDefensiveIteration = (
+   request: DefensiveExecutionRequest,
+   prioritization: DefensivePrioritization,
+   failure: DefensiveFailureState
+ ): DefensiveIterationRecord => {
+   const selectedAction = prioritization.selectedAction.action;
++  const residualRisk = defensiveResidualRiskSchema.parse({
++    level: request.input.findings
++      .map((finding) => finding.severity)
++      .sort((left, right) => severityOrder[right] - severityOrder[left])[0] ?? "info",
++    summary: "The hardening iteration was blocked, so the selected risk remains in place until scope or evidence improves.",
++    remainingFindingIds: prioritization.selectedAction.sourceIds,
++    needsHumanReview: true
++  });
++  const recommendedNextStep = defensiveNextStepSchema.parse({
++    summary: failure.operatorAction,
++    rationale: failure.summary,
++    continueLoop: false
++  });
++  const issueOutcomes = buildIssueOutcomes(
++    request.input,
++    request.observations,
++    prioritization,
++    request.evidence,
++    "blocked",
++    failure
++  );
++  const finalOutcome = buildFinalOutcome(selectedAction, failure.summary, "blocked");
++  const carryForward = buildCarryForwardState(
++    request.iterationId,
++    request.input,
++    issueOutcomes,
++    residualRisk,
++    recommendedNextStep
++  );
+ 
+   return defensiveIterationRecordSchema.parse({
+     iterationId: request.iterationId,
+@@ -1016,19 +1205,11 @@
+       checks: request.verificationPlan.checks
+     },
+     evidence: request.evidence,
+-    residualRisk: {
+-      level: request.input.findings
+-        .map((finding) => finding.severity)
+-        .sort((left, right) => severityOrder[right] - severityOrder[left])[0] ?? "info",
+-      summary: "The hardening iteration was blocked, so the selected risk remains in place until scope or evidence improves.",
+-      remainingFindingIds: prioritization.selectedAction.sourceIds,
+-      needsHumanReview: true
+-    },
+-    recommendedNextStep: {
+-      summary: failure.operatorAction,
+-      rationale: failure.summary,
+-      continueLoop: false
+-    },
++    finalOutcome,
++    issueOutcomes,
++    residualRisk,
++    recommendedNextStep,
++    carryForward,
+     handoffSummary: `${failure.summary} No change was applied.`,
+     failure
+   });
+@@ -1195,6 +1376,21 @@
+ 
+   const residualRisk = deriveCompletionResidualRisk(prioritization, request.input);
+   const recommendedNextStep = buildCompletedNextStep(prioritization);
++  const issueOutcomes = buildIssueOutcomes(
++    request.input,
++    request.observations,
++    prioritization,
++    request.evidence,
++    "completed"
++  );
++  const finalOutcome = buildFinalOutcome(selectedAction, request.outcomeSummary, "completed");
++  const carryForward = buildCarryForwardState(
++    request.iterationId,
++    request.input,
++    issueOutcomes,
++    residualRisk,
++    recommendedNextStep
++  );
+ 
+   return defensiveIterationRecordSchema.parse({
+     iterationId: request.iterationId,
+@@ -1209,8 +1405,11 @@
+       checks: request.verificationPlan.checks
+     },
+     evidence: request.evidence,
++    finalOutcome,
++    issueOutcomes,
+     residualRisk,
+     recommendedNextStep,
++    carryForward,
+     handoffSummary: `${request.change.summary} completed. ${recommendedNextStep.summary}`
+   });
+ };
+@@ -1243,8 +1442,11 @@
+     chosenAction: defensiveChosenActionSchema,
+     verification: defensiveVerificationSchema,
+     evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
++    finalOutcome: defensiveFinalOutcomeSchema,
++    issueOutcomes: z.array(defensiveIssueOutcomeSchema).min(1),
+     residualRisk: defensiveResidualRiskSchema,
+     recommendedNextStep: defensiveNextStepSchema,
++    carryForward: defensiveCarryForwardStateSchema,
+     handoffSummary: z.string().min(1),
+     failure: defensiveFailureStateSchema.optional()
+   })
+@@ -1277,6 +1479,14 @@
+         path: ["chosenAction"]
+       });
+     }
++
++    if (value.carryForward.iterationId !== value.iterationId) {
++      ctx.addIssue({
++        code: z.ZodIssueCode.custom,
++        message: "Carry-forward state must reference the current iteration.",
++        path: ["carryForward", "iterationId"]
++      });
++    }
+   });
+ export type DefensiveIterationRecord = z.infer<typeof defensiveIterationRecordSchema>;
+ 
+
+tokens used
+88,084
+Implemented S4 in the shared defensive-loop contract and docs. The iteration record now stores explicit `finalOutcome`, per-source `issueOutcomes` (`fixed`, `mitigated`, `unverified`, `skipped`), and a structured `carryForward` state so the next iteration can resume without rebuilding context.
+
+Verification passed with `pnpm --filter @synosec/contracts test`, `pnpm --filter @synosec/contracts build`, `pnpm build`, and `pnpm test`. `pnpm lint` still fails on the existing typed-lint issue in `apps/backend/src/generated/prisma/client.js`. Implementation commit: `da2b5d8d Record evidence and residual risk`. Final HEAD: `f5b94ca7 Capture S4 run log`.
+
+<promise>COMPLETE</promise>
