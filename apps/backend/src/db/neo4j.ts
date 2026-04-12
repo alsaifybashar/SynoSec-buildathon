@@ -27,6 +27,10 @@ export function getNeo4jDriver(): Driver {
   return driver;
 }
 
+export async function ensureNeo4jAvailable(): Promise<void> {
+  await getNeo4jDriver().verifyConnectivity();
+}
+
 export async function closeNeo4jDriver(): Promise<void> {
   if (driver) {
     await driver.close();

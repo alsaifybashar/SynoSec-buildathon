@@ -1,14 +1,12 @@
 import { z } from "zod";
 
-// ---------------------------------------------------------------------------
-// Routes
-// ---------------------------------------------------------------------------
-
 export const apiRoutes = {
   health: "/api/health",
   demo: "/api/demo",
   brief: "/api/brief",
-  // Scan lifecycle
+  applications: "/api/applications",
+  runtimes: "/api/runtimes",
+  workflows: "/api/workflows",
   scanCreate: "/api/scan",
   scanList: "/api/scans",
   scanGet: "/api/scan/:id",
@@ -23,10 +21,6 @@ export const apiRoutes = {
   scanSeed: "/api/scan/seed",
   applications: "/api/applications"
 } as const;
-
-// ---------------------------------------------------------------------------
-// Existing legacy schemas (kept for backwards compat with tests)
-// ---------------------------------------------------------------------------
 
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),
@@ -56,9 +50,134 @@ export const briefResponseSchema = z.object({
 });
 export type BriefResponse = z.infer<typeof briefResponseSchema>;
 
-// ---------------------------------------------------------------------------
-// OSI Layer
-// ---------------------------------------------------------------------------
+export const applicationEnvironmentSchema = z.enum(["production", "staging", "development"]);
+export type ApplicationEnvironment = z.infer<typeof applicationEnvironmentSchema>;
+
+export const applicationStatusSchema = z.enum(["active", "investigating", "archived"]);
+export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
+
+export const applicationSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  baseUrl: z.string().url().nullable(),
+  environment: applicationEnvironmentSchema,
+  status: applicationStatusSchema,
+  lastScannedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type Application = z.infer<typeof applicationSchema>;
+
+export const listApplicationsResponseSchema = z.object({
+  applications: z.array(applicationSchema)
+});
+export type ListApplicationsResponse = z.infer<typeof listApplicationsResponseSchema>;
+
+const applicationBodyBaseSchema = z.object({
+  name: z.string().trim().min(1),
+  baseUrl: z.union([z.string().trim().url(), z.literal(""), z.null()]).transform((value) => value || null),
+  environment: applicationEnvironmentSchema,
+  status: applicationStatusSchema,
+  lastScannedAt: z.union([z.string().datetime(), z.null()])
+});
+
+export const createApplicationBodySchema = applicationBodyBaseSchema;
+export type CreateApplicationBody = z.infer<typeof createApplicationBodySchema>;
+
+export const updateApplicationBodySchema = applicationBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
+  message: "At least one field is required."
+});
+export type UpdateApplicationBody = z.infer<typeof updateApplicationBodySchema>;
+
+export const runtimeServiceTypeSchema = z.enum(["gateway", "api", "worker", "database", "queue", "storage", "other"]);
+export type RuntimeServiceType = z.infer<typeof runtimeServiceTypeSchema>;
+
+export const runtimeProviderSchema = z.enum(["aws", "gcp", "azure", "on-prem", "docker", "vercel", "other"]);
+export type RuntimeProvider = z.infer<typeof runtimeProviderSchema>;
+
+export const runtimeStatusSchema = z.enum(["healthy", "degraded", "retired"]);
+export type RuntimeStatus = z.infer<typeof runtimeStatusSchema>;
+
+export const runtimeSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  serviceType: runtimeServiceTypeSchema,
+  provider: runtimeProviderSchema,
+  environment: applicationEnvironmentSchema,
+  region: z.string().min(1),
+  status: runtimeStatusSchema,
+  applicationId: z.string().uuid().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type Runtime = z.infer<typeof runtimeSchema>;
+
+export const listRuntimesResponseSchema = z.object({
+  runtimes: z.array(runtimeSchema)
+});
+export type ListRuntimesResponse = z.infer<typeof listRuntimesResponseSchema>;
+
+const runtimeBodyBaseSchema = z.object({
+  name: z.string().trim().min(1),
+  serviceType: runtimeServiceTypeSchema,
+  provider: runtimeProviderSchema,
+  environment: applicationEnvironmentSchema,
+  region: z.string().trim().min(1),
+  status: runtimeStatusSchema,
+  applicationId: z.union([z.string().uuid(), z.literal(""), z.null()]).transform((value) => value || null)
+});
+
+export const createRuntimeBodySchema = runtimeBodyBaseSchema;
+export type CreateRuntimeBody = z.infer<typeof createRuntimeBodySchema>;
+
+export const updateRuntimeBodySchema = runtimeBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
+  message: "At least one field is required."
+});
+export type UpdateRuntimeBody = z.infer<typeof updateRuntimeBodySchema>;
+
+export const workflowTriggerSchema = z.enum(["manual", "schedule", "event"]);
+export type WorkflowTrigger = z.infer<typeof workflowTriggerSchema>;
+
+export const workflowStatusSchema = z.enum(["draft", "active", "paused"]);
+export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
+
+export const workflowTargetModeSchema = z.enum(["application", "runtime", "manual"]);
+export type WorkflowTargetMode = z.infer<typeof workflowTargetModeSchema>;
+
+export const workflowSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  trigger: workflowTriggerSchema,
+  status: workflowStatusSchema,
+  maxDepth: z.number().int().min(1).max(8),
+  targetMode: workflowTargetModeSchema,
+  applicationId: z.string().uuid().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type Workflow = z.infer<typeof workflowSchema>;
+
+export const listWorkflowsResponseSchema = z.object({
+  workflows: z.array(workflowSchema)
+});
+export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
+
+const workflowBodyBaseSchema = z.object({
+  name: z.string().trim().min(1),
+  trigger: workflowTriggerSchema,
+  status: workflowStatusSchema,
+  maxDepth: z.number().int().min(1).max(8),
+  targetMode: workflowTargetModeSchema,
+  applicationId: z.union([z.string().uuid(), z.literal(""), z.null()]).transform((value) => value || null)
+});
+
+export const createWorkflowBodySchema = workflowBodyBaseSchema;
+export type CreateWorkflowBody = z.infer<typeof createWorkflowBodySchema>;
+
+export const updateWorkflowBodySchema = workflowBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
+  message: "At least one field is required."
+});
+export type UpdateWorkflowBody = z.infer<typeof updateWorkflowBodySchema>;
 
 export const osiLayerSchema = z.enum(["L2", "L3", "L4", "L5", "L6", "L7"]);
 export type OsiLayer = z.infer<typeof osiLayerSchema>;
@@ -71,10 +190,6 @@ export const osiLayerLabels: Record<OsiLayer, string> = {
   L6: "Presentation",
   L7: "Application"
 };
-
-// ---------------------------------------------------------------------------
-// Scan scope
-// ---------------------------------------------------------------------------
 
 export const scanScopeSchema = z.object({
   targets: z.array(z.string().min(1)).min(1).max(20),
@@ -90,9 +205,16 @@ export const scanScopeSchema = z.object({
 });
 export type ScanScope = z.infer<typeof scanScopeSchema>;
 
-// ---------------------------------------------------------------------------
-// DFS Node
-// ---------------------------------------------------------------------------
+export const llmProviderSchema = z.enum(["anthropic", "local"]);
+export type LlmProvider = z.infer<typeof llmProviderSchema>;
+
+export const scanLlmConfigSchema = z.object({
+  provider: llmProviderSchema.default("anthropic"),
+  model: z.string().trim().min(1).optional(),
+  baseUrl: z.string().trim().url().optional(),
+  apiPath: z.string().trim().min(1).optional()
+});
+export type ScanLlmConfig = z.infer<typeof scanLlmConfigSchema>;
 
 export const nodeStatusSchema = z.enum(["pending", "in-progress", "complete", "skipped"]);
 export type NodeStatus = z.infer<typeof nodeStatusSchema>;
@@ -111,10 +233,6 @@ export const dfsNodeSchema = z.object({
   createdAt: z.string().datetime()
 });
 export type DfsNode = z.infer<typeof dfsNodeSchema>;
-
-// ---------------------------------------------------------------------------
-// Finding
-// ---------------------------------------------------------------------------
 
 export const severitySchema = z.enum(["info", "low", "medium", "high", "critical"]);
 export type Severity = z.infer<typeof severitySchema>;
@@ -157,6 +275,7 @@ export const findingSchema = z.object({
 });
 export type Finding = z.infer<typeof findingSchema>;
 
+<<<<<<< HEAD
 // ---------------------------------------------------------------------------
 // GRACE — Graph-Reasoning Agents + Cyber Range Evaluation
 // ---------------------------------------------------------------------------
@@ -307,6 +426,8 @@ export type EvidenceResponse = z.infer<typeof evidenceResponseSchema>;
 // Scan
 // ---------------------------------------------------------------------------
 
+=======
+>>>>>>> 8518d768bc6b0eaa5ee3c175a923e52f535c8303
 export const scanStatusSchema = z.enum(["pending", "running", "complete", "aborted", "failed"]);
 export type ScanStatus = z.infer<typeof scanStatusSchema>;
 
@@ -322,10 +443,6 @@ export const scanSchema = z.object({
 });
 export type Scan = z.infer<typeof scanSchema>;
 
-// ---------------------------------------------------------------------------
-// Audit
-// ---------------------------------------------------------------------------
-
 export const auditEntrySchema = z.object({
   id: z.string(),
   scanId: z.string(),
@@ -337,10 +454,6 @@ export const auditEntrySchema = z.object({
   details: z.record(z.unknown())
 });
 export type AuditEntry = z.infer<typeof auditEntrySchema>;
-
-// ---------------------------------------------------------------------------
-// Report
-// ---------------------------------------------------------------------------
 
 export const attackPathSchema = z.object({
   nodeIds: z.array(z.string()),
@@ -374,12 +487,9 @@ export const reportSchema = z.object({
 });
 export type Report = z.infer<typeof reportSchema>;
 
-// ---------------------------------------------------------------------------
-// API request / response wrappers
-// ---------------------------------------------------------------------------
-
 export const createScanRequestSchema = z.object({
-  scope: scanScopeSchema
+  scope: scanScopeSchema,
+  llm: scanLlmConfigSchema.optional()
 });
 export type CreateScanRequest = z.infer<typeof createScanRequestSchema>;
 
@@ -393,10 +503,6 @@ export const graphResponseSchema = z.object({
   )
 });
 export type GraphResponse = z.infer<typeof graphResponseSchema>;
-
-// ---------------------------------------------------------------------------
-// WebSocket events (server → client)
-// ---------------------------------------------------------------------------
 
 export const wsEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("node_updated"), node: dfsNodeSchema }),

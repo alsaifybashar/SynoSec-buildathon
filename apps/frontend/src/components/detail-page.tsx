@@ -3,7 +3,6 @@ import { ArrowLeft, CircleHelp } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { PageHeader } from "./page-header";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 export function DetailPage({
   title,
@@ -14,6 +13,7 @@ export function DetailPage({
   onSave,
   onDismiss,
   saveLabel = "Save",
+  sidebar,
   children
 }: {
   title: string;
@@ -24,6 +24,7 @@ export function DetailPage({
   onSave: () => void | Promise<void>;
   onDismiss: () => void;
   saveLabel?: string;
+  sidebar?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -43,9 +44,62 @@ export function DetailPage({
         </Button>
       </div>
 
-      <Card className="m-3">
-        <CardContent className="grid gap-5 p-6 md:grid-cols-2">{children}</CardContent>
-      </Card>
+      {sidebar ? (
+        <div className="m-3 grid gap-4 lg:grid-cols-[2fr_1fr]">
+          <Card>
+            <CardContent className="space-y-2 p-6">{children}</CardContent>
+          </Card>
+          <Card className="self-start bg-muted/40">
+            <CardContent className="space-y-4 p-5">{sidebar}</CardContent>
+          </Card>
+        </div>
+      ) : (
+        <Card className="m-3">
+          <CardContent className="space-y-2 p-6">{children}</CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+export function DetailFieldGroup({
+  title,
+  className,
+  children
+}: {
+  title?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={["grid gap-5 md:grid-cols-2 rounded-lg p-4 -mx-1", className]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {title ? (
+        <p className="col-span-full text-xs uppercase tracking-widest text-muted-foreground mb-1">
+          {title}
+        </p>
+      ) : null}
+      {children}
+    </div>
+  );
+}
+
+export function DetailSidebarItem({
+  label,
+  children
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs uppercase tracking-widest text-muted-foreground">
+        {label}
+      </p>
+      <div className="text-sm text-foreground">{children}</div>
     </div>
   );
 }
@@ -67,26 +121,28 @@ export function DetailField({
 }) {
   return (
     <div className={className ? `block space-y-1.5 ${className}` : "block space-y-1.5"}>
-      <div className="flex items-center gap-1.5 text-sm font-medium">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <span>
           {label}
           {required ? <span className="ml-1 text-destructive">*</span> : null}
         </span>
         {hint ? (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex items-center text-muted-foreground transition hover:text-foreground"
-                  aria-label="Show field guidance"
-                >
-                  <CircleHelp className="h-3.5 w-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{hint}</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <span className="relative inline-flex">
+            <button
+              type="button"
+              className="peer inline-flex items-center text-muted-foreground transition hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+              aria-label={`Show guidance for ${label}`}
+              title={hint}
+            >
+              <CircleHelp className="h-3.5 w-3.5" />
+            </button>
+            <span
+              role="tooltip"
+              className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden w-56 -translate-x-1/2 rounded-md bg-foreground px-3 py-2 text-left text-xs leading-relaxed text-background shadow-md peer-hover:block peer-focus-visible:block"
+            >
+              {hint}
+            </span>
+          </span>
         ) : null}
       </div>
       {children}

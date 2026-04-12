@@ -1,5 +1,5 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { ArrowUpDown, Plus, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -230,23 +230,23 @@ export function ListPage<T extends { id: string }>({
           </div>
       </div>
 
-      <section className="bg-background">
+      <section className="relative overflow-hidden bg-background" style={{ backgroundImage: "radial-gradient(ellipse at top, hsl(var(--primary) / 0.04), transparent 60%)" }}>
         <div>
           {dataState.state === "loading" ? (
-            <Table className="bg-background">
+            <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   {columns.map((column) => (
-                    <TableHead key={column.id} className={cn("border-b border-r border-t border-border bg-muted/35 last:border-r-0", column.className)}>
+                    <TableHead key={column.id} className={cn("border-b border-b-primary/10 border-t border-t-primary/10 bg-muted/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground", column.className)}>
                       {column.header}
                     </TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   {columns.map((column, columnIndex) => (
-                    <TableCell key={`${column.id}-loading`} className={cn("border-r border-border last:border-r-0", column.className)}>
+                    <TableCell key={`${column.id}-loading`} className={column.className}>
                       {columnIndex === 0 ? (
                         <div className="flex items-center justify-center text-muted-foreground">
                           <Spinner className="h-3.5 w-3.5" />
@@ -270,24 +270,39 @@ export function ListPage<T extends { id: string }>({
           ) : visibleRows.length === 0 ? (
             <div className="mx-6 mb-6 rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">{emptyMessage}</div>
           ) : (
-            <Table className="bg-background">
+            <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   {columns.map((column) => (
-                    <TableHead key={column.id} className={cn("border-b border-r border-t border-border bg-muted/35 last:border-r-0", column.className)}>
-                      <button className="inline-flex items-center gap-2 font-medium text-foreground" type="button" onClick={() => toggleSort(column.id)}>
+                    <TableHead key={column.id} className={cn("border-b border-b-primary/10 border-t border-t-primary/10 bg-muted/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground", column.className)}>
+                      <button className="group/sort inline-flex items-center gap-2 font-semibold" type="button" onClick={() => toggleSort(column.id)}>
                         {column.header}
-                        <ArrowUpDown className={cn("h-4 w-4 text-muted-foreground", sortColumn === column.id && "text-foreground")} />
+                        {sortColumn === column.id ? (
+                          sortDirection === "asc" ? (
+                            <ArrowUp className="h-3.5 w-3.5 text-primary" />
+                          ) : (
+                            <ArrowDown className="h-3.5 w-3.5 text-primary" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/50" />
+                        )}
                       </button>
                     </TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleRows.map((row) => (
-                  <TableRow key={row.id} className="cursor-pointer" onClick={() => (onRowClick ? onRowClick(row) : handleDefaultRowClick())}>
+                {visibleRows.map((row, rowIndex) => (
+                  <TableRow
+                    key={row.id}
+                    className={cn(
+                      "cursor-pointer border-l-2 border-l-transparent transition-colors duration-150 hover:border-l-primary hover:bg-accent/40",
+                      rowIndex % 2 === 1 && "bg-muted/10"
+                    )}
+                    onClick={() => (onRowClick ? onRowClick(row) : handleDefaultRowClick())}
+                  >
                     {columns.map((column) => (
-                      <TableCell key={column.id} className={cn("border-r border-border last:border-r-0", column.className)}>
+                      <TableCell key={column.id} className={column.className}>
                         {column.cell(row)}
                       </TableCell>
                     ))}

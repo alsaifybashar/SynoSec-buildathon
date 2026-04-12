@@ -9,6 +9,7 @@ import type {
   ToolRequest
 } from "@synosec/contracts";
 import { createAuditEntry } from "../db/neo4j.js";
+import type { LlmClient } from "../llm/client.js";
 
 export interface AgentContext {
   scanId: string;
@@ -25,6 +26,8 @@ export interface AgentResult {
 }
 
 export abstract class BaseAgent {
+  constructor(protected readonly llmClient: LlmClient) {}
+
   abstract readonly agentId: string;
   abstract readonly layer: OsiLayer;
 
@@ -66,5 +69,40 @@ export abstract class BaseAgent {
     await createAuditEntry(entry);
   }
 
+  protected async generateJson<T>(params: {
+    system: string;
+    user: string;
+    maxTokens: number;
+  }): Promise<T> {
+    const text = await this.llmClient.generateText(params);
+    return parseJsonResponse<T>(text);
+  }
+
   abstract execute(node: DfsNode, context: AgentContext): Promise<AgentResult>;
+}
+
+function parseJsonResponse<T>(text: string): T {
+  const trimmed = text.trim();
+
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    const withoutFences = trimmed
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+
+    try {
+      return JSON.parse(withoutFences) as T;
+    } catch {
+      const start = withoutFences.search(/[\[{]/);
+      const end = Math.max(withoutFences.lastIndexOf("}"), withoutFences.lastIndexOf("]"));
+
+      if (start >= 0 && end > start) {
+        return JSON.parse(withoutFences.slice(start, end + 1)) as T;
+      }
+
+      throw new Error("LLM response did not contain valid JSON");
+    }
+  }
 }

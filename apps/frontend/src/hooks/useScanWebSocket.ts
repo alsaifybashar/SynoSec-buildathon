@@ -6,7 +6,7 @@ interface UseScanWebSocketResult {
   isConnected: boolean;
 }
 
-export function useScanWebSocket(): UseScanWebSocketResult {
+export function useScanWebSocket(enabled = true): UseScanWebSocketResult {
   const [lastEvent, setLastEvent] = useState<WsEvent | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -15,6 +15,14 @@ export function useScanWebSocket(): UseScanWebSocketResult {
 
   useEffect(() => {
     mountedRef.current = true;
+
+    if (!enabled) {
+      setLastEvent(null);
+      setIsConnected(false);
+      return () => {
+        mountedRef.current = false;
+      };
+    }
 
     function connect() {
       if (!mountedRef.current) return;
@@ -57,7 +65,7 @@ export function useScanWebSocket(): UseScanWebSocketResult {
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (wsRef.current) wsRef.current.close();
     };
-  }, []);
+  }, [enabled]);
 
   return { lastEvent, isConnected };
 }

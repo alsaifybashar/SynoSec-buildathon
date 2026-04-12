@@ -1,6 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
-import type { Report, VulnerabilityChain, WsEvent } from "@synosec/contracts";
+import type { Report, ScanLlmConfig, VulnerabilityChain, WsEvent } from "@synosec/contracts";
 import { getAttackPaths, getFindingsForScan, getScan } from "../db/neo4j.js";
+import { createLlmClient } from "../llm/client.js";
 
 // ---------------------------------------------------------------------------
 // Report generation via Claude
@@ -19,6 +19,7 @@ interface ReportClaudeResponse {
 export async function generateReport(
   scanId: string,
   broadcast: (event: WsEvent) => void,
+  llmConfig?: ScanLlmConfig,
   attackChains: VulnerabilityChain[] = []
 ): Promise<Report> {
   const [findings, attackPaths, scan] = await Promise.all([
@@ -35,7 +36,7 @@ export async function generateReport(
     critical: findings.filter((f) => f.severity === "critical").length
   };
 
-  const client = new Anthropic({ apiKey: process.env["ANTHROPIC_API_KEY"] });
+  const llmClient = createLlmClient(llmConfig);
 
   const findingsSummary = findings
     .map(
@@ -91,17 +92,14 @@ Include top 5 risks ordered by severity. Recommendations must be specific and ac
   let claudeResult: ReportClaudeResponse;
 
   try {
-    const response = await client.messages.create({
-      model: process.env["CLAUDE_MODEL"] ?? "claude-sonnet-4-6",
-      max_tokens: 3000,
+    const text = await llmClient.generateText({
       system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }]
+      user: userPrompt,
+      maxTokens: 3000
     });
-
-    const text = response.content[0]?.type === "text" ? response.content[0].text : "";
     claudeResult = JSON.parse(text) as ReportClaudeResponse;
   } catch (err: unknown) {
-    console.error("Report generation Claude error:", err instanceof Error ? err.message : err);
+    console.error("Report generation LLM error:", err instanceof Error ? err.message : err);
     claudeResult = {
       executiveSummary: `Security assessment of the target environment revealed ${findings.length} findings across ${Object.keys(findingsBySeverity).filter((k) => findingsBySeverity[k as keyof typeof findingsBySeverity] > 0).length} severity levels. ${findingsBySeverity.critical > 0 ? `Critical vulnerabilities were identified that require immediate remediation.` : "No critical vulnerabilities were found."} The overall security posture requires attention, particularly around web application security and network service exposure. Immediate action is recommended for high and critical findings.`,
       topRisks: findings

@@ -1,5 +1,5 @@
 import { Toaster as Sonner } from "sonner";
 
 export function Toaster() {
-  return <Sonner richColors position="top-right" />;
+  return <Sonner richColors position="top-right" duration={3500} />;
 }

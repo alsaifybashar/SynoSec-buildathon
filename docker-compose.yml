@@ -1,5 +1,15 @@
 services:
-  # ── Neo4j graph database ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "${POSTGRES_PORT:-55432}:5432"
+    environment:
+      POSTGRES_DB: synosec
+      POSTGRES_USER: synosec
+      POSTGRES_PASSWORD: synosec
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   neo4j:
     image: neo4j:5.18-community
     container_name: synosec-neo4j
@@ -33,7 +43,7 @@ services:
       context: .
       dockerfile: apps/backend/Dockerfile
     ports:
-      - "${BACKEND_PORT:-3001}:3001"
+      - "${BACKEND_PORT:-3001}:${BACKEND_PORT:-3001}"
     volumes:
       - .:/workspace
       - backend_node_modules:/workspace/apps/backend/node_modules
@@ -41,12 +51,15 @@ services:
       - root_node_modules:/workspace/node_modules
     working_dir: /workspace
     depends_on:
+      postgres:
+        condition: service_started
       neo4j:
         condition: service_healthy
       vulnerable-target:
         condition: service_started
     environment:
-      BACKEND_PORT: 3001
+      BACKEND_PORT: ${BACKEND_PORT:-3001}
+      DATABASE_URL: postgres://synosec:synosec@postgres:5432/synosec
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: synosec-dev
@@ -57,17 +70,17 @@ services:
       SCAN_RATE_LIMIT_RPS: ${SCAN_RATE_LIMIT_RPS:-5}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/backend dev"
+    command: sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/backend prisma:generate && pnpm --filter @synosec/backend prisma:push && pnpm --filter @synosec/backend dev"
 
   frontend:
     build:
       context: .
       dockerfile: apps/frontend/Dockerfile
     environment:
-      VITE_API_PROXY_TARGET: http://backend:3001
-      VITE_DEV_PORT: 5173
+      VITE_API_PROXY_TARGET: http://backend:${BACKEND_PORT:-3001}
+      VITE_DEV_PORT: ${VITE_DEV_PORT:-5173}
     ports:
-      - "${VITE_DEV_PORT:-5173}:5173"
+      - "${VITE_DEV_PORT:-5173}:${VITE_DEV_PORT:-5173}"
     depends_on:
       - backend
     volumes:
@@ -76,13 +89,13 @@ services:
       - contracts_node_modules:/workspace/packages/contracts/node_modules
       - root_node_modules:/workspace/node_modules
     working_dir: /workspace
-    command: sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/frontend dev -- --host 0.0.0.0"
+    command: sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/frontend dev -- --host 0.0.0.0 --port ${VITE_DEV_PORT:-5173}"
 
 volumes:
+  postgres_data:
   backend_node_modules:
   contracts_node_modules:
   frontend_node_modules:
   root_node_modules:
   neo4j_data:
   neo4j_logs:
-

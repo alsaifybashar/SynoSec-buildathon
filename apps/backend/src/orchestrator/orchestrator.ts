@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { randomUUID } from "crypto";
 import type {
   DfsNode,
@@ -6,6 +5,7 @@ import type {
   GraceAgentContext,
   GraceReport,
   Scan,
+  ScanLlmConfig,
   ValidationStatus,
   WsEvent
 } from "@synosec/contracts";
@@ -30,6 +30,11 @@ import { DfsQueue } from "./dfs-graph.js";
 import { GraceReasoner } from "./grace-reasoner.js";
 import { generateReport } from "./report.js";
 import { reportStore } from "../runtime/report-store.js";
+import { createLlmClient, type LlmClient } from "../llm/client.js";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 type SupportedLayer = "L3" | "L4" | "L5" | "L6" | "L7";
 
@@ -37,12 +42,16 @@ const abortSignals = new Map<string, boolean>();
 
 export class Orchestrator {
   private queue = new DfsQueue();
-  private client = new Anthropic({ apiKey: process.env["ANTHROPIC_API_KEY"] });
+  private llmClient: LlmClient;
   private broker: ToolBroker;
   private graceReasoner = new GraceReasoner();
   private currentGraceContext: GraceAgentContext | undefined;
 
-  constructor(private broadcast: (event: WsEvent) => void) {
+  constructor(
+    private broadcast: (event: WsEvent) => void,
+    private readonly llmConfig?: ScanLlmConfig
+  ) {
+    this.llmClient = createLlmClient(llmConfig);
     this.broker = new ToolBroker({ broadcast });
   }
 
@@ -83,7 +92,13 @@ export class Orchestrator {
       actor: "orchestrator",
       action: "scan-started",
       scopeValid: true,
-      details: { targets: scan.scope.targets, maxDepth, rootNodesCreated: rootNodes.length }
+      details: {
+        targets: scan.scope.targets,
+        maxDepth,
+        rootNodesCreated: rootNodes.length,
+        llmProvider: this.llmClient.provider,
+        llmModel: this.llmClient.model
+      }
     });
 
     let nodesComplete = 0;
@@ -304,7 +319,7 @@ export class Orchestrator {
 
     try {
       const chains = await getVulnerabilityChains(scan.id);
-      const report = await generateReport(scan.id, this.broadcast, chains);
+      const report = await generateReport(scan.id, this.broadcast, this.llmConfig, chains);
       reportStore.set(scan.id, report);
     } catch (err: unknown) {
       console.error("Report generation error:", err instanceof Error ? err.message : err);
@@ -320,15 +335,15 @@ export class Orchestrator {
   private getAgent(layer: SupportedLayer) {
     switch (layer) {
       case "L3":
-        return new L3Agent();
+        return new L3Agent(this.llmClient);
       case "L4":
-        return new L4Agent();
+        return new L4Agent(this.llmClient);
       case "L5":
-        return new L5Agent();
+        return new L5Agent(this.llmClient);
       case "L6":
-        return new L6Agent();
+        return new L6Agent(this.llmClient);
       case "L7":
-        return new L7Agent();
+        return new L7Agent(this.llmClient);
       default:
         return null;
     }
@@ -361,22 +376,16 @@ export class Orchestrator {
             }))
           : [];
 
-      if (validations.length === 0 && process.env["ANTHROPIC_API_KEY"]) {
-        const response = await this.client.messages.create({
-          model: process.env["CLAUDE_MODEL"] ?? "claude-sonnet-4-6",
-          max_tokens: 1024,
+      if (validations.length === 0) {
+        const response = await this.llmClient.generateText({
+          model: this.llmClient.model,
+          maxTokens: 1024,
           system:
-            "You review pentest evidence. Only confirm findings when the supplied tool evidence supports them.",
-          messages: [
-            {
-              role: "user",
-              content: `Target ${node.target} (${node.layer}) high-risk findings:\n${findingsSummary}\n\nEvidence:\n${evidenceSummary || "No evidence"}\n\nReturn JSON array with { "title": string, "validationStatus": "single_source|cross_validated|rejected", "reason": string }.`
-            }
-          ]
+            "You review pentest evidence. Only confirm findings when the supplied tool evidence supports them. Respond ONLY with valid JSON array.",
+          user: `Target ${node.target} (${node.layer}) high-risk findings:\n${findingsSummary}\n\nEvidence:\n${evidenceSummary || "No evidence"}\n\nReturn JSON array with { "title": string, "validationStatus": "single_source|cross_validated|rejected", "reason": string }.`
         });
 
-        const text = response.content[0]?.type === "text" ? response.content[0].text : "[]";
-        const parsed = JSON.parse(text) as Array<{
+        const parsed = JSON.parse(response) as Array<{
           title: string;
           validationStatus: ValidationStatus;
           reason: string;
@@ -477,22 +486,13 @@ export class Orchestrator {
         return `Round ${round} complete.${chainNote} Prioritizing nodes with corroborated evidence and elevated severity.`;
       }
 
-      const response = await this.client.messages.create({
-        model: process.env["CLAUDE_MODEL"] ?? "claude-sonnet-4-6",
-        max_tokens: 512,
+      return await this.llmClient.generateText({
+        model: this.llmClient.model,
+        maxTokens: 512,
         system:
           "You are an AI pentest orchestrator. Prioritize next steps based on evidence-backed findings and GRACE chain analysis.",
-        messages: [
-          {
-            role: "user",
-            content: `Round ${round} evidence summary:\n${observationSummary || "No observations"}\n\nFindings:\n${findingSummary || "No findings yet."}${graceSummary}\n\nExplain the highest-priority next step in 2-3 sentences.`
-          }
-        ]
+        user: `Round ${round} evidence summary:\n${observationSummary || "No observations"}\n\nFindings:\n${findingSummary || "No findings yet."}${graceSummary}\n\nExplain the highest-priority next step in 2-3 sentences.`
       });
-
-      return response.content[0]?.type === "text"
-        ? response.content[0].text
-        : `Round ${round} complete. Continuing scan with highest-risk nodes prioritized.`;
     } catch (err: unknown) {
       console.error("Orchestrator analysis error:", err instanceof Error ? err.message : err);
       return `Round ${round} complete. Continuing scan with highest-risk nodes prioritized.`;

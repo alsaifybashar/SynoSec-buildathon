@@ -9,6 +9,7 @@ type IdParam = { id: string };
 type ReqWithId = Request<IdParam>;
 import {
   createScan,
+  ensureNeo4jAvailable,
   getAuditForScan,
   getFindingsForScan,
   getGraphForScan,
@@ -26,6 +27,22 @@ import { reportStore } from "../runtime/report-store.js";
 
 const activeOrchestrators = new Map<string, Orchestrator>();
 
+const neo4jUnavailableMessage =
+  "Neo4j is not available. Start the Neo4j service or configure NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD correctly.";
+
+async function requireNeo4j(res: Response): Promise<boolean> {
+  try {
+    await ensureNeo4jAvailable();
+    return true;
+  } catch (error) {
+    res.status(503).json({
+      error: "Neo4j unavailable",
+      message: error instanceof Error ? neo4jUnavailableMessage : neo4jUnavailableMessage
+    });
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Router factory
 // ---------------------------------------------------------------------------
@@ -35,6 +52,10 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
 
   // POST /api/scan — create + start scan
   router.post("/api/scan", async (req: Request, res: Response) => {
+    if (!(await requireNeo4j(res))) {
+      return;
+    }
+
     const parsed = createScanRequestSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
@@ -53,7 +74,7 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
 
     await createScan(scan);
 
-    const orchestrator = new Orchestrator(broadcast);
+    const orchestrator = new Orchestrator(broadcast, parsed.data.llm);
     activeOrchestrators.set(scan.id, orchestrator);
 
     // Fire and forget — don't await
@@ -68,12 +89,35 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
 
   // GET /api/scans — list all scans
   router.get("/api/scans", async (_req: Request, res: Response) => {
+    if (!(await requireNeo4j(res))) {
+      return;
+    }
+
     const scans = await listScans();
     res.json(scans);
   });
 
+  // GET /api/scan/seed — must come before /api/scan/:id to avoid route conflict
+  router.post("/api/scan/seed", async (_req: Request, res: Response) => {
+    if (!(await requireNeo4j(res))) {
+      return;
+    }
+
+    try {
+      const scanId = await seedDemoScan();
+      res.status(201).json({ scanId });
+    } catch (err: unknown) {
+      console.error("Seed error:", err instanceof Error ? err.message : err);
+      res.status(500).json({ error: "Seed failed", message: err instanceof Error ? err.message : "Unknown error" });
+    }
+  });
+
   // GET /api/scan/:id — get scan status
   router.get("/api/scan/:id", async (req: ReqWithId, res: Response) => {
+    if (!(await requireNeo4j(res))) {
+      return;
+    }
+
     const { id } = req.params;
     if (!id) {
       res.status(400).json({ error: "Missing scan id" });
@@ -91,6 +135,10 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
 
   // GET /api/scan/:id/findings
   router.get("/api/scan/:id/findings", async (req: ReqWithId, res: Response) => {
+    if (!(await requireNeo4j(res))) {
+      return;
+    }
+
     const { id } = req.params;
     if (!id) {
       res.status(400).json({ error: "Missing scan id" });
@@ -103,6 +151,10 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
 
   // GET /api/scan/:id/graph
   router.get("/api/scan/:id/graph", async (req: ReqWithId, res: Response) => {
+    if (!(await requireNeo4j(res))) {
+      return;
+    }
+
     const { id } = req.params;
     if (!id) {
       res.status(400).json({ error: "Missing scan id" });
@@ -127,6 +179,10 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
 
   // GET /api/scan/:id/report
   router.get("/api/scan/:id/report", async (req: ReqWithId, res: Response) => {
+    if (!(await requireNeo4j(res))) {
+      return;
+    }
+
     const { id } = req.params;
     if (!id) {
       res.status(400).json({ error: "Missing scan id" });
@@ -166,6 +222,10 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
 
   // POST /api/scan/:id/abort
   router.post("/api/scan/:id/abort", async (req: ReqWithId, res: Response) => {
+    if (!(await requireNeo4j(res))) {
+      return;
+    }
+
     const { id } = req.params;
     if (!id) {
       res.status(400).json({ error: "Missing scan id" });
@@ -184,6 +244,10 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
 
   // GET /api/scan/:id/audit
   router.get("/api/scan/:id/audit", async (req: ReqWithId, res: Response) => {
+    if (!(await requireNeo4j(res))) {
+      return;
+    }
+
     const { id } = req.params;
     if (!id) {
       res.status(400).json({ error: "Missing scan id" });
