@@ -1,0 +1,25 @@
+{
+  "name": "synosec-buildathon",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.23.0",
+  "scripts": {
+    "dev": "pnpm --filter @synosec/contracts build && concurrently -n contracts,backend,frontend -c blue,green,magenta \"pnpm --filter @synosec/contracts dev\" \"pnpm --filter @synosec/backend dev\" \"pnpm --filter @synosec/frontend dev\"",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.24.0",
+    "@types/node": "^22.15.3",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.24.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.19",
+    "globals": "^16.0.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.30.1"
+  }
+}
+

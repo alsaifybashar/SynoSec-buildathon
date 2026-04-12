@@ -12,7 +12,5 @@ Use this file to record decisions that should not be reopened during the hackath
 | Date | Area | Decision | Reason |
 |---|---|---|---|
 | 2026-04-12 | Repo setup | Added Codex and Claude hackathon guidance | Reduce repeated prompting and keep scope disciplined |
-
-## Deferred Choices
-| Date | Topic | Deferred Until | Notes |
-|---|---|---|---|
+| 2026-04-12 | Repo setup | Use a `pnpm` monorepo with React SPA, Express API, and shared `zod` contracts | Fast local setup with strict compile-time and runtime API safety |
+| 2026-04-12 | Local development | Include Docker Compose for frontend/backend dev from the initial scaffold | Matches the todo's container requirement without blocking local workspace scripts |
