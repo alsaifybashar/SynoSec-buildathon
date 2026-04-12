@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import type { AuditEntry, DfsNode, Finding, Report, Scan } from "@synosec/contracts";
+import { localDemoTargetDefaults, type AuditEntry, type DfsNode, type Finding, type Report, type Scan } from "@synosec/contracts";
 import { createAuditEntry, createDfsNode, createFinding, createScan } from "../db/neo4j.js";
 
 // ---------------------------------------------------------------------------
@@ -19,7 +19,7 @@ export async function seedDemoScan(): Promise<string> {
   const scan: Scan = {
     id: scanId,
     scope: {
-      targets: ["192.168.1.0/24", "app.synosec.local"],
+      targets: [localDemoTargetDefaults.internalTarget],
       exclusions: [],
       layers: ["L3", "L4", "L7"],
       maxDepth: 3,
@@ -58,7 +58,7 @@ export async function seedDemoScan(): Promise<string> {
     {
       id: nodeIds.l3Root,
       scanId,
-      target: "192.168.1.0/24",
+      target: localDemoTargetDefaults.internalTarget,
       layer: "L3",
       riskScore: 0.5,
       status: "complete",
@@ -69,7 +69,7 @@ export async function seedDemoScan(): Promise<string> {
     {
       id: nodeIds.l3App,
       scanId,
-      target: "app.synosec.local",
+      target: localDemoTargetDefaults.internalHost,
       layer: "L3",
       riskScore: 0.5,
       status: "complete",
@@ -80,7 +80,7 @@ export async function seedDemoScan(): Promise<string> {
     {
       id: nodeIds.l4Server1,
       scanId,
-      target: "192.168.1.10",
+      target: localDemoTargetDefaults.internalHost,
       layer: "L4",
       riskScore: 0.6,
       status: "complete",
@@ -91,7 +91,7 @@ export async function seedDemoScan(): Promise<string> {
     {
       id: nodeIds.l4App,
       scanId,
-      target: "app.synosec.local",
+      target: localDemoTargetDefaults.internalHost,
       layer: "L4",
       riskScore: 0.65,
       status: "complete",
@@ -102,10 +102,10 @@ export async function seedDemoScan(): Promise<string> {
     {
       id: nodeIds.l7Web,
       scanId,
-      target: "app.synosec.local",
+      target: localDemoTargetDefaults.internalHost,
       layer: "L7",
       service: "http",
-      port: 80,
+      port: localDemoTargetDefaults.port,
       riskScore: 0.6,
       status: "complete",
       parentId: nodeIds.l4App,
@@ -115,10 +115,10 @@ export async function seedDemoScan(): Promise<string> {
     {
       id: nodeIds.l7Admin,
       scanId,
-      target: "app.synosec.local",
+      target: localDemoTargetDefaults.internalHost,
       layer: "L7",
       service: "http-admin",
-      port: 8080,
+      port: localDemoTargetDefaults.port,
       riskScore: 0.9,
       status: "complete",
       parentId: nodeIds.l4App,
@@ -128,10 +128,10 @@ export async function seedDemoScan(): Promise<string> {
     {
       id: nodeIds.l7Api,
       scanId,
-      target: "app.synosec.local",
+      target: localDemoTargetDefaults.internalHost,
       layer: "L7",
       service: "api",
-      port: 443,
+      port: localDemoTargetDefaults.port,
       riskScore: 0.7,
       status: "complete",
       parentId: nodeIds.l4App,
@@ -141,7 +141,7 @@ export async function seedDemoScan(): Promise<string> {
     {
       id: nodeIds.l5Ssh,
       scanId,
-      target: "192.168.1.10",
+      target: localDemoTargetDefaults.internalHost,
       layer: "L5",
       service: "ssh",
       port: 22,
@@ -154,7 +154,7 @@ export async function seedDemoScan(): Promise<string> {
     {
       id: nodeIds.l4Db,
       scanId,
-      target: "192.168.1.20",
+      target: localDemoTargetDefaults.internalHost,
       layer: "L4",
       riskScore: 0.8,
       status: "complete",
@@ -165,7 +165,7 @@ export async function seedDemoScan(): Promise<string> {
     {
       id: nodeIds.l7Db,
       scanId,
-      target: "192.168.1.20",
+      target: localDemoTargetDefaults.internalHost,
       layer: "L7",
       service: "mysql",
       port: 3306,
@@ -434,7 +434,7 @@ export async function seedDemoScan(): Promise<string> {
       actor: "orchestrator",
       action: "scan-started",
       scopeValid: true,
-      details: { targets: ["192.168.1.0/24", "app.synosec.local"], maxDepth: 3 }
+      details: { targets: [localDemoTargetDefaults.internalTarget], maxDepth: 3 }
     },
     {
       id: randomUUID(),
@@ -444,7 +444,7 @@ export async function seedDemoScan(): Promise<string> {
       action: "l3-scan-complete",
       targetNodeId: nodeIds.l3Root,
       scopeValid: true,
-      details: { findingsCount: 2, discoveredHosts: ["192.168.1.10", "192.168.1.20"] }
+      details: { findingsCount: 2, discoveredHosts: [localDemoTargetDefaults.internalHost] }
     },
     {
       id: randomUUID(),
@@ -453,7 +453,7 @@ export async function seedDemoScan(): Promise<string> {
       actor: "orchestrator",
       action: "round-complete",
       scopeValid: true,
-      details: { round: 1, summary: "L3 recon complete. Two high-value hosts identified at 192.168.1.10 and 192.168.1.20. Proceeding with L4 port scans prioritizing 192.168.1.20 (database server)." }
+      details: { round: 1, summary: `L3 recon complete. Local target ${localDemoTargetDefaults.internalTarget} is reachable. Proceeding with L4 and L7 validation against the same-machine demo service.` }
     },
     {
       id: randomUUID(),
@@ -488,7 +488,7 @@ export async function seedDemoScan(): Promise<string> {
 
   const report: Report = {
     scanId,
-    executiveSummary: `The penetration test of 192.168.1.0/24 and app.synosec.local revealed a critical security posture that requires immediate attention. Two critical vulnerabilities were identified: an SQL injection vulnerability in the authentication endpoint that allows complete authentication bypass, and an unauthenticated administration panel that exposes all system data and configuration.
+    executiveSummary: `The penetration test of the local demo target at ${localDemoTargetDefaults.internalTarget} revealed a critical security posture that requires immediate attention. Two critical vulnerabilities were identified: an SQL injection vulnerability in the authentication endpoint that allows complete authentication bypass, and an unauthenticated administration panel that exposes all system data and configuration.
 
 The application infrastructure shows systemic security deficiencies including network-accessible databases without authentication controls, deprecated cryptographic protocols on SSH, and widespread information disclosure through verbose error messages and missing security headers. The combination of these findings creates multiple viable attack paths from network perimeter to complete system compromise.
 
@@ -499,31 +499,31 @@ Immediate remediation is required for the SQL injection and unauthenticated admi
       {
         title: "SQL Injection in Login Form",
         severity: "critical",
-        nodeTarget: "app.synosec.local",
+        nodeTarget: localDemoTargetDefaults.hostUrl,
         recommendation: "Use parameterized queries or prepared statements for all database operations. Implement a WAF rule to detect SQLi patterns. Conduct a full code audit of database interaction points."
       },
       {
         title: "Unauthenticated Admin Panel Access",
         severity: "critical",
-        nodeTarget: "app.synosec.local:8080",
+        nodeTarget: `${localDemoTargetDefaults.hostUrl}/admin`,
         recommendation: "Immediately restrict access to /admin with strong authentication (MFA). Move admin interface to a separate internal network segment. Add IP allowlist for admin endpoint access."
       },
       {
         title: "Telnet Service Exposed on Port 23",
         severity: "high",
-        nodeTarget: "192.168.1.10",
+        nodeTarget: localDemoTargetDefaults.internalHost,
         recommendation: "Disable Telnet immediately and replace with SSH. Remove telnetd package. Add firewall rule to block port 23 at the network perimeter."
       },
       {
         title: "MySQL Database Accessible From Network",
         severity: "high",
-        nodeTarget: "192.168.1.20",
+        nodeTarget: localDemoTargetDefaults.internalHost,
         recommendation: "Restrict MySQL to localhost or specific application server IPs using bind-address configuration. Implement network segmentation with VLAN for database tier. Review and remove root access from remote hosts."
       },
       {
         title: "API Endpoint Returns Sensitive User Data Without Authorization",
         severity: "high",
-        nodeTarget: "app.synosec.local",
+        nodeTarget: `${localDemoTargetDefaults.hostUrl}/api/users`,
         recommendation: "Implement authentication middleware on all /api/ routes. Apply principle of least privilege to API responses. Remove sensitive fields (password_hash, internal IDs) from API responses."
       }
     ],
@@ -531,17 +531,17 @@ Immediate remediation is required for the SQL injection and unauthenticated admi
       {
         nodeIds: [nodeIds.l3App, nodeIds.l4App, nodeIds.l7Web],
         risk: 0.95,
-        description: "External access → app.synosec.local → SQL injection in /login → database compromise → full authentication bypass"
+        description: `External access → ${localDemoTargetDefaults.hostUrl} → SQL injection in /login → database compromise → full authentication bypass`
       },
       {
         nodeIds: [nodeIds.l3App, nodeIds.l4App, nodeIds.l7Admin],
         risk: 0.95,
-        description: "External access → app.synosec.local:8080 → unauthenticated /admin → complete system takeover"
+        description: `External access → ${localDemoTargetDefaults.hostUrl}/admin → unauthenticated admin panel → complete system takeover`
       },
       {
         nodeIds: [nodeIds.l3Root, nodeIds.l4Db, nodeIds.l7Db],
         risk: 0.85,
-        description: "Network access → 192.168.1.20:3306 → MySQL without authentication → full database access"
+        description: `Network access → ${localDemoTargetDefaults.internalHost}:3306 → MySQL without authentication → full database access`
       }
     ],
     generatedAt: now.toISOString()

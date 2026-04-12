@@ -16,6 +16,11 @@ import { DfsQueue } from "./dfs-graph.js";
 import { generateReport } from "./report.js";
 import { reportStore } from "../seed/demo-data.js";
 import { createLlmClient, type LlmClient } from "../llm/client.js";
+import {
+  getInitialLayerForScope,
+  normalizeScopeForRun,
+  shouldRunSecondaryLlmPasses
+} from "./execution-policy.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,24 +46,26 @@ export class Orchestrator {
   }
 
   async run(scan: Scan): Promise<void> {
+    const normalizedScope = normalizeScopeForRun(scan.scope, this.llmConfig);
+    const effectiveScan: Scan = { ...scan, scope: normalizedScope };
     const maxDepth = Number(process.env["SCAN_MAX_DEPTH"] ?? scan.scope.maxDepth ?? 3);
     abortSignals.set(scan.id, false);
 
     // Step 1: Set scan to running
     await updateScanStatus(scan.id, "running");
-    const runningState: Scan = { ...scan, status: "running" };
+    const runningState: Scan = { ...effectiveScan, status: "running" };
     this.broadcast({ type: "scan_status", scan: runningState });
 
     // Step 2: Create root nodes for each target
     let nodesTotal = 0;
     const rootNodes: DfsNode[] = [];
 
-    for (const target of scan.scope.targets) {
+    for (const target of effectiveScan.scope.targets) {
       const rootNode: DfsNode = {
         id: randomUUID(),
         scanId: scan.id,
         target,
-        layer: "L3",
+        layer: getInitialLayerForScope(effectiveScan.scope),
         riskScore: 0.5,
         status: "pending",
         parentId: null,
@@ -82,6 +89,7 @@ export class Orchestrator {
       scopeValid: true,
       details: {
         targets: scan.scope.targets,
+        normalizedLayers: effectiveScan.scope.layers,
         maxDepth,
         rootNodesCreated: rootNodes.length,
         llmProvider: this.llmClient.provider,
@@ -143,7 +151,7 @@ export class Orchestrator {
       this.broadcast({ type: "node_updated", node: inProgressNode });
 
       // Validate scope
-      const inScope = this.isInScope(node.target, scan);
+      const inScope = this.isInScope(node.target, effectiveScan);
       if (!inScope) {
         await updateNodeStatus(node.id, "skipped");
         this.broadcast({ type: "node_updated", node: { ...node, status: "skipped" } });
@@ -179,7 +187,7 @@ export class Orchestrator {
 
         const result = await agent.execute(node, {
           scanId: scan.id,
-          scope: scan.scope,
+          scope: effectiveScan.scope,
           parentFindings,
           roundSummary
         });
@@ -201,12 +209,26 @@ export class Orchestrator {
         const highRiskFindings = result.findings.filter(
           (f) => f.severity === "critical" || f.severity === "high"
         );
-        if (highRiskFindings.length > 0) {
+        if (highRiskFindings.length > 0 && shouldRunSecondaryLlmPasses(this.llmConfig)) {
           await this.crossValidate(scan, node, highRiskFindings);
         }
 
         // Persist child nodes and enqueue
         for (const rawChild of result.childNodes) {
+          if (!effectiveScan.scope.layers.includes(rawChild.layer)) {
+            await createAuditEntry({
+              id: randomUUID(),
+              scanId: scan.id,
+              timestamp: new Date().toISOString(),
+              actor: "orchestrator",
+              action: "child-node-skipped-layer-disabled",
+              targetNodeId: node.id,
+              scopeValid: true,
+              details: { childTarget: rawChild.target, childLayer: rawChild.layer }
+            });
+            continue;
+          }
+
           const child: DfsNode = {
             ...rawChild,
             id: randomUUID(),
@@ -248,20 +270,25 @@ export class Orchestrator {
       if (completedCountForRound >= 3) {
         completedCountForRound = 0;
         currentRound++;
-        roundSummary = await this.orchestratorAnalysis(scan.id, currentRound);
-        this.broadcast({ type: "round_complete", round: currentRound, summary: roundSummary });
+        if (shouldRunSecondaryLlmPasses(this.llmConfig)) {
+          roundSummary = await this.orchestratorAnalysis(scan.id, currentRound);
+          this.broadcast({ type: "round_complete", round: currentRound, summary: roundSummary });
 
-        await updateScanStatus(scan.id, "running", { currentRound });
+          await updateScanStatus(scan.id, "running", { currentRound });
 
-        await createAuditEntry({
-          id: randomUUID(),
-          scanId: scan.id,
-          timestamp: new Date().toISOString(),
-          actor: "orchestrator",
-          action: "round-complete",
-          scopeValid: true,
-          details: { round: currentRound, summary: roundSummary }
-        });
+          await createAuditEntry({
+            id: randomUUID(),
+            scanId: scan.id,
+            timestamp: new Date().toISOString(),
+            actor: "orchestrator",
+            action: "round-complete",
+            scopeValid: true,
+            details: { round: currentRound, summary: roundSummary }
+          });
+        } else {
+          roundSummary = `Round ${currentRound} complete. Continuing tool-backed scan.`;
+          await updateScanStatus(scan.id, "running", { currentRound });
+        }
       }
     }
 
@@ -273,6 +300,7 @@ export class Orchestrator {
       type: "scan_status",
       scan: {
         ...scan,
+        scope: effectiveScan.scope,
         status: "complete",
         nodesComplete,
         nodesTotal,

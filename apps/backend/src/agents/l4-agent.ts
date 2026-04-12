@@ -1,5 +1,6 @@
 import type { DfsNode, OsiLayer } from "@synosec/contracts";
 import { BaseAgent, type AgentContext, type AgentResult } from "./base-agent.js";
+import { parseScanTarget } from "../tools/scan-tools.js";
 
 // ---------------------------------------------------------------------------
 // L4 Structured response from Claude
@@ -41,52 +42,18 @@ export class L4Agent extends BaseAgent {
       layer: node.layer
     });
 
-    const systemPrompt = `You are a port scanning and service detection agent operating at OSI Layer 4 (Transport Layer).
-You simulate realistic penetration testing port scans including TCP SYN scans, service version detection, and UDP scans.
-Your findings must be technically accurate and realistic for a professional penetration test.
-Respond ONLY with valid JSON, no markdown code blocks, no explanation.`;
-
-    const userPrompt = `Perform a Layer 4 transport layer scan against host: ${node.target}
-
-Simulate the following techniques:
-1. TCP SYN scan of common ports: 21 (FTP), 22 (SSH), 23 (Telnet), 25 (SMTP), 80 (HTTP), 443 (HTTPS), 445 (SMB), 3306 (MySQL), 5432 (PostgreSQL), 8080 (HTTP-alt), 8443 (HTTPS-alt), 27017 (MongoDB), 6379 (Redis)
-2. Service version banner grabbing for open ports
-3. UDP scan of high-value ports: 53 (DNS), 161 (SNMP), 500 (IKE)
-
-Previous context:
-${context.roundSummary || "First scan round."}
-
-Return ONLY this JSON structure:
-{
-  "findings": [
-    {
-      "title": "string",
-      "severity": "info|low|medium|high|critical",
-      "confidence": 0.0-1.0,
-      "description": "string",
-      "evidence": "simulated nmap output",
-      "technique": "TCP SYN scan | Banner grab | UDP scan",
-      "reproduceCommand": "nmap command"
-    }
-  ],
-  "openPorts": [
-    {"port": 22, "protocol": "tcp", "service": "ssh", "version": "OpenSSH 7.9", "risk": 0.3}
-  ],
-  "agentSummary": "brief paragraph summarizing what was found"
-}
-
-Produce 3-6 findings. The open ports list should realistically reflect what might be found on a typical network host. Make evidence look like real nmap output. Flag dangerous services (telnet, old SSH, exposed databases) with higher severity.`;
-
     let parsed: L4ClaudeResponse;
+    const tools = this.createToolRunner(node, context);
+    const parsedTarget = parseScanTarget(node.target);
+    const host = parsedTarget.host;
+    const candidatePorts = parsedTarget.port != null
+      ? [parsedTarget.port]
+      : [21, 22, 23, 25, 80, 443, 445, 3306, 5432, 6379, 8080, 8443, 27017];
 
     try {
-      parsed = await this.generateJson<L4ClaudeResponse>({
-        system: systemPrompt,
-        user: userPrompt,
-        maxTokens: 2048
-      });
+      parsed = await this.runRealTransportScan(node, host, candidatePorts, tools);
     } catch (err: unknown) {
-      console.error("L4Agent LLM error:", err instanceof Error ? err.message : err);
+      console.error("L4Agent tool error:", err instanceof Error ? err.message : err);
       parsed = {
         findings: [
           {
@@ -137,7 +104,7 @@ Produce 3-6 findings. The open ports list should realistically reflect what migh
     for (const openPort of parsed.openPorts) {
       const p = openPort.port;
 
-      if ([443, 8443].includes(p)) {
+      if (openPort.service === "https" || [443, 8443].includes(p)) {
         // HTTPS → L6 TLS audit + L7 application
         childNodes.push({
           target: node.target,
@@ -157,7 +124,7 @@ Produce 3-6 findings. The open ports list should realistically reflect what migh
           status: "pending",
           depth: node.depth + 1
         });
-      } else if ([80, 8080].includes(p)) {
+      } else if (openPort.service === "http" || [80, 8080].includes(p)) {
         // HTTP → L7 only
         childNodes.push({
           target: node.target,
@@ -236,4 +203,132 @@ Produce 3-6 findings. The open ports list should realistically reflect what migh
       agentSummary: parsed.agentSummary
     };
   }
+
+  private async runRealTransportScan(
+    node: DfsNode,
+    host: string,
+    candidatePorts: number[],
+    tools: ReturnType<L4Agent["createToolRunner"]>
+  ): Promise<L4ClaudeResponse> {
+    const openPorts: OpenPort[] = [];
+    const findings: L4ClaudeResponse["findings"] = [];
+
+    for (const port of candidatePorts) {
+      const tcpCheck = await tools.checkTcpPort(host, port);
+      if (!tcpCheck.open) {
+        continue;
+      }
+
+      let service = serviceForPort(port);
+      let version = "unknown";
+      let evidence = [formatCommand(tcpCheck.argv), tcpCheck.stdout || tcpCheck.stderr].filter(Boolean).join("\n");
+      let technique: L4ClaudeResponse["findings"][number]["technique"] = "TCP SYN scan";
+      let reproduceCommand = tcpCheck.argv.join(" ");
+
+      if (port === 22) {
+        const banner = await tools.grabTcpBanner(host, port);
+        if (banner.banner) {
+          version = banner.banner;
+          evidence = [evidence, formatCommand(banner.argv), banner.banner].filter(Boolean).join("\n");
+          technique = "Banner grab";
+          reproduceCommand = banner.argv.join(" ");
+        }
+      } else if (parsedHttpPort(port, candidatePorts)) {
+        const headers = await tools.fetchHttpHeaders(`http://${host}:${port}`);
+        if (headers.ok && headers.statusCode != null) {
+          service = "http";
+          version = headers.headers["server"] ?? version;
+          evidence = [evidence, formatCommand(headers.argv), headers.stdout].filter(Boolean).join("\n");
+          technique = "Banner grab";
+          reproduceCommand = headers.argv.join(" ");
+        } else {
+          const tls = await tools.inspectTls(host, port);
+          if (tls.connected) {
+            service = "https";
+            version = parseTlsProtocol(`${tls.stdout}\n${tls.stderr}`) ?? version;
+            evidence = [evidence, formatCommand(tls.argv), tls.stdout, tls.stderr].filter(Boolean).join("\n");
+            technique = "Banner grab";
+            reproduceCommand = tls.argv.join(" ");
+          }
+        }
+      }
+
+      openPorts.push({
+        port,
+        protocol: "tcp",
+        service,
+        version,
+        risk: riskForService(service, port)
+      });
+
+      findings.push({
+        title: `${service.toUpperCase()} Service Detected`,
+        severity: service === "telnet" ? "high" : "info",
+        confidence: 0.99,
+        description: `${service.toUpperCase()} service running on ${node.target}:${port}`,
+        evidence,
+        technique,
+        reproduceCommand
+      });
+    }
+
+    if (openPorts.length === 0) {
+      throw new Error(`No open ports identified on ${node.target}`);
+    }
+
+    return {
+      findings,
+      openPorts,
+      agentSummary: `Transport scan of ${node.target} found ${openPorts.length} reachable TCP service${openPorts.length === 1 ? "" : "s"}.`
+    };
+  }
+}
+
+function formatCommand(argv: string[]): string {
+  return `$ ${argv.join(" ")}`;
+}
+
+function parsedHttpPort(port: number, candidatePorts: number[]): boolean {
+  return port === 80 || port === 443 || port === 8080 || port === 8443 || candidatePorts.length === 1;
+}
+
+function parseTlsProtocol(text: string): string | null {
+  const match = text.match(/Protocol version:\s*([^\n]+)/i);
+  return match?.[1]?.trim() ?? null;
+}
+
+function serviceForPort(port: number): string {
+  switch (port) {
+    case 22:
+      return "ssh";
+    case 23:
+      return "telnet";
+    case 80:
+    case 8080:
+      return "http";
+    case 443:
+    case 8443:
+      return "https";
+    case 445:
+      return "smb";
+    case 3306:
+      return "mysql";
+    case 5432:
+      return "postgresql";
+    case 6379:
+      return "redis";
+    case 27017:
+      return "mongodb";
+    default:
+      return "tcp";
+  }
+}
+
+function riskForService(service: string, port: number): number {
+  if (service === "telnet") return 0.9;
+  if (service === "https" || service === "http") return 0.6;
+  if (service === "smb") return 0.7;
+  if (service === "mysql" || service === "postgresql" || service === "mongodb" || service === "redis") return 0.8;
+  if (port === 22) return 0.4;
+  return 0.5;
 }

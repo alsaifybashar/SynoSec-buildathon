@@ -2,7 +2,10 @@
 set -euo pipefail
 
 BACKEND_URL="${BACKEND_URL:-http://127.0.0.1:3001}"
-TARGET="${TARGET:-localhost:8888}"
+# Default assumes the backend runs in Docker Compose and reaches the demo target
+# over the internal service network. Override with TARGET=localhost:8888 when the
+# backend itself is running directly on the host.
+TARGET="${TARGET:-synosec-target:8888}"
 LOCAL_MODEL="${LOCAL_MODEL:-Qwen/Qwen3-1.7B}"
 LOCAL_BASE_URL="${LOCAL_BASE_URL:-http://127.0.0.1:8010}"
 LOCAL_API_PATH="${LOCAL_API_PATH:-/generate}"
@@ -23,7 +26,7 @@ payload="$(jq -n \
     scope: {
       targets: [$target],
       exclusions: [],
-      layers: ["L3", "L4", "L5", "L6", "L7"],
+      layers: ["L4", "L6", "L7"],
       maxDepth: $maxDepth,
       maxDurationMinutes: $maxDurationMinutes,
       rateLimitRps: $rateLimitRps,

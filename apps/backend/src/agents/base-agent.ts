@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import type { AuditEntry, DfsNode, Finding, OsiLayer, ScanScope } from "@synosec/contracts";
 import { createAuditEntry } from "../db/neo4j.js";
 import type { LlmClient } from "../llm/client.js";
+import { ScanToolRunner } from "../tools/scan-tools.js";
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -78,6 +79,15 @@ export abstract class BaseAgent {
   }): Promise<T> {
     const text = await this.llmClient.generateText(params);
     return parseJsonResponse<T>(text);
+  }
+
+  protected createToolRunner(node: DfsNode, context: AgentContext): ScanToolRunner {
+    return new ScanToolRunner({
+      scanId: context.scanId,
+      scope: context.scope,
+      actor: this.agentId,
+      targetNodeId: node.id
+    });
   }
 
   abstract execute(node: DfsNode, context: AgentContext): Promise<AgentResult>;

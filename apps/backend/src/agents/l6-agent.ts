@@ -1,5 +1,6 @@
 import type { DfsNode, OsiLayer } from "@synosec/contracts";
 import { BaseAgent, type AgentContext, type AgentResult } from "./base-agent.js";
+import { parseScanTarget } from "../tools/scan-tools.js";
 
 // ---------------------------------------------------------------------------
 // L6 Structured response from Claude
@@ -41,62 +42,16 @@ export class L6Agent extends BaseAgent {
       port: node.port
     });
 
-    const systemPrompt = `You are a TLS/SSL and cryptographic security testing agent operating at OSI Layer 6 (Presentation Layer).
-You simulate realistic penetration testing activities including TLS cipher suite audits, certificate chain validation, protocol downgrade attacks, and cryptographic weakness detection.
-Your findings must be technically accurate and realistic for a professional penetration test.
-Respond ONLY with valid JSON, no markdown code blocks, no explanation.`;
-
-    const targetHost = node.target;
-    const port = node.port ?? 443;
-
-    const userPrompt = `Perform a Layer 6 presentation layer / TLS-SSL security audit against: ${targetHost}:${port}
-
-Simulate the following TLS/SSL tests:
-1. Supported TLS/SSL protocol versions (SSLv2, SSLv3, TLS 1.0, 1.1, 1.2, 1.3)
-2. Cipher suite enumeration — flag weak ciphers (RC4, DES, 3DES, NULL, EXPORT, anon)
-3. Certificate inspection: validity period, subject/SANs, issuer, key length, signature algorithm
-4. Certificate chain validation (self-signed, expired, hostname mismatch)
-5. Known attacks: BEAST, POODLE, DROWN, HEARTBLEED, ROBOT, LUCKY13
-6. HSTS preload status, HPKP, OCSP stapling
-
-Previous context: ${context.roundSummary || "First scan round."}
-Parent findings: ${context.parentFindings.map((f) => `[${f.severity}] ${f.title}`).join(", ") || "None"}
-
-Return ONLY this JSON structure:
-{
-  "findings": [
-    {
-      "title": "string",
-      "severity": "info|low|medium|high|critical",
-      "confidence": 0.0-1.0,
-      "description": "string",
-      "evidence": "simulated sslscan or testssl.sh output",
-      "technique": "TLS audit | Cipher enum | Cert inspection | Protocol downgrade | Vuln scan",
-      "reproduceCommand": "optional sslscan or openssl command"
-    }
-  ],
-  "tlsDetails": {
-    "version": "TLS 1.2",
-    "certSubject": "CN=example.com",
-    "certExpiry": "2025-12-31",
-    "weakCiphers": ["TLS_RSA_WITH_RC4_128_SHA"],
-    "grade": "B"
-  },
-  "agentSummary": "brief paragraph summarizing TLS/SSL security posture"
-}
-
-Produce 3-5 findings covering different TLS aspects. Make evidence look like real sslscan output. Flag deprecated protocols (SSLv3, TLS 1.0/1.1) and weak ciphers as medium-high severity. Self-signed or expired certs are high severity.`;
-
     let parsed: L6ClaudeResponse;
+    const parsedTarget = parseScanTarget(node.target);
+    const targetHost = parsedTarget.host;
+    const port = node.port ?? parsedTarget.port ?? 443;
+    const tools = this.createToolRunner(node, context);
 
     try {
-      parsed = await this.generateJson<L6ClaudeResponse>({
-        system: systemPrompt,
-        user: userPrompt,
-        maxTokens: 2048
-      });
+      parsed = await this.runRealTlsInspection(targetHost, port, tools);
     } catch (err: unknown) {
-      console.error("L6Agent LLM error:", err instanceof Error ? err.message : err);
+      console.error("L6Agent tool error:", err instanceof Error ? err.message : err);
       parsed = {
         findings: [
           {
@@ -166,4 +121,77 @@ Produce 3-5 findings covering different TLS aspects. Make evidence look like rea
       agentSummary: parsed.agentSummary
     };
   }
+
+  private async runRealTlsInspection(
+    targetHost: string,
+    port: number,
+    tools: ReturnType<L6Agent["createToolRunner"]>
+  ): Promise<L6ClaudeResponse> {
+    const tls = await tools.inspectTls(targetHost, port);
+    if (!tls.connected) {
+      throw new Error(`TLS handshake failed for ${targetHost}:${port}`);
+    }
+
+    const evidence = [formatCommand(tls.argv), tls.stdout, tls.stderr].filter(Boolean).join("\n");
+    const subject = firstMatch(evidence, /subject=([^\n]+)/i);
+    const issuer = firstMatch(evidence, /issuer=([^\n]+)/i);
+    const protocol = firstMatch(evidence, /Protocol version:\s*([^\n]+)/i) ?? "TLS";
+    const cipher = firstMatch(evidence, /Ciphersuite:\s*([^\n]+)/i);
+    const verifyError = firstMatch(evidence, /Verification error:\s*([^\n]+)/i);
+
+    const findings: L6ClaudeResponse["findings"] = [
+      {
+        title: "TLS Service Detected",
+        severity: "info",
+        confidence: 0.98,
+        description: `${targetHost}:${port} negotiated ${protocol}${cipher ? ` with ${cipher}` : ""}.`,
+        evidence,
+        technique: "TLS audit",
+        reproduceCommand: tls.argv.join(" ")
+      }
+    ];
+
+    if (subject || issuer) {
+      findings.push({
+        title: "Certificate Metadata Enumerated",
+        severity: "info",
+        confidence: 0.95,
+        description: `Certificate details were retrievable${subject ? ` for ${subject}` : ""}${issuer ? ` and issued by ${issuer}` : ""}.`,
+        evidence,
+        technique: "Cert inspection",
+        reproduceCommand: tls.argv.join(" ")
+      });
+    }
+
+    if (verifyError) {
+      findings.push({
+        title: "TLS Certificate Validation Issue",
+        severity: "medium",
+        confidence: 0.92,
+        description: `The TLS handshake reported a certificate validation problem: ${verifyError}.`,
+        evidence,
+        technique: "TLS audit",
+        reproduceCommand: tls.argv.join(" ")
+      });
+    }
+
+    return {
+      findings,
+      tlsDetails: {
+        version: protocol,
+        ...(subject ? { certSubject: subject } : {}),
+        ...(issuer ? { grade: issuer.includes("Let's Encrypt") ? "B" : "C" } : {})
+      },
+      agentSummary: `TLS inspection of ${targetHost}:${port} completed using openssl.`
+    };
+  }
+}
+
+function formatCommand(argv: string[]): string {
+  return `$ ${argv.join(" ")}`;
+}
+
+function firstMatch(text: string, pattern: RegExp): string | null {
+  const match = text.match(pattern);
+  return match?.[1]?.trim() ?? null;
 }

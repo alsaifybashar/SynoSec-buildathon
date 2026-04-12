@@ -92,7 +92,7 @@ Produce 2-4 findings. Include at least one finding per technique used. Make the 
             reproduceCommand: `nmap -sn ${node.target}`
           }
         ],
-        discoveredHosts: [node.target.replace("/24", ".1"), node.target.replace("/24", ".10")],
+        discoveredHosts: [node.target],
         agentSummary: `Layer 3 reconnaissance of ${node.target} completed. Hosts discovered.`
       };
     }

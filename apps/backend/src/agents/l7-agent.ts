@@ -1,5 +1,6 @@
 import type { DfsNode, OsiLayer } from "@synosec/contracts";
 import { BaseAgent, type AgentContext, type AgentResult } from "./base-agent.js";
+import { parseScanTarget } from "../tools/scan-tools.js";
 
 // ---------------------------------------------------------------------------
 // L7 Structured response from Claude
@@ -34,84 +35,27 @@ export class L7Agent extends BaseAgent {
       port: node.port
     });
 
-    const targetUrl = node.port
-      ? `${[443, 8443].includes(node.port) ? "https" : "http"}://${node.target}:${node.port}`
-      : `http://${node.target}`;
+    const parsedTarget = parseScanTarget(node.target);
+    const targetHost = parsedTarget.host;
+    const targetPort = node.port ?? parsedTarget.port;
+    const targetUrl = targetPort
+      ? `${[443, 8443].includes(targetPort) ? "https" : "http"}://${targetHost}:${targetPort}`
+      : `http://${targetHost}`;
 
     const service = node.service ?? "http";
     const isTelnet = service === "telnet" || node.port === 23;
     const isDatabase = node.port && [3306, 5432, 27017, 6379].includes(node.port);
 
-    const systemPrompt = `You are a web application and service security testing agent operating at OSI Layer 7 (Application Layer).
-You simulate realistic penetration testing activities including HTTP security audits, vulnerability probing, authentication testing, and API security testing.
-Your findings must be technically accurate, realistic, and professionally written.
-Respond ONLY with valid JSON, no markdown code blocks, no explanation.`;
-
-    let testingContext = "";
-    if (isTelnet) {
-      testingContext = `Target is running Telnet (port ${node.port ?? 23}). Focus on:
-- Clear-text credential transmission risk
-- Lack of encryption
-- Authentication bypass possibilities
-- Banner information disclosure`;
-    } else if (isDatabase) {
-      testingContext = `Target is running ${service} database (port ${node.port}). Focus on:
-- Unauthenticated access attempts
-- Default credentials testing
-- Information disclosure from error messages
-- Network-accessible database risks`;
-    } else {
-      testingContext = `Target is a web application at ${targetUrl}. Focus on:
-- HTTP header security audit (HSTS, CSP, X-Frame-Options, X-Content-Type-Options)
-- Technology fingerprinting (Server header, X-Powered-By, error pages, cookies)
-- SQL injection probing on login forms and query parameters
-- XSS reflection testing on input fields
-- Path traversal attempts (../etc/passwd)
-- Authentication bypass on /admin, /api/admin, /login, /dashboard
-- API endpoint discovery and security testing
-- TLS configuration analysis (if HTTPS)`;
-    }
-
-    const previousFindings = context.parentFindings.length > 0
-      ? `Previous findings on ancestor nodes:\n${context.parentFindings.map((f) => `- [${f.severity}] ${f.title}: ${f.description}`).join("\n")}`
-      : "No previous findings.";
-
-    const userPrompt = `Perform a Layer 7 application security test against: ${node.target}${node.port ? `:${node.port}` : ""} (service: ${service})
-
-${testingContext}
-
-${previousFindings}
-
-Round context: ${context.roundSummary || "First scan round."}
-
-Return ONLY this JSON structure:
-{
-  "findings": [
-    {
-      "title": "string",
-      "severity": "info|low|medium|high|critical",
-      "confidence": 0.0-1.0,
-      "description": "string",
-      "evidence": "simulated HTTP response, curl output, or tool output",
-      "technique": "SQLi probe | XSS reflection | Header audit | Auth bypass | Path traversal | Tech fingerprint | TLS audit",
-      "reproduceCommand": "optional curl or tool command"
-    }
-  ],
-  "agentSummary": "brief paragraph summarizing vulnerabilities found"
-}
-
-Produce 3-7 findings of varied severity. Make findings realistic and specific. Critical findings (SQLi, unauthenticated admin, RCE) should have plausible evidence like actual HTTP responses showing error messages, SQL errors, or admin panel HTML. Low/info findings include missing headers or version disclosure.`;
-
     let parsed: L7ClaudeResponse;
+    const tools = this.createToolRunner(node, context);
 
     try {
-      parsed = await this.generateJson<L7ClaudeResponse>({
-        system: systemPrompt,
-        user: userPrompt,
-        maxTokens: 3000
-      });
+      if (isTelnet || isDatabase) {
+        throw new Error(`No safe HTTP tooling available for ${service}`);
+      }
+      parsed = await this.runRealHttpChecks(targetUrl, targetHost, tools);
     } catch (err: unknown) {
-      console.error("L7Agent LLM error:", err instanceof Error ? err.message : err);
+      console.error("L7Agent tool error:", err instanceof Error ? err.message : err);
       parsed = {
         findings: [
           {
@@ -166,4 +110,83 @@ Produce 3-7 findings of varied severity. Make findings realistic and specific. C
       agentSummary: parsed.agentSummary
     };
   }
+
+  private async runRealHttpChecks(
+    targetUrl: string,
+    targetHost: string,
+    tools: ReturnType<L7Agent["createToolRunner"]>
+  ): Promise<L7ClaudeResponse> {
+    const findings: L7ClaudeResponse["findings"] = [];
+    const headers = await tools.fetchHttpHeaders(targetUrl);
+    if (headers.statusCode == null) {
+      throw new Error(`No HTTP response from ${targetUrl}`);
+    }
+
+    const evidence = [formatCommand(headers.argv), headers.stdout].filter(Boolean).join("\n");
+    const missingHeaders = ["strict-transport-security", "content-security-policy", "x-frame-options"]
+      .filter((header) => headers.headers[header] == null);
+
+    if (missingHeaders.length > 0) {
+      findings.push({
+        title: "Missing Security Headers",
+        severity: "low",
+        confidence: 0.99,
+        description: `${targetHost} is missing important HTTP security headers: ${missingHeaders.join(", ")}.`,
+        evidence,
+        technique: "Header audit",
+        reproduceCommand: headers.argv.join(" ")
+      });
+    }
+
+    const leakedHeaders = ["server", "x-powered-by"]
+      .filter((header) => headers.headers[header] != null)
+      .map((header) => `${header}: ${headers.headers[header]}`);
+    if (leakedHeaders.length > 0) {
+      findings.push({
+        title: "Server Version Disclosure",
+        severity: "info",
+        confidence: 0.99,
+        description: "Server-side technology details are exposed in HTTP response headers.",
+        evidence: [evidence, leakedHeaders.join("\n")].join("\n"),
+        technique: "Tech fingerprint",
+        reproduceCommand: headers.argv.join(" ")
+      });
+    }
+
+    for (const path of ["/robots.txt", "/login", "/admin"]) {
+      const response = await tools.fetchHttpPath(targetUrl, path);
+      if (response.statusCode != null && [200, 301, 302, 401, 403].includes(response.statusCode)) {
+        findings.push({
+          title: `Interesting Application Path: ${path}`,
+          severity: response.statusCode === 200 ? "medium" : "info",
+          confidence: 0.9,
+          description: `${path} responded with HTTP ${response.statusCode}. This endpoint should be reviewed during manual validation.`,
+          evidence: [formatCommand(response.argv), response.stdout].filter(Boolean).join("\n"),
+          technique: "Auth bypass",
+          reproduceCommand: response.argv.join(" ")
+        });
+      }
+    }
+
+    if (findings.length === 0) {
+      findings.push({
+        title: "HTTP Service Reachable",
+        severity: "info",
+        confidence: 0.95,
+        description: `${targetUrl} returned HTTP ${headers.statusCode}.`,
+        evidence,
+        technique: "Header audit",
+        reproduceCommand: headers.argv.join(" ")
+      });
+    }
+
+    return {
+      findings,
+      agentSummary: `Application checks against ${targetUrl} completed using curl-based probes.`
+    };
+  }
+}
+
+function formatCommand(argv: string[]): string {
+  return `$ ${argv.join(" ")}`;
 }

@@ -17,6 +17,7 @@ import {
   listScans
 } from "../db/neo4j.js";
 import { Orchestrator } from "../orchestrator/orchestrator.js";
+import { normalizeScopeForRun } from "../orchestrator/execution-policy.js";
 import { reportStore, seedDemoScan } from "../seed/demo-data.js";
 
 // ---------------------------------------------------------------------------
@@ -60,9 +61,11 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
       return;
     }
 
+    const normalizedScope = normalizeScopeForRun(parsed.data.scope, parsed.data.llm);
+
     const scan: Scan = {
       id: randomUUID(),
-      scope: parsed.data.scope,
+      scope: normalizedScope,
       status: "pending",
       currentRound: 0,
       nodesTotal: 0,

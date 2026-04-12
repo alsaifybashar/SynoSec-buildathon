@@ -18,6 +18,15 @@ export const apiRoutes = {
   scanSeed: "/api/scan/seed"
 } as const;
 
+export const localDemoTargetDefaults = {
+  internalHost: "synosec-target",
+  port: 8888,
+  internalTarget: "synosec-target:8888",
+  internalUrl: "http://synosec-target:8888",
+  hostUrl: "http://localhost:8888",
+  hostGatewayTarget: "host.docker.internal:8888"
+} as const;
+
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),
   service: z.literal("synosec-backend"),

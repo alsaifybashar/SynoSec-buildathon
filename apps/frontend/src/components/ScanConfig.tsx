@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Shield, AlertTriangle, Zap } from "lucide-react";
 import { toast } from "sonner";
-import type { OsiLayer } from "@synosec/contracts";
+import { localDemoTargetDefaults, type OsiLayer } from "@synosec/contracts";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { Switch } from "./ui/switch";
@@ -24,7 +24,7 @@ const DEPTH_OPTIONS = [1, 2, 3, 4, 5];
 const DURATION_OPTIONS = [5, 10, 15, 30];
 
 export function ScanConfig({ onScanStarted }: ScanConfigProps) {
-  const [targetsText, setTargetsText] = useState("synosec-target");
+  const [targetsText, setTargetsText] = useState(localDemoTargetDefaults.internalTarget);
   const [layers, setLayers] = useState<Set<OsiLayer>>(new Set(["L3", "L4", "L5", "L6", "L7"]));
   const [maxDepth, setMaxDepth] = useState(3);
   const [maxDuration, setMaxDuration] = useState(10);
@@ -34,9 +34,9 @@ export function ScanConfig({ onScanStarted }: ScanConfigProps) {
   const [isSeeding, setIsSeeding] = useState(false);
 
   const QUICK_TARGETS = [
-    { label: "Local Demo", value: "synosec-target" },
-    { label: "Localhost:3000", value: "host.docker.internal:3000" },
-    { label: "Localhost", value: "host.docker.internal" },
+    { label: "Compose Demo", value: localDemoTargetDefaults.internalTarget },
+    { label: "Host Service", value: localDemoTargetDefaults.hostGatewayTarget },
+    { label: "Container Host", value: localDemoTargetDefaults.internalHost },
     { label: "192.168.1.0/24", value: "192.168.1.0/24" },
   ];
 
@@ -157,11 +157,11 @@ export function ScanConfig({ onScanStarted }: ScanConfigProps) {
         <Textarea
           value={targetsText}
           onChange={(e) => setTargetsText(e.target.value)}
-          placeholder={"synosec-target\n192.168.1.0/24\napp.example.com"}
+          placeholder={`${localDemoTargetDefaults.internalTarget}\n${localDemoTargetDefaults.hostGatewayTarget}\napp.example.com`}
           rows={4}
           className="resize-none border-gray-700 bg-gray-900 font-mono text-sm text-gray-200 placeholder:text-gray-600 focus:border-green-500 focus:ring-green-500/20"
         />
-        <p className="text-xs text-gray-500">One target per line — IPv4, CIDR ranges, hostnames, or <span className="text-green-500/70">synosec-target</span> for local demo</p>
+        <p className="text-xs text-gray-500">One target per line. Docker Compose scans should use <span className="text-green-500/70">{localDemoTargetDefaults.internalTarget}</span>; use <span className="text-green-500/70">{localDemoTargetDefaults.hostGatewayTarget}</span> when the service is bound on the same host.</p>
         {errors["targets"] && (
           <p className="text-xs text-red-400">{errors["targets"]}</p>
         )}
