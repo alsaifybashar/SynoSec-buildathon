@@ -19,6 +19,7 @@ interface ResolvedLlmConfig {
   model: string;
   baseUrl?: string;
   apiPath?: string;
+  timeoutMs?: number;
 }
 
 function resolveLlmConfig(config?: ScanLlmConfig): ResolvedLlmConfig {
@@ -28,8 +29,9 @@ function resolveLlmConfig(config?: ScanLlmConfig): ResolvedLlmConfig {
     return {
       provider,
       model: config?.model ?? process.env["LLM_LOCAL_MODEL"] ?? "local-qwen",
-      baseUrl: config?.baseUrl ?? process.env["LLM_LOCAL_BASE_URL"] ?? "http://127.0.0.1:8000",
-      apiPath: config?.apiPath ?? process.env["LLM_LOCAL_API_PATH"] ?? "/api/chat/raw"
+      baseUrl: config?.baseUrl ?? process.env["LLM_LOCAL_BASE_URL"] ?? "http://127.0.0.1:8010",
+      apiPath: config?.apiPath ?? process.env["LLM_LOCAL_API_PATH"] ?? "/generate",
+      timeoutMs: Number(process.env["LLM_LOCAL_TIMEOUT_MS"] ?? "15000")
     };
   }
 
@@ -63,33 +65,59 @@ class LocalHttpLlmClient implements LlmClient {
   constructor(
     readonly model: string,
     private readonly baseUrl: string,
-    private readonly apiPath: string
+    private readonly apiPath: string,
+    private readonly timeoutMs: number
   ) {}
 
   async generateText(params: GenerateTextParams): Promise<string> {
-    const prompt = [
-      `System:\n${params.system}`,
-      `User:\n${params.user}`,
-      "Return only the requested answer."
-    ].join("\n\n");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
-    const response = await fetch(new URL(this.apiPath, this.baseUrl), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        message: prompt,
-        history: [],
-        model: this.model
-      })
-    });
+    try {
+      const response = await fetch(new URL(this.apiPath, this.baseUrl), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(buildLocalRequestBody(this.apiPath, this.model, params)),
+        signal: controller.signal
+      });
 
-    if (!response.ok) {
-      throw new Error(`Local LLM request failed with ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`Local LLM request failed with ${response.status} ${response.statusText}`);
+      }
+
+      const payload = (await response.json()) as Record<string, unknown>;
+      return extractLocalText(payload);
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(`Local LLM request timed out after ${this.timeoutMs}ms`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const payload = (await response.json()) as Record<string, unknown>;
-    return extractLocalText(payload);
   }
+}
+
+function buildLocalRequestBody(apiPath: string, model: string, params: GenerateTextParams): Record<string, unknown> {
+  if (apiPath === "/api/chat/raw") {
+    return {
+      message: [
+        `System:\n${params.system}`,
+        `User:\n${params.user}`,
+        "Return only the requested answer."
+      ].join("\n\n"),
+      history: [],
+      model
+    };
+  }
+
+  return {
+    model,
+    system: params.system,
+    user: params.user,
+    maxTokens: params.maxTokens,
+    workflow: "synosec-scan"
+  };
 }
 
 function extractLocalText(payload: Record<string, unknown>): string {
@@ -135,12 +163,13 @@ export function createLlmClient(config?: ScanLlmConfig): LlmClient {
   if (resolved.provider === "local") {
     return new LocalHttpLlmClient(
       resolved.model,
-      resolved.baseUrl ?? "http://127.0.0.1:8000",
-      resolved.apiPath ?? "/api/chat/raw"
+      resolved.baseUrl ?? "http://127.0.0.1:8010",
+      resolved.apiPath ?? "/generate",
+      resolved.timeoutMs ?? 15000
     );
   }
 
   return new AnthropicLlmClient(resolved.model);
 }
 
-export { extractLocalText, resolveLlmConfig };
+export { buildLocalRequestBody, extractLocalText, resolveLlmConfig };

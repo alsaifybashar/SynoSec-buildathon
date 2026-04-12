@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createLlmClient, extractLocalText, resolveLlmConfig } from "./client.js";
+import { buildLocalRequestBody, createLlmClient, extractLocalText, resolveLlmConfig } from "./client.js";
 
 describe("llm client", () => {
   afterEach(() => {
@@ -8,6 +8,7 @@ describe("llm client", () => {
     delete process.env["LLM_LOCAL_BASE_URL"];
     delete process.env["LLM_LOCAL_API_PATH"];
     delete process.env["LLM_LOCAL_MODEL"];
+    delete process.env["LLM_LOCAL_TIMEOUT_MS"];
   });
 
   it("extracts answer text from the local raw chat payload", () => {
@@ -34,7 +35,8 @@ describe("llm client", () => {
       provider: "local",
       model: "qwen-test",
       baseUrl: "http://127.0.0.1:9000",
-      apiPath: "/v1/chat/completions"
+      apiPath: "/v1/chat/completions",
+      timeoutMs: 15000
     });
   });
 
@@ -77,5 +79,21 @@ describe("llm client", () => {
     expect(body["model"]).toBe("Qwen/Qwen3-4B");
     expect(String(body["message"])).toContain("System:\nReturn JSON only.");
     expect(String(body["message"])).toContain("User:\nSay hello.");
+  });
+
+  it("builds specialized scan payloads for the repo-local service", () => {
+    expect(
+      buildLocalRequestBody("/generate", "Qwen/Qwen3-1.7B", {
+        system: "sys",
+        user: "usr",
+        maxTokens: 99
+      })
+    ).toEqual({
+      model: "Qwen/Qwen3-1.7B",
+      system: "sys",
+      user: "usr",
+      maxTokens: 99,
+      workflow: "synosec-scan"
+    });
   });
 });
