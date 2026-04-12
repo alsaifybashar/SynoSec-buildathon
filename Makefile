@@ -16,8 +16,8 @@ help:
 docker-up:
 	docker compose up --build -d --remove-orphans
 	@printf "\n\033[1;32m✓ SynoSec started!\033[0m\n"
-	@printf "  Frontend: \033[36mhttp://localhost:5173\033[0m\n"
-	@printf "  Backend:  \033[36mhttp://localhost:3001\033[0m\n"
+	@printf "  Frontend: \033[36mhttp://localhost:%s\033[0m\n" "$${VITE_DEV_PORT:-5173}"
+	@printf "  Backend:  \033[36mhttp://localhost:%s\033[0m\n" "$${BACKEND_PORT:-3001}"
 	@printf "  Neo4j UI: \033[36mhttp://localhost:7474\033[0m\n"
 	@printf "  Target:   \033[36mhttp://localhost:8888\033[0m\n"
 
@@ -44,4 +44,4 @@ test:
 	pnpm test
 
 seed:
-	curl -s -X POST http://localhost:3001/api/scan/seed | python3 -m json.tool
+	curl -s -X POST http://localhost:$${BACKEND_PORT:-3001}/api/scan/seed | python3 -m json.tool
