@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../../generated/prisma/index.js";
 import type { CreateRuntimeBody, Runtime, RuntimeProvider, UpdateRuntimeBody } from "@synosec/contracts";
 import { RequestError } from "../../core/http/request-error.js";
 import { mapRuntimeRow } from "./runtimes.mapper.js";

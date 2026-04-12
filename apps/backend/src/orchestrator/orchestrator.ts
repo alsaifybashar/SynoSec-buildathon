@@ -378,7 +378,6 @@ export class Orchestrator {
 
       if (validations.length === 0) {
         const response = await this.llmClient.generateText({
-          model: this.llmClient.model,
           maxTokens: 1024,
           system:
             "You review pentest evidence. Only confirm findings when the supplied tool evidence supports them. Respond ONLY with valid JSON array.",
@@ -487,7 +486,6 @@ export class Orchestrator {
       }
 
       return await this.llmClient.generateText({
-        model: this.llmClient.model,
         maxTokens: 512,
         system:
           "You are an AI pentest orchestrator. Prioritize next steps based on evidence-backed findings and GRACE chain analysis.",

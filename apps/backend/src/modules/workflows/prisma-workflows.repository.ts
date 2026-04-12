@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../../generated/prisma/index.js";
 import type { CreateWorkflowBody, UpdateWorkflowBody, Workflow } from "@synosec/contracts";
 import { RequestError } from "../../core/http/request-error.js";
 import { mapWorkflowRow } from "./workflows.mapper.js";

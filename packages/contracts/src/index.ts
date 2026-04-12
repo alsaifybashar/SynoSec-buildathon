@@ -18,8 +18,7 @@ export const apiRoutes = {
   scanAudit: "/api/scan/:id/audit",
   scanToolRuns: "/api/scan/:id/tool-runs",
   scanEvidence: "/api/scan/:id/evidence",
-  scanSeed: "/api/scan/seed",
-  applications: "/api/applications"
+  scanSeed: "/api/scan/seed"
 } as const;
 
 export const healthResponseSchema = z.object({
@@ -275,7 +274,6 @@ export const findingSchema = z.object({
 });
 export type Finding = z.infer<typeof findingSchema>;
 
-<<<<<<< HEAD
 // ---------------------------------------------------------------------------
 // GRACE — Graph-Reasoning Agents + Cyber Range Evaluation
 // ---------------------------------------------------------------------------
@@ -426,8 +424,6 @@ export type EvidenceResponse = z.infer<typeof evidenceResponseSchema>;
 // Scan
 // ---------------------------------------------------------------------------
 
-=======
->>>>>>> 8518d768bc6b0eaa5ee3c175a923e52f535c8303
 export const scanStatusSchema = z.enum(["pending", "running", "complete", "aborted", "failed"]);
 export type ScanStatus = z.infer<typeof scanStatusSchema>;
 
@@ -532,46 +528,3 @@ export const wsEventSchema = z.discriminatedUnion("type", [
   })
 ]);
 export type WsEvent = z.infer<typeof wsEventSchema>;
-
-// ---------------------------------------------------------------------------
-// Application
-// ---------------------------------------------------------------------------
-
-export const applicationEnvironmentSchema = z.enum(["production", "staging", "development"]);
-export type ApplicationEnvironment = z.infer<typeof applicationEnvironmentSchema>;
-
-export const applicationStatusSchema = z.enum(["active", "investigating", "archived"]);
-export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
-
-export const applicationSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1),
-  baseUrl: z.string().url().nullable(),
-  environment: applicationEnvironmentSchema,
-  status: applicationStatusSchema,
-  lastScannedAt: z.string().datetime().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
-});
-export type Application = z.infer<typeof applicationSchema>;
-
-export const listApplicationsResponseSchema = z.object({
-  applications: z.array(applicationSchema)
-});
-export type ListApplicationsResponse = z.infer<typeof listApplicationsResponseSchema>;
-
-const applicationBodyBaseSchema = z.object({
-  name: z.string().trim().min(1),
-  baseUrl: z.union([z.string().trim().url(), z.literal(""), z.null()]).transform((value) => value || null),
-  environment: applicationEnvironmentSchema,
-  status: applicationStatusSchema,
-  lastScannedAt: z.union([z.string().datetime(), z.null()])
-});
-
-export const createApplicationBodySchema = applicationBodyBaseSchema;
-export type CreateApplicationBody = z.infer<typeof createApplicationBodySchema>;
-
-export const updateApplicationBodySchema = applicationBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
-  message: "At least one field is required."
-});
-export type UpdateApplicationBody = z.infer<typeof updateApplicationBodySchema>;

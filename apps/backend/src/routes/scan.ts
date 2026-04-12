@@ -20,6 +20,7 @@ import {
 import { Orchestrator } from "../orchestrator/orchestrator.js";
 import { evidenceStore } from "../broker/evidence-store.js";
 import { reportStore } from "../runtime/report-store.js";
+import { seedDemoScan } from "../seed/demo-data.js";
 
 // ---------------------------------------------------------------------------
 // Active orchestrators — keyed by scanId

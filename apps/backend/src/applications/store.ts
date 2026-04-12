@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { PrismaClient, type Application as PrismaApplication } from "@prisma/client";
+import { PrismaClient, type Application as PrismaApplication } from "../generated/prisma/index.js";
 import type { Application, CreateApplicationBody, UpdateApplicationBody } from "@synosec/contracts";
-import { prisma } from "../prisma.js";
+import { prisma } from "../core/database/prisma-client.js";
 
 export interface ApplicationStore {
   list(): Promise<Application[]>;
