@@ -561,6 +561,15 @@ export const defensiveNextStepSchema = z.object({
 });
 export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
 
+export const defensiveClosureSummarySchema = z.object({
+  headline: z.string().min(1),
+  summary: z.string().min(1),
+  evidenceHighlights: z.array(z.string().min(1)).min(1).max(3),
+  nextStep: z.string().min(1),
+  continueLoop: z.boolean()
+});
+export type DefensiveClosureSummary = z.infer<typeof defensiveClosureSummarySchema>;
+
 export const defensiveFinalOutcomeSchema = z.object({
   status: z.enum(["fixed", "mitigated", "blocked"]),
   summary: z.string().min(1),
@@ -1141,6 +1150,35 @@ const buildCarryForwardState = (
     recommendedNextStep
   });
 
+const buildClosureSummary = (
+  selectedAction: DefensiveChosenAction,
+  evidence: DefensiveEvidenceArtifact[],
+  residualRisk: DefensiveResidualRisk,
+  recommendedNextStep: DefensiveNextStep,
+  status: "completed" | "blocked"
+): DefensiveClosureSummary => {
+  const evidenceHighlights = evidence
+    .map((artifact) => artifact.summary.trim())
+    .filter((summary) => summary.length > 0)
+    .slice(0, 3);
+
+  const fallbackEvidence = status === "completed"
+    ? "The bounded change and verification checks are recorded for review."
+    : "The available review evidence is recorded before any autonomous change.";
+
+  return defensiveClosureSummarySchema.parse({
+    headline: status === "completed"
+      ? "Defensive iteration complete: one bounded risk reduction landed."
+      : "Defensive iteration blocked: no unsupported remediation was applied.",
+    summary: status === "completed"
+      ? `${selectedAction.summary} Evidence supports the risk reduction claim, and remaining risk is: ${residualRisk.summary}`
+      : `${selectedAction.summary} The loop stopped before making a change. Remaining risk is: ${residualRisk.summary}`,
+    evidenceHighlights: evidenceHighlights.length > 0 ? evidenceHighlights : [fallbackEvidence],
+    nextStep: recommendedNextStep.summary,
+    continueLoop: recommendedNextStep.continueLoop
+  });
+};
+
 const buildFinalOutcome = (
   selectedAction: DefensiveChosenAction,
   verificationSummary: string,
@@ -1191,6 +1229,13 @@ const blockDefensiveIteration = (
     residualRisk,
     recommendedNextStep
   );
+  const closureSummary = buildClosureSummary(
+    selectedAction,
+    request.evidence,
+    residualRisk,
+    recommendedNextStep,
+    "blocked"
+  );
 
   return defensiveIterationRecordSchema.parse({
     iterationId: request.iterationId,
@@ -1210,6 +1255,7 @@ const blockDefensiveIteration = (
     residualRisk,
     recommendedNextStep,
     carryForward,
+    closureSummary,
     handoffSummary: `${failure.summary} No change was applied.`,
     failure
   });
@@ -1391,6 +1437,13 @@ export const executeDefensiveIteration = (
     residualRisk,
     recommendedNextStep
   );
+  const closureSummary = buildClosureSummary(
+    selectedAction,
+    request.evidence,
+    residualRisk,
+    recommendedNextStep,
+    "completed"
+  );
 
   return defensiveIterationRecordSchema.parse({
     iterationId: request.iterationId,
@@ -1410,6 +1463,7 @@ export const executeDefensiveIteration = (
     residualRisk,
     recommendedNextStep,
     carryForward,
+    closureSummary,
     handoffSummary: `${request.change.summary} completed. ${recommendedNextStep.summary}`
   });
 };
@@ -1447,6 +1501,7 @@ export const defensiveIterationRecordSchema = z
     residualRisk: defensiveResidualRiskSchema,
     recommendedNextStep: defensiveNextStepSchema,
     carryForward: defensiveCarryForwardStateSchema,
+    closureSummary: defensiveClosureSummarySchema,
     handoffSummary: z.string().min(1),
     failure: defensiveFailureStateSchema.optional()
   })
@@ -1566,7 +1621,7 @@ export const defensiveLoopContract = defensiveLoopContractSchema.parse({
       stage: "handoff",
       purpose: "Recommend the next safe step so the following iteration starts with preserved context.",
       consumes: ["iterationRecord", "residualRisk"],
-      produces: ["recommendedNextStep", "handoffSummary"]
+      produces: ["recommendedNextStep", "closureSummary", "handoffSummary"]
     }
   ],
   requiredInputs: [
@@ -1616,6 +1671,11 @@ export const defensiveLoopContract = defensiveLoopContractSchema.parse({
       key: "recommendedNextStep",
       required: true,
       description: "The next safe action or explicit stop condition for the following iteration."
+    },
+    {
+      key: "closureSummary",
+      required: true,
+      description: "Compact end-of-iteration guidance that states what risk changed, what evidence supports that claim, what remains, and whether the loop can safely continue."
     }
   ],
   failureStates: [

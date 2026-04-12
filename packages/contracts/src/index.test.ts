@@ -128,7 +128,8 @@ describe("contracts", () => {
       "prioritization",
       "evidence",
       "residualRisk",
-      "recommendedNextStep"
+      "recommendedNextStep",
+      "closureSummary"
     ]);
     expect(defensiveLoopContract.failureStates.map((failure) => failure.reason)).toEqual([
       "missing_evidence",
@@ -312,6 +313,16 @@ describe("contracts", () => {
           rationale: "The highest remaining risk is credential misuse rather than internet exposure.",
           continueLoop: true
         }
+      },
+      closureSummary: {
+        headline: "Defensive iteration complete: one bounded risk reduction landed.",
+        summary: "Reduce external exposure for Admin API based on public admin endpoint exposed. Evidence supports the risk reduction claim, and remaining risk is: Exposure is reduced, but admin authentication hardening still needs review.",
+        evidenceHighlights: [
+          "Ingress manifest now limits source CIDRs.",
+          "Manual probes confirm the new network boundary."
+        ],
+        nextStep: "Review privileged admin authentication flows next.",
+        continueLoop: true
       },
       handoffSummary: "Ingress is restricted and the next iteration should focus on admin authentication hardening."
     });
@@ -543,6 +554,15 @@ describe("contracts", () => {
           continueLoop: false
         }
       },
+      closureSummary: {
+        headline: "Defensive iteration blocked: no unsupported remediation was applied.",
+        summary: "Reproduce and validate suspicious privileged path before any production change. The loop stopped before making a change. Remaining risk is: The suspected issue remains unresolved pending stronger evidence.",
+        evidenceHighlights: [
+          "The current report does not provide enough proof to act."
+        ],
+        nextStep: "Reproduce the finding with stronger evidence before any change.",
+        continueLoop: false
+      },
       handoffSummary: "Pause autonomous action until the finding can be reproduced."
     });
 
@@ -616,6 +636,12 @@ describe("contracts", () => {
     expect(result.issueOutcomes[0]?.disposition).toBe("mitigated");
     expect(result.carryForward.outstandingIssues[0]?.sourceId).toBe("finding-1");
     expect(result.recommendedNextStep.continueLoop).toBe(true);
+    expect(result.closureSummary.headline).toContain("Defensive iteration complete");
+    expect(result.closureSummary.summary).toContain("remaining risk");
+    expect(result.closureSummary.evidenceHighlights).toEqual([
+      "Ingress allowlist narrowed to the approved source CIDRs.",
+      "Verification probes confirm the route now blocks untrusted access."
+    ]);
     expect(result.handoffSummary).toContain("completed");
   });
 
@@ -701,6 +727,7 @@ describe("contracts", () => {
     expect(result.issueOutcomes.map((issue) => issue.disposition)).toEqual(["fixed", "skipped", "unverified"]);
     expect(result.carryForward.resolvedIssues[0]?.sourceId).toBe("finding-patch-1");
     expect(result.carryForward.outstandingIssues.map((issue) => issue.sourceId)).toEqual(["finding-skip-1", "obs-verify-1"]);
+    expect(result.closureSummary.nextStep).toContain("stronger evidence");
   });
 
   it("blocks an unsafe change that broadens beyond one reversible mitigation", () => {
@@ -762,6 +789,8 @@ describe("contracts", () => {
     expect(result.verification.outcome).toBe("blocked");
     expect(result.finalOutcome.status).toBe("blocked");
     expect(result.issueOutcomes[0]?.disposition).toBe("skipped");
+    expect(result.closureSummary.headline).toContain("blocked");
+    expect(result.closureSummary.continueLoop).toBe(false);
     expect(result.handoffSummary).toContain("No change was applied");
   });
 
@@ -822,5 +851,6 @@ describe("contracts", () => {
     expect(result.issueOutcomes[0]?.disposition).toBe("unverified");
     expect(result.carryForward.outstandingIssues[0]?.sourceId).toBe("finding-2");
     expect(result.recommendedNextStep.summary).toContain("stronger evidence");
+    expect(result.closureSummary.nextStep).toContain("stronger evidence");
   });
 });
