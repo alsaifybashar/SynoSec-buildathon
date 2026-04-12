@@ -9265,3 +9265,3267 @@ index c6cea9f160d9248d7e2e1559e60854c086266ca8..93914898f8abc4f465515a7376d12254
 
 codex
 The implementation is ready and the audit is complete: security-wise this only adds schemas/docs, performance-wise it doesn’t affect runtime paths, and regression risk is limited to shared-contract typing already covered by build and tests. I’m creating the first commit now so I can record an actual hash in the required progress entry.
+exec
+/bin/bash -lc 'git add -A && git commit -m "Define defensive loop contract" && git show -s --format="%h %s" HEAD' in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+[main aec4f098] Define defensive loop contract
+ 10 files changed, 9869 insertions(+), 1 deletion(-)
+ create mode 100644 .ralph/activity.log
+ create mode 100644 .ralph/errors.log
+ create mode 100644 .ralph/guardrails.md
+ create mode 100644 .ralph/progress.md
+ create mode 100644 .ralph/runs/run-20260413-004018-509304-iter-1.log
+ create mode 100644 .ralph/runs/run-20260413-004018-509304-iter-1.md
+ create mode 100644 docs/defensive-loop-contract.md
+aec4f098 Define defensive loop contract
+
+diff --git a/.ralph/runs/run-20260413-004018-509304-iter-1.md b/.ralph/runs/run-20260413-004018-509304-iter-1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..16a1ad9633c5d0ee155154c3412e1c4485b6334b
+--- /dev/null
++++ b/.ralph/runs/run-20260413-004018-509304-iter-1.md
+@@ -0,0 +1,25 @@
++# Run Summary
++
++## Story
++- ID: S1
++- Title: Define the defensive loop contract
++- Run: 20260413-004018-509304
++- Iteration: 1
++
++## Outcome
++- Added a machine-readable defensive loop contract in `packages/contracts/src/index.ts`.
++- Defined the required stage order: intake, prioritize, act, verify, record, handoff.
++- Added structured input, output, and failure-state schemas for one defensive iteration.
++- Documented the contract in `docs/defensive-loop-contract.md`.
++- Added contract coverage in `packages/contracts/src/index.test.ts`.
++
++## Verification
++- `pnpm --filter @synosec/contracts test`: PASS
++- `pnpm --filter @synosec/contracts build`: PASS
++- `pnpm build`: PASS
++- `pnpm test`: PASS
++- `pnpm lint`: FAIL due to an existing ESLint typed-linting issue in `apps/backend/src/generated/prisma/client.js`
++
++## Notes
++- The PRD file already had unrelated in-progress metadata changes and was left untouched.
++- No UI files changed, so browser verification was not required for this story.
+diff --git a/docs/defensive-loop-contract.md b/docs/defensive-loop-contract.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba7eac46e3515a70fb181f94b84465906da797cf
+--- /dev/null
++++ b/docs/defensive-loop-contract.md
+@@ -0,0 +1,41 @@
++# Defensive Loop Contract
++
++The defensive loop is a single bounded iteration. It accepts evidence-backed findings, chooses one explainable defensive action, verifies the outcome, records what happened, and hands off a deterministic next step.
++
++## Stage order
++
++1. `intake`: collect findings, target identity, asset context, and prior iteration state when available.
++2. `prioritize`: select exactly one bounded defensive action using the intake evidence and asset context.
++3. `act`: execute the chosen action only when the scope is clear and the action is safe.
++4. `verify`: confirm the action outcome with explicit checks and supporting evidence.
++5. `record`: persist the chosen action, verification result, evidence, and residual risk.
++6. `handoff`: produce the next safe step so the next iteration can continue without rebuilding context.
++
++## Required inputs
++
++- `findings`: one or more findings with severity, confidence, source, and evidence.
++- `target`: stable target identity for the application, runtime, service, host, repository, or manually scoped asset.
++- `assetContext`: criticality and exposure context needed to explain the decision in plain language.
++- `priorIteration`: optional carry-forward state from the previous loop, including unresolved findings and residual risk.
++
++## Required outputs
++
++- `chosenAction`: the single bounded defensive action selected for the iteration, including rationale and safety checks.
++- `evidence`: reviewable artifacts showing what was checked, changed, or why the iteration stopped.
++- `residualRisk`: a plain-language statement of what risk remains after the iteration.
++- `recommendedNextStep`: the next safe action, or an explicit reason the loop cannot continue autonomously.
++
++## Failure states
++
++- `missing_evidence`: block the loop when verification or outcome claims cannot be backed by concrete evidence.
++- `ambiguous_scope`: block the loop when the target boundary, ownership, or affected components are unclear.
++- `unsafe_action`: block the loop when the proposed change is destructive, irreversible, or larger than the agreed bounded scope.
++
++## Source of truth
++
++The machine-readable contract lives in [packages/contracts/src/index.ts](../packages/contracts/src/index.ts) as:
++
++- `defensiveLoopContract`
++- `defensiveIterationInputSchema`
++- `defensiveIterationRecordSchema`
++- `defensiveFailureStateSchema`
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+index 794a8db1f95a08caeee13918ca1154355eccd079..4976e9dc0faa1e3e25d329b6ee7c1aefc36a2cf6
+--- a/packages/contracts/src/index.test.ts
++++ b/packages/contracts/src/index.test.ts
+@@ -4,6 +4,9 @@
+   briefResponseSchema,
+   createScanRequestSchema,
+   createApplicationBodySchema,
++  defensiveIterationRecordSchema,
++  defensiveLoopContract,
++  defensiveLoopStages,
+   demoResponseSchema,
+   healthResponseSchema,
+   updateApplicationBodySchema
+@@ -105,4 +108,178 @@
+ 
+     expect(result.success).toBe(true);
+   });
++
++  it("defines the defensive loop stages in order", () => {
++    expect(defensiveLoopStages).toEqual(["intake", "prioritize", "act", "verify", "record", "handoff"]);
++    expect(defensiveLoopContract.stages.map((stage) => stage.stage)).toEqual(defensiveLoopStages);
++  });
++
++  it("documents the required defensive loop fields and blocked states", () => {
++    expect(defensiveLoopContract.requiredInputs.map((field) => field.key)).toEqual([
++      "findings",
++      "target",
++      "assetContext",
++      "priorIteration"
++    ]);
++    expect(defensiveLoopContract.requiredOutputs.map((field) => field.key)).toEqual([
++      "chosenAction",
++      "evidence",
++      "residualRisk",
++      "recommendedNextStep"
++    ]);
++    expect(defensiveLoopContract.failureStates.map((failure) => failure.reason)).toEqual([
++      "missing_evidence",
++      "ambiguous_scope",
++      "unsafe_action"
++    ]);
++  });
++
++  it("accepts a completed defensive iteration record", () => {
++    const result = defensiveIterationRecordSchema.safeParse({
++      iterationId: "iter-001",
++      stages: ["intake", "prioritize", "act", "verify", "record", "handoff"],
++      status: "completed",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.92,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        },
++        priorIteration: {
++          iterationId: "iter-000",
++          summary: "Previous iteration limited scanner rate but did not reduce exposure.",
++          residualRisk: "Admin API remains internet reachable.",
++          outstandingFindingIds: ["finding-0"],
++          recommendedNextStep: "Reduce exposure on the admin route."
++        }
++      },
++      chosenAction: {
++        type: "access_restriction",
++        summary: "Restrict the admin ingress to office and VPN CIDRs.",
++        rationale: "This reduces exposure without changing application behavior.",
++        scope: "Ingress policy for the production admin service only.",
++        bounded: true,
++        safetyChecks: ["Confirm allowed CIDRs with operations", "Apply only to the admin ingress resource"]
++      },
++      verification: {
++        outcome: "verified",
++        summary: "The route no longer responds from an untrusted source and still works from approved IP space.",
++        checks: ["Curl from blocked source fails", "Smoke test from approved source passes"]
++      },
++      evidence: [
++        {
++          type: "config_diff",
++          summary: "Ingress manifest now limits source CIDRs.",
++          reference: "git diff apps/infra/admin-ingress.yaml"
++        },
++        {
++          type: "test_result",
++          summary: "Manual probes confirm the new network boundary.",
++          reference: "probe-log-2026-04-13"
++        }
++      ],
++      residualRisk: {
++        level: "medium",
++        summary: "Exposure is reduced, but admin authentication hardening still needs review.",
++        remainingFindingIds: ["finding-auth-1"],
++        needsHumanReview: false
++      },
++      recommendedNextStep: {
++        summary: "Review privileged admin authentication flows next.",
++        rationale: "The highest remaining risk is credential misuse rather than internet exposure.",
++        continueLoop: true
++      },
++      handoffSummary: "Ingress is restricted and the next iteration should focus on admin authentication hardening."
++    });
++
++    expect(result.success).toBe(true);
++  });
++
++  it("rejects a blocked defensive iteration without a failure state", () => {
++    const result = defensiveIterationRecordSchema.safeParse({
++      iterationId: "iter-002",
++      stages: ["intake", "prioritize", "act", "verify", "record", "handoff"],
++      status: "blocked",
++      input: {
++        findings: [
++          {
++            id: "finding-2",
++            title: "Suspicious privileged path",
++            severity: "high",
++            confidence: 0.6,
++            summary: "The path may allow privilege escalation.",
++            evidence: "Single unverified report",
++            source: "scanner"
++          }
++        ],
++        target: {
++          kind: "application",
++          id: "app-1",
++          displayName: "Operator Portal"
++        },
++        assetContext: {
++          assetId: "asset-2",
++          assetName: "Operator Portal",
++          criticality: "high",
++          internetExposed: true,
++          containsSensitiveData: false,
++          notes: []
++        }
++      },
++      chosenAction: {
++        type: "defer",
++        summary: "Do not change production routing yet.",
++        rationale: "The report is too weak to justify a live change.",
++        scope: "No production change.",
++        bounded: true,
++        safetyChecks: ["Require stronger reproduction evidence"]
++      },
++      verification: {
++        outcome: "blocked",
++        summary: "Execution was blocked before verification.",
++        checks: ["Confirmed the evidence is incomplete"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The current report does not provide enough proof to act."
++        }
++      ],
++      residualRisk: {
++        level: "high",
++        summary: "The suspected issue remains unresolved pending stronger evidence.",
++        remainingFindingIds: ["finding-2"],
++        needsHumanReview: true
++      },
++      recommendedNextStep: {
++        summary: "Reproduce the finding with stronger evidence before any change.",
++        rationale: "The scope and exploitability are still ambiguous.",
++        continueLoop: false
++      },
++      handoffSummary: "Pause autonomous action until the finding can be reproduced."
++    });
++
++    expect(result.success).toBe(false);
++  });
+ });
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index c6cea9f160d9248d7e2e1559e60854c086266ca8..93914898f8abc4f465515a7376d12254d60dafd4
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -430,6 +430,320 @@
+ export type EvidenceResponse = z.infer<typeof evidenceResponseSchema>;
+ 
+ // ---------------------------------------------------------------------------
++// Defensive iteration loop contract
++// ---------------------------------------------------------------------------
++
++export const defensiveLoopStageSchema = z.enum(["intake", "prioritize", "act", "verify", "record", "handoff"]);
++export type DefensiveLoopStage = z.infer<typeof defensiveLoopStageSchema>;
++
++export const defensiveLoopStages = [
++  "intake",
++  "prioritize",
++  "act",
++  "verify",
++  "record",
++  "handoff"
++] as const satisfies readonly DefensiveLoopStage[];
++
++export const defensiveTargetKindSchema = z.enum(["application", "runtime", "service", "host", "repository", "manual"]);
++export type DefensiveTargetKind = z.infer<typeof defensiveTargetKindSchema>;
++
++export const defensiveAssetCriticalitySchema = z.enum(["low", "moderate", "high", "critical"]);
++export type DefensiveAssetCriticality = z.infer<typeof defensiveAssetCriticalitySchema>;
++
++export const defensiveIterationFindingSchema = z.object({
++  id: z.string().min(1),
++  title: z.string().min(1),
++  severity: severitySchema,
++  confidence: z.number().min(0).max(1),
++  summary: z.string().min(1),
++  evidence: z.string().min(1),
++  source: z.string().min(1)
++});
++export type DefensiveIterationFinding = z.infer<typeof defensiveIterationFindingSchema>;
++
++export const defensiveTargetIdentitySchema = z.object({
++  kind: defensiveTargetKindSchema,
++  id: z.string().min(1),
++  displayName: z.string().min(1),
++  environment: applicationEnvironmentSchema.optional(),
++  locator: z.string().min(1).optional()
++});
++export type DefensiveTargetIdentity = z.infer<typeof defensiveTargetIdentitySchema>;
++
++export const defensiveAssetContextSchema = z.object({
++  assetId: z.string().min(1),
++  assetName: z.string().min(1),
++  criticality: defensiveAssetCriticalitySchema,
++  internetExposed: z.boolean(),
++  containsSensitiveData: z.boolean(),
++  notes: z.array(z.string().min(1)).default([])
++});
++export type DefensiveAssetContext = z.infer<typeof defensiveAssetContextSchema>;
++
++export const priorIterationStateSchema = z.object({
++  iterationId: z.string().min(1),
++  summary: z.string().min(1),
++  residualRisk: z.string().min(1),
++  outstandingFindingIds: z.array(z.string().min(1)).default([]),
++  recommendedNextStep: z.string().min(1).optional()
++});
++export type PriorIterationState = z.infer<typeof priorIterationStateSchema>;
++
++export const defensiveIterationInputSchema = z.object({
++  findings: z.array(defensiveIterationFindingSchema).min(1),
++  target: defensiveTargetIdentitySchema,
++  assetContext: defensiveAssetContextSchema,
++  priorIteration: priorIterationStateSchema.optional()
++});
++export type DefensiveIterationInput = z.infer<typeof defensiveIterationInputSchema>;
++
++export const defensiveActionTypeSchema = z.enum([
++  "patch",
++  "configuration_change",
++  "access_restriction",
++  "monitoring",
++  "manual_investigation",
++  "defer"
++]);
++export type DefensiveActionType = z.infer<typeof defensiveActionTypeSchema>;
++
++export const defensiveChosenActionSchema = z.object({
++  type: defensiveActionTypeSchema,
++  summary: z.string().min(1),
++  rationale: z.string().min(1),
++  scope: z.string().min(1),
++  bounded: z.boolean(),
++  safetyChecks: z.array(z.string().min(1)).min(1)
++});
++export type DefensiveChosenAction = z.infer<typeof defensiveChosenActionSchema>;
++
++export const defensiveVerificationSchema = z.object({
++  outcome: z.enum(["verified", "partial", "blocked"]),
++  summary: z.string().min(1),
++  checks: z.array(z.string().min(1)).min(1)
++});
++export type DefensiveVerification = z.infer<typeof defensiveVerificationSchema>;
++
++export const defensiveEvidenceArtifactSchema = z.object({
++  type: z.enum(["command_output", "config_diff", "test_result", "review_note", "ticket"]),
++  summary: z.string().min(1),
++  reference: z.string().min(1).optional()
++});
++export type DefensiveEvidenceArtifact = z.infer<typeof defensiveEvidenceArtifactSchema>;
++
++export const defensiveResidualRiskSchema = z.object({
++  level: severitySchema,
++  summary: z.string().min(1),
++  remainingFindingIds: z.array(z.string().min(1)).default([]),
++  needsHumanReview: z.boolean()
++});
++export type DefensiveResidualRisk = z.infer<typeof defensiveResidualRiskSchema>;
++
++export const defensiveNextStepSchema = z.object({
++  summary: z.string().min(1),
++  rationale: z.string().min(1),
++  continueLoop: z.boolean()
++});
++export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
++
++export const defensiveFailureReasonSchema = z.enum(["missing_evidence", "ambiguous_scope", "unsafe_action"]);
++export type DefensiveFailureReason = z.infer<typeof defensiveFailureReasonSchema>;
++
++export const defensiveFailureStateSchema = z.object({
++  reason: defensiveFailureReasonSchema,
++  blockedStage: defensiveLoopStageSchema,
++  summary: z.string().min(1),
++  operatorAction: z.string().min(1)
++});
++export type DefensiveFailureState = z.infer<typeof defensiveFailureStateSchema>;
++
++export const defensiveIterationRecordSchema = z
++  .object({
++    iterationId: z.string().min(1),
++    stages: z.tuple([
++      z.literal("intake"),
++      z.literal("prioritize"),
++      z.literal("act"),
++      z.literal("verify"),
++      z.literal("record"),
++      z.literal("handoff")
++    ]),
++    status: z.enum(["completed", "blocked"]),
++    input: defensiveIterationInputSchema,
++    chosenAction: defensiveChosenActionSchema,
++    verification: defensiveVerificationSchema,
++    evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
++    residualRisk: defensiveResidualRiskSchema,
++    recommendedNextStep: defensiveNextStepSchema,
++    handoffSummary: z.string().min(1),
++    failure: defensiveFailureStateSchema.optional()
++  })
++  .superRefine((value, ctx) => {
++    if (value.status === "blocked" && !value.failure) {
++      ctx.addIssue({
++        code: z.ZodIssueCode.custom,
++        message: "Blocked iterations must include a failure state.",
++        path: ["failure"]
++      });
++    }
++
++    if (value.status === "completed" && value.failure) {
++      ctx.addIssue({
++        code: z.ZodIssueCode.custom,
++        message: "Completed iterations cannot include a failure state.",
++        path: ["failure"]
++      });
++    }
++  });
++export type DefensiveIterationRecord = z.infer<typeof defensiveIterationRecordSchema>;
++
++export const defensiveLoopContractFieldSchema = z.object({
++  key: z.string().min(1),
++  required: z.boolean(),
++  description: z.string().min(1)
++});
++export type DefensiveLoopContractField = z.infer<typeof defensiveLoopContractFieldSchema>;
++
++export const defensiveLoopStageDefinitionSchema = z.object({
++  stage: defensiveLoopStageSchema,
++  purpose: z.string().min(1),
++  consumes: z.array(z.string().min(1)),
++  produces: z.array(z.string().min(1))
++});
++export type DefensiveLoopStageDefinition = z.infer<typeof defensiveLoopStageDefinitionSchema>;
++
++export const defensiveLoopContractSchema = z.object({
++  name: z.literal("defensive-iteration"),
++  version: z.literal("1.0"),
++  stages: z.tuple([
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("intake") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("prioritize") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("act") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("verify") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("record") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("handoff") })
++  ]),
++  requiredInputs: z.array(defensiveLoopContractFieldSchema).min(4),
++  requiredOutputs: z.array(defensiveLoopContractFieldSchema).min(4),
++  failureStates: z
++    .array(
++      defensiveFailureStateSchema.extend({
++        reason: defensiveFailureReasonSchema
++      })
++    )
++    .min(3)
++});
++export type DefensiveLoopContract = z.infer<typeof defensiveLoopContractSchema>;
++
++export const defensiveLoopContract = defensiveLoopContractSchema.parse({
++  name: "defensive-iteration",
++  version: "1.0",
++  stages: [
++    {
++      stage: "intake",
++      purpose: "Collect validated findings, target identity, asset context, and prior state before making any change.",
++      consumes: ["findings", "target", "assetContext", "priorIteration"],
++      produces: ["iterationInput"]
++    },
++    {
++      stage: "prioritize",
++      purpose: "Choose one bounded defensive action using the intake evidence and known asset risk.",
++      consumes: ["iterationInput"],
++      produces: ["chosenAction"]
++    },
++    {
++      stage: "act",
++      purpose: "Execute the selected defensive action only when scope and safety checks are clear.",
++      consumes: ["chosenAction"],
++      produces: ["executionArtifacts"]
++    },
++    {
++      stage: "verify",
++      purpose: "Confirm the action outcome with explicit checks instead of assuming risk reduction.",
++      consumes: ["executionArtifacts"],
++      produces: ["verification", "evidence"]
++    },
++    {
++      stage: "record",
++      purpose: "Persist what changed, what evidence supports it, and what residual risk remains.",
++      consumes: ["chosenAction", "verification", "evidence"],
++      produces: ["iterationRecord", "residualRisk"]
++    },
++    {
++      stage: "handoff",
++      purpose: "Recommend the next safe step so the following iteration starts with preserved context.",
++      consumes: ["iterationRecord", "residualRisk"],
++      produces: ["recommendedNextStep", "handoffSummary"]
++    }
++  ],
++  requiredInputs: [
++    {
++      key: "findings",
++      required: true,
++      description: "At least one finding with severity, confidence, source, and evidence."
++    },
++    {
++      key: "target",
++      required: true,
++      description: "Target identity including kind, stable identifier, and display name."
++    },
++    {
++      key: "assetContext",
++      required: true,
++      description: "Asset criticality and exposure context used to explain prioritization."
++    },
++    {
++      key: "priorIteration",
++      required: false,
++      description: "Previous iteration summary and carry-forward risk when available."
++    }
++  ],
++  requiredOutputs: [
++    {
++      key: "chosenAction",
++      required: true,
++      description: "The single bounded action selected for the iteration with rationale and safety checks."
++    },
++    {
++      key: "evidence",
++      required: true,
++      description: "Artifacts that show what was checked, changed, or deliberately blocked."
++    },
++    {
++      key: "residualRisk",
++      required: true,
++      description: "Plain-language statement of remaining risk after the iteration."
++    },
++    {
++      key: "recommendedNextStep",
++      required: true,
++      description: "The next safe action or explicit stop condition for the following iteration."
++    }
++  ],
++  failureStates: [
++    {
++      reason: "missing_evidence",
++      blockedStage: "verify",
++      summary: "Stop when the action cannot be supported by concrete evidence or verification output.",
++      operatorAction: "Collect stronger evidence before claiming the risk changed."
++    },
++    {
++      reason: "ambiguous_scope",
++      blockedStage: "prioritize",
++      summary: "Stop when the target boundary or affected assets are unclear.",
++      operatorAction: "Clarify ownership, targets, or impacted components before acting."
++    },
++    {
++      reason: "unsafe_action",
++      blockedStage: "act",
++      summary: "Stop when the proposed change is destructive, irreversible, or exceeds the bounded scope.",
++      operatorAction: "Escalate for human review or choose a safer defensive action."
++    }
++  ]
++});
++
++// ---------------------------------------------------------------------------
+ // Scan
+ // ---------------------------------------------------------------------------
+ 
+
+apply patch
+patch: completed
+/home/nilwi971/projects/SynoSec-buildathon/.ralph/progress.md
+diff --git a/.ralph/progress.md b/.ralph/progress.md
+index c9449dfe55753c81d8a11a8ee0a32e89afb336fe..193917c224f0f6c9804dc8cd4397092c0133d152
+--- a/.ralph/progress.md
++++ b/.ralph/progress.md
+@@ -5,3 +5,41 @@
+ - (add reusable patterns here)
+ 
+ ---
++## [2026-04-13 00:45:00 CEST] - S1: Define the defensive loop contract
++Thread: 
++Run: 20260413-004018-509304 (iteration 1)
++Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004018-509304-iter-1.log
++Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004018-509304-iter-1.md
++- Guardrails reviewed: yes
++- No-commit run: false
++- Commit: aec4f098 Define defensive loop contract
++- Post-commit status: `clean`
++- Verification:
++  - Command: `pnpm --filter @synosec/contracts test` -> PASS
++  - Command: `pnpm --filter @synosec/contracts build` -> PASS
++  - Command: `pnpm build` -> PASS
++  - Command: `pnpm test` -> PASS
++  - Command: `pnpm lint` -> FAIL (existing ESLint typed-linting issue in `apps/backend/src/generated/prisma/client.js`)
++- Files changed:
++  - .agents/tasks/prd-defensive-loop.json
++  - .ralph/activity.log
++  - .ralph/errors.log
++  - .ralph/guardrails.md
++  - .ralph/progress.md
++  - .ralph/runs/run-20260413-004018-509304-iter-1.log
++  - .ralph/runs/run-20260413-004018-509304-iter-1.md
++  - docs/defensive-loop-contract.md
++  - packages/contracts/src/index.test.ts
++  - packages/contracts/src/index.ts
++- What was implemented
++- Added a machine-readable defensive iteration contract with explicit stage order, required inputs, required outputs, and blocked failure states.
++- Added a structured iteration record schema that preserves intake, chosen action, verification, evidence, residual risk, and handoff data for later iterations.
++- Added shared-contract tests and an operator-facing contract document for the buildathon demo.
++- **Learnings for future iterations:**
++  - Patterns discovered
++  - Shared `zod` contracts are the right place for cross-app workflow definitions because they keep backend, frontend, and docs aligned.
++  - Gotchas encountered
++  - Root `pnpm lint` currently fails on a generated Prisma file due typed ESLint configuration, so lint results need to be interpreted separately from story-specific changes.
++  - Useful context
++  - The PRD file already carried runner-managed `in_progress` metadata before implementation work and was not manually edited during this story.
++---
+diff --git a/.ralph/runs/run-20260413-004018-509304-iter-1.md b/.ralph/runs/run-20260413-004018-509304-iter-1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..16a1ad9633c5d0ee155154c3412e1c4485b6334b
+--- /dev/null
++++ b/.ralph/runs/run-20260413-004018-509304-iter-1.md
+@@ -0,0 +1,25 @@
++# Run Summary
++
++## Story
++- ID: S1
++- Title: Define the defensive loop contract
++- Run: 20260413-004018-509304
++- Iteration: 1
++
++## Outcome
++- Added a machine-readable defensive loop contract in `packages/contracts/src/index.ts`.
++- Defined the required stage order: intake, prioritize, act, verify, record, handoff.
++- Added structured input, output, and failure-state schemas for one defensive iteration.
++- Documented the contract in `docs/defensive-loop-contract.md`.
++- Added contract coverage in `packages/contracts/src/index.test.ts`.
++
++## Verification
++- `pnpm --filter @synosec/contracts test`: PASS
++- `pnpm --filter @synosec/contracts build`: PASS
++- `pnpm build`: PASS
++- `pnpm test`: PASS
++- `pnpm lint`: FAIL due to an existing ESLint typed-linting issue in `apps/backend/src/generated/prisma/client.js`
++
++## Notes
++- The PRD file already had unrelated in-progress metadata changes and was left untouched.
++- No UI files changed, so browser verification was not required for this story.
+diff --git a/docs/defensive-loop-contract.md b/docs/defensive-loop-contract.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba7eac46e3515a70fb181f94b84465906da797cf
+--- /dev/null
++++ b/docs/defensive-loop-contract.md
+@@ -0,0 +1,41 @@
++# Defensive Loop Contract
++
++The defensive loop is a single bounded iteration. It accepts evidence-backed findings, chooses one explainable defensive action, verifies the outcome, records what happened, and hands off a deterministic next step.
++
++## Stage order
++
++1. `intake`: collect findings, target identity, asset context, and prior iteration state when available.
++2. `prioritize`: select exactly one bounded defensive action using the intake evidence and asset context.
++3. `act`: execute the chosen action only when the scope is clear and the action is safe.
++4. `verify`: confirm the action outcome with explicit checks and supporting evidence.
++5. `record`: persist the chosen action, verification result, evidence, and residual risk.
++6. `handoff`: produce the next safe step so the next iteration can continue without rebuilding context.
++
++## Required inputs
++
++- `findings`: one or more findings with severity, confidence, source, and evidence.
++- `target`: stable target identity for the application, runtime, service, host, repository, or manually scoped asset.
++- `assetContext`: criticality and exposure context needed to explain the decision in plain language.
++- `priorIteration`: optional carry-forward state from the previous loop, including unresolved findings and residual risk.
++
++## Required outputs
++
++- `chosenAction`: the single bounded defensive action selected for the iteration, including rationale and safety checks.
++- `evidence`: reviewable artifacts showing what was checked, changed, or why the iteration stopped.
++- `residualRisk`: a plain-language statement of what risk remains after the iteration.
++- `recommendedNextStep`: the next safe action, or an explicit reason the loop cannot continue autonomously.
++
++## Failure states
++
++- `missing_evidence`: block the loop when verification or outcome claims cannot be backed by concrete evidence.
++- `ambiguous_scope`: block the loop when the target boundary, ownership, or affected components are unclear.
++- `unsafe_action`: block the loop when the proposed change is destructive, irreversible, or larger than the agreed bounded scope.
++
++## Source of truth
++
++The machine-readable contract lives in [packages/contracts/src/index.ts](../packages/contracts/src/index.ts) as:
++
++- `defensiveLoopContract`
++- `defensiveIterationInputSchema`
++- `defensiveIterationRecordSchema`
++- `defensiveFailureStateSchema`
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+index 794a8db1f95a08caeee13918ca1154355eccd079..4976e9dc0faa1e3e25d329b6ee7c1aefc36a2cf6
+--- a/packages/contracts/src/index.test.ts
++++ b/packages/contracts/src/index.test.ts
+@@ -4,6 +4,9 @@
+   briefResponseSchema,
+   createScanRequestSchema,
+   createApplicationBodySchema,
++  defensiveIterationRecordSchema,
++  defensiveLoopContract,
++  defensiveLoopStages,
+   demoResponseSchema,
+   healthResponseSchema,
+   updateApplicationBodySchema
+@@ -105,4 +108,178 @@
+ 
+     expect(result.success).toBe(true);
+   });
++
++  it("defines the defensive loop stages in order", () => {
++    expect(defensiveLoopStages).toEqual(["intake", "prioritize", "act", "verify", "record", "handoff"]);
++    expect(defensiveLoopContract.stages.map((stage) => stage.stage)).toEqual(defensiveLoopStages);
++  });
++
++  it("documents the required defensive loop fields and blocked states", () => {
++    expect(defensiveLoopContract.requiredInputs.map((field) => field.key)).toEqual([
++      "findings",
++      "target",
++      "assetContext",
++      "priorIteration"
++    ]);
++    expect(defensiveLoopContract.requiredOutputs.map((field) => field.key)).toEqual([
++      "chosenAction",
++      "evidence",
++      "residualRisk",
++      "recommendedNextStep"
++    ]);
++    expect(defensiveLoopContract.failureStates.map((failure) => failure.reason)).toEqual([
++      "missing_evidence",
++      "ambiguous_scope",
++      "unsafe_action"
++    ]);
++  });
++
++  it("accepts a completed defensive iteration record", () => {
++    const result = defensiveIterationRecordSchema.safeParse({
++      iterationId: "iter-001",
++      stages: ["intake", "prioritize", "act", "verify", "record", "handoff"],
++      status: "completed",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.92,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        },
++        priorIteration: {
++          iterationId: "iter-000",
++          summary: "Previous iteration limited scanner rate but did not reduce exposure.",
++          residualRisk: "Admin API remains internet reachable.",
++          outstandingFindingIds: ["finding-0"],
++          recommendedNextStep: "Reduce exposure on the admin route."
++        }
++      },
++      chosenAction: {
++        type: "access_restriction",
++        summary: "Restrict the admin ingress to office and VPN CIDRs.",
++        rationale: "This reduces exposure without changing application behavior.",
++        scope: "Ingress policy for the production admin service only.",
++        bounded: true,
++        safetyChecks: ["Confirm allowed CIDRs with operations", "Apply only to the admin ingress resource"]
++      },
++      verification: {
++        outcome: "verified",
++        summary: "The route no longer responds from an untrusted source and still works from approved IP space.",
++        checks: ["Curl from blocked source fails", "Smoke test from approved source passes"]
++      },
++      evidence: [
++        {
++          type: "config_diff",
++          summary: "Ingress manifest now limits source CIDRs.",
++          reference: "git diff apps/infra/admin-ingress.yaml"
++        },
++        {
++          type: "test_result",
++          summary: "Manual probes confirm the new network boundary.",
++          reference: "probe-log-2026-04-13"
++        }
++      ],
++      residualRisk: {
++        level: "medium",
++        summary: "Exposure is reduced, but admin authentication hardening still needs review.",
++        remainingFindingIds: ["finding-auth-1"],
++        needsHumanReview: false
++      },
++      recommendedNextStep: {
++        summary: "Review privileged admin authentication flows next.",
++        rationale: "The highest remaining risk is credential misuse rather than internet exposure.",
++        continueLoop: true
++      },
++      handoffSummary: "Ingress is restricted and the next iteration should focus on admin authentication hardening."
++    });
++
++    expect(result.success).toBe(true);
++  });
++
++  it("rejects a blocked defensive iteration without a failure state", () => {
++    const result = defensiveIterationRecordSchema.safeParse({
++      iterationId: "iter-002",
++      stages: ["intake", "prioritize", "act", "verify", "record", "handoff"],
++      status: "blocked",
++      input: {
++        findings: [
++          {
++            id: "finding-2",
++            title: "Suspicious privileged path",
++            severity: "high",
++            confidence: 0.6,
++            summary: "The path may allow privilege escalation.",
++            evidence: "Single unverified report",
++            source: "scanner"
++          }
++        ],
++        target: {
++          kind: "application",
++          id: "app-1",
++          displayName: "Operator Portal"
++        },
++        assetContext: {
++          assetId: "asset-2",
++          assetName: "Operator Portal",
++          criticality: "high",
++          internetExposed: true,
++          containsSensitiveData: false,
++          notes: []
++        }
++      },
++      chosenAction: {
++        type: "defer",
++        summary: "Do not change production routing yet.",
++        rationale: "The report is too weak to justify a live change.",
++        scope: "No production change.",
++        bounded: true,
++        safetyChecks: ["Require stronger reproduction evidence"]
++      },
++      verification: {
++        outcome: "blocked",
++        summary: "Execution was blocked before verification.",
++        checks: ["Confirmed the evidence is incomplete"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The current report does not provide enough proof to act."
++        }
++      ],
++      residualRisk: {
++        level: "high",
++        summary: "The suspected issue remains unresolved pending stronger evidence.",
++        remainingFindingIds: ["finding-2"],
++        needsHumanReview: true
++      },
++      recommendedNextStep: {
++        summary: "Reproduce the finding with stronger evidence before any change.",
++        rationale: "The scope and exploitability are still ambiguous.",
++        continueLoop: false
++      },
++      handoffSummary: "Pause autonomous action until the finding can be reproduced."
++    });
++
++    expect(result.success).toBe(false);
++  });
+ });
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index c6cea9f160d9248d7e2e1559e60854c086266ca8..93914898f8abc4f465515a7376d12254d60dafd4
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -430,6 +430,320 @@
+ export type EvidenceResponse = z.infer<typeof evidenceResponseSchema>;
+ 
+ // ---------------------------------------------------------------------------
++// Defensive iteration loop contract
++// ---------------------------------------------------------------------------
++
++export const defensiveLoopStageSchema = z.enum(["intake", "prioritize", "act", "verify", "record", "handoff"]);
++export type DefensiveLoopStage = z.infer<typeof defensiveLoopStageSchema>;
++
++export const defensiveLoopStages = [
++  "intake",
++  "prioritize",
++  "act",
++  "verify",
++  "record",
++  "handoff"
++] as const satisfies readonly DefensiveLoopStage[];
++
++export const defensiveTargetKindSchema = z.enum(["application", "runtime", "service", "host", "repository", "manual"]);
++export type DefensiveTargetKind = z.infer<typeof defensiveTargetKindSchema>;
++
++export const defensiveAssetCriticalitySchema = z.enum(["low", "moderate", "high", "critical"]);
++export type DefensiveAssetCriticality = z.infer<typeof defensiveAssetCriticalitySchema>;
++
++export const defensiveIterationFindingSchema = z.object({
++  id: z.string().min(1),
++  title: z.string().min(1),
++  severity: severitySchema,
++  confidence: z.number().min(0).max(1),
++  summary: z.string().min(1),
++  evidence: z.string().min(1),
++  source: z.string().min(1)
++});
++export type DefensiveIterationFinding = z.infer<typeof defensiveIterationFindingSchema>;
++
++export const defensiveTargetIdentitySchema = z.object({
++  kind: defensiveTargetKindSchema,
++  id: z.string().min(1),
++  displayName: z.string().min(1),
++  environment: applicationEnvironmentSchema.optional(),
++  locator: z.string().min(1).optional()
++});
++export type DefensiveTargetIdentity = z.infer<typeof defensiveTargetIdentitySchema>;
++
++export const defensiveAssetContextSchema = z.object({
++  assetId: z.string().min(1),
++  assetName: z.string().min(1),
++  criticality: defensiveAssetCriticalitySchema,
++  internetExposed: z.boolean(),
++  containsSensitiveData: z.boolean(),
++  notes: z.array(z.string().min(1)).default([])
++});
++export type DefensiveAssetContext = z.infer<typeof defensiveAssetContextSchema>;
++
++export const priorIterationStateSchema = z.object({
++  iterationId: z.string().min(1),
++  summary: z.string().min(1),
++  residualRisk: z.string().min(1),
++  outstandingFindingIds: z.array(z.string().min(1)).default([]),
++  recommendedNextStep: z.string().min(1).optional()
++});
++export type PriorIterationState = z.infer<typeof priorIterationStateSchema>;
++
++export const defensiveIterationInputSchema = z.object({
++  findings: z.array(defensiveIterationFindingSchema).min(1),
++  target: defensiveTargetIdentitySchema,
++  assetContext: defensiveAssetContextSchema,
++  priorIteration: priorIterationStateSchema.optional()
++});
++export type DefensiveIterationInput = z.infer<typeof defensiveIterationInputSchema>;
++
++export const defensiveActionTypeSchema = z.enum([
++  "patch",
++  "configuration_change",
++  "access_restriction",
++  "monitoring",
++  "manual_investigation",
++  "defer"
++]);
++export type DefensiveActionType = z.infer<typeof defensiveActionTypeSchema>;
++
++export const defensiveChosenActionSchema = z.object({
++  type: defensiveActionTypeSchema,
++  summary: z.string().min(1),
++  rationale: z.string().min(1),
++  scope: z.string().min(1),
++  bounded: z.boolean(),
++  safetyChecks: z.array(z.string().min(1)).min(1)
++});
++export type DefensiveChosenAction = z.infer<typeof defensiveChosenActionSchema>;
++
++export const defensiveVerificationSchema = z.object({
++  outcome: z.enum(["verified", "partial", "blocked"]),
++  summary: z.string().min(1),
++  checks: z.array(z.string().min(1)).min(1)
++});
++export type DefensiveVerification = z.infer<typeof defensiveVerificationSchema>;
++
++export const defensiveEvidenceArtifactSchema = z.object({
++  type: z.enum(["command_output", "config_diff", "test_result", "review_note", "ticket"]),
++  summary: z.string().min(1),
++  reference: z.string().min(1).optional()
++});
++export type DefensiveEvidenceArtifact = z.infer<typeof defensiveEvidenceArtifactSchema>;
++
++export const defensiveResidualRiskSchema = z.object({
++  level: severitySchema,
++  summary: z.string().min(1),
++  remainingFindingIds: z.array(z.string().min(1)).default([]),
++  needsHumanReview: z.boolean()
++});
++export type DefensiveResidualRisk = z.infer<typeof defensiveResidualRiskSchema>;
++
++export const defensiveNextStepSchema = z.object({
++  summary: z.string().min(1),
++  rationale: z.string().min(1),
++  continueLoop: z.boolean()
++});
++export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
++
++export const defensiveFailureReasonSchema = z.enum(["missing_evidence", "ambiguous_scope", "unsafe_action"]);
++export type DefensiveFailureReason = z.infer<typeof defensiveFailureReasonSchema>;
++
++export const defensiveFailureStateSchema = z.object({
++  reason: defensiveFailureReasonSchema,
++  blockedStage: defensiveLoopStageSchema,
++  summary: z.string().min(1),
++  operatorAction: z.string().min(1)
++});
++export type DefensiveFailureState = z.infer<typeof defensiveFailureStateSchema>;
++
++export const defensiveIterationRecordSchema = z
++  .object({
++    iterationId: z.string().min(1),
++    stages: z.tuple([
++      z.literal("intake"),
++      z.literal("prioritize"),
++      z.literal("act"),
++      z.literal("verify"),
++      z.literal("record"),
++      z.literal("handoff")
++    ]),
++    status: z.enum(["completed", "blocked"]),
++    input: defensiveIterationInputSchema,
++    chosenAction: defensiveChosenActionSchema,
++    verification: defensiveVerificationSchema,
++    evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
++    residualRisk: defensiveResidualRiskSchema,
++    recommendedNextStep: defensiveNextStepSchema,
++    handoffSummary: z.string().min(1),
++    failure: defensiveFailureStateSchema.optional()
++  })
++  .superRefine((value, ctx) => {
++    if (value.status === "blocked" && !value.failure) {
++      ctx.addIssue({
++        code: z.ZodIssueCode.custom,
++        message: "Blocked iterations must include a failure state.",
++        path: ["failure"]
++      });
++    }
++
++    if (value.status === "completed" && value.failure) {
++      ctx.addIssue({
++        code: z.ZodIssueCode.custom,
++        message: "Completed iterations cannot include a failure state.",
++        path: ["failure"]
++      });
++    }
++  });
++export type DefensiveIterationRecord = z.infer<typeof defensiveIterationRecordSchema>;
++
++export const defensiveLoopContractFieldSchema = z.object({
++  key: z.string().min(1),
++  required: z.boolean(),
++  description: z.string().min(1)
++});
++export type DefensiveLoopContractField = z.infer<typeof defensiveLoopContractFieldSchema>;
++
++export const defensiveLoopStageDefinitionSchema = z.object({
++  stage: defensiveLoopStageSchema,
++  purpose: z.string().min(1),
++  consumes: z.array(z.string().min(1)),
++  produces: z.array(z.string().min(1))
++});
++export type DefensiveLoopStageDefinition = z.infer<typeof defensiveLoopStageDefinitionSchema>;
++
++export const defensiveLoopContractSchema = z.object({
++  name: z.literal("defensive-iteration"),
++  version: z.literal("1.0"),
++  stages: z.tuple([
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("intake") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("prioritize") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("act") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("verify") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("record") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("handoff") })
++  ]),
++  requiredInputs: z.array(defensiveLoopContractFieldSchema).min(4),
++  requiredOutputs: z.array(defensiveLoopContractFieldSchema).min(4),
++  failureStates: z
++    .array(
++      defensiveFailureStateSchema.extend({
++        reason: defensiveFailureReasonSchema
++      })
++    )
++    .min(3)
++});
++export type DefensiveLoopContract = z.infer<typeof defensiveLoopContractSchema>;
++
++export const defensiveLoopContract = defensiveLoopContractSchema.parse({
++  name: "defensive-iteration",
++  version: "1.0",
++  stages: [
++    {
++      stage: "intake",
++      purpose: "Collect validated findings, target identity, asset context, and prior state before making any change.",
++      consumes: ["findings", "target", "assetContext", "priorIteration"],
++      produces: ["iterationInput"]
++    },
++    {
++      stage: "prioritize",
++      purpose: "Choose one bounded defensive action using the intake evidence and known asset risk.",
++      consumes: ["iterationInput"],
++      produces: ["chosenAction"]
++    },
++    {
++      stage: "act",
++      purpose: "Execute the selected defensive action only when scope and safety checks are clear.",
++      consumes: ["chosenAction"],
++      produces: ["executionArtifacts"]
++    },
++    {
++      stage: "verify",
++      purpose: "Confirm the action outcome with explicit checks instead of assuming risk reduction.",
++      consumes: ["executionArtifacts"],
++      produces: ["verification", "evidence"]
++    },
++    {
++      stage: "record",
++      purpose: "Persist what changed, what evidence supports it, and what residual risk remains.",
++      consumes: ["chosenAction", "verification", "evidence"],
++      produces: ["iterationRecord", "residualRisk"]
++    },
++    {
++      stage: "handoff",
++      purpose: "Recommend the next safe step so the following iteration starts with preserved context.",
++      consumes: ["iterationRecord", "residualRisk"],
++      produces: ["recommendedNextStep", "handoffSummary"]
++    }
++  ],
++  requiredInputs: [
++    {
++      key: "findings",
++      required: true,
++      description: "At least one finding with severity, confidence, source, and evidence."
++    },
++    {
++      key: "target",
++      required: true,
++      description: "Target identity including kind, stable identifier, and display name."
++    },
++    {
++      key: "assetContext",
++      required: true,
++      description: "Asset criticality and exposure context used to explain prioritization."
++    },
++    {
++      key: "priorIteration",
++      required: false,
++      description: "Previous iteration summary and carry-forward risk when available."
++    }
++  ],
++  requiredOutputs: [
++    {
++      key: "chosenAction",
++      required: true,
++      description: "The single bounded action selected for the iteration with rationale and safety checks."
++    },
++    {
++      key: "evidence",
++      required: true,
++      description: "Artifacts that show what was checked, changed, or deliberately blocked."
++    },
++    {
++      key: "residualRisk",
++      required: true,
++      description: "Plain-language statement of remaining risk after the iteration."
++    },
++    {
++      key: "recommendedNextStep",
++      required: true,
++      description: "The next safe action or explicit stop condition for the following iteration."
++    }
++  ],
++  failureStates: [
++    {
++      reason: "missing_evidence",
++      blockedStage: "verify",
++      summary: "Stop when the action cannot be supported by concrete evidence or verification output.",
++      operatorAction: "Collect stronger evidence before claiming the risk changed."
++    },
++    {
++      reason: "ambiguous_scope",
++      blockedStage: "prioritize",
++      summary: "Stop when the target boundary or affected assets are unclear.",
++      operatorAction: "Clarify ownership, targets, or impacted components before acting."
++    },
++    {
++      reason: "unsafe_action",
++      blockedStage: "act",
++      summary: "Stop when the proposed change is destructive, irreversible, or exceeds the bounded scope.",
++      operatorAction: "Escalate for human review or choose a safer defensive action."
++    }
++  ]
++});
++
++// ---------------------------------------------------------------------------
+ // Scan
+ // ---------------------------------------------------------------------------
+ 
+
+diff --git a/.ralph/progress.md b/.ralph/progress.md
+index c9449dfe55753c81d8a11a8ee0a32e89afb336fe..193917c224f0f6c9804dc8cd4397092c0133d152
+--- a/.ralph/progress.md
++++ b/.ralph/progress.md
+@@ -5,3 +5,41 @@
+ - (add reusable patterns here)
+ 
+ ---
++## [2026-04-13 00:45:00 CEST] - S1: Define the defensive loop contract
++Thread: 
++Run: 20260413-004018-509304 (iteration 1)
++Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004018-509304-iter-1.log
++Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004018-509304-iter-1.md
++- Guardrails reviewed: yes
++- No-commit run: false
++- Commit: aec4f098 Define defensive loop contract
++- Post-commit status: `clean`
++- Verification:
++  - Command: `pnpm --filter @synosec/contracts test` -> PASS
++  - Command: `pnpm --filter @synosec/contracts build` -> PASS
++  - Command: `pnpm build` -> PASS
++  - Command: `pnpm test` -> PASS
++  - Command: `pnpm lint` -> FAIL (existing ESLint typed-linting issue in `apps/backend/src/generated/prisma/client.js`)
++- Files changed:
++  - .agents/tasks/prd-defensive-loop.json
++  - .ralph/activity.log
++  - .ralph/errors.log
++  - .ralph/guardrails.md
++  - .ralph/progress.md
++  - .ralph/runs/run-20260413-004018-509304-iter-1.log
++  - .ralph/runs/run-20260413-004018-509304-iter-1.md
++  - docs/defensive-loop-contract.md
++  - packages/contracts/src/index.test.ts
++  - packages/contracts/src/index.ts
++- What was implemented
++- Added a machine-readable defensive iteration contract with explicit stage order, required inputs, required outputs, and blocked failure states.
++- Added a structured iteration record schema that preserves intake, chosen action, verification, evidence, residual risk, and handoff data for later iterations.
++- Added shared-contract tests and an operator-facing contract document for the buildathon demo.
++- **Learnings for future iterations:**
++  - Patterns discovered
++  - Shared `zod` contracts are the right place for cross-app workflow definitions because they keep backend, frontend, and docs aligned.
++  - Gotchas encountered
++  - Root `pnpm lint` currently fails on a generated Prisma file due typed ESLint configuration, so lint results need to be interpreted separately from story-specific changes.
++  - Useful context
++  - The PRD file already carried runner-managed `in_progress` metadata before implementation work and was not manually edited during this story.
++---
+diff --git a/.ralph/runs/run-20260413-004018-509304-iter-1.md b/.ralph/runs/run-20260413-004018-509304-iter-1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..16a1ad9633c5d0ee155154c3412e1c4485b6334b
+--- /dev/null
++++ b/.ralph/runs/run-20260413-004018-509304-iter-1.md
+@@ -0,0 +1,25 @@
++# Run Summary
++
++## Story
++- ID: S1
++- Title: Define the defensive loop contract
++- Run: 20260413-004018-509304
++- Iteration: 1
++
++## Outcome
++- Added a machine-readable defensive loop contract in `packages/contracts/src/index.ts`.
++- Defined the required stage order: intake, prioritize, act, verify, record, handoff.
++- Added structured input, output, and failure-state schemas for one defensive iteration.
++- Documented the contract in `docs/defensive-loop-contract.md`.
++- Added contract coverage in `packages/contracts/src/index.test.ts`.
++
++## Verification
++- `pnpm --filter @synosec/contracts test`: PASS
++- `pnpm --filter @synosec/contracts build`: PASS
++- `pnpm build`: PASS
++- `pnpm test`: PASS
++- `pnpm lint`: FAIL due to an existing ESLint typed-linting issue in `apps/backend/src/generated/prisma/client.js`
++
++## Notes
++- The PRD file already had unrelated in-progress metadata changes and was left untouched.
++- No UI files changed, so browser verification was not required for this story.
+diff --git a/docs/defensive-loop-contract.md b/docs/defensive-loop-contract.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba7eac46e3515a70fb181f94b84465906da797cf
+--- /dev/null
++++ b/docs/defensive-loop-contract.md
+@@ -0,0 +1,41 @@
++# Defensive Loop Contract
++
++The defensive loop is a single bounded iteration. It accepts evidence-backed findings, chooses one explainable defensive action, verifies the outcome, records what happened, and hands off a deterministic next step.
++
++## Stage order
++
++1. `intake`: collect findings, target identity, asset context, and prior iteration state when available.
++2. `prioritize`: select exactly one bounded defensive action using the intake evidence and asset context.
++3. `act`: execute the chosen action only when the scope is clear and the action is safe.
++4. `verify`: confirm the action outcome with explicit checks and supporting evidence.
++5. `record`: persist the chosen action, verification result, evidence, and residual risk.
++6. `handoff`: produce the next safe step so the next iteration can continue without rebuilding context.
++
++## Required inputs
++
++- `findings`: one or more findings with severity, confidence, source, and evidence.
++- `target`: stable target identity for the application, runtime, service, host, repository, or manually scoped asset.
++- `assetContext`: criticality and exposure context needed to explain the decision in plain language.
++- `priorIteration`: optional carry-forward state from the previous loop, including unresolved findings and residual risk.
++
++## Required outputs
++
++- `chosenAction`: the single bounded defensive action selected for the iteration, including rationale and safety checks.
++- `evidence`: reviewable artifacts showing what was checked, changed, or why the iteration stopped.
++- `residualRisk`: a plain-language statement of what risk remains after the iteration.
++- `recommendedNextStep`: the next safe action, or an explicit reason the loop cannot continue autonomously.
++
++## Failure states
++
++- `missing_evidence`: block the loop when verification or outcome claims cannot be backed by concrete evidence.
++- `ambiguous_scope`: block the loop when the target boundary, ownership, or affected components are unclear.
++- `unsafe_action`: block the loop when the proposed change is destructive, irreversible, or larger than the agreed bounded scope.
++
++## Source of truth
++
++The machine-readable contract lives in [packages/contracts/src/index.ts](../packages/contracts/src/index.ts) as:
++
++- `defensiveLoopContract`
++- `defensiveIterationInputSchema`
++- `defensiveIterationRecordSchema`
++- `defensiveFailureStateSchema`
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+index 794a8db1f95a08caeee13918ca1154355eccd079..4976e9dc0faa1e3e25d329b6ee7c1aefc36a2cf6
+--- a/packages/contracts/src/index.test.ts
++++ b/packages/contracts/src/index.test.ts
+@@ -4,6 +4,9 @@
+   briefResponseSchema,
+   createScanRequestSchema,
+   createApplicationBodySchema,
++  defensiveIterationRecordSchema,
++  defensiveLoopContract,
++  defensiveLoopStages,
+   demoResponseSchema,
+   healthResponseSchema,
+   updateApplicationBodySchema
+@@ -105,4 +108,178 @@
+ 
+     expect(result.success).toBe(true);
+   });
++
++  it("defines the defensive loop stages in order", () => {
++    expect(defensiveLoopStages).toEqual(["intake", "prioritize", "act", "verify", "record", "handoff"]);
++    expect(defensiveLoopContract.stages.map((stage) => stage.stage)).toEqual(defensiveLoopStages);
++  });
++
++  it("documents the required defensive loop fields and blocked states", () => {
++    expect(defensiveLoopContract.requiredInputs.map((field) => field.key)).toEqual([
++      "findings",
++      "target",
++      "assetContext",
++      "priorIteration"
++    ]);
++    expect(defensiveLoopContract.requiredOutputs.map((field) => field.key)).toEqual([
++      "chosenAction",
++      "evidence",
++      "residualRisk",
++      "recommendedNextStep"
++    ]);
++    expect(defensiveLoopContract.failureStates.map((failure) => failure.reason)).toEqual([
++      "missing_evidence",
++      "ambiguous_scope",
++      "unsafe_action"
++    ]);
++  });
++
++  it("accepts a completed defensive iteration record", () => {
++    const result = defensiveIterationRecordSchema.safeParse({
++      iterationId: "iter-001",
++      stages: ["intake", "prioritize", "act", "verify", "record", "handoff"],
++      status: "completed",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.92,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        },
++        priorIteration: {
++          iterationId: "iter-000",
++          summary: "Previous iteration limited scanner rate but did not reduce exposure.",
++          residualRisk: "Admin API remains internet reachable.",
++          outstandingFindingIds: ["finding-0"],
++          recommendedNextStep: "Reduce exposure on the admin route."
++        }
++      },
++      chosenAction: {
++        type: "access_restriction",
++        summary: "Restrict the admin ingress to office and VPN CIDRs.",
++        rationale: "This reduces exposure without changing application behavior.",
++        scope: "Ingress policy for the production admin service only.",
++        bounded: true,
++        safetyChecks: ["Confirm allowed CIDRs with operations", "Apply only to the admin ingress resource"]
++      },
++      verification: {
++        outcome: "verified",
++        summary: "The route no longer responds from an untrusted source and still works from approved IP space.",
++        checks: ["Curl from blocked source fails", "Smoke test from approved source passes"]
++      },
++      evidence: [
++        {
++          type: "config_diff",
++          summary: "Ingress manifest now limits source CIDRs.",
++          reference: "git diff apps/infra/admin-ingress.yaml"
++        },
++        {
++          type: "test_result",
++          summary: "Manual probes confirm the new network boundary.",
++          reference: "probe-log-2026-04-13"
++        }
++      ],
++      residualRisk: {
++        level: "medium",
++        summary: "Exposure is reduced, but admin authentication hardening still needs review.",
++        remainingFindingIds: ["finding-auth-1"],
++        needsHumanReview: false
++      },
++      recommendedNextStep: {
++        summary: "Review privileged admin authentication flows next.",
++        rationale: "The highest remaining risk is credential misuse rather than internet exposure.",
++        continueLoop: true
++      },
++      handoffSummary: "Ingress is restricted and the next iteration should focus on admin authentication hardening."
++    });
++
++    expect(result.success).toBe(true);
++  });
++
++  it("rejects a blocked defensive iteration without a failure state", () => {
++    const result = defensiveIterationRecordSchema.safeParse({
++      iterationId: "iter-002",
++      stages: ["intake", "prioritize", "act", "verify", "record", "handoff"],
++      status: "blocked",
++      input: {
++        findings: [
++          {
++            id: "finding-2",
++            title: "Suspicious privileged path",
++            severity: "high",
++            confidence: 0.6,
++            summary: "The path may allow privilege escalation.",
++            evidence: "Single unverified report",
++            source: "scanner"
++          }
++        ],
++        target: {
++          kind: "application",
++          id: "app-1",
++          displayName: "Operator Portal"
++        },
++        assetContext: {
++          assetId: "asset-2",
++          assetName: "Operator Portal",
++          criticality: "high",
++          internetExposed: true,
++          containsSensitiveData: false,
++          notes: []
++        }
++      },
++      chosenAction: {
++        type: "defer",
++        summary: "Do not change production routing yet.",
++        rationale: "The report is too weak to justify a live change.",
++        scope: "No production change.",
++        bounded: true,
++        safetyChecks: ["Require stronger reproduction evidence"]
++      },
++      verification: {
++        outcome: "blocked",
++        summary: "Execution was blocked before verification.",
++        checks: ["Confirmed the evidence is incomplete"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The current report does not provide enough proof to act."
++        }
++      ],
++      residualRisk: {
++        level: "high",
++        summary: "The suspected issue remains unresolved pending stronger evidence.",
++        remainingFindingIds: ["finding-2"],
++        needsHumanReview: true
++      },
++      recommendedNextStep: {
++        summary: "Reproduce the finding with stronger evidence before any change.",
++        rationale: "The scope and exploitability are still ambiguous.",
++        continueLoop: false
++      },
++      handoffSummary: "Pause autonomous action until the finding can be reproduced."
++    });
++
++    expect(result.success).toBe(false);
++  });
+ });
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index c6cea9f160d9248d7e2e1559e60854c086266ca8..93914898f8abc4f465515a7376d12254d60dafd4
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -430,6 +430,320 @@
+ export type EvidenceResponse = z.infer<typeof evidenceResponseSchema>;
+ 
+ // ---------------------------------------------------------------------------
++// Defensive iteration loop contract
++// ---------------------------------------------------------------------------
++
++export const defensiveLoopStageSchema = z.enum(["intake", "prioritize", "act", "verify", "record", "handoff"]);
++export type DefensiveLoopStage = z.infer<typeof defensiveLoopStageSchema>;
++
++export const defensiveLoopStages = [
++  "intake",
++  "prioritize",
++  "act",
++  "verify",
++  "record",
++  "handoff"
++] as const satisfies readonly DefensiveLoopStage[];
++
++export const defensiveTargetKindSchema = z.enum(["application", "runtime", "service", "host", "repository", "manual"]);
++export type DefensiveTargetKind = z.infer<typeof defensiveTargetKindSchema>;
++
++export const defensiveAssetCriticalitySchema = z.enum(["low", "moderate", "high", "critical"]);
++export type DefensiveAssetCriticality = z.infer<typeof defensiveAssetCriticalitySchema>;
++
++export const defensiveIterationFindingSchema = z.object({
++  id: z.string().min(1),
++  title: z.string().min(1),
++  severity: severitySchema,
++  confidence: z.number().min(0).max(1),
++  summary: z.string().min(1),
++  evidence: z.string().min(1),
++  source: z.string().min(1)
++});
++export type DefensiveIterationFinding = z.infer<typeof defensiveIterationFindingSchema>;
++
++export const defensiveTargetIdentitySchema = z.object({
++  kind: defensiveTargetKindSchema,
++  id: z.string().min(1),
++  displayName: z.string().min(1),
++  environment: applicationEnvironmentSchema.optional(),
++  locator: z.string().min(1).optional()
++});
++export type DefensiveTargetIdentity = z.infer<typeof defensiveTargetIdentitySchema>;
++
++export const defensiveAssetContextSchema = z.object({
++  assetId: z.string().min(1),
++  assetName: z.string().min(1),
++  criticality: defensiveAssetCriticalitySchema,
++  internetExposed: z.boolean(),
++  containsSensitiveData: z.boolean(),
++  notes: z.array(z.string().min(1)).default([])
++});
++export type DefensiveAssetContext = z.infer<typeof defensiveAssetContextSchema>;
++
++export const priorIterationStateSchema = z.object({
++  iterationId: z.string().min(1),
++  summary: z.string().min(1),
++  residualRisk: z.string().min(1),
++  outstandingFindingIds: z.array(z.string().min(1)).default([]),
++  recommendedNextStep: z.string().min(1).optional()
++});
++export type PriorIterationState = z.infer<typeof priorIterationStateSchema>;
++
++export const defensiveIterationInputSchema = z.object({
++  findings: z.array(defensiveIterationFindingSchema).min(1),
++  target: defensiveTargetIdentitySchema,
++  assetContext: defensiveAssetContextSchema,
++  priorIteration: priorIterationStateSchema.optional()
++});
++export type DefensiveIterationInput = z.infer<typeof defensiveIterationInputSchema>;
++
++export const defensiveActionTypeSchema = z.enum([
++  "patch",
++  "configuration_change",
++  "access_restriction",
++  "monitoring",
++  "manual_investigation",
++  "defer"
++]);
++export type DefensiveActionType = z.infer<typeof defensiveActionTypeSchema>;
++
++export const defensiveChosenActionSchema = z.object({
++  type: defensiveActionTypeSchema,
++  summary: z.string().min(1),
++  rationale: z.string().min(1),
++  scope: z.string().min(1),
++  bounded: z.boolean(),
++  safetyChecks: z.array(z.string().min(1)).min(1)
++});
++export type DefensiveChosenAction = z.infer<typeof defensiveChosenActionSchema>;
++
++export const defensiveVerificationSchema = z.object({
++  outcome: z.enum(["verified", "partial", "blocked"]),
++  summary: z.string().min(1),
++  checks: z.array(z.string().min(1)).min(1)
++});
++export type DefensiveVerification = z.infer<typeof defensiveVerificationSchema>;
++
++export const defensiveEvidenceArtifactSchema = z.object({
++  type: z.enum(["command_output", "config_diff", "test_result", "review_note", "ticket"]),
++  summary: z.string().min(1),
++  reference: z.string().min(1).optional()
++});
++export type DefensiveEvidenceArtifact = z.infer<typeof defensiveEvidenceArtifactSchema>;
++
++export const defensiveResidualRiskSchema = z.object({
++  level: severitySchema,
++  summary: z.string().min(1),
++  remainingFindingIds: z.array(z.string().min(1)).default([]),
++  needsHumanReview: z.boolean()
++});
++export type DefensiveResidualRisk = z.infer<typeof defensiveResidualRiskSchema>;
++
++export const defensiveNextStepSchema = z.object({
++  summary: z.string().min(1),
++  rationale: z.string().min(1),
++  continueLoop: z.boolean()
++});
++export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
++
++export const defensiveFailureReasonSchema = z.enum(["missing_evidence", "ambiguous_scope", "unsafe_action"]);
++export type DefensiveFailureReason = z.infer<typeof defensiveFailureReasonSchema>;
++
++export const defensiveFailureStateSchema = z.object({
++  reason: defensiveFailureReasonSchema,
++  blockedStage: defensiveLoopStageSchema,
++  summary: z.string().min(1),
++  operatorAction: z.string().min(1)
++});
++export type DefensiveFailureState = z.infer<typeof defensiveFailureStateSchema>;
++
++export const defensiveIterationRecordSchema = z
++  .object({
++    iterationId: z.string().min(1),
++    stages: z.tuple([
++      z.literal("intake"),
++      z.literal("prioritize"),
++      z.literal("act"),
++      z.literal("verify"),
++      z.literal("record"),
++      z.literal("handoff")
++    ]),
++    status: z.enum(["completed", "blocked"]),
++    input: defensiveIterationInputSchema,
++    chosenAction: defensiveChosenActionSchema,
++    verification: defensiveVerificationSchema,
++    evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
++    residualRisk: defensiveResidualRiskSchema,
++    recommendedNextStep: defensiveNextStepSchema,
++    handoffSummary: z.string().min(1),
++    failure: defensiveFailureStateSchema.optional()
++  })
++  .superRefine((value, ctx) => {
++    if (value.status === "blocked" && !value.failure) {
++      ctx.addIssue({
++        code: z.ZodIssueCode.custom,
++        message: "Blocked iterations must include a failure state.",
++        path: ["failure"]
++      });
++    }
++
++    if (value.status === "completed" && value.failure) {
++      ctx.addIssue({
++        code: z.ZodIssueCode.custom,
++        message: "Completed iterations cannot include a failure state.",
++        path: ["failure"]
++      });
++    }
++  });
++export type DefensiveIterationRecord = z.infer<typeof defensiveIterationRecordSchema>;
++
++export const defensiveLoopContractFieldSchema = z.object({
++  key: z.string().min(1),
++  required: z.boolean(),
++  description: z.string().min(1)
++});
++export type DefensiveLoopContractField = z.infer<typeof defensiveLoopContractFieldSchema>;
++
++export const defensiveLoopStageDefinitionSchema = z.object({
++  stage: defensiveLoopStageSchema,
++  purpose: z.string().min(1),
++  consumes: z.array(z.string().min(1)),
++  produces: z.array(z.string().min(1))
++});
++export type DefensiveLoopStageDefinition = z.infer<typeof defensiveLoopStageDefinitionSchema>;
++
++export const defensiveLoopContractSchema = z.object({
++  name: z.literal("defensive-iteration"),
++  version: z.literal("1.0"),
++  stages: z.tuple([
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("intake") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("prioritize") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("act") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("verify") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("record") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("handoff") })
++  ]),
++  requiredInputs: z.array(defensiveLoopContractFieldSchema).min(4),
++  requiredOutputs: z.array(defensiveLoopContractFieldSchema).min(4),
++  failureStates: z
++    .array(
++      defensiveFailureStateSchema.extend({
++        reason: defensiveFailureReasonSchema
++      })
++    )
++    .min(3)
++});
++export type DefensiveLoopContract = z.infer<typeof defensiveLoopContractSchema>;
++
++export const defensiveLoopContract = defensiveLoopContractSchema.parse({
++  name: "defensive-iteration",
++  version: "1.0",
++  stages: [
++    {
++      stage: "intake",
++      purpose: "Collect validated findings, target identity, asset context, and prior state before making any change.",
++      consumes: ["findings", "target", "assetContext", "priorIteration"],
++      produces: ["iterationInput"]
++    },
++    {
++      stage: "prioritize",
++      purpose: "Choose one bounded defensive action using the intake evidence and known asset risk.",
++      consumes: ["iterationInput"],
++      produces: ["chosenAction"]
++    },
++    {
++      stage: "act",
++      purpose: "Execute the selected defensive action only when scope and safety checks are clear.",
++      consumes: ["chosenAction"],
++      produces: ["executionArtifacts"]
++    },
++    {
++      stage: "verify",
++      purpose: "Confirm the action outcome with explicit checks instead of assuming risk reduction.",
++      consumes: ["executionArtifacts"],
++      produces: ["verification", "evidence"]
++    },
++    {
++      stage: "record",
++      purpose: "Persist what changed, what evidence supports it, and what residual risk remains.",
++      consumes: ["chosenAction", "verification", "evidence"],
++      produces: ["iterationRecord", "residualRisk"]
++    },
++    {
++      stage: "handoff",
++      purpose: "Recommend the next safe step so the following iteration starts with preserved context.",
++      consumes: ["iterationRecord", "residualRisk"],
++      produces: ["recommendedNextStep", "handoffSummary"]
++    }
++  ],
++  requiredInputs: [
++    {
++      key: "findings",
++      required: true,
++      description: "At least one finding with severity, confidence, source, and evidence."
++    },
++    {
++      key: "target",
++      required: true,
++      description: "Target identity including kind, stable identifier, and display name."
++    },
++    {
++      key: "assetContext",
++      required: true,
++      description: "Asset criticality and exposure context used to explain prioritization."
++    },
++    {
++      key: "priorIteration",
++      required: false,
++      description: "Previous iteration summary and carry-forward risk when available."
++    }
++  ],
++  requiredOutputs: [
++    {
++      key: "chosenAction",
++      required: true,
++      description: "The single bounded action selected for the iteration with rationale and safety checks."
++    },
++    {
++      key: "evidence",
++      required: true,
++      description: "Artifacts that show what was checked, changed, or deliberately blocked."
++    },
++    {
++      key: "residualRisk",
++      required: true,
++      description: "Plain-language statement of remaining risk after the iteration."
++    },
++    {
++      key: "recommendedNextStep",
++      required: true,
++      description: "The next safe action or explicit stop condition for the following iteration."
++    }
++  ],
++  failureStates: [
++    {
++      reason: "missing_evidence",
++      blockedStage: "verify",
++      summary: "Stop when the action cannot be supported by concrete evidence or verification output.",
++      operatorAction: "Collect stronger evidence before claiming the risk changed."
++    },
++    {
++      reason: "ambiguous_scope",
++      blockedStage: "prioritize",
++      summary: "Stop when the target boundary or affected assets are unclear.",
++      operatorAction: "Clarify ownership, targets, or impacted components before acting."
++    },
++    {
++      reason: "unsafe_action",
++      blockedStage: "act",
++      summary: "Stop when the proposed change is destructive, irreversible, or exceeds the bounded scope.",
++      operatorAction: "Escalate for human review or choose a safer defensive action."
++    }
++  ]
++});
++
++// ---------------------------------------------------------------------------
+ // Scan
+ // ---------------------------------------------------------------------------
+ 
+
+exec
+/bin/bash -lc 'ralph log "Updated S1 progress log with commit aec4f098, verification results, and future-iteration notes"' in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+Using local templates: /home/nilwi971/projects/SynoSec-buildathon/.agents/ralph
+
+diff --git a/.ralph/progress.md b/.ralph/progress.md
+index c9449dfe55753c81d8a11a8ee0a32e89afb336fe..193917c224f0f6c9804dc8cd4397092c0133d152
+--- a/.ralph/progress.md
++++ b/.ralph/progress.md
+@@ -5,3 +5,41 @@
+ - (add reusable patterns here)
+ 
+ ---
++## [2026-04-13 00:45:00 CEST] - S1: Define the defensive loop contract
++Thread: 
++Run: 20260413-004018-509304 (iteration 1)
++Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004018-509304-iter-1.log
++Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004018-509304-iter-1.md
++- Guardrails reviewed: yes
++- No-commit run: false
++- Commit: aec4f098 Define defensive loop contract
++- Post-commit status: `clean`
++- Verification:
++  - Command: `pnpm --filter @synosec/contracts test` -> PASS
++  - Command: `pnpm --filter @synosec/contracts build` -> PASS
++  - Command: `pnpm build` -> PASS
++  - Command: `pnpm test` -> PASS
++  - Command: `pnpm lint` -> FAIL (existing ESLint typed-linting issue in `apps/backend/src/generated/prisma/client.js`)
++- Files changed:
++  - .agents/tasks/prd-defensive-loop.json
++  - .ralph/activity.log
++  - .ralph/errors.log
++  - .ralph/guardrails.md
++  - .ralph/progress.md
++  - .ralph/runs/run-20260413-004018-509304-iter-1.log
++  - .ralph/runs/run-20260413-004018-509304-iter-1.md
++  - docs/defensive-loop-contract.md
++  - packages/contracts/src/index.test.ts
++  - packages/contracts/src/index.ts
++- What was implemented
++- Added a machine-readable defensive iteration contract with explicit stage order, required inputs, required outputs, and blocked failure states.
++- Added a structured iteration record schema that preserves intake, chosen action, verification, evidence, residual risk, and handoff data for later iterations.
++- Added shared-contract tests and an operator-facing contract document for the buildathon demo.
++- **Learnings for future iterations:**
++  - Patterns discovered
++  - Shared `zod` contracts are the right place for cross-app workflow definitions because they keep backend, frontend, and docs aligned.
++  - Gotchas encountered
++  - Root `pnpm lint` currently fails on a generated Prisma file due typed ESLint configuration, so lint results need to be interpreted separately from story-specific changes.
++  - Useful context
++  - The PRD file already carried runner-managed `in_progress` metadata before implementation work and was not manually edited during this story.
++---
+diff --git a/.ralph/runs/run-20260413-004018-509304-iter-1.md b/.ralph/runs/run-20260413-004018-509304-iter-1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..16a1ad9633c5d0ee155154c3412e1c4485b6334b
+--- /dev/null
++++ b/.ralph/runs/run-20260413-004018-509304-iter-1.md
+@@ -0,0 +1,25 @@
++# Run Summary
++
++## Story
++- ID: S1
++- Title: Define the defensive loop contract
++- Run: 20260413-004018-509304
++- Iteration: 1
++
++## Outcome
++- Added a machine-readable defensive loop contract in `packages/contracts/src/index.ts`.
++- Defined the required stage order: intake, prioritize, act, verify, record, handoff.
++- Added structured input, output, and failure-state schemas for one defensive iteration.
++- Documented the contract in `docs/defensive-loop-contract.md`.
++- Added contract coverage in `packages/contracts/src/index.test.ts`.
++
++## Verification
++- `pnpm --filter @synosec/contracts test`: PASS
++- `pnpm --filter @synosec/contracts build`: PASS
++- `pnpm build`: PASS
++- `pnpm test`: PASS
++- `pnpm lint`: FAIL due to an existing ESLint typed-linting issue in `apps/backend/src/generated/prisma/client.js`
++
++## Notes
++- The PRD file already had unrelated in-progress metadata changes and was left untouched.
++- No UI files changed, so browser verification was not required for this story.
+diff --git a/docs/defensive-loop-contract.md b/docs/defensive-loop-contract.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba7eac46e3515a70fb181f94b84465906da797cf
+--- /dev/null
++++ b/docs/defensive-loop-contract.md
+@@ -0,0 +1,41 @@
++# Defensive Loop Contract
++
++The defensive loop is a single bounded iteration. It accepts evidence-backed findings, chooses one explainable defensive action, verifies the outcome, records what happened, and hands off a deterministic next step.
++
++## Stage order
++
++1. `intake`: collect findings, target identity, asset context, and prior iteration state when available.
++2. `prioritize`: select exactly one bounded defensive action using the intake evidence and asset context.
++3. `act`: execute the chosen action only when the scope is clear and the action is safe.
++4. `verify`: confirm the action outcome with explicit checks and supporting evidence.
++5. `record`: persist the chosen action, verification result, evidence, and residual risk.
++6. `handoff`: produce the next safe step so the next iteration can continue without rebuilding context.
++
++## Required inputs
++
++- `findings`: one or more findings with severity, confidence, source, and evidence.
++- `target`: stable target identity for the application, runtime, service, host, repository, or manually scoped asset.
++- `assetContext`: criticality and exposure context needed to explain the decision in plain language.
++- `priorIteration`: optional carry-forward state from the previous loop, including unresolved findings and residual risk.
++
++## Required outputs
++
++- `chosenAction`: the single bounded defensive action selected for the iteration, including rationale and safety checks.
++- `evidence`: reviewable artifacts showing what was checked, changed, or why the iteration stopped.
++- `residualRisk`: a plain-language statement of what risk remains after the iteration.
++- `recommendedNextStep`: the next safe action, or an explicit reason the loop cannot continue autonomously.
++
++## Failure states
++
++- `missing_evidence`: block the loop when verification or outcome claims cannot be backed by concrete evidence.
++- `ambiguous_scope`: block the loop when the target boundary, ownership, or affected components are unclear.
++- `unsafe_action`: block the loop when the proposed change is destructive, irreversible, or larger than the agreed bounded scope.
++
++## Source of truth
++
++The machine-readable contract lives in [packages/contracts/src/index.ts](../packages/contracts/src/index.ts) as:
++
++- `defensiveLoopContract`
++- `defensiveIterationInputSchema`
++- `defensiveIterationRecordSchema`
++- `defensiveFailureStateSchema`
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+index 794a8db1f95a08caeee13918ca1154355eccd079..4976e9dc0faa1e3e25d329b6ee7c1aefc36a2cf6
+--- a/packages/contracts/src/index.test.ts
++++ b/packages/contracts/src/index.test.ts
+@@ -4,6 +4,9 @@
+   briefResponseSchema,
+   createScanRequestSchema,
+   createApplicationBodySchema,
++  defensiveIterationRecordSchema,
++  defensiveLoopContract,
++  defensiveLoopStages,
+   demoResponseSchema,
+   healthResponseSchema,
+   updateApplicationBodySchema
+@@ -105,4 +108,178 @@
+ 
+     expect(result.success).toBe(true);
+   });
++
++  it("defines the defensive loop stages in order", () => {
++    expect(defensiveLoopStages).toEqual(["intake", "prioritize", "act", "verify", "record", "handoff"]);
++    expect(defensiveLoopContract.stages.map((stage) => stage.stage)).toEqual(defensiveLoopStages);
++  });
++
++  it("documents the required defensive loop fields and blocked states", () => {
++    expect(defensiveLoopContract.requiredInputs.map((field) => field.key)).toEqual([
++      "findings",
++      "target",
++      "assetContext",
++      "priorIteration"
++    ]);
++    expect(defensiveLoopContract.requiredOutputs.map((field) => field.key)).toEqual([
++      "chosenAction",
++      "evidence",
++      "residualRisk",
++      "recommendedNextStep"
++    ]);
++    expect(defensiveLoopContract.failureStates.map((failure) => failure.reason)).toEqual([
++      "missing_evidence",
++      "ambiguous_scope",
++      "unsafe_action"
++    ]);
++  });
++
++  it("accepts a completed defensive iteration record", () => {
++    const result = defensiveIterationRecordSchema.safeParse({
++      iterationId: "iter-001",
++      stages: ["intake", "prioritize", "act", "verify", "record", "handoff"],
++      status: "completed",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.92,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        },
++        priorIteration: {
++          iterationId: "iter-000",
++          summary: "Previous iteration limited scanner rate but did not reduce exposure.",
++          residualRisk: "Admin API remains internet reachable.",
++          outstandingFindingIds: ["finding-0"],
++          recommendedNextStep: "Reduce exposure on the admin route."
++        }
++      },
++      chosenAction: {
++        type: "access_restriction",
++        summary: "Restrict the admin ingress to office and VPN CIDRs.",
++        rationale: "This reduces exposure without changing application behavior.",
++        scope: "Ingress policy for the production admin service only.",
++        bounded: true,
++        safetyChecks: ["Confirm allowed CIDRs with operations", "Apply only to the admin ingress resource"]
++      },
++      verification: {
++        outcome: "verified",
++        summary: "The route no longer responds from an untrusted source and still works from approved IP space.",
++        checks: ["Curl from blocked source fails", "Smoke test from approved source passes"]
++      },
++      evidence: [
++        {
++          type: "config_diff",
++          summary: "Ingress manifest now limits source CIDRs.",
++          reference: "git diff apps/infra/admin-ingress.yaml"
++        },
++        {
++          type: "test_result",
++          summary: "Manual probes confirm the new network boundary.",
++          reference: "probe-log-2026-04-13"
++        }
++      ],
++      residualRisk: {
++        level: "medium",
++        summary: "Exposure is reduced, but admin authentication hardening still needs review.",
++        remainingFindingIds: ["finding-auth-1"],
++        needsHumanReview: false
++      },
++      recommendedNextStep: {
++        summary: "Review privileged admin authentication flows next.",
++        rationale: "The highest remaining risk is credential misuse rather than internet exposure.",
++        continueLoop: true
++      },
++      handoffSummary: "Ingress is restricted and the next iteration should focus on admin authentication hardening."
++    });
++
++    expect(result.success).toBe(true);
++  });
++
++  it("rejects a blocked defensive iteration without a failure state", () => {
++    const result = defensiveIterationRecordSchema.safeParse({
++      iterationId: "iter-002",
++      stages: ["intake", "prioritize", "act", "verify", "record", "handoff"],
++      status: "blocked",
++      input: {
++        findings: [
++          {
++            id: "finding-2",
++            title: "Suspicious privileged path",
++            severity: "high",
++            confidence: 0.6,
++            summary: "The path may allow privilege escalation.",
++            evidence: "Single unverified report",
++            source: "scanner"
++          }
++        ],
++        target: {
++          kind: "application",
++          id: "app-1",
++          displayName: "Operator Portal"
++        },
++        assetContext: {
++          assetId: "asset-2",
++          assetName: "Operator Portal",
++          criticality: "high",
++          internetExposed: true,
++          containsSensitiveData: false,
++          notes: []
++        }
++      },
++      chosenAction: {
++        type: "defer",
++        summary: "Do not change production routing yet.",
++        rationale: "The report is too weak to justify a live change.",
++        scope: "No production change.",
++        bounded: true,
++        safetyChecks: ["Require stronger reproduction evidence"]
++      },
++      verification: {
++        outcome: "blocked",
++        summary: "Execution was blocked before verification.",
++        checks: ["Confirmed the evidence is incomplete"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The current report does not provide enough proof to act."
++        }
++      ],
++      residualRisk: {
++        level: "high",
++        summary: "The suspected issue remains unresolved pending stronger evidence.",
++        remainingFindingIds: ["finding-2"],
++        needsHumanReview: true
++      },
++      recommendedNextStep: {
++        summary: "Reproduce the finding with stronger evidence before any change.",
++        rationale: "The scope and exploitability are still ambiguous.",
++        continueLoop: false
++      },
++      handoffSummary: "Pause autonomous action until the finding can be reproduced."
++    });
++
++    expect(result.success).toBe(false);
++  });
+ });
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index c6cea9f160d9248d7e2e1559e60854c086266ca8..93914898f8abc4f465515a7376d12254d60dafd4
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -430,6 +430,320 @@
+ export type EvidenceResponse = z.infer<typeof evidenceResponseSchema>;
+ 
+ // ---------------------------------------------------------------------------
++// Defensive iteration loop contract
++// ---------------------------------------------------------------------------
++
++export const defensiveLoopStageSchema = z.enum(["intake", "prioritize", "act", "verify", "record", "handoff"]);
++export type DefensiveLoopStage = z.infer<typeof defensiveLoopStageSchema>;
++
++export const defensiveLoopStages = [
++  "intake",
++  "prioritize",
++  "act",
++  "verify",
++  "record",
++  "handoff"
++] as const satisfies readonly DefensiveLoopStage[];
++
++export const defensiveTargetKindSchema = z.enum(["application", "runtime", "service", "host", "repository", "manual"]);
++export type DefensiveTargetKind = z.infer<typeof defensiveTargetKindSchema>;
++
++export const defensiveAssetCriticalitySchema = z.enum(["low", "moderate", "high", "critical"]);
++export type DefensiveAssetCriticality = z.infer<typeof defensiveAssetCriticalitySchema>;
++
++export const defensiveIterationFindingSchema = z.object({
++  id: z.string().min(1),
++  title: z.string().min(1),
++  severity: severitySchema,
++  confidence: z.number().min(0).max(1),
++  summary: z.string().min(1),
++  evidence: z.string().min(1),
++  source: z.string().min(1)
++});
++export type DefensiveIterationFinding = z.infer<typeof defensiveIterationFindingSchema>;
++
++export const defensiveTargetIdentitySchema = z.object({
++  kind: defensiveTargetKindSchema,
++  id: z.string().min(1),
++  displayName: z.string().min(1),
++  environment: applicationEnvironmentSchema.optional(),
++  locator: z.string().min(1).optional()
++});
++export type DefensiveTargetIdentity = z.infer<typeof defensiveTargetIdentitySchema>;
++
++export const defensiveAssetContextSchema = z.object({
++  assetId: z.string().min(1),
++  assetName: z.string().min(1),
++  criticality: defensiveAssetCriticalitySchema,
++  internetExposed: z.boolean(),
++  containsSensitiveData: z.boolean(),
++  notes: z.array(z.string().min(1)).default([])
++});
++export type DefensiveAssetContext = z.infer<typeof defensiveAssetContextSchema>;
++
++export const priorIterationStateSchema = z.object({
++  iterationId: z.string().min(1),
++  summary: z.string().min(1),
++  residualRisk: z.string().min(1),
++  outstandingFindingIds: z.array(z.string().min(1)).default([]),
++  recommendedNextStep: z.string().min(1).optional()
++});
++export type PriorIterationState = z.infer<typeof priorIterationStateSchema>;
++
++export const defensiveIterationInputSchema = z.object({
++  findings: z.array(defensiveIterationFindingSchema).min(1),
++  target: defensiveTargetIdentitySchema,
++  assetContext: defensiveAssetContextSchema,
++  priorIteration: priorIterationStateSchema.optional()
++});
++export type DefensiveIterationInput = z.infer<typeof defensiveIterationInputSchema>;
++
++export const defensiveActionTypeSchema = z.enum([
++  "patch",
++  "configuration_change",
++  "access_restriction",
++  "monitoring",
++  "manual_investigation",
++  "defer"
++]);
++export type DefensiveActionType = z.infer<typeof defensiveActionTypeSchema>;
++
++export const defensiveChosenActionSchema = z.object({
++  type: defensiveActionTypeSchema,
++  summary: z.string().min(1),
++  rationale: z.string().min(1),
++  scope: z.string().min(1),
++  bounded: z.boolean(),
++  safetyChecks: z.array(z.string().min(1)).min(1)
++});
++export type DefensiveChosenAction = z.infer<typeof defensiveChosenActionSchema>;
++
++export const defensiveVerificationSchema = z.object({
++  outcome: z.enum(["verified", "partial", "blocked"]),
++  summary: z.string().min(1),
++  checks: z.array(z.string().min(1)).min(1)
++});
++export type DefensiveVerification = z.infer<typeof defensiveVerificationSchema>;
++
++export const defensiveEvidenceArtifactSchema = z.object({
++  type: z.enum(["command_output", "config_diff", "test_result", "review_note", "ticket"]),
++  summary: z.string().min(1),
++  reference: z.string().min(1).optional()
++});
++export type DefensiveEvidenceArtifact = z.infer<typeof defensiveEvidenceArtifactSchema>;
++
++export const defensiveResidualRiskSchema = z.object({
++  level: severitySchema,
++  summary: z.string().min(1),
++  remainingFindingIds: z.array(z.string().min(1)).default([]),
++  needsHumanReview: z.boolean()
++});
++export type DefensiveResidualRisk = z.infer<typeof defensiveResidualRiskSchema>;
++
++export const defensiveNextStepSchema = z.object({
++  summary: z.string().min(1),
++  rationale: z.string().min(1),
++  continueLoop: z.boolean()
++});
++export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
++
++export const defensiveFailureReasonSchema = z.enum(["missing_evidence", "ambiguous_scope", "unsafe_action"]);
++export type DefensiveFailureReason = z.infer<typeof defensiveFailureReasonSchema>;
++
++export const defensiveFailureStateSchema = z.object({
++  reason: defensiveFailureReasonSchema,
++  blockedStage: defensiveLoopStageSchema,
++  summary: z.string().min(1),
++  operatorAction: z.string().min(1)
++});
++export type DefensiveFailureState = z.infer<typeof defensiveFailureStateSchema>;
++
++export const defensiveIterationRecordSchema = z
++  .object({
++    iterationId: z.string().min(1),
++    stages: z.tuple([
++      z.literal("intake"),
++      z.literal("prioritize"),
++      z.literal("act"),
++      z.literal("verify"),
++      z.literal("record"),
++      z.literal("handoff")
++    ]),
++    status: z.enum(["completed", "blocked"]),
++    input: defensiveIterationInputSchema,
++    chosenAction: defensiveChosenActionSchema,
++    verification: defensiveVerificationSchema,
++    evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
++    residualRisk: defensiveResidualRiskSchema,
++    recommendedNextStep: defensiveNextStepSchema,
++    handoffSummary: z.string().min(1),
++    failure: defensiveFailureStateSchema.optional()
++  })
++  .superRefine((value, ctx) => {
++    if (value.status === "blocked" && !value.failure) {
++      ctx.addIssue({
++        code: z.ZodIssueCode.custom,
++        message: "Blocked iterations must include a failure state.",
++        path: ["failure"]
++      });
++    }
++
++    if (value.status === "completed" && value.failure) {
++      ctx.addIssue({
++        code: z.ZodIssueCode.custom,
++        message: "Completed iterations cannot include a failure state.",
++        path: ["failure"]
++      });
++    }
++  });
++export type DefensiveIterationRecord = z.infer<typeof defensiveIterationRecordSchema>;
++
++export const defensiveLoopContractFieldSchema = z.object({
++  key: z.string().min(1),
++  required: z.boolean(),
++  description: z.string().min(1)
++});
++export type DefensiveLoopContractField = z.infer<typeof defensiveLoopContractFieldSchema>;
++
++export const defensiveLoopStageDefinitionSchema = z.object({
++  stage: defensiveLoopStageSchema,
++  purpose: z.string().min(1),
++  consumes: z.array(z.string().min(1)),
++  produces: z.array(z.string().min(1))
++});
++export type DefensiveLoopStageDefinition = z.infer<typeof defensiveLoopStageDefinitionSchema>;
++
++export const defensiveLoopContractSchema = z.object({
++  name: z.literal("defensive-iteration"),
++  version: z.literal("1.0"),
++  stages: z.tuple([
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("intake") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("prioritize") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("act") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("verify") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("record") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("handoff") })
++  ]),
++  requiredInputs: z.array(defensiveLoopContractFieldSchema).min(4),
++  requiredOutputs: z.array(defensiveLoopContractFieldSchema).min(4),
++  failureStates: z
++    .array(
++      defensiveFailureStateSchema.extend({
++        reason: defensiveFailureReasonSchema
++      })
++    )
++    .min(3)
++});
++export type DefensiveLoopContract = z.infer<typeof defensiveLoopContractSchema>;
++
++export const defensiveLoopContract = defensiveLoopContractSchema.parse({
++  name: "defensive-iteration",
++  version: "1.0",
++  stages: [
++    {
++      stage: "intake",
++      purpose: "Collect validated findings, target identity, asset context, and prior state before making any change.",
++      consumes: ["findings", "target", "assetContext", "priorIteration"],
++      produces: ["iterationInput"]
++    },
++    {
++      stage: "prioritize",
++      purpose: "Choose one bounded defensive action using the intake evidence and known asset risk.",
++      consumes: ["iterationInput"],
++      produces: ["chosenAction"]
++    },
++    {
++      stage: "act",
++      purpose: "Execute the selected defensive action only when scope and safety checks are clear.",
++      consumes: ["chosenAction"],
++      produces: ["executionArtifacts"]
++    },
++    {
++      stage: "verify",
++      purpose: "Confirm the action outcome with explicit checks instead of assuming risk reduction.",
++      consumes: ["executionArtifacts"],
++      produces: ["verification", "evidence"]
++    },
++    {
++      stage: "record",
++      purpose: "Persist what changed, what evidence supports it, and what residual risk remains.",
++      consumes: ["chosenAction", "verification", "evidence"],
++      produces: ["iterationRecord", "residualRisk"]
++    },
++    {
++      stage: "handoff",
++      purpose: "Recommend the next safe step so the following iteration starts with preserved context.",
++      consumes: ["iterationRecord", "residualRisk"],
++      produces: ["recommendedNextStep", "handoffSummary"]
++    }
++  ],
++  requiredInputs: [
++    {
++      key: "findings",
++      required: true,
++      description: "At least one finding with severity, confidence, source, and evidence."
++    },
++    {
++      key: "target",
++      required: true,
++      description: "Target identity including kind, stable identifier, and display name."
++    },
++    {
++      key: "assetContext",
++      required: true,
++      description: "Asset criticality and exposure context used to explain prioritization."
++    },
++    {
++      key: "priorIteration",
++      required: false,
++      description: "Previous iteration summary and carry-forward risk when available."
++    }
++  ],
++  requiredOutputs: [
++    {
++      key: "chosenAction",
++      required: true,
++      description: "The single bounded action selected for the iteration with rationale and safety checks."
++    },
++    {
++      key: "evidence",
++      required: true,
++      description: "Artifacts that show what was checked, changed, or deliberately blocked."
++    },
++    {
++      key: "residualRisk",
++      required: true,
++      description: "Plain-language statement of remaining risk after the iteration."
++    },
++    {
++      key: "recommendedNextStep",
++      required: true,
++      description: "The next safe action or explicit stop condition for the following iteration."
++    }
++  ],
++  failureStates: [
++    {
++      reason: "missing_evidence",
++      blockedStage: "verify",
++      summary: "Stop when the action cannot be supported by concrete evidence or verification output.",
++      operatorAction: "Collect stronger evidence before claiming the risk changed."
++    },
++    {
++      reason: "ambiguous_scope",
++      blockedStage: "prioritize",
++      summary: "Stop when the target boundary or affected assets are unclear.",
++      operatorAction: "Clarify ownership, targets, or impacted components before acting."
++    },
++    {
++      reason: "unsafe_action",
++      blockedStage: "act",
++      summary: "Stop when the proposed change is destructive, irreversible, or exceeds the bounded scope.",
++      operatorAction: "Escalate for human review or choose a safer defensive action."
++    }
++  ]
++});
++
++// ---------------------------------------------------------------------------
+ // Scan
+ // ---------------------------------------------------------------------------
+ 
+
+codex
+The required progress entry is appended and the final activity event is logged. I’m making the bookkeeping commit now, then I’ll verify the worktree is fully clean and capture the final HEAD reference.
+exec
+/bin/bash -lc 'git status --short' in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+ M .ralph/activity.log
+ M .ralph/progress.md
+ M .ralph/runs/run-20260413-004018-509304-iter-1.log
+
+exec
+/bin/bash -lc "tail -n 60 .ralph/activity.log && printf '\\n---\\n' && tail -n 80 .ralph/progress.md" in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+# Activity Log
+
+## Run Summary
+
+## Events
+
+[2026-04-13 00:40:18] ITERATION 1 start (mode=build story=S1)
+[2026-04-13 00:42:19] S1 implementation plan: add defensive iteration contract schemas in packages/contracts, cover with tests, and document stage/input/output/failure semantics
+[2026-04-13 00:44:21] Completed S1 verification: contracts tests passed, workspace build passed, workspace tests passed, root lint failed on existing generated Prisma ESLint config issue
+[2026-04-13 00:44:58] Implemented S1 defensive loop contract: added shared schemas, deterministic contract metadata, tests, and operator-facing documentation
+[2026-04-13 00:45:50] Updated S1 progress log with commit aec4f098, verification results, and future-iteration notes
+
+---
+# Progress Log
+Started: Mon Apr 13 00:40:18 CEST 2026
+
+## Codebase Patterns
+- (add reusable patterns here)
+
+---
+## [2026-04-13 00:45:00 CEST] - S1: Define the defensive loop contract
+Thread: 
+Run: 20260413-004018-509304 (iteration 1)
+Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004018-509304-iter-1.log
+Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004018-509304-iter-1.md
+- Guardrails reviewed: yes
+- No-commit run: false
+- Commit: aec4f098 Define defensive loop contract
+- Post-commit status: `clean`
+- Verification:
+  - Command: `pnpm --filter @synosec/contracts test` -> PASS
+  - Command: `pnpm --filter @synosec/contracts build` -> PASS
+  - Command: `pnpm build` -> PASS
+  - Command: `pnpm test` -> PASS
+  - Command: `pnpm lint` -> FAIL (existing ESLint typed-linting issue in `apps/backend/src/generated/prisma/client.js`)
+- Files changed:
+  - .agents/tasks/prd-defensive-loop.json
+  - .ralph/activity.log
+  - .ralph/errors.log
+  - .ralph/guardrails.md
+  - .ralph/progress.md
+  - .ralph/runs/run-20260413-004018-509304-iter-1.log
+  - .ralph/runs/run-20260413-004018-509304-iter-1.md
+  - docs/defensive-loop-contract.md
+  - packages/contracts/src/index.test.ts
+  - packages/contracts/src/index.ts
+- What was implemented
+- Added a machine-readable defensive iteration contract with explicit stage order, required inputs, required outputs, and blocked failure states.
+- Added a structured iteration record schema that preserves intake, chosen action, verification, evidence, residual risk, and handoff data for later iterations.
+- Added shared-contract tests and an operator-facing contract document for the buildathon demo.
+- **Learnings for future iterations:**
+  - Patterns discovered
+  - Shared `zod` contracts are the right place for cross-app workflow definitions because they keep backend, frontend, and docs aligned.
+  - Gotchas encountered
+  - Root `pnpm lint` currently fails on a generated Prisma file due typed ESLint configuration, so lint results need to be interpreted separately from story-specific changes.
+  - Useful context
+  - The PRD file already carried runner-managed `in_progress` metadata before implementation work and was not manually edited during this story.
+---
+
+diff --git a/.ralph/progress.md b/.ralph/progress.md
+index c9449dfe55753c81d8a11a8ee0a32e89afb336fe..193917c224f0f6c9804dc8cd4397092c0133d152
+--- a/.ralph/progress.md
++++ b/.ralph/progress.md
+@@ -5,3 +5,41 @@
+ - (add reusable patterns here)
+ 
+ ---
++## [2026-04-13 00:45:00 CEST] - S1: Define the defensive loop contract
++Thread: 
++Run: 20260413-004018-509304 (iteration 1)
++Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004018-509304-iter-1.log
++Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004018-509304-iter-1.md
++- Guardrails reviewed: yes
++- No-commit run: false
++- Commit: aec4f098 Define defensive loop contract
++- Post-commit status: `clean`
++- Verification:
++  - Command: `pnpm --filter @synosec/contracts test` -> PASS
++  - Command: `pnpm --filter @synosec/contracts build` -> PASS
++  - Command: `pnpm build` -> PASS
++  - Command: `pnpm test` -> PASS
++  - Command: `pnpm lint` -> FAIL (existing ESLint typed-linting issue in `apps/backend/src/generated/prisma/client.js`)
++- Files changed:
++  - .agents/tasks/prd-defensive-loop.json
++  - .ralph/activity.log
++  - .ralph/errors.log
++  - .ralph/guardrails.md
++  - .ralph/progress.md
++  - .ralph/runs/run-20260413-004018-509304-iter-1.log
++  - .ralph/runs/run-20260413-004018-509304-iter-1.md
++  - docs/defensive-loop-contract.md
++  - packages/contracts/src/index.test.ts
++  - packages/contracts/src/index.ts
++- What was implemented
++- Added a machine-readable defensive iteration contract with explicit stage order, required inputs, required outputs, and blocked failure states.
++- Added a structured iteration record schema that preserves intake, chosen action, verification, evidence, residual risk, and handoff data for later iterations.
++- Added shared-contract tests and an operator-facing contract document for the buildathon demo.
++- **Learnings for future iterations:**
++  - Patterns discovered
++  - Shared `zod` contracts are the right place for cross-app workflow definitions because they keep backend, frontend, and docs aligned.
++  - Gotchas encountered
++  - Root `pnpm lint` currently fails on a generated Prisma file due typed ESLint configuration, so lint results need to be interpreted separately from story-specific changes.
++  - Useful context
++  - The PRD file already carried runner-managed `in_progress` metadata before implementation work and was not manually edited during this story.
++---
+diff --git a/.ralph/runs/run-20260413-004018-509304-iter-1.md b/.ralph/runs/run-20260413-004018-509304-iter-1.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..16a1ad9633c5d0ee155154c3412e1c4485b6334b
+--- /dev/null
++++ b/.ralph/runs/run-20260413-004018-509304-iter-1.md
+@@ -0,0 +1,25 @@
++# Run Summary
++
++## Story
++- ID: S1
++- Title: Define the defensive loop contract
++- Run: 20260413-004018-509304
++- Iteration: 1
++
++## Outcome
++- Added a machine-readable defensive loop contract in `packages/contracts/src/index.ts`.
++- Defined the required stage order: intake, prioritize, act, verify, record, handoff.
++- Added structured input, output, and failure-state schemas for one defensive iteration.
++- Documented the contract in `docs/defensive-loop-contract.md`.
++- Added contract coverage in `packages/contracts/src/index.test.ts`.
++
++## Verification
++- `pnpm --filter @synosec/contracts test`: PASS
++- `pnpm --filter @synosec/contracts build`: PASS
++- `pnpm build`: PASS
++- `pnpm test`: PASS
++- `pnpm lint`: FAIL due to an existing ESLint typed-linting issue in `apps/backend/src/generated/prisma/client.js`
++
++## Notes
++- The PRD file already had unrelated in-progress metadata changes and was left untouched.
++- No UI files changed, so browser verification was not required for this story.
+diff --git a/docs/defensive-loop-contract.md b/docs/defensive-loop-contract.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba7eac46e3515a70fb181f94b84465906da797cf
+--- /dev/null
++++ b/docs/defensive-loop-contract.md
+@@ -0,0 +1,41 @@
++# Defensive Loop Contract
++
++The defensive loop is a single bounded iteration. It accepts evidence-backed findings, chooses one explainable defensive action, verifies the outcome, records what happened, and hands off a deterministic next step.
++
++## Stage order
++
++1. `intake`: collect findings, target identity, asset context, and prior iteration state when available.
++2. `prioritize`: select exactly one bounded defensive action using the intake evidence and asset context.
++3. `act`: execute the chosen action only when the scope is clear and the action is safe.
++4. `verify`: confirm the action outcome with explicit checks and supporting evidence.
++5. `record`: persist the chosen action, verification result, evidence, and residual risk.
++6. `handoff`: produce the next safe step so the next iteration can continue without rebuilding context.
++
++## Required inputs
++
++- `findings`: one or more findings with severity, confidence, source, and evidence.
++- `target`: stable target identity for the application, runtime, service, host, repository, or manually scoped asset.
++- `assetContext`: criticality and exposure context needed to explain the decision in plain language.
++- `priorIteration`: optional carry-forward state from the previous loop, including unresolved findings and residual risk.
++
++## Required outputs
++
++- `chosenAction`: the single bounded defensive action selected for the iteration, including rationale and safety checks.
++- `evidence`: reviewable artifacts showing what was checked, changed, or why the iteration stopped.
++- `residualRisk`: a plain-language statement of what risk remains after the iteration.
++- `recommendedNextStep`: the next safe action, or an explicit reason the loop cannot continue autonomously.
++
++## Failure states
++
++- `missing_evidence`: block the loop when verification or outcome claims cannot be backed by concrete evidence.
++- `ambiguous_scope`: block the loop when the target boundary, ownership, or affected components are unclear.
++- `unsafe_action`: block the loop when the proposed change is destructive, irreversible, or larger than the agreed bounded scope.
++
++## Source of truth
++
++The machine-readable contract lives in [packages/contracts/src/index.ts](../packages/contracts/src/index.ts) as:
++
++- `defensiveLoopContract`
++- `defensiveIterationInputSchema`
++- `defensiveIterationRecordSchema`
++- `defensiveFailureStateSchema`
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+index 794a8db1f95a08caeee13918ca1154355eccd079..4976e9dc0faa1e3e25d329b6ee7c1aefc36a2cf6
+--- a/packages/contracts/src/index.test.ts
++++ b/packages/contracts/src/index.test.ts
+@@ -4,6 +4,9 @@
+   briefResponseSchema,
+   createScanRequestSchema,
+   createApplicationBodySchema,
++  defensiveIterationRecordSchema,
++  defensiveLoopContract,
++  defensiveLoopStages,
+   demoResponseSchema,
+   healthResponseSchema,
+   updateApplicationBodySchema
+@@ -105,4 +108,178 @@
+ 
+     expect(result.success).toBe(true);
+   });
++
++  it("defines the defensive loop stages in order", () => {
++    expect(defensiveLoopStages).toEqual(["intake", "prioritize", "act", "verify", "record", "handoff"]);
++    expect(defensiveLoopContract.stages.map((stage) => stage.stage)).toEqual(defensiveLoopStages);
++  });
++
++  it("documents the required defensive loop fields and blocked states", () => {
++    expect(defensiveLoopContract.requiredInputs.map((field) => field.key)).toEqual([
++      "findings",
++      "target",
++      "assetContext",
++      "priorIteration"
++    ]);
++    expect(defensiveLoopContract.requiredOutputs.map((field) => field.key)).toEqual([
++      "chosenAction",
++      "evidence",
++      "residualRisk",
++      "recommendedNextStep"
++    ]);
++    expect(defensiveLoopContract.failureStates.map((failure) => failure.reason)).toEqual([
++      "missing_evidence",
++      "ambiguous_scope",
++      "unsafe_action"
++    ]);
++  });
++
++  it("accepts a completed defensive iteration record", () => {
++    const result = defensiveIterationRecordSchema.safeParse({
++      iterationId: "iter-001",
++      stages: ["intake", "prioritize", "act", "verify", "record", "handoff"],
++      status: "completed",
++      input: {
++        findings: [
++          {
++            id: "finding-1",
++            title: "Public admin endpoint exposed",
++            severity: "high",
++            confidence: 0.92,
++            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
++            evidence: "Ingress policy and probe output show the route is publicly reachable.",
++            source: "manual-review"
++          }
++        ],
++        target: {
++          kind: "service",
++          id: "svc-admin-api",
++          displayName: "Admin API",
++          environment: "production",
++          locator: "admin-api.prod.internal"
++        },
++        assetContext: {
++          assetId: "asset-1",
++          assetName: "Admin API",
++          criticality: "critical",
++          internetExposed: true,
++          containsSensitiveData: true,
++          notes: ["Production admin surface"]
++        },
++        priorIteration: {
++          iterationId: "iter-000",
++          summary: "Previous iteration limited scanner rate but did not reduce exposure.",
++          residualRisk: "Admin API remains internet reachable.",
++          outstandingFindingIds: ["finding-0"],
++          recommendedNextStep: "Reduce exposure on the admin route."
++        }
++      },
++      chosenAction: {
++        type: "access_restriction",
++        summary: "Restrict the admin ingress to office and VPN CIDRs.",
++        rationale: "This reduces exposure without changing application behavior.",
++        scope: "Ingress policy for the production admin service only.",
++        bounded: true,
++        safetyChecks: ["Confirm allowed CIDRs with operations", "Apply only to the admin ingress resource"]
++      },
++      verification: {
++        outcome: "verified",
++        summary: "The route no longer responds from an untrusted source and still works from approved IP space.",
++        checks: ["Curl from blocked source fails", "Smoke test from approved source passes"]
++      },
++      evidence: [
++        {
++          type: "config_diff",
++          summary: "Ingress manifest now limits source CIDRs.",
++          reference: "git diff apps/infra/admin-ingress.yaml"
++        },
++        {
++          type: "test_result",
++          summary: "Manual probes confirm the new network boundary.",
++          reference: "probe-log-2026-04-13"
++        }
++      ],
++      residualRisk: {
++        level: "medium",
++        summary: "Exposure is reduced, but admin authentication hardening still needs review.",
++        remainingFindingIds: ["finding-auth-1"],
++        needsHumanReview: false
++      },
++      recommendedNextStep: {
++        summary: "Review privileged admin authentication flows next.",
++        rationale: "The highest remaining risk is credential misuse rather than internet exposure.",
++        continueLoop: true
++      },
++      handoffSummary: "Ingress is restricted and the next iteration should focus on admin authentication hardening."
++    });
++
++    expect(result.success).toBe(true);
++  });
++
++  it("rejects a blocked defensive iteration without a failure state", () => {
++    const result = defensiveIterationRecordSchema.safeParse({
++      iterationId: "iter-002",
++      stages: ["intake", "prioritize", "act", "verify", "record", "handoff"],
++      status: "blocked",
++      input: {
++        findings: [
++          {
++            id: "finding-2",
++            title: "Suspicious privileged path",
++            severity: "high",
++            confidence: 0.6,
++            summary: "The path may allow privilege escalation.",
++            evidence: "Single unverified report",
++            source: "scanner"
++          }
++        ],
++        target: {
++          kind: "application",
++          id: "app-1",
++          displayName: "Operator Portal"
++        },
++        assetContext: {
++          assetId: "asset-2",
++          assetName: "Operator Portal",
++          criticality: "high",
++          internetExposed: true,
++          containsSensitiveData: false,
++          notes: []
++        }
++      },
++      chosenAction: {
++        type: "defer",
++        summary: "Do not change production routing yet.",
++        rationale: "The report is too weak to justify a live change.",
++        scope: "No production change.",
++        bounded: true,
++        safetyChecks: ["Require stronger reproduction evidence"]
++      },
++      verification: {
++        outcome: "blocked",
++        summary: "Execution was blocked before verification.",
++        checks: ["Confirmed the evidence is incomplete"]
++      },
++      evidence: [
++        {
++          type: "review_note",
++          summary: "The current report does not provide enough proof to act."
++        }
++      ],
++      residualRisk: {
++        level: "high",
++        summary: "The suspected issue remains unresolved pending stronger evidence.",
++        remainingFindingIds: ["finding-2"],
++        needsHumanReview: true
++      },
++      recommendedNextStep: {
++        summary: "Reproduce the finding with stronger evidence before any change.",
++        rationale: "The scope and exploitability are still ambiguous.",
++        continueLoop: false
++      },
++      handoffSummary: "Pause autonomous action until the finding can be reproduced."
++    });
++
++    expect(result.success).toBe(false);
++  });
+ });
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index c6cea9f160d9248d7e2e1559e60854c086266ca8..93914898f8abc4f465515a7376d12254d60dafd4
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -430,6 +430,320 @@
+ export type EvidenceResponse = z.infer<typeof evidenceResponseSchema>;
+ 
+ // ---------------------------------------------------------------------------
++// Defensive iteration loop contract
++// ---------------------------------------------------------------------------
++
++export const defensiveLoopStageSchema = z.enum(["intake", "prioritize", "act", "verify", "record", "handoff"]);
++export type DefensiveLoopStage = z.infer<typeof defensiveLoopStageSchema>;
++
++export const defensiveLoopStages = [
++  "intake",
++  "prioritize",
++  "act",
++  "verify",
++  "record",
++  "handoff"
++] as const satisfies readonly DefensiveLoopStage[];
++
++export const defensiveTargetKindSchema = z.enum(["application", "runtime", "service", "host", "repository", "manual"]);
++export type DefensiveTargetKind = z.infer<typeof defensiveTargetKindSchema>;
++
++export const defensiveAssetCriticalitySchema = z.enum(["low", "moderate", "high", "critical"]);
++export type DefensiveAssetCriticality = z.infer<typeof defensiveAssetCriticalitySchema>;
++
++export const defensiveIterationFindingSchema = z.object({
++  id: z.string().min(1),
++  title: z.string().min(1),
++  severity: severitySchema,
++  confidence: z.number().min(0).max(1),
++  summary: z.string().min(1),
++  evidence: z.string().min(1),
++  source: z.string().min(1)
++});
++export type DefensiveIterationFinding = z.infer<typeof defensiveIterationFindingSchema>;
++
++export const defensiveTargetIdentitySchema = z.object({
++  kind: defensiveTargetKindSchema,
++  id: z.string().min(1),
++  displayName: z.string().min(1),
++  environment: applicationEnvironmentSchema.optional(),
++  locator: z.string().min(1).optional()
++});
++export type DefensiveTargetIdentity = z.infer<typeof defensiveTargetIdentitySchema>;
++
++export const defensiveAssetContextSchema = z.object({
++  assetId: z.string().min(1),
++  assetName: z.string().min(1),
++  criticality: defensiveAssetCriticalitySchema,
++  internetExposed: z.boolean(),
++  containsSensitiveData: z.boolean(),
++  notes: z.array(z.string().min(1)).default([])
++});
++export type DefensiveAssetContext = z.infer<typeof defensiveAssetContextSchema>;
++
++export const priorIterationStateSchema = z.object({
++  iterationId: z.string().min(1),
++  summary: z.string().min(1),
++  residualRisk: z.string().min(1),
++  outstandingFindingIds: z.array(z.string().min(1)).default([]),
++  recommendedNextStep: z.string().min(1).optional()
++});
++export type PriorIterationState = z.infer<typeof priorIterationStateSchema>;
++
++export const defensiveIterationInputSchema = z.object({
++  findings: z.array(defensiveIterationFindingSchema).min(1),
++  target: defensiveTargetIdentitySchema,
++  assetContext: defensiveAssetContextSchema,
++  priorIteration: priorIterationStateSchema.optional()
++});
++export type DefensiveIterationInput = z.infer<typeof defensiveIterationInputSchema>;
++
++export const defensiveActionTypeSchema = z.enum([
++  "patch",
++  "configuration_change",
++  "access_restriction",
++  "monitoring",
++  "manual_investigation",
++  "defer"
++]);
++export type DefensiveActionType = z.infer<typeof defensiveActionTypeSchema>;
++
++export const defensiveChosenActionSchema = z.object({
++  type: defensiveActionTypeSchema,
++  summary: z.string().min(1),
++  rationale: z.string().min(1),
++  scope: z.string().min(1),
++  bounded: z.boolean(),
++  safetyChecks: z.array(z.string().min(1)).min(1)
++});
++export type DefensiveChosenAction = z.infer<typeof defensiveChosenActionSchema>;
++
++export const defensiveVerificationSchema = z.object({
++  outcome: z.enum(["verified", "partial", "blocked"]),
++  summary: z.string().min(1),
++  checks: z.array(z.string().min(1)).min(1)
++});
++export type DefensiveVerification = z.infer<typeof defensiveVerificationSchema>;
++
++export const defensiveEvidenceArtifactSchema = z.object({
++  type: z.enum(["command_output", "config_diff", "test_result", "review_note", "ticket"]),
++  summary: z.string().min(1),
++  reference: z.string().min(1).optional()
++});
++export type DefensiveEvidenceArtifact = z.infer<typeof defensiveEvidenceArtifactSchema>;
++
++export const defensiveResidualRiskSchema = z.object({
++  level: severitySchema,
++  summary: z.string().min(1),
++  remainingFindingIds: z.array(z.string().min(1)).default([]),
++  needsHumanReview: z.boolean()
++});
++export type DefensiveResidualRisk = z.infer<typeof defensiveResidualRiskSchema>;
++
++export const defensiveNextStepSchema = z.object({
++  summary: z.string().min(1),
++  rationale: z.string().min(1),
++  continueLoop: z.boolean()
++});
++export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
++
++export const defensiveFailureReasonSchema = z.enum(["missing_evidence", "ambiguous_scope", "unsafe_action"]);
++export type DefensiveFailureReason = z.infer<typeof defensiveFailureReasonSchema>;
++
++export const defensiveFailureStateSchema = z.object({
++  reason: defensiveFailureReasonSchema,
++  blockedStage: defensiveLoopStageSchema,
++  summary: z.string().min(1),
++  operatorAction: z.string().min(1)
++});
++export type DefensiveFailureState = z.infer<typeof defensiveFailureStateSchema>;
++
++export const defensiveIterationRecordSchema = z
++  .object({
++    iterationId: z.string().min(1),
++    stages: z.tuple([
++      z.literal("intake"),
++      z.literal("prioritize"),
++      z.literal("act"),
++      z.literal("verify"),
++      z.literal("record"),
++      z.literal("handoff")
++    ]),
++    status: z.enum(["completed", "blocked"]),
++    input: defensiveIterationInputSchema,
++    chosenAction: defensiveChosenActionSchema,
++    verification: defensiveVerificationSchema,
++    evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
++    residualRisk: defensiveResidualRiskSchema,
++    recommendedNextStep: defensiveNextStepSchema,
++    handoffSummary: z.string().min(1),
++    failure: defensiveFailureStateSchema.optional()
++  })
++  .superRefine((value, ctx) => {
++    if (value.status === "blocked" && !value.failure) {
++      ctx.addIssue({
++        code: z.ZodIssueCode.custom,
++        message: "Blocked iterations must include a failure state.",
++        path: ["failure"]
++      });
++    }
++
++    if (value.status === "completed" && value.failure) {
++      ctx.addIssue({
++        code: z.ZodIssueCode.custom,
++        message: "Completed iterations cannot include a failure state.",
++        path: ["failure"]
++      });
++    }
++  });
++export type DefensiveIterationRecord = z.infer<typeof defensiveIterationRecordSchema>;
++
++export const defensiveLoopContractFieldSchema = z.object({
++  key: z.string().min(1),
++  required: z.boolean(),
++  description: z.string().min(1)
++});
++export type DefensiveLoopContractField = z.infer<typeof defensiveLoopContractFieldSchema>;
++
++export const defensiveLoopStageDefinitionSchema = z.object({
++  stage: defensiveLoopStageSchema,
++  purpose: z.string().min(1),
++  consumes: z.array(z.string().min(1)),
++  produces: z.array(z.string().min(1))
++});
++export type DefensiveLoopStageDefinition = z.infer<typeof defensiveLoopStageDefinitionSchema>;
++
++export const defensiveLoopContractSchema = z.object({
++  name: z.literal("defensive-iteration"),
++  version: z.literal("1.0"),
++  stages: z.tuple([
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("intake") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("prioritize") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("act") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("verify") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("record") }),
++    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("handoff") })
++  ]),
++  requiredInputs: z.array(defensiveLoopContractFieldSchema).min(4),
++  requiredOutputs: z.array(defensiveLoopContractFieldSchema).min(4),
++  failureStates: z
++    .array(
++      defensiveFailureStateSchema.extend({
++        reason: defensiveFailureReasonSchema
++      })
++    )
++    .min(3)
++});
++export type DefensiveLoopContract = z.infer<typeof defensiveLoopContractSchema>;
++
++export const defensiveLoopContract = defensiveLoopContractSchema.parse({
++  name: "defensive-iteration",
++  version: "1.0",
++  stages: [
++    {
++      stage: "intake",
++      purpose: "Collect validated findings, target identity, asset context, and prior state before making any change.",
++      consumes: ["findings", "target", "assetContext", "priorIteration"],
++      produces: ["iterationInput"]
++    },
++    {
++      stage: "prioritize",
++      purpose: "Choose one bounded defensive action using the intake evidence and known asset risk.",
++      consumes: ["iterationInput"],
++      produces: ["chosenAction"]
++    },
++    {
++      stage: "act",
++      purpose: "Execute the selected defensive action only when scope and safety checks are clear.",
++      consumes: ["chosenAction"],
++      produces: ["executionArtifacts"]
++    },
++    {
++      stage: "verify",
++      purpose: "Confirm the action outcome with explicit checks instead of assuming risk reduction.",
++      consumes: ["executionArtifacts"],
++      produces: ["verification", "evidence"]
++    },
++    {
++      stage: "record",
++      purpose: "Persist what changed, what evidence supports it, and what residual risk remains.",
++      consumes: ["chosenAction", "verification", "evidence"],
++      produces: ["iterationRecord", "residualRisk"]
++    },
++    {
++      stage: "handoff",
++      purpose: "Recommend the next safe step so the following iteration starts with preserved context.",
++      consumes: ["iterationRecord", "residualRisk"],
++      produces: ["recommendedNextStep", "handoffSummary"]
++    }
++  ],
++  requiredInputs: [
++    {
++      key: "findings",
++      required: true,
++      description: "At least one finding with severity, confidence, source, and evidence."
++    },
++    {
++      key: "target",
++      required: true,
++      description: "Target identity including kind, stable identifier, and display name."
++    },
++    {
++      key: "assetContext",
++      required: true,
++      description: "Asset criticality and exposure context used to explain prioritization."
++    },
++    {
++      key: "priorIteration",
++      required: false,
++      description: "Previous iteration summary and carry-forward risk when available."
++    }
++  ],
++  requiredOutputs: [
++    {
++      key: "chosenAction",
++      required: true,
++      description: "The single bounded action selected for the iteration with rationale and safety checks."
++    },
++    {
++      key: "evidence",
++      required: true,
++      description: "Artifacts that show what was checked, changed, or deliberately blocked."
++    },
++    {
++      key: "residualRisk",
++      required: true,
++      description: "Plain-language statement of remaining risk after the iteration."
++    },
++    {
++      key: "recommendedNextStep",
++      required: true,
++      description: "The next safe action or explicit stop condition for the following iteration."
++    }
++  ],
++  failureStates: [
++    {
++      reason: "missing_evidence",
++      blockedStage: "verify",
++      summary: "Stop when the action cannot be supported by concrete evidence or verification output.",
++      operatorAction: "Collect stronger evidence before claiming the risk changed."
++    },
++    {
++      reason: "ambiguous_scope",
++      blockedStage: "prioritize",
++      summary: "Stop when the target boundary or affected assets are unclear.",
++      operatorAction: "Clarify ownership, targets, or impacted components before acting."
++    },
++    {
++      reason: "unsafe_action",
++      blockedStage: "act",
++      summary: "Stop when the proposed change is destructive, irreversible, or exceeds the bounded scope.",
++      operatorAction: "Escalate for human review or choose a safer defensive action."
++    }
++  ]
++});
++
++// ---------------------------------------------------------------------------
+ // Scan
+ // ---------------------------------------------------------------------------
+ 
+
+codex
+I’m making the final commit as the last repo-mutating command so the tracked run log is included in its terminal state and the worktree can finish clean.
