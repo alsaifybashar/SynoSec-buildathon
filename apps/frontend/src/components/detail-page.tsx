@@ -3,7 +3,6 @@ import { ArrowLeft, CircleHelp } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { PageHeader } from "./page-header";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 export function DetailPage({
   title,
@@ -65,27 +64,21 @@ export function DetailPage({
 
 export function DetailFieldGroup({
   title,
-  tinted = false,
   className,
   children
 }: {
   title?: string;
-  tinted?: boolean;
   className?: string;
   children: ReactNode;
 }) {
   return (
     <div
-      className={[
-        "grid gap-5 md:grid-cols-2 rounded-lg p-4 -mx-1",
-        tinted ? "bg-muted/30" : "",
-        className
-      ]
+      className={["grid gap-5 md:grid-cols-2 rounded-lg p-4 -mx-1", className]
         .filter(Boolean)
         .join(" ")}
     >
       {title ? (
-        <p className="col-span-full text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+        <p className="col-span-full text-xs uppercase tracking-widest text-muted-foreground mb-1">
           {title}
         </p>
       ) : null}
@@ -103,7 +96,7 @@ export function DetailSidebarItem({
 }) {
   return (
     <div className="space-y-1">
-      <p className="text-[0.65rem] font-semibold uppercase tracking-widest text-muted-foreground">
+      <p className="text-xs uppercase tracking-widest text-muted-foreground">
         {label}
       </p>
       <div className="text-sm text-foreground">{children}</div>
@@ -128,26 +121,28 @@ export function DetailField({
 }) {
   return (
     <div className={className ? `block space-y-1.5 ${className}` : "block space-y-1.5"}>
-      <div className="flex items-center gap-1.5 text-sm font-medium">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <span>
           {label}
           {required ? <span className="ml-1 text-destructive">*</span> : null}
         </span>
         {hint ? (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex items-center text-muted-foreground transition hover:text-foreground"
-                  aria-label="Show field guidance"
-                >
-                  <CircleHelp className="h-3.5 w-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{hint}</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <span className="relative inline-flex">
+            <button
+              type="button"
+              className="peer inline-flex items-center text-muted-foreground transition hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+              aria-label={`Show guidance for ${label}`}
+              title={hint}
+            >
+              <CircleHelp className="h-3.5 w-3.5" />
+            </button>
+            <span
+              role="tooltip"
+              className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 hidden w-56 -translate-x-1/2 rounded-md bg-foreground px-3 py-2 text-left text-xs leading-relaxed text-background shadow-md peer-hover:block peer-focus-visible:block"
+            >
+              {hint}
+            </span>
+          </span>
         ) : null}
       </div>
       {children}

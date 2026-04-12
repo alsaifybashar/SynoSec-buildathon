@@ -390,9 +390,6 @@ export function RuntimesPage({
       sidebar={
         !isCreateMode && runtime ? (
           <>
-            <DetailSidebarItem label="ID">
-              <span className="font-mono text-xs break-all">{runtime.id}</span>
-            </DetailSidebarItem>
             <DetailSidebarItem label="Status">
               <StatusBadge label={statusLabels[runtime.status]} className={statusBadgeStyles[runtime.status]} />
             </DetailSidebarItem>
@@ -419,7 +416,7 @@ export function RuntimesPage({
         </DetailField>
       </DetailFieldGroup>
 
-      <DetailFieldGroup title="Infrastructure" tinted>
+      <DetailFieldGroup title="Infrastructure">
         <DetailField label="Service type" required hint="Choose the runtime's primary operational role.">
           <Select value={formValues.serviceType} onValueChange={(value: RuntimeServiceType) => handleFieldChange("serviceType", value)}>
             <SelectTrigger aria-label="Service type" className="w-fit min-w-[10rem] max-w-[12rem]">
@@ -435,7 +432,7 @@ export function RuntimesPage({
           </Select>
         </DetailField>
 
-        <DetailField label="Provider" required hint="Record the platform or hosting provider backing this runtime.">
+        <DetailField label="Provider" required>
           <Select value={formValues.provider} onValueChange={(value: RuntimeProvider) => handleFieldChange("provider", value)}>
             <SelectTrigger aria-label="Provider" className="w-fit min-w-[10rem] max-w-[12rem]">
               <SelectValue placeholder="Select provider" />
@@ -467,7 +464,7 @@ export function RuntimesPage({
       </DetailFieldGroup>
 
       <DetailFieldGroup title="Status & linking">
-        <DetailField label="Status" required hint="Reflect whether the runtime is healthy, degraded, or retired.">
+        <DetailField label="Status" required>
           <Select value={formValues.status} onValueChange={(value: RuntimeStatus) => handleFieldChange("status", value)}>
             <SelectTrigger aria-label="Status" className="w-fit min-w-[10rem] max-w-[12rem]">
               <SelectValue placeholder="Select status" />
@@ -482,7 +479,7 @@ export function RuntimesPage({
           </Select>
         </DetailField>
 
-        <DetailField label="Application" hint="Optionally link this runtime to an application inventory record.">
+        <DetailField label="Application">
           <Select value={formValues.applicationId || "__none__"} onValueChange={(value) => handleFieldChange("applicationId", value === "__none__" ? "" : value)}>
             <SelectTrigger aria-label="Application" className="w-fit min-w-[12rem] max-w-[16rem]">
               <SelectValue placeholder="Select application" />

@@ -378,9 +378,6 @@ export function WorkflowsPage({
       sidebar={
         !isCreateMode && workflow ? (
           <>
-            <DetailSidebarItem label="ID">
-              <span className="font-mono text-xs break-all">{workflow.id}</span>
-            </DetailSidebarItem>
             <DetailSidebarItem label="Status">
               <StatusBadge label={statusLabels[workflow.status]} className={statusBadgeStyles[workflow.status]} />
             </DetailSidebarItem>
@@ -405,7 +402,7 @@ export function WorkflowsPage({
           <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
         </DetailField>
 
-        <DetailField label="Trigger" required hint="How the playbook is started.">
+        <DetailField label="Trigger" required>
           <Select value={formValues.trigger} onValueChange={(value: WorkflowTrigger) => handleFieldChange("trigger", value)}>
             <SelectTrigger aria-label="Trigger" className="w-fit min-w-[10rem] max-w-[12rem]">
               <SelectValue placeholder="Select trigger" />
@@ -420,7 +417,7 @@ export function WorkflowsPage({
           </Select>
         </DetailField>
 
-        <DetailField label="Status" required hint="Use status to reflect whether the playbook is draft, active, or paused.">
+        <DetailField label="Status" required>
           <Select value={formValues.status} onValueChange={(value: WorkflowStatus) => handleFieldChange("status", value)}>
             <SelectTrigger aria-label="Status" className="w-fit min-w-[10rem] max-w-[12rem]">
               <SelectValue placeholder="Select status" />
@@ -436,7 +433,7 @@ export function WorkflowsPage({
         </DetailField>
       </DetailFieldGroup>
 
-      <DetailFieldGroup title="Scan configuration" tinted>
+      <DetailFieldGroup title="Scan configuration">
         <DetailField label="Max depth" required hint="Limit how deep the playbook can explore.">
           <Input
             type="number"
@@ -463,7 +460,7 @@ export function WorkflowsPage({
           </Select>
         </DetailField>
 
-        <DetailField label="Application" hint="Optionally link this playbook to an application inventory record.">
+        <DetailField label="Application">
           <Select value={formValues.applicationId || "__none__"} onValueChange={(value) => handleFieldChange("applicationId", value === "__none__" ? "" : value)}>
             <SelectTrigger aria-label="Application" className="w-fit min-w-[12rem] max-w-[16rem]">
               <SelectValue placeholder="Select application" />

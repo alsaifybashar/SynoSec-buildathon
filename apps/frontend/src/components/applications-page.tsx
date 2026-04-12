@@ -321,9 +321,6 @@ export function ApplicationsPage({
       sidebar={
         !isCreateMode && application ? (
           <>
-            <DetailSidebarItem label="ID">
-              <span className="font-mono text-xs break-all">{application.id}</span>
-            </DetailSidebarItem>
             <DetailSidebarItem label="Status">
               <StatusBadge label={statusLabels[application.status]} className={statusBadgeStyles[application.status]} />
             </DetailSidebarItem>
@@ -361,8 +358,8 @@ export function ApplicationsPage({
         </DetailField>
       </DetailFieldGroup>
 
-      <DetailFieldGroup title="Configuration" tinted>
-        <DetailField label="Environment" required hint="Choose the environment that best reflects how this application is currently operated.">
+      <DetailFieldGroup title="Configuration">
+        <DetailField label="Environment" required>
           <Select value={formValues.environment} onValueChange={(value: ApplicationEnvironment) => handleFieldChange("environment", value)}>
             <SelectTrigger aria-label="Environment" className="w-fit min-w-[10rem] max-w-[12rem]">
               <SelectValue placeholder="Select environment" />
@@ -377,7 +374,7 @@ export function ApplicationsPage({
           </Select>
         </DetailField>
 
-        <DetailField label="Status" required hint="Use status to reflect whether the application is active, under investigation, or archived.">
+        <DetailField label="Status" required>
           <Select value={formValues.status} onValueChange={(value: ApplicationStatus) => handleFieldChange("status", value)}>
             <SelectTrigger aria-label="Status" className="w-fit min-w-[10rem] max-w-[12rem]">
               <SelectValue placeholder="Select status" />
@@ -392,7 +389,7 @@ export function ApplicationsPage({
           </Select>
         </DetailField>
 
-        <DetailField label="Last scanned" hint="Optional. Use the most recent known successful scan timestamp when there is one.">
+        <DetailField label="Last scanned">
           <Input
             type="datetime-local"
             value={formValues.lastScannedAt}
