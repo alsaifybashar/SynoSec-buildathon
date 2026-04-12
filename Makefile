@@ -14,7 +14,7 @@ help:
 	@printf "\033[33m  make seed\033[0m        Seed demo data into running backend\n"
 
 docker-up:
-	docker compose up --build -d
+	docker compose up --build -d --remove-orphans
 	@printf "\n\033[1;32m✓ SynoSec started!\033[0m\n"
 	@printf "  Frontend: \033[36mhttp://localhost:5173\033[0m\n"
 	@printf "  Backend:  \033[36mhttp://localhost:3001\033[0m\n"
@@ -22,7 +22,7 @@ docker-up:
 	@printf "  Target:   \033[36mhttp://localhost:8888\033[0m\n"
 
 docker-down:
-	docker compose down
+	docker compose down --remove-orphans
 
 docker-logs:
 	docker compose logs -f
