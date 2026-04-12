@@ -172,7 +172,7 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: " " }
     });
-    fireEvent.change(screen.getByLabelText("Base URL"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Base URL" }), {
       target: { value: "not-a-url" }
     });
 
@@ -193,7 +193,7 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "Queue Reconciler" }
     });
-    fireEvent.change(screen.getByLabelText("Base URL"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Base URL" }), {
       target: { value: "https://queue.synosec.local" }
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

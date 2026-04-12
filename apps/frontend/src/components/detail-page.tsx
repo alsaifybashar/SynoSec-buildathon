@@ -66,8 +66,8 @@ export function DetailField({
   children: ReactNode;
 }) {
   return (
-    <label className={className ? `block space-y-1.5 ${className}` : "block space-y-1.5"}>
-      <span className="flex items-center gap-1.5 text-sm font-medium">
+    <div className={className ? `block space-y-1.5 ${className}` : "block space-y-1.5"}>
+      <div className="flex items-center gap-1.5 text-sm font-medium">
         <span>
           {label}
           {required ? <span className="ml-1 text-destructive">*</span> : null}
@@ -79,7 +79,7 @@ export function DetailField({
                 <button
                   type="button"
                   className="inline-flex items-center text-muted-foreground transition hover:text-foreground"
-                  aria-label={`${label} help`}
+                  aria-label="Show field guidance"
                 >
                   <CircleHelp className="h-3.5 w-3.5" />
                 </button>
@@ -88,9 +88,9 @@ export function DetailField({
             </Tooltip>
           </TooltipProvider>
         ) : null}
-      </span>
+      </div>
       {children}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </label>
+    </div>
   );
 }
