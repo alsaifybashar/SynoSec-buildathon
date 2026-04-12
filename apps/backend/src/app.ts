@@ -1,5 +1,5 @@
 import cors from "cors";
-import express, { type Express } from "express";
+import express, { type ErrorRequestHandler, type Express } from "express";
 import {
   apiRoutes,
   briefResponseSchema,
@@ -41,6 +41,24 @@ function buildBriefResponse(): BriefResponse {
   };
 }
 
+function isProductionEnvironment() {
+  return process.env["BACKEND_ENV"] === "production";
+}
+
+export function createErrorHandler(options?: { isProduction?: boolean }): ErrorRequestHandler {
+  const isProduction = options?.isProduction ?? isProductionEnvironment();
+
+  return (error, _request, response, _next) => {
+    const message = error instanceof Error ? error.message : "Unknown error";
+
+    if (!response.headersSent) {
+      response.status(500).json({
+        message: isProduction ? "Something went wrong." : message
+      });
+    }
+  };
+}
+
 export function createApp(): Express {
   const app = express();
 
@@ -63,6 +81,8 @@ export function createApp(): Express {
   app.get(apiRoutes.brief, (_request, response) => {
     response.json(briefResponseSchema.parse(buildBriefResponse()));
   });
+
+  app.use(createErrorHandler());
 
   return app;
 }

@@ -1,7 +1,8 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { briefResponseSchema, demoResponseSchema, healthResponseSchema } from "@synosec/contracts";
-import { createApp } from "./app.js";
+import express from "express";
+import { createApp, createErrorHandler } from "./app.js";
 
 describe("backend api", () => {
   const app = createApp();
@@ -28,5 +29,31 @@ describe("backend api", () => {
 
     expect(response.status).toBe(200);
     expect(parsed.actions.length).toBeGreaterThan(0);
+  });
+
+  it("returns a generic error payload in production", async () => {
+    const errorApp = express();
+    errorApp.get("/boom", () => {
+      throw new Error("sensitive stack detail");
+    });
+    errorApp.use(createErrorHandler({ isProduction: true }));
+
+    const response = await request(errorApp).get("/boom");
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ message: "Something went wrong." });
+  });
+
+  it("returns the error message outside production", async () => {
+    const errorApp = express();
+    errorApp.get("/boom", () => {
+      throw new Error("sensitive stack detail");
+    });
+    errorApp.use(createErrorHandler({ isProduction: false }));
+
+    const response = await request(errorApp).get("/boom");
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ message: "sensitive stack detail" });
   });
 });
