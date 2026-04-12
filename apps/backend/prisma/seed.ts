@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
-import "../src/core/env/load-env.js";
+import "../src/env.js";
 
 const prisma = new PrismaClient();
 

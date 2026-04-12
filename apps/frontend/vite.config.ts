@@ -15,7 +15,12 @@ export default defineConfig(({ mode }) => {
       port: frontendPort,
       strictPort: true,
       proxy: {
-        "/api": proxyTarget
+        "/api": proxyTarget,
+        "/ws": {
+          target: proxyTarget.replace("http://", "ws://").replace("https://", "wss://"),
+          ws: true,
+          rewriteWsOrigin: true
+        }
       }
     },
     test: {

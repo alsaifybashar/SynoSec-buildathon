@@ -1,35 +1,48 @@
 import { useEffect, useMemo, useState } from "react";
-import { AppWindow, LayoutDashboard, Network, Workflow } from "lucide-react";
+import {
+  AppWindow,
+  ClipboardList,
+  FileText,
+  LayoutDashboard,
+  List,
+  Network,
+  Shield,
+  Workflow
+} from "lucide-react";
 import { toast } from "sonner";
-import { apiRoutes, type BriefResponse } from "@synosec/contracts";
+import { apiRoutes, type BriefResponse, type DfsNode, type Scan } from "@synosec/contracts";
 import { ApplicationsPage } from "./components/applications-page";
+import { AuditLog } from "./components/AuditLog";
+import { DfsGraph } from "./components/DfsGraph";
+import { FindingsPanel } from "./components/FindingsPanel";
+import { ReportView } from "./components/ReportView";
+import { ScanConfig } from "./components/ScanConfig";
+import { ScanStatus } from "./components/ScanStatus";
 import { DetailField, DetailPage } from "./components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "./components/list-page";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuText,
-  SidebarProvider
-} from "./components/ui/sidebar";
+import { Sidebar, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuItem, SidebarMenuText, SidebarProvider, SidebarTrigger } from "./components/ui/sidebar";
+import { Skeleton } from "./components/ui/skeleton";
 import { Toaster } from "./components/ui/toaster";
 import { Display, Lead } from "./components/ui/typography";
+import { useScan } from "./hooks/useScan";
+import { useScanWebSocket } from "./hooks/useScanWebSocket";
 import { fetchJson } from "./lib/api";
 import { cn } from "./lib/utils";
 
+type NavigationId = "dashboard" | "runtimes" | "applications" | "workflows" | "scans";
+type ScanView = "config" | "history" | "graph" | "findings" | "report" | "audit";
+
 type NavigationItem = {
-  id: "dashboard" | "runtimes" | "applications" | "workflows";
+  id: NavigationId;
   label: string;
   icon: typeof LayoutDashboard;
 };
 
 type AppRoute = {
-  section: NavigationItem["id"];
+  section: NavigationId;
   detailId: string | undefined;
 };
 
@@ -58,19 +71,35 @@ type StaticDetailFieldConfig<TValues> = {
   options?: Array<{ label: string; value: string }>;
 };
 
+type ScanPageProps = {
+  activeScanId: string | null;
+  onScanSelected: (scanId: string) => void;
+};
+
 const navigationItems: NavigationItem[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "runtimes", label: "Runtimes", icon: Network },
   { id: "applications", label: "Applications", icon: AppWindow },
-  { id: "workflows", label: "Workflows", icon: Workflow }
+  { id: "workflows", label: "Workflows", icon: Workflow },
+  { id: "scans", label: "Scans", icon: Shield }
 ];
 
-const navigationPaths: Record<NavigationItem["id"], string> = {
+const navigationPaths: Record<NavigationId, string> = {
   dashboard: "/",
   runtimes: "/runtimes",
   applications: "/applications",
-  workflows: "/workflows"
+  workflows: "/workflows",
+  scans: "/scans"
 };
+
+const scanTabs: Array<{ id: ScanView; label: string; icon: typeof LayoutDashboard; requiresScan?: boolean }> = [
+  { id: "config", label: "New Scan", icon: Shield },
+  { id: "history", label: "History", icon: List },
+  { id: "graph", label: "Graph", icon: Network, requiresScan: true },
+  { id: "findings", label: "Findings", icon: Shield, requiresScan: true },
+  { id: "report", label: "Report", icon: FileText, requiresScan: true },
+  { id: "audit", label: "Audit Log", icon: ClipboardList, requiresScan: true }
+];
 
 const runtimeRecords: RuntimeRecord[] = [
   { id: "rt-001", name: "Node Runtime 20", language: "Node.js", status: "healthy", region: "eu-north-1" },
@@ -179,7 +208,7 @@ function getRouteFromPath(pathname: string): AppRoute {
     return { section: "dashboard", detailId: undefined };
   }
 
-  const section = segments[0] as NavigationItem["id"];
+  const section = segments[0] as NavigationId;
   if (!(section in navigationPaths)) {
     return { section: "dashboard", detailId: undefined };
   }
@@ -191,9 +220,7 @@ function getRouteFromPath(pathname: string): AppRoute {
 }
 
 function createStaticFormValues<TRecord extends Record<string, string | number>>(record: TRecord) {
-  return Object.fromEntries(
-    Object.entries(record).map(([key, value]) => [key, String(value)])
-  ) as Record<keyof TRecord, string>;
+  return Object.fromEntries(Object.entries(record).map(([key, value]) => [key, String(value)])) as Record<keyof TRecord, string>;
 }
 
 function StaticDetailPage<TRecord extends { id: string } & Record<string, string | number>>({
@@ -220,10 +247,7 @@ function StaticDetailPage<TRecord extends { id: string } & Record<string, string
     setErrors({});
   }, [record]);
 
-  const isDirty = useMemo(
-    () => JSON.stringify(formValues) !== JSON.stringify(initialValues),
-    [formValues, initialValues]
-  );
+  const isDirty = useMemo(() => JSON.stringify(formValues) !== JSON.stringify(initialValues), [formValues, initialValues]);
 
   function handleFieldChange<Key extends keyof TRecord>(key: Key, value: string) {
     setFormValues((current) => ({
@@ -311,9 +335,284 @@ function StaticDetailPage<TRecord extends { id: string } & Record<string, string
   );
 }
 
+async function fetchScans(): Promise<Scan[]> {
+  const response = await fetch(apiRoutes.scanList);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  return response.json() as Promise<Scan[]>;
+}
+
+async function abortScan(id: string): Promise<void> {
+  const response = await fetch(`/api/scan/${id}/abort`, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+}
+
+function ScanHistoryList({ onSelect }: { onSelect: (id: string) => void }) {
+  const [scans, setScans] = useState<Scan[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchScans()
+      .then(setScans)
+      .catch(() => setScans([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const statusColors: Record<Scan["status"], string> = {
+    pending: "text-muted-foreground",
+    running: "text-emerald-400",
+    complete: "text-emerald-500",
+    aborted: "text-amber-400",
+    failed: "text-rose-400"
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3].map((index) => (
+          <Skeleton key={index} className="h-20 w-full rounded-2xl" />
+        ))}
+      </div>
+    );
+  }
+
+  if (!scans || scans.length === 0) {
+    return <p className="text-sm text-muted-foreground">No scans found. Start a new scan from the configuration tab.</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {scans.map((scan) => (
+        <button
+          key={scan.id}
+          type="button"
+          onClick={() => onSelect(scan.id)}
+          className="w-full rounded-2xl border border-border bg-card/75 px-4 py-4 text-left transition hover:border-primary/30 hover:bg-accent/50"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-mono text-xs text-muted-foreground">{scan.id}</span>
+            <span className={cn("text-xs font-semibold uppercase tracking-[0.18em]", statusColors[scan.status])}>
+              {scan.status}
+            </span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
+            <span>{scan.scope.targets.slice(0, 2).join(", ")}{scan.scope.targets.length > 2 ? ` +${scan.scope.targets.length - 2}` : ""}</span>
+            <span>Round {scan.currentRound}</span>
+            <span>{scan.nodesComplete}/{scan.nodesTotal} nodes</span>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ScansPage({ activeScanId, onScanSelected }: ScanPageProps) {
+  const [activeView, setActiveView] = useState<ScanView>(activeScanId ? "graph" : "config");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [roundSummary, setRoundSummary] = useState("");
+  const { lastEvent, isConnected } = useScanWebSocket(true);
+  const { scan, findings, graph, report, isLoading, refetch } = useScan(activeScanId, lastEvent);
+
+  useEffect(() => {
+    setActiveView(activeScanId ? "graph" : "config");
+    setSelectedNodeId(null);
+    setRoundSummary("");
+  }, [activeScanId]);
+
+  useEffect(() => {
+    if (!lastEvent) {
+      return;
+    }
+
+    if (lastEvent.type === "round_complete") {
+      setRoundSummary(lastEvent.summary);
+      toast.info(`Round ${lastEvent.round} complete`, {
+        description: lastEvent.summary.slice(0, 80)
+      });
+      return;
+    }
+
+    if (lastEvent.type === "scan_status") {
+      if (lastEvent.scan.status === "complete") {
+        toast.success("Scan complete", { description: "Report is ready" });
+        refetch();
+      } else if (lastEvent.scan.status === "failed") {
+        toast.error("Scan failed");
+      } else if (lastEvent.scan.status === "aborted") {
+        toast("Scan aborted");
+      }
+      return;
+    }
+
+    if (lastEvent.type === "finding_added" && (lastEvent.finding.severity === "high" || lastEvent.finding.severity === "critical")) {
+      toast.warning(`${lastEvent.finding.severity.toUpperCase()} finding`, {
+        description: lastEvent.finding.title
+      });
+    }
+  }, [lastEvent, refetch]);
+
+  function handleScanStarted(scanId: string) {
+    onScanSelected(scanId);
+    setActiveView("graph");
+    setSelectedNodeId(null);
+    setRoundSummary("");
+  }
+
+  function handleNodeClick(node: DfsNode) {
+    setSelectedNodeId(node.id);
+    setActiveView("findings");
+  }
+
+  async function handleAbort() {
+    if (!activeScanId) {
+      return;
+    }
+
+    try {
+      await abortScan(activeScanId);
+      toast("Abort requested");
+    } catch (error) {
+      toast.error("Failed to abort", {
+        description: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  }
+
+  function navigateScanView(view: ScanView) {
+    if (view !== "config" && view !== "history" && !activeScanId) {
+      toast("No scan selected", {
+        description: "Start or load a scan first."
+      });
+      return;
+    }
+
+    setActiveView(view);
+  }
+
+  function renderScanContent() {
+    if (activeView === "config") {
+      return (
+        <div className="rounded-[2rem] border border-border bg-card/80 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
+          <ScanConfig onScanStarted={handleScanStarted} />
+        </div>
+      );
+    }
+
+    if (activeView === "history") {
+      return (
+        <div className="rounded-[2rem] border border-border bg-card/80 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
+          <ScanHistoryList onSelect={handleScanStarted} />
+        </div>
+      );
+    }
+
+    if (activeView === "graph") {
+      if (!graph || isLoading) {
+        return (
+          <div className="flex min-h-[32rem] items-center justify-center rounded-[2rem] border border-border bg-card/80 p-6 text-muted-foreground">
+            Loading scan graph...
+          </div>
+        );
+      }
+
+      return (
+        <div className="h-[42rem] overflow-hidden rounded-[2rem] border border-border bg-slate-950">
+          <DfsGraph graph={graph} findings={findings} onNodeClick={handleNodeClick} />
+        </div>
+      );
+    }
+
+    if (activeView === "findings") {
+      return (
+        <div className="overflow-hidden rounded-[2rem] border border-border bg-card/80">
+          <FindingsPanel findings={findings} selectedNodeId={selectedNodeId} />
+        </div>
+      );
+    }
+
+    if (activeView === "report") {
+      if (!report) {
+        return (
+          <div className="flex min-h-[22rem] items-center justify-center rounded-[2rem] border border-border bg-card/80 p-6 text-muted-foreground">
+            {scan?.status === "complete" ? "Generating report..." : "Report becomes available when the scan completes."}
+          </div>
+        );
+      }
+
+      return (
+        <div className="overflow-hidden rounded-[2rem] border border-border bg-card/80">
+          <ReportView report={report} />
+        </div>
+      );
+    }
+
+    return (
+      <div className="overflow-hidden rounded-[2rem] border border-border bg-card/80">
+        <AuditLog scanId={activeScanId} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 p-6 md:p-8">
+      <div className="flex flex-col gap-4 rounded-[2rem] border border-border bg-card/80 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground">Scan Console</p>
+            <Display className="mt-2 max-w-none text-left text-4xl">Autonomous DFS Scanning</Display>
+            <Lead className="mt-3 max-w-3xl">
+              Launch a scan, inspect the graph traversal, review findings, and keep the existing admin workspace intact.
+            </Lead>
+          </div>
+          <div className="flex items-center gap-2 rounded-full border border-border bg-background/80 px-4 py-2 text-xs font-medium text-muted-foreground">
+            <span className={cn("h-2.5 w-2.5 rounded-full", isConnected ? "bg-emerald-500" : "bg-amber-500")} />
+            {isConnected ? "Realtime connected" : "Realtime reconnecting"}
+          </div>
+        </div>
+
+        {scan ? <ScanStatus scan={scan} onAbort={() => void handleAbort()} roundSummary={roundSummary} /> : null}
+
+        <div className="flex flex-wrap gap-2">
+          {scanTabs.map((tab) => {
+            const Icon = tab.icon;
+            const disabled = tab.requiresScan && !activeScanId;
+
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => navigateScanView(tab.id)}
+                disabled={disabled}
+                className={cn(
+                  "flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition",
+                  activeView === tab.id
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-background text-foreground hover:bg-accent",
+                  disabled && "cursor-not-allowed opacity-40"
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {renderScanContent()}
+    </div>
+  );
+}
+
 export default function App() {
   const [route, setRoute] = useState<AppRoute>(() => getRouteFromPath(window.location.pathname));
   const [loadingBrief, setLoadingBrief] = useState(false);
+  const [activeScanId, setActiveScanId] = useState<string | null>(route.section === "scans" ? route.detailId ?? null : null);
 
   useEffect(() => {
     const syncFromLocation = () => {
@@ -328,18 +627,23 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (route.section === "scans") {
+      setActiveScanId(route.detailId ?? null);
+    }
+  }, [route.detailId, route.section]);
+
   async function handleBackendButtonClick() {
     setLoadingBrief(true);
 
     try {
-      const brief = await fetchJson<BriefResponse>(apiRoutes.brief);
+      const payload = await fetchJson<BriefResponse>(apiRoutes.brief);
       toast.success("Backend connected", {
-        description: brief.headline
+        description: payload.headline
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
       toast.error("Backend request failed", {
-        description: message
+        description: error instanceof Error ? error.message : "Unknown error"
       });
     } finally {
       setLoadingBrief(false);
@@ -354,13 +658,22 @@ export default function App() {
     setRoute(getRouteFromPath(path));
   }
 
+  function navigateToScan(scanId: string | null) {
+    if (scanId) {
+      navigateToPath(`/scans/${scanId}`);
+      return;
+    }
+
+    navigateToPath("/scans");
+  }
+
   function renderPage() {
     if (route.section === "dashboard") {
       return (
         <div className="w-full max-w-2xl text-center">
           <Display className="max-w-none">Dashboard</Display>
           <Lead className="mx-auto mt-4">
-            Minimal SPA shell with shared list and detail pages for records, filters, sorting, searching, loading states, and recovery.
+            Minimal SPA shell with shared list and detail pages for records, filters, sorting, searching, loading states, recovery, and a dedicated scanning workspace.
           </Lead>
 
           <div className="mt-10 flex justify-center">
@@ -416,6 +729,10 @@ export default function App() {
       );
     }
 
+    if (route.section === "scans") {
+      return <ScansPage activeScanId={activeScanId} onScanSelected={navigateToScan} />;
+    }
+
     if (route.detailId) {
       const workflow = workflowRecords.find((candidate) => candidate.id === route.detailId) ?? workflowRecords[0];
 
@@ -448,29 +765,27 @@ export default function App() {
     );
   }
 
-  const activeItem = route.section;
-
   return (
     <SidebarProvider>
-      <div className="min-h-screen bg-background xl:flex">
-        <Sidebar className="border-border bg-card">
-          <div className="flex h-full flex-col">
-            <div className="relative px-4 py-6 text-center">
+      <div className="flex min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.12),_transparent_30%),linear-gradient(180deg,_#f8fafc_0%,_#eef2ff_48%,_#f8fafc_100%)] text-foreground">
+        <Sidebar className="border-r border-border/80 bg-white/70">
+          <div className="flex h-full flex-col px-4 py-6">
+            <div className="relative px-2 py-2 text-center">
               <p className="font-['Space_Grotesk'] text-[1.75rem] font-bold tracking-[-0.04em] text-foreground">SynoSec</p>
               <div className="absolute inset-x-0 bottom-0 border-b border-border" aria-hidden="true" />
             </div>
 
-            <SidebarContent className="flex-1 px-2 py-4">
+            <SidebarContent className="mt-6 flex-1">
               <SidebarGroup>
                 <SidebarMenu>
                   {navigationItems.map((item) => {
                     const Icon = item.icon;
-                    const isActive = item.id === activeItem;
+                    const isActive = item.id === route.section;
 
                     return (
                       <SidebarMenuItem
                         key={item.id}
-                        className={cn("rounded-lg border border-transparent", isActive && "border-border bg-accent text-accent-foreground")}
+                        className={cn("rounded-xl border border-transparent", isActive && "border-border bg-accent text-accent-foreground")}
                         onClick={() => navigateToPath(navigationPaths[item.id])}
                       >
                         <Icon className="h-4 w-4" />
@@ -481,10 +796,16 @@ export default function App() {
                 </SidebarMenu>
               </SidebarGroup>
             </SidebarContent>
+
+            <div className="mt-6 flex justify-center border-t border-border pt-4">
+              <SidebarTrigger />
+            </div>
           </div>
         </Sidebar>
 
-        <main className={cn("flex-1", route.section === "dashboard" ? "flex items-center justify-center p-6 md:p-10" : "p-0")}>{renderPage()}</main>
+        <main className={cn("flex-1", route.section === "dashboard" ? "flex items-center justify-center p-6 md:p-10" : "p-0")}>
+          {renderPage()}
+        </main>
 
         <Toaster />
       </div>
