@@ -4,13 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "prisma:generate": "prisma generate",
-    "prisma:push": "prisma db push",
-    "prisma:seed": "prisma db seed"
+    "prisma:push": "DATABASE_URL=${DATABASE_URL:-postgres://synosec:synosec@localhost:55432/synosec} prisma db push",
+    "prisma:seed": "DATABASE_URL=${DATABASE_URL:-postgres://synosec:synosec@localhost:55432/synosec} prisma db seed"
   },
   "dependencies": {
     "@prisma/client": "^6.7.0",

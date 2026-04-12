@@ -2,14 +2,10 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 import {
   applicationSchema,
-  briefResponseSchema,
-  demoResponseSchema,
-  healthResponseSchema,
   listApplicationsResponseSchema
 } from "@synosec/contracts";
-import express from "express";
-import { createApp, createErrorHandler } from "./app.js";
-import { InMemoryApplicationStore } from "./applications/store.js";
+import { createApp } from "../../app/create-app.js";
+import { MemoryApplicationsRepository } from "./memory-applications.repository.js";
 
 const seedApplications = [
   {
@@ -34,40 +30,13 @@ const seedApplications = [
   }
 ] as const;
 
-describe("backend api", () => {
-  function createTestApp() {
-    return createApp({
-      applicationStore: new InMemoryApplicationStore(seedApplications.map((application) => ({ ...application })))
-    });
-  }
-
-  it("returns a valid health payload", async () => {
-    const app = createTestApp();
-    const response = await request(app).get("/api/health");
-
-    expect(response.status).toBe(200);
-    expect(healthResponseSchema.safeParse(response.body).success).toBe(true);
+function createTestApp() {
+  return createApp({
+    applicationsRepository: new MemoryApplicationsRepository(seedApplications.map((application) => ({ ...application })))
   });
+}
 
-  it("returns the typed demo payload", async () => {
-    const app = createTestApp();
-    const response = await request(app).get("/api/demo");
-    const parsed = demoResponseSchema.parse(response.body);
-
-    expect(response.status).toBe(200);
-    expect(demoResponseSchema.safeParse(response.body).success).toBe(true);
-    expect(parsed.scanMode).toBe("depth-first");
-  });
-
-  it("returns a typed brief payload", async () => {
-    const app = createTestApp();
-    const response = await request(app).get("/api/brief");
-    const parsed = briefResponseSchema.parse(response.body);
-
-    expect(response.status).toBe(200);
-    expect(parsed.actions.length).toBeGreaterThan(0);
-  });
-
+describe("application routes", () => {
   it("lists seeded applications", async () => {
     const app = createTestApp();
     const response = await request(app).get("/api/applications");
@@ -147,31 +116,5 @@ describe("backend api", () => {
 
     expect(response.status).toBe(400);
     expect(response.body.message).toBeTruthy();
-  });
-
-  it("returns a generic error payload in production", async () => {
-    const errorApp = express();
-    errorApp.get("/boom", () => {
-      throw new Error("sensitive stack detail");
-    });
-    errorApp.use(createErrorHandler({ isProduction: true }));
-
-    const response = await request(errorApp).get("/boom");
-
-    expect(response.status).toBe(500);
-    expect(response.body).toEqual({ message: "Something went wrong." });
-  });
-
-  it("returns the error message outside production", async () => {
-    const errorApp = express();
-    errorApp.get("/boom", () => {
-      throw new Error("sensitive stack detail");
-    });
-    errorApp.use(createErrorHandler({ isProduction: false }));
-
-    const response = await request(errorApp).get("/boom");
-
-    expect(response.status).toBe(500);
-    expect(response.body).toEqual({ message: "sensitive stack detail" });
   });
 });

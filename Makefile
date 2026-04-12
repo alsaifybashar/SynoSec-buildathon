@@ -28,6 +28,7 @@ docker-logs:
 	docker compose logs -f
 
 dev:
+	$(MAKE) database
 	pnpm dev
 
 database:
