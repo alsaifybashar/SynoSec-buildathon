@@ -237,7 +237,7 @@ export function ListPage<T extends { id: string }>({
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   {columns.map((column) => (
-                    <TableHead key={column.id} className={cn("border-b-2 border-b-primary/15 border-t-2 border-t-primary/15 bg-muted/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground", column.className)}>
+                    <TableHead key={column.id} className={cn("border-b border-b-primary/10 border-t border-t-primary/10 bg-muted/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground", column.className)}>
                       {column.header}
                     </TableHead>
                   ))}
@@ -274,7 +274,7 @@ export function ListPage<T extends { id: string }>({
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   {columns.map((column) => (
-                    <TableHead key={column.id} className={cn("border-b-2 border-b-primary/15 border-t-2 border-t-primary/15 bg-muted/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground", column.className)}>
+                    <TableHead key={column.id} className={cn("border-b border-b-primary/10 border-t border-t-primary/10 bg-muted/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground", column.className)}>
                       <button className="group/sort inline-flex items-center gap-2 font-semibold" type="button" onClick={() => toggleSort(column.id)}>
                         {column.header}
                         {sortColumn === column.id ? (
