@@ -11,7 +11,7 @@ type SidebarContextValue = {
 
 const SidebarContext = createContext<SidebarContextValue | null>(null);
 
-function useSidebar() {
+export function useSidebar() {
   const context = useContext(SidebarContext);
   if (!context) {
     throw new Error("Sidebar components must be used inside SidebarProvider.");

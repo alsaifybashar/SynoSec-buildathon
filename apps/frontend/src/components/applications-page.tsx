@@ -317,7 +317,7 @@ export function ApplicationsPage({
 
       <DetailField label="Environment" required hint="Choose the environment that best reflects how this application is currently operated.">
         <Select value={formValues.environment} onValueChange={(value: ApplicationEnvironment) => handleFieldChange("environment", value)}>
-          <SelectTrigger aria-label="Environment" className="ml-auto w-fit min-w-[11rem] max-w-full">
+          <SelectTrigger aria-label="Environment" className="w-fit min-w-[10rem] max-w-[12rem]">
             <SelectValue placeholder="Select environment" />
           </SelectTrigger>
           <SelectContent>
@@ -332,7 +332,7 @@ export function ApplicationsPage({
 
       <DetailField label="Status" required hint="Use status to reflect whether the application is active, under investigation, or archived.">
         <Select value={formValues.status} onValueChange={(value: ApplicationStatus) => handleFieldChange("status", value)}>
-          <SelectTrigger aria-label="Status" className="ml-auto w-fit min-w-[11rem] max-w-full">
+          <SelectTrigger aria-label="Status" className="w-fit min-w-[10rem] max-w-[12rem]">
             <SelectValue placeholder="Select status" />
           </SelectTrigger>
           <SelectContent>

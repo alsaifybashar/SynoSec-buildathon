@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AppWindow,
   ClipboardList,
+  Palette,
   FileText,
   LayoutDashboard,
   List,
@@ -23,7 +24,18 @@ import { ListPage, type ListPageColumn, type ListPageFilter } from "./components
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
-import { Sidebar, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuItem, SidebarMenuText, SidebarProvider, SidebarTrigger } from "./components/ui/sidebar";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuText,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar
+} from "./components/ui/sidebar";
 import { Skeleton } from "./components/ui/skeleton";
 import { Toaster } from "./components/ui/toaster";
 import { Display, Lead } from "./components/ui/typography";
@@ -61,6 +73,8 @@ type WorkflowRecord = {
   state: "active" | "paused" | "draft";
   runs: number;
 };
+
+type ThemeId = "light" | "dark" | "synosec" | "amber";
 
 type StaticDetailFieldConfig<TValues> = {
   key: keyof TValues;
@@ -195,6 +209,24 @@ const workflowFieldConfig: StaticDetailFieldConfig<WorkflowRecord>[] = [
   { key: "runs", label: "Runs", required: true, type: "number", hint: "Keep the total run count aligned with the latest execution history." }
 ];
 
+const themeStorageKey = "synosec-theme";
+
+const themes: Array<{ id: ThemeId; label: string }> = [
+  { id: "light", label: "Light" },
+  { id: "dark", label: "Dark" },
+  { id: "synosec", label: "SynoSec" },
+  { id: "amber", label: "Amber Grid" }
+];
+
+function isThemeId(value: string): value is ThemeId {
+  return themes.some((theme) => theme.id === value);
+}
+
+function getInitialTheme(): ThemeId {
+  const storedTheme = window.localStorage.getItem(themeStorageKey);
+  return storedTheme && isThemeId(storedTheme) ? storedTheme : "light";
+}
+
 function delay<T>(value: T, ms = 250): Promise<T> {
   return new Promise((resolve) => {
     window.setTimeout(() => resolve(value), ms);
@@ -310,7 +342,7 @@ function StaticDetailPage<TRecord extends { id: string } & Record<string, string
         >
           {field.options ? (
             <Select value={formValues[field.key]} onValueChange={(value) => handleFieldChange(field.key, value)}>
-              <SelectTrigger aria-label={field.label} className="ml-auto w-fit min-w-[11rem] max-w-full">
+              <SelectTrigger aria-label={field.label} className="w-fit min-w-[10rem] max-w-[12rem]">
                 <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
               </SelectTrigger>
               <SelectContent>
@@ -559,7 +591,7 @@ function ScansPage({ activeScanId, onScanSelected }: ScanPageProps) {
   }
 
   return (
-    <div className="space-y-6 p-6 md:p-8">
+    <div className="scan-console min-h-full space-y-6 p-6 md:p-8">
       <div className="flex flex-col gap-4 rounded-[2rem] border border-border bg-card/80 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -609,10 +641,52 @@ function ScansPage({ activeScanId, onScanSelected }: ScanPageProps) {
   );
 }
 
+function ThemeSwitcher({ value, onValueChange }: { value: ThemeId; onValueChange: (theme: ThemeId) => void }) {
+  const { collapsed } = useSidebar();
+
+  if (collapsed) {
+    return (
+      <Select value={value} onValueChange={(nextValue) => onValueChange(nextValue as ThemeId)}>
+        <SelectTrigger aria-label="Select theme" className="h-10 w-10 rounded-xl border-border bg-background/80 px-0">
+          <span className="flex w-full items-center justify-center">
+            <Palette className="h-4 w-4" />
+          </span>
+        </SelectTrigger>
+        <SelectContent align="end">
+          {themes.map((theme) => (
+            <SelectItem key={theme.id} value={theme.id}>
+              {theme.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <SidebarGroupLabel>Theme</SidebarGroupLabel>
+      <Select value={value} onValueChange={(nextValue) => onValueChange(nextValue as ThemeId)}>
+        <SelectTrigger aria-label="Select theme" className="h-11 rounded-xl border-border bg-background/80">
+          <SelectValue placeholder="Select theme" />
+        </SelectTrigger>
+        <SelectContent align="end">
+          {themes.map((theme) => (
+            <SelectItem key={theme.id} value={theme.id}>
+              {theme.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 export default function App() {
   const [route, setRoute] = useState<AppRoute>(() => getRouteFromPath(window.location.pathname));
   const [loadingBrief, setLoadingBrief] = useState(false);
   const [activeScanId, setActiveScanId] = useState<string | null>(route.section === "scans" ? route.detailId ?? null : null);
+  const [theme, setTheme] = useState<ThemeId>(() => getInitialTheme());
 
   useEffect(() => {
     const syncFromLocation = () => {
@@ -632,6 +706,11 @@ export default function App() {
       setActiveScanId(route.detailId ?? null);
     }
   }, [route.detailId, route.section]);
+
+  useEffect(() => {
+    document.documentElement.dataset["theme"] = theme;
+    window.localStorage.setItem(themeStorageKey, theme);
+  }, [theme]);
 
   async function handleBackendButtonClick() {
     setLoadingBrief(true);
@@ -767,8 +846,8 @@ export default function App() {
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.12),_transparent_30%),linear-gradient(180deg,_#f8fafc_0%,_#eef2ff_48%,_#f8fafc_100%)] text-foreground">
-        <Sidebar className="border-r border-border/80 bg-white/70">
+      <div className="flex min-h-screen text-foreground" style={{ backgroundImage: "var(--app-shell-background)" }}>
+        <Sidebar className="border-r border-border/80 bg-card/70">
           <div className="flex h-full flex-col px-4 py-6">
             <div className="relative px-2 py-2 text-center">
               <p className="font-['Space_Grotesk'] text-[1.75rem] font-bold tracking-[-0.04em] text-foreground">SynoSec</p>
@@ -797,8 +876,11 @@ export default function App() {
               </SidebarGroup>
             </SidebarContent>
 
-            <div className="mt-6 flex justify-center border-t border-border pt-4">
-              <SidebarTrigger />
+            <div className="mt-6 space-y-4 border-t border-border pt-4">
+              <ThemeSwitcher value={theme} onValueChange={setTheme} />
+              <div className="flex justify-center">
+                <SidebarTrigger />
+              </div>
             </div>
           </div>
         </Sidebar>
