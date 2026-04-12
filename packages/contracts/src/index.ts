@@ -501,6 +501,9 @@ export const defensiveIterationObservationSchema = z.object({
 });
 export type DefensiveIterationObservation = z.infer<typeof defensiveIterationObservationSchema>;
 
+export const defensiveIssueDispositionSchema = z.enum(["fixed", "mitigated", "unverified", "skipped"]);
+export type DefensiveIssueDisposition = z.infer<typeof defensiveIssueDispositionSchema>;
+
 export const defensiveIterationInputSchema = z.object({
   findings: z.array(defensiveIterationFindingSchema).min(1),
   target: defensiveTargetIdentitySchema,
@@ -558,6 +561,13 @@ export const defensiveNextStepSchema = z.object({
 });
 export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
 
+export const defensiveFinalOutcomeSchema = z.object({
+  status: z.enum(["fixed", "mitigated", "blocked"]),
+  summary: z.string().min(1),
+  changeApplied: z.boolean()
+});
+export type DefensiveFinalOutcome = z.infer<typeof defensiveFinalOutcomeSchema>;
+
 export const defensiveMitigationChangeSchema = z.object({
   summary: z.string().min(1),
   scopeRef: z.string().min(1),
@@ -587,6 +597,30 @@ export type DefensiveExecutionRequest = z.infer<typeof defensiveExecutionRequest
 
 export const defensivePrioritizationSourceKindSchema = z.enum(["finding", "observation"]);
 export type DefensivePrioritizationSourceKind = z.infer<typeof defensivePrioritizationSourceKindSchema>;
+
+export const defensiveIssueOutcomeSchema = z.object({
+  sourceId: z.string().min(1),
+  sourceKind: defensivePrioritizationSourceKindSchema,
+  title: z.string().min(1),
+  severity: severitySchema,
+  disposition: defensiveIssueDispositionSchema,
+  summary: z.string().min(1),
+  evidenceRefs: z.array(z.string().min(1)).default([]),
+  carryForward: z.boolean()
+});
+export type DefensiveIssueOutcome = z.infer<typeof defensiveIssueOutcomeSchema>;
+
+export const defensiveCarryForwardStateSchema = z.object({
+  iterationId: z.string().min(1),
+  summary: z.string().min(1),
+  target: defensiveTargetIdentitySchema,
+  assetContext: defensiveAssetContextSchema,
+  resolvedIssues: z.array(defensiveIssueOutcomeSchema).default([]),
+  outstandingIssues: z.array(defensiveIssueOutcomeSchema).default([]),
+  residualRisk: defensiveResidualRiskSchema,
+  recommendedNextStep: defensiveNextStepSchema
+});
+export type DefensiveCarryForwardState = z.infer<typeof defensiveCarryForwardStateSchema>;
 
 export const defensivePrioritizationInputSchema = z
   .object({
@@ -996,12 +1030,167 @@ const buildCompletedNextStep = (prioritization: DefensivePrioritization): Defens
   });
 };
 
+const buildIssueOutcomes = (
+  input: DefensiveIterationInput,
+  observations: DefensiveIterationObservation[],
+  prioritization: DefensivePrioritization,
+  evidence: DefensiveEvidenceArtifact[],
+  outcome: "completed" | "blocked",
+  failure?: DefensiveFailureState
+): DefensiveIssueOutcome[] => {
+  const sourceIndex = new Map<string, DefensivePrioritizationSource>(
+    [
+      ...input.findings.map((finding) => ({ ...finding, kind: "finding" as const })),
+      ...observations.map((observation) => ({ ...observation, kind: "observation" as const }))
+    ].map((source) => [`${source.kind}:${source.id}`, source])
+  );
+  const followUpKeys = new Set(prioritization.followUp.map((item) => `${item.sourceKind}:${item.sourceId}`));
+  const selectedKeys = new Set(
+    prioritization.selectedAction.sourceIds.map((sourceId, index) => {
+      const sourceKind = prioritization.selectedAction.sourceKinds[index] ?? prioritization.selectedAction.sourceKinds[0];
+      return `${sourceKind}:${sourceId}`;
+    })
+  );
+  const evidenceRefs = evidence
+    .map((artifact) => artifact.reference)
+    .filter((reference): reference is string => typeof reference === "string" && reference.length > 0);
+
+  return Array.from(sourceIndex.entries())
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([, source]) => {
+      const sourceKey = `${source.kind}:${source.id}`;
+
+      if (followUpKeys.has(sourceKey)) {
+        return defensiveIssueOutcomeSchema.parse({
+          sourceId: source.id,
+          sourceKind: source.kind,
+          title: source.title,
+          severity: source.severity,
+          disposition: "unverified",
+          summary: "Moved to follow-up because the evidence is not strong enough to support a confirmed remediation claim in this iteration.",
+          evidenceRefs,
+          carryForward: true
+        });
+      }
+
+      if (selectedKeys.has(sourceKey)) {
+        if (outcome === "completed") {
+          const disposition = prioritization.selectedAction.action.type === "patch" ? "fixed" : "mitigated";
+
+          return defensiveIssueOutcomeSchema.parse({
+            sourceId: source.id,
+            sourceKind: source.kind,
+            title: source.title,
+            severity: source.severity,
+            disposition,
+            summary: disposition === "fixed"
+              ? "The selected bounded change removed the issue and verification evidence supports closing it for this iteration."
+              : "The selected bounded change reduced the issue exposure, but some residual risk may remain for a later iteration.",
+            evidenceRefs,
+            carryForward: disposition !== "fixed"
+          });
+        }
+
+        const disposition = failure?.reason === "ambiguous_scope"
+          && prioritization.selectedAction.confidenceDisposition !== "confirmed_risk"
+          ? "unverified"
+          : "skipped";
+
+        return defensiveIssueOutcomeSchema.parse({
+          sourceId: source.id,
+          sourceKind: source.kind,
+          title: source.title,
+          severity: source.severity,
+          disposition,
+          summary: disposition === "unverified"
+            ? "Autonomous mitigation was blocked because the evidence was not strong enough to confirm the issue safely."
+            : "The issue was intentionally skipped for this iteration because the proposed action could not be executed safely within the bounded scope.",
+          evidenceRefs,
+          carryForward: true
+        });
+      }
+
+      return defensiveIssueOutcomeSchema.parse({
+        sourceId: source.id,
+        sourceKind: source.kind,
+        title: source.title,
+        severity: source.severity,
+        disposition: "skipped",
+        summary: "The issue was intentionally left for a later iteration because another action ranked higher for immediate risk reduction.",
+        evidenceRefs,
+        carryForward: true
+      });
+    });
+};
+
+const buildCarryForwardState = (
+  iterationId: string,
+  input: DefensiveIterationInput,
+  issueOutcomes: DefensiveIssueOutcome[],
+  residualRisk: DefensiveResidualRisk,
+  recommendedNextStep: DefensiveNextStep
+): DefensiveCarryForwardState =>
+  defensiveCarryForwardStateSchema.parse({
+    iterationId,
+    summary: `${issueOutcomes.filter((issue) => issue.disposition === "fixed" || issue.disposition === "mitigated").length} issue(s) changed state and ${issueOutcomes.filter((issue) => issue.carryForward).length} item(s) carry forward into the next iteration.`,
+    target: input.target,
+    assetContext: input.assetContext,
+    resolvedIssues: issueOutcomes.filter((issue) => !issue.carryForward),
+    outstandingIssues: issueOutcomes.filter((issue) => issue.carryForward),
+    residualRisk,
+    recommendedNextStep
+  });
+
+const buildFinalOutcome = (
+  selectedAction: DefensiveChosenAction,
+  verificationSummary: string,
+  status: "completed" | "blocked"
+): DefensiveFinalOutcome =>
+  defensiveFinalOutcomeSchema.parse({
+    status: status === "blocked"
+      ? "blocked"
+      : selectedAction.type === "patch"
+        ? "fixed"
+        : "mitigated",
+    summary: verificationSummary,
+    changeApplied: status === "completed"
+  });
+
 const blockDefensiveIteration = (
   request: DefensiveExecutionRequest,
   prioritization: DefensivePrioritization,
   failure: DefensiveFailureState
 ): DefensiveIterationRecord => {
   const selectedAction = prioritization.selectedAction.action;
+  const residualRisk = defensiveResidualRiskSchema.parse({
+    level: request.input.findings
+      .map((finding) => finding.severity)
+      .sort((left, right) => severityOrder[right] - severityOrder[left])[0] ?? "info",
+    summary: "The hardening iteration was blocked, so the selected risk remains in place until scope or evidence improves.",
+    remainingFindingIds: prioritization.selectedAction.sourceIds,
+    needsHumanReview: true
+  });
+  const recommendedNextStep = defensiveNextStepSchema.parse({
+    summary: failure.operatorAction,
+    rationale: failure.summary,
+    continueLoop: false
+  });
+  const issueOutcomes = buildIssueOutcomes(
+    request.input,
+    request.observations,
+    prioritization,
+    request.evidence,
+    "blocked",
+    failure
+  );
+  const finalOutcome = buildFinalOutcome(selectedAction, failure.summary, "blocked");
+  const carryForward = buildCarryForwardState(
+    request.iterationId,
+    request.input,
+    issueOutcomes,
+    residualRisk,
+    recommendedNextStep
+  );
 
   return defensiveIterationRecordSchema.parse({
     iterationId: request.iterationId,
@@ -1016,19 +1205,11 @@ const blockDefensiveIteration = (
       checks: request.verificationPlan.checks
     },
     evidence: request.evidence,
-    residualRisk: {
-      level: request.input.findings
-        .map((finding) => finding.severity)
-        .sort((left, right) => severityOrder[right] - severityOrder[left])[0] ?? "info",
-      summary: "The hardening iteration was blocked, so the selected risk remains in place until scope or evidence improves.",
-      remainingFindingIds: prioritization.selectedAction.sourceIds,
-      needsHumanReview: true
-    },
-    recommendedNextStep: {
-      summary: failure.operatorAction,
-      rationale: failure.summary,
-      continueLoop: false
-    },
+    finalOutcome,
+    issueOutcomes,
+    residualRisk,
+    recommendedNextStep,
+    carryForward,
     handoffSummary: `${failure.summary} No change was applied.`,
     failure
   });
@@ -1195,6 +1376,21 @@ export const executeDefensiveIteration = (
 
   const residualRisk = deriveCompletionResidualRisk(prioritization, request.input);
   const recommendedNextStep = buildCompletedNextStep(prioritization);
+  const issueOutcomes = buildIssueOutcomes(
+    request.input,
+    request.observations,
+    prioritization,
+    request.evidence,
+    "completed"
+  );
+  const finalOutcome = buildFinalOutcome(selectedAction, request.outcomeSummary, "completed");
+  const carryForward = buildCarryForwardState(
+    request.iterationId,
+    request.input,
+    issueOutcomes,
+    residualRisk,
+    recommendedNextStep
+  );
 
   return defensiveIterationRecordSchema.parse({
     iterationId: request.iterationId,
@@ -1209,8 +1405,11 @@ export const executeDefensiveIteration = (
       checks: request.verificationPlan.checks
     },
     evidence: request.evidence,
+    finalOutcome,
+    issueOutcomes,
     residualRisk,
     recommendedNextStep,
+    carryForward,
     handoffSummary: `${request.change.summary} completed. ${recommendedNextStep.summary}`
   });
 };
@@ -1243,8 +1442,11 @@ export const defensiveIterationRecordSchema = z
     chosenAction: defensiveChosenActionSchema,
     verification: defensiveVerificationSchema,
     evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
+    finalOutcome: defensiveFinalOutcomeSchema,
+    issueOutcomes: z.array(defensiveIssueOutcomeSchema).min(1),
     residualRisk: defensiveResidualRiskSchema,
     recommendedNextStep: defensiveNextStepSchema,
+    carryForward: defensiveCarryForwardStateSchema,
     handoffSummary: z.string().min(1),
     failure: defensiveFailureStateSchema.optional()
   })
@@ -1275,6 +1477,14 @@ export const defensiveIterationRecordSchema = z
         code: z.ZodIssueCode.custom,
         message: "Chosen action must match the prioritization-selected action.",
         path: ["chosenAction"]
+      });
+    }
+
+    if (value.carryForward.iterationId !== value.iterationId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Carry-forward state must reference the current iteration.",
+        path: ["carryForward", "iterationId"]
       });
     }
   });

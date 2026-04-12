@@ -64,7 +64,18 @@ The loop blocks instead of executing when:
 - the proposed change does not match the selected mitigation scope
 - verification evidence is missing, so the loop cannot claim success
 
-When execution succeeds, the record explains the exact mitigation that landed, the verification checks that passed, the residual risk, and the next bounded step. When execution is blocked, the record preserves the failure reason and states clearly that no change was applied.
+When execution succeeds, the record explains the exact mitigation that landed, the verification checks that passed, the residual risk, the per-issue outcome (`fixed`, `mitigated`, `unverified`, or `skipped`), and the next bounded step. When execution is blocked, the record preserves the failure reason, marks which issues were intentionally skipped or still unverified, and states clearly that no change was applied.
+
+## Recorded iteration state
+
+The record stage now preserves enough structure for the next iteration to start without rebuilding context by hand:
+
+- `input.findings`: the source findings that justified the iteration.
+- `chosenAction`: the selected bounded mitigation and its safety checks.
+- `evidence`: reviewable source, change, and verification artifacts.
+- `finalOutcome`: whether the iteration ended as `fixed`, `mitigated`, or `blocked`.
+- `issueOutcomes`: one entry per finding or observation showing whether it was `fixed`, `mitigated`, `unverified`, or intentionally `skipped`.
+- `carryForward`: the next-iteration seed, including the target, asset context, resolved issues, outstanding issues, residual risk, and recommended next step.
 
 ## Failure states
 

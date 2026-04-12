@@ -242,6 +242,23 @@ describe("contracts", () => {
           reference: "probe-log-2026-04-13"
         }
       ],
+      finalOutcome: {
+        status: "mitigated",
+        summary: "The route no longer responds from an untrusted source and still works from approved IP space.",
+        changeApplied: true
+      },
+      issueOutcomes: [
+        {
+          sourceId: "finding-1",
+          sourceKind: "finding",
+          title: "Public admin endpoint exposed",
+          severity: "high",
+          disposition: "mitigated",
+          summary: "The selected bounded change reduced the issue exposure, but some residual risk may remain for a later iteration.",
+          evidenceRefs: ["git diff apps/infra/admin-ingress.yaml", "probe-log-2026-04-13"],
+          carryForward: true
+        }
+      ],
       residualRisk: {
         level: "medium",
         summary: "Exposure is reduced, but admin authentication hardening still needs review.",
@@ -252,6 +269,49 @@ describe("contracts", () => {
         summary: "Review privileged admin authentication flows next.",
         rationale: "The highest remaining risk is credential misuse rather than internet exposure.",
         continueLoop: true
+      },
+      carryForward: {
+        iterationId: "iter-001",
+        summary: "1 issue(s) changed state and 1 item(s) carry forward into the next iteration.",
+        target: {
+          kind: "service",
+          id: "svc-admin-api",
+          displayName: "Admin API",
+          environment: "production",
+          locator: "admin-api.prod.internal"
+        },
+        assetContext: {
+          assetId: "asset-1",
+          assetName: "Admin API",
+          criticality: "critical",
+          internetExposed: true,
+          containsSensitiveData: true,
+          notes: ["Production admin surface"]
+        },
+        resolvedIssues: [],
+        outstandingIssues: [
+          {
+            sourceId: "finding-1",
+            sourceKind: "finding",
+            title: "Public admin endpoint exposed",
+            severity: "high",
+            disposition: "mitigated",
+            summary: "The selected bounded change reduced the issue exposure, but some residual risk may remain for a later iteration.",
+            evidenceRefs: ["git diff apps/infra/admin-ingress.yaml", "probe-log-2026-04-13"],
+            carryForward: true
+          }
+        ],
+        residualRisk: {
+          level: "medium",
+          summary: "Exposure is reduced, but admin authentication hardening still needs review.",
+          remainingFindingIds: ["finding-auth-1"],
+          needsHumanReview: false
+        },
+        recommendedNextStep: {
+          summary: "Review privileged admin authentication flows next.",
+          rationale: "The highest remaining risk is credential misuse rather than internet exposure.",
+          continueLoop: true
+        }
       },
       handoffSummary: "Ingress is restricted and the next iteration should focus on admin authentication hardening."
     });
@@ -414,6 +474,23 @@ describe("contracts", () => {
           summary: "The current report does not provide enough proof to act."
         }
       ],
+      finalOutcome: {
+        status: "blocked",
+        summary: "Execution was blocked before verification.",
+        changeApplied: false
+      },
+      issueOutcomes: [
+        {
+          sourceId: "finding-2",
+          sourceKind: "finding",
+          title: "Suspicious privileged path",
+          severity: "high",
+          disposition: "unverified",
+          summary: "Autonomous mitigation was blocked because the evidence was not strong enough to confirm the issue safely.",
+          evidenceRefs: [],
+          carryForward: true
+        }
+      ],
       residualRisk: {
         level: "high",
         summary: "The suspected issue remains unresolved pending stronger evidence.",
@@ -424,6 +501,47 @@ describe("contracts", () => {
         summary: "Reproduce the finding with stronger evidence before any change.",
         rationale: "The scope and exploitability are still ambiguous.",
         continueLoop: false
+      },
+      carryForward: {
+        iterationId: "iter-002",
+        summary: "0 issue(s) changed state and 1 item(s) carry forward into the next iteration.",
+        target: {
+          kind: "application",
+          id: "app-1",
+          displayName: "Operator Portal"
+        },
+        assetContext: {
+          assetId: "asset-2",
+          assetName: "Operator Portal",
+          criticality: "high",
+          internetExposed: true,
+          containsSensitiveData: false,
+          notes: []
+        },
+        resolvedIssues: [],
+        outstandingIssues: [
+          {
+            sourceId: "finding-2",
+            sourceKind: "finding",
+            title: "Suspicious privileged path",
+            severity: "high",
+            disposition: "unverified",
+            summary: "Autonomous mitigation was blocked because the evidence was not strong enough to confirm the issue safely.",
+            evidenceRefs: [],
+            carryForward: true
+          }
+        ],
+        residualRisk: {
+          level: "high",
+          summary: "The suspected issue remains unresolved pending stronger evidence.",
+          remainingFindingIds: ["finding-2"],
+          needsHumanReview: true
+        },
+        recommendedNextStep: {
+          summary: "Reproduce the finding with stronger evidence before any change.",
+          rationale: "The scope and exploitability are still ambiguous.",
+          continueLoop: false
+        }
       },
       handoffSummary: "Pause autonomous action until the finding can be reproduced."
     });
@@ -493,9 +611,96 @@ describe("contracts", () => {
     expect(result.status).toBe("completed");
     expect(result.verification.outcome).toBe("verified");
     expect(result.chosenAction.type).toBe("access_restriction");
+    expect(result.finalOutcome.status).toBe("mitigated");
     expect(result.evidence).toHaveLength(2);
+    expect(result.issueOutcomes[0]?.disposition).toBe("mitigated");
+    expect(result.carryForward.outstandingIssues[0]?.sourceId).toBe("finding-1");
     expect(result.recommendedNextStep.continueLoop).toBe(true);
     expect(result.handoffSummary).toContain("completed");
+  });
+
+  it("records fixed, mitigated, unverified, and skipped issue outcomes for future iterations", () => {
+    const result = executeDefensiveIteration({
+      iterationId: "iter-003b",
+      input: {
+        findings: [
+          {
+            id: "finding-patch-1",
+            title: "Outdated OpenSSL package",
+            severity: "critical",
+            confidence: 0.97,
+            summary: "The runtime image ships an OpenSSL package with a published fix available.",
+            evidence: "Package inventory and CVE review confirm the vulnerable version.",
+            source: "package-audit"
+          },
+          {
+            id: "finding-skip-1",
+            title: "Public admin endpoint exposed",
+            severity: "high",
+            confidence: 0.91,
+            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
+            evidence: "Ingress policy and probe output show the route is publicly reachable.",
+            source: "manual-review"
+          }
+        ],
+        target: {
+          kind: "runtime",
+          id: "runtime-api",
+          displayName: "API Runtime",
+          environment: "production",
+          locator: "api.prod.internal"
+        },
+        assetContext: {
+          assetId: "asset-runtime-1",
+          assetName: "API Runtime",
+          criticality: "critical",
+          internetExposed: true,
+          containsSensitiveData: true,
+          notes: ["Production runtime"]
+        }
+      },
+      observations: [
+        {
+          id: "obs-verify-1",
+          title: "Possible debug endpoint",
+          severity: "medium",
+          confidence: 0.62,
+          summary: "A debug route may still be exposed.",
+          evidence: "Single unverified report from an earlier probe.",
+          source: "scanner"
+        }
+      ],
+      change: {
+        summary: "Updated the runtime image to the patched OpenSSL version.",
+        scopeRef: "api-runtime container image version",
+        rolloutRef: "git diff deploy/runtime-api.yaml",
+        reversibleIntent: true,
+        affectsMultipleComponents: false,
+        destructive: false
+      },
+      verificationPlan: {
+        successCriteria: "The patched package version is deployed and the vulnerable version is no longer present.",
+        checks: ["Inspect deployed image digest", "Verify package inventory shows the patched version"]
+      },
+      evidence: [
+        {
+          type: "config_diff",
+          summary: "Deployment manifest now references the patched runtime image.",
+          reference: "git diff deploy/runtime-api.yaml"
+        },
+        {
+          type: "test_result",
+          summary: "Package inventory confirms the vulnerable OpenSSL version is gone.",
+          reference: "inventory-check-2026-04-13"
+        }
+      ],
+      outcomeSummary: "The runtime image was patched in one place and verification confirmed the vulnerable package version was removed."
+    });
+
+    expect(result.finalOutcome.status).toBe("fixed");
+    expect(result.issueOutcomes.map((issue) => issue.disposition)).toEqual(["fixed", "skipped", "unverified"]);
+    expect(result.carryForward.resolvedIssues[0]?.sourceId).toBe("finding-patch-1");
+    expect(result.carryForward.outstandingIssues.map((issue) => issue.sourceId)).toEqual(["finding-skip-1", "obs-verify-1"]);
   });
 
   it("blocks an unsafe change that broadens beyond one reversible mitigation", () => {
@@ -555,6 +760,8 @@ describe("contracts", () => {
     expect(result.status).toBe("blocked");
     expect(result.failure?.reason).toBe("unsafe_action");
     expect(result.verification.outcome).toBe("blocked");
+    expect(result.finalOutcome.status).toBe("blocked");
+    expect(result.issueOutcomes[0]?.disposition).toBe("skipped");
     expect(result.handoffSummary).toContain("No change was applied");
   });
 
@@ -612,6 +819,8 @@ describe("contracts", () => {
 
     expect(result.status).toBe("blocked");
     expect(result.failure?.reason).toBe("ambiguous_scope");
+    expect(result.issueOutcomes[0]?.disposition).toBe("unverified");
+    expect(result.carryForward.outstandingIssues[0]?.sourceId).toBe("finding-2");
     expect(result.recommendedNextStep.summary).toContain("stronger evidence");
   });
 });
