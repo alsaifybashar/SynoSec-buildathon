@@ -24,17 +24,15 @@ const DEPTH_OPTIONS = [1, 2, 3, 4, 5];
 const DURATION_OPTIONS = [5, 10, 15, 30];
 
 export function ScanConfig({ onScanStarted }: ScanConfigProps) {
-  const [targetsText, setTargetsText] = useState("synosec-target");
+  const [targetsText, setTargetsText] = useState("");
   const [layers, setLayers] = useState<Set<OsiLayer>>(new Set(["L3", "L4", "L5", "L6", "L7"]));
   const [maxDepth, setMaxDepth] = useState(3);
   const [maxDuration, setMaxDuration] = useState(10);
   const [allowActiveExploits, setAllowActiveExploits] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isStarting, setIsStarting] = useState(false);
-  const [isSeeding, setIsSeeding] = useState(false);
 
   const QUICK_TARGETS = [
-    { label: "Local Demo", value: "synosec-target" },
     { label: "Localhost:3000", value: "host.docker.internal:3000" },
     { label: "Localhost", value: "host.docker.internal" },
     { label: "192.168.1.0/24", value: "192.168.1.0/24" },
@@ -57,10 +55,10 @@ export function ScanConfig({ onScanStarted }: ScanConfigProps) {
       .filter(Boolean);
 
     if (targets.length === 0) {
-      newErrors.targets = "At least one target is required";
+      newErrors["targets"] = "At least one target is required";
     }
     if (layers.size === 0) {
-      newErrors.layers = "Select at least one layer";
+      newErrors["layers"] = "Select at least one layer";
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -104,24 +102,6 @@ export function ScanConfig({ onScanStarted }: ScanConfigProps) {
     }
   }
 
-  async function handleLoadDemo() {
-    setIsSeeding(true);
-    try {
-      const res = await fetch("/api/scan/seed", { method: "POST" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { scanId?: string; id?: string };
-      const scanId = data.scanId ?? data.id ?? "";
-      if (!scanId) throw new Error("No scan ID in response");
-      toast.success("Demo scan loaded", { description: `Scan ID: ${scanId}` });
-      onScanStarted(scanId);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      toast.error("Failed to load demo", { description: msg });
-    } finally {
-      setIsSeeding(false);
-    }
-  }
-
   return (
     <div className="mx-auto max-w-2xl space-y-8">
       {/* Header */}
@@ -157,13 +137,13 @@ export function ScanConfig({ onScanStarted }: ScanConfigProps) {
         <Textarea
           value={targetsText}
           onChange={(e) => setTargetsText(e.target.value)}
-          placeholder={"synosec-target\n192.168.1.0/24\napp.example.com"}
+          placeholder={"192.168.1.0/24\napp.example.com\nstaging.internal.example"}
           rows={4}
           className="resize-none border-gray-700 bg-gray-900 font-mono text-sm text-gray-200 placeholder:text-gray-600 focus:border-green-500 focus:ring-green-500/20"
         />
-        <p className="text-xs text-gray-500">One target per line — IPv4, CIDR ranges, hostnames, or <span className="text-green-500/70">synosec-target</span> for local demo</p>
-        {errors.targets && (
-          <p className="text-xs text-red-400">{errors.targets}</p>
+        <p className="text-xs text-gray-500">One target per line — IPv4, CIDR ranges, or authorized hostnames only.</p>
+        {errors["targets"] && (
+          <p className="text-xs text-red-400">{errors["targets"]}</p>
         )}
       </div>
 
@@ -205,7 +185,7 @@ export function ScanConfig({ onScanStarted }: ScanConfigProps) {
           )}
         </div>
         </TooltipProvider>
-        {errors.layers && <p className="text-xs text-red-400">{errors.layers}</p>}
+        {errors["layers"] && <p className="text-xs text-red-400">{errors["layers"]}</p>}
       </div>
 
       {/* Depth + Duration */}
@@ -264,19 +244,11 @@ export function ScanConfig({ onScanStarted }: ScanConfigProps) {
       <div className="flex gap-3">
         <Button
           onClick={() => void handleStartScan()}
-          disabled={isStarting || isSeeding}
+          disabled={isStarting}
           className="flex-1 bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
         >
           <Zap className="mr-2 h-4 w-4" />
           {isStarting ? "Starting..." : "Start Scan"}
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => void handleLoadDemo()}
-          disabled={isStarting || isSeeding}
-          className="border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white"
-        >
-          {isSeeding ? "Loading..." : "Load Demo"}
         </Button>
       </div>
     </div>

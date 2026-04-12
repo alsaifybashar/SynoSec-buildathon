@@ -3,33 +3,12 @@ import express, { type Express } from "express";
 import {
   apiRoutes,
   briefResponseSchema,
-  demoResponseSchema,
   healthResponseSchema,
   type BriefResponse,
-  type DemoResponse,
   type HealthResponse,
   type WsEvent
 } from "@synosec/contracts";
 import { createScanRouter } from "./routes/scan.js";
-
-const demoResponse: DemoResponse = {
-  scanMode: "depth-first",
-  targetCount: 2,
-  findings: [
-    {
-      id: "finding-ssh-legacy",
-      target: "192.168.10.14",
-      severity: "medium",
-      summary: "Legacy SSH banner exposed with deprecated ciphers enabled."
-    },
-    {
-      id: "finding-cms-version",
-      target: "intranet.synosec.local",
-      severity: "high",
-      summary: "Public version leak maps to a known CMS vulnerability."
-    }
-  ]
-};
 
 function buildBriefResponse(): BriefResponse {
   return {
@@ -57,10 +36,6 @@ export function createApp(broadcast: (event: WsEvent) => void = () => {}): Expre
     };
 
     response.json(healthResponseSchema.parse(payload));
-  });
-
-  app.get(apiRoutes.demo, (_request, response) => {
-    response.json(demoResponseSchema.parse(demoResponse));
   });
 
   app.get(apiRoutes.brief, (_request, response) => {

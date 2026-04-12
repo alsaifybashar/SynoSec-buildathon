@@ -3,8 +3,7 @@ import dotenv from "dotenv";
 import { WebSocket, WebSocketServer } from "ws";
 import type { WsEvent } from "@synosec/contracts";
 import { createApp } from "./app.js";
-import { closeNeo4jDriver, initNeo4jSchema, listScans } from "./db/neo4j.js";
-import { seedDemoScan } from "./seed/demo-data.js";
+import { closeNeo4jDriver, initNeo4jSchema } from "./db/neo4j.js";
 
 dotenv.config({ path: new URL("../../../.env", import.meta.url).pathname });
 
@@ -59,18 +58,6 @@ const port = Number(process.env["BACKEND_PORT"] ?? "3001");
 
 // Initialize Neo4j schema before accepting requests
 await initNeo4jSchema();
-
-// Auto-seed demo data if DB is empty (first-run experience)
-try {
-  const existing = await listScans();
-  if (existing.length === 0) {
-    console.log("No scans found in DB — seeding demo data...");
-    const seedId = await seedDemoScan();
-    console.log(`Demo scan seeded with ID: ${seedId}`);
-  }
-} catch (err: unknown) {
-  console.warn("Auto-seed skipped:", err instanceof Error ? err.message : err);
-}
 
 server.listen(port, () => {
   console.log(`Backend listening on http://localhost:${port}`);

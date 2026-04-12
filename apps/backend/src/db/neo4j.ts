@@ -4,8 +4,11 @@ import type {
   DfsNode,
   Finding,
   NodeStatus,
+  OsiLayer,
   Scan,
-  ScanStatus
+  ScanStatus,
+  ValidationStatus,
+  VulnerabilityChain
 } from "@synosec/contracts";
 
 // ---------------------------------------------------------------------------
@@ -69,6 +72,25 @@ export async function initNeo4jSchema(): Promise<void> {
       await session.run(
         "CREATE INDEX finding_nodeid IF NOT EXISTS FOR (f:Finding) ON (f.nodeId)"
       );
+      // GRACE schema
+      await session.run(
+        "CREATE CONSTRAINT chain_id_unique IF NOT EXISTS FOR (c:VulnerabilityChain) REQUIRE c.id IS UNIQUE"
+      );
+      await session.run(
+        "CREATE CONSTRAINT target_host_unique IF NOT EXISTS FOR (t:Target) REQUIRE t.host IS UNIQUE"
+      );
+      await session.run(
+        "CREATE INDEX finding_severity IF NOT EXISTS FOR (f:Finding) ON (f.severity)"
+      );
+      await session.run(
+        "CREATE INDEX finding_confidence IF NOT EXISTS FOR (f:Finding) ON (f.confidence)"
+      );
+      await session.run(
+        "CREATE INDEX chain_risk IF NOT EXISTS FOR (c:VulnerabilityChain) ON (c.compositeRisk)"
+      );
+      await session.run(
+        "CREATE INDEX dfsnode_depth IF NOT EXISTS FOR (n:DfsNode) ON (n.depth)"
+      );
     });
     console.log("Neo4j schema initialized");
   } catch (err: unknown) {
@@ -118,6 +140,9 @@ function rowToNode(row: Record<string, unknown>): DfsNode {
 }
 
 function rowToFinding(row: Record<string, unknown>): Finding {
+  const evidenceRefsJson = typeof row["evidenceRefsJson"] === "string" ? row["evidenceRefsJson"] : "[]";
+  const sourceToolRunsJson =
+    typeof row["sourceToolRunsJson"] === "string" ? row["sourceToolRunsJson"] : "[]";
   return {
     id: String(row["id"]),
     nodeId: String(row["nodeId"]),
@@ -131,6 +156,14 @@ function rowToFinding(row: Record<string, unknown>): Finding {
     technique: String(row["technique"]),
     ...(row["reproduceCommand"] != null ? { reproduceCommand: String(row["reproduceCommand"]) } : {}),
     validated: row["validated"] === true || row["validated"] === "true",
+    ...(row["validationStatus"] != null
+      ? { validationStatus: String(row["validationStatus"]) as Finding["validationStatus"] }
+      : {}),
+    ...(row["evidenceRefsJson"] != null ? { evidenceRefs: JSON.parse(evidenceRefsJson) as string[] } : {}),
+    ...(row["sourceToolRunsJson"] != null
+      ? { sourceToolRuns: JSON.parse(sourceToolRunsJson) as string[] }
+      : {}),
+    ...(row["confidenceReason"] != null ? { confidenceReason: String(row["confidenceReason"]) } : {}),
     createdAt: String(row["createdAt"])
   };
 }
@@ -322,7 +355,7 @@ export async function getNextPendingNode(
         `MATCH (n:DfsNode {scanId: $scanId, status: 'pending'})
          WHERE n.depth <= $maxDepth
          RETURN n
-         ORDER BY n.riskScore DESC
+         ORDER BY n.depth DESC, n.riskScore DESC
          LIMIT 1`,
         { scanId, maxDepth: neo4j.int(maxDepth) }
       );
@@ -433,6 +466,10 @@ export async function createFinding(finding: Finding): Promise<void> {
           technique: $technique,
           reproduceCommand: $reproduceCommand,
           validated: $validated,
+          validationStatus: $validationStatus,
+          evidenceRefsJson: $evidenceRefsJson,
+          sourceToolRunsJson: $sourceToolRunsJson,
+          confidenceReason: $confidenceReason,
           createdAt: $createdAt
         })`,
         {
@@ -448,6 +485,10 @@ export async function createFinding(finding: Finding): Promise<void> {
           technique: finding.technique,
           reproduceCommand: finding.reproduceCommand ?? null,
           validated: finding.validated,
+          validationStatus: finding.validationStatus ?? null,
+          evidenceRefsJson: JSON.stringify(finding.evidenceRefs ?? []),
+          sourceToolRunsJson: JSON.stringify(finding.sourceToolRuns ?? []),
+          confidenceReason: finding.confidenceReason ?? null,
           createdAt: finding.createdAt
         }
       );
@@ -546,6 +587,284 @@ export async function getAuditForScan(scanId: string): Promise<AuditEntry[]> {
     });
   } catch (err: unknown) {
     console.error("getAuditForScan error:", err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Finding updates
+// ---------------------------------------------------------------------------
+
+export async function updateFindingValidation(
+  findingId: string,
+  validationStatus: ValidationStatus,
+  confidence: number,
+  confidenceReason: string
+): Promise<void> {
+  try {
+    await withSession(async (session) => {
+      await session.run(
+        `MATCH (f:Finding {id: $findingId})
+         SET f.validationStatus = $validationStatus,
+             f.confidence = $confidence,
+             f.confidenceReason = $confidenceReason,
+             f.validated = $validated`,
+        {
+          findingId,
+          validationStatus,
+          confidence,
+          confidenceReason,
+          validated: validationStatus === "cross_validated" || validationStatus === "reproduced"
+        }
+      );
+    });
+  } catch (err: unknown) {
+    console.error("updateFindingValidation error:", err instanceof Error ? err.message : err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GRACE — VulnerabilityChain repo
+// ---------------------------------------------------------------------------
+
+function rowToChain(row: Record<string, unknown>): VulnerabilityChain {
+  const findingIdsJson = typeof row["findingIdsJson"] === "string" ? row["findingIdsJson"] : "[]";
+  const linksJson = typeof row["linksJson"] === "string" ? row["linksJson"] : "[]";
+  return {
+    id: String(row["id"]),
+    scanId: String(row["scanId"]),
+    title: String(row["title"]),
+    compositeRisk: typeof row["compositeRisk"] === "number"
+      ? row["compositeRisk"]
+      : parseFloat(String(row["compositeRisk"])),
+    technique: String(row["technique"]),
+    findingIds: JSON.parse(findingIdsJson) as string[],
+    links: JSON.parse(linksJson) as VulnerabilityChain["links"],
+    startTarget: String(row["startTarget"]),
+    endTarget: String(row["endTarget"]),
+    chainLength: toNumber(row["chainLength"]),
+    confidence: typeof row["confidence"] === "number"
+      ? row["confidence"]
+      : parseFloat(String(row["confidence"])),
+    ...(row["narrative"] != null ? { narrative: String(row["narrative"]) } : {}),
+    createdAt: String(row["createdAt"])
+  };
+}
+
+export async function createVulnerabilityChain(chain: VulnerabilityChain): Promise<void> {
+  try {
+    await withSession(async (session) => {
+      await session.run(
+        `MERGE (c:VulnerabilityChain {id: $id})
+         SET c.scanId = $scanId,
+             c.title = $title,
+             c.compositeRisk = $compositeRisk,
+             c.technique = $technique,
+             c.findingIdsJson = $findingIdsJson,
+             c.linksJson = $linksJson,
+             c.startTarget = $startTarget,
+             c.endTarget = $endTarget,
+             c.chainLength = $chainLength,
+             c.confidence = $confidence,
+             c.narrative = $narrative,
+             c.createdAt = $createdAt`,
+        {
+          id: chain.id,
+          scanId: chain.scanId,
+          title: chain.title,
+          compositeRisk: chain.compositeRisk,
+          technique: chain.technique,
+          findingIdsJson: JSON.stringify(chain.findingIds),
+          linksJson: JSON.stringify(chain.links),
+          startTarget: chain.startTarget,
+          endTarget: chain.endTarget,
+          chainLength: neo4j.int(chain.chainLength),
+          confidence: chain.confidence,
+          narrative: chain.narrative ?? null,
+          createdAt: chain.createdAt
+        }
+      );
+
+      // Link chain to scan
+      await session.run(
+        `MATCH (s:Scan {id: $scanId}), (c:VulnerabilityChain {id: $chainId})
+         MERGE (s)-[:HAS_CHAIN]->(c)`,
+        { scanId: chain.scanId, chainId: chain.id }
+      );
+    });
+  } catch (err: unknown) {
+    console.error("createVulnerabilityChain error:", err instanceof Error ? err.message : err);
+  }
+}
+
+export async function linkFindingsInChain(
+  chainId: string,
+  findingIds: string[]
+): Promise<void> {
+  try {
+    await withSession(async (session) => {
+      for (let i = 0; i < findingIds.length; i++) {
+        const findingId = findingIds[i];
+        if (!findingId) continue;
+        await session.run(
+          `MATCH (c:VulnerabilityChain {id: $chainId}), (f:Finding {id: $findingId})
+           MERGE (c)-[:INCLUDES {order: $order}]->(f)`,
+          { chainId, findingId, order: neo4j.int(i) }
+        );
+        // Create LEADS_TO edges between consecutive findings
+        if (i > 0) {
+          const prevId = findingIds[i - 1];
+          if (prevId) {
+            await session.run(
+              `MATCH (f1:Finding {id: $fromId}), (f2:Finding {id: $toId})
+               MERGE (f1)-[:LEADS_TO {chainId: $chainId}]->(f2)`,
+              { fromId: prevId, toId: findingId, chainId }
+            );
+          }
+        }
+      }
+    });
+  } catch (err: unknown) {
+    console.error("linkFindingsInChain error:", err instanceof Error ? err.message : err);
+  }
+}
+
+export async function getVulnerabilityChains(scanId: string): Promise<VulnerabilityChain[]> {
+  try {
+    return await withSession(async (session) => {
+      const result = await session.run(
+        `MATCH (c:VulnerabilityChain {scanId: $scanId})
+         RETURN c
+         ORDER BY c.compositeRisk DESC`,
+        { scanId }
+      );
+      return result.records.map((r) =>
+        rowToChain(r.get("c").properties as Record<string, unknown>)
+      );
+    });
+  } catch (err: unknown) {
+    console.error("getVulnerabilityChains error:", err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GRACE — DFS node boost + graph queries
+// ---------------------------------------------------------------------------
+
+export async function boostNodeRiskScore(
+  scanId: string,
+  target: string,
+  layer: OsiLayer,
+  boost: number
+): Promise<void> {
+  try {
+    await withSession(async (session) => {
+      await session.run(
+        `MATCH (n:DfsNode {scanId: $scanId, target: $target, layer: $layer, status: 'pending'})
+         SET n.riskScore = CASE
+           WHEN n.riskScore + $boost > 1.0 THEN 1.0
+           ELSE n.riskScore + $boost
+         END`,
+        { scanId, target, layer, boost }
+      );
+    });
+  } catch (err: unknown) {
+    console.error("boostNodeRiskScore error:", err instanceof Error ? err.message : err);
+  }
+}
+
+export async function getAttackSurfaceClusters(
+  scanId: string
+): Promise<Array<{ target: string; totalFindings: number; riskWeight: number }>> {
+  try {
+    return await withSession(async (session) => {
+      const result = await session.run(
+        `MATCH (n:DfsNode {scanId: $scanId})-[:HAS_FINDING]->(f:Finding)
+         RETURN n.target AS target,
+                COUNT(f) AS totalFindings,
+                SUM(CASE
+                  WHEN f.severity = 'critical' THEN 4
+                  WHEN f.severity = 'high' THEN 3
+                  WHEN f.severity = 'medium' THEN 2
+                  WHEN f.severity = 'low' THEN 1
+                  ELSE 0
+                END) AS riskWeight
+         ORDER BY riskWeight DESC
+         LIMIT 5`,
+        { scanId }
+      );
+      return result.records.map((r) => ({
+        target: String(r.get("target")),
+        totalFindings: toNumber(r.get("totalFindings")),
+        riskWeight: toNumber(r.get("riskWeight"))
+      }));
+    });
+  } catch (err: unknown) {
+    console.error("getAttackSurfaceClusters error:", err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
+export async function detectVulnerabilityChains(
+  scanId: string
+): Promise<Array<{ startTarget: string; trigger: string; endTarget: string; impact: string; chainConfidence: number }>> {
+  try {
+    return await withSession(async (session) => {
+      const result = await session.run(
+        `MATCH (n1:DfsNode {scanId: $scanId})-[:DISCOVERED*1..3]->(n2:DfsNode)
+         MATCH (n1)-[:HAS_FINDING]->(f1:Finding)
+         MATCH (n2)-[:HAS_FINDING]->(f2:Finding)
+         WHERE f1.severity IN ['high', 'critical']
+           AND f2.severity IN ['high', 'critical']
+           AND f1.confidence > 0.7
+           AND f2.confidence > 0.7
+           AND n1.id <> n2.id
+         RETURN n1.target AS startTarget,
+                f1.title AS trigger,
+                n2.target AS endTarget,
+                f2.title AS impact,
+                (f1.confidence + f2.confidence) / 2 AS chainConfidence
+         ORDER BY chainConfidence DESC
+         LIMIT 20`,
+        { scanId }
+      );
+      return result.records.map((r) => ({
+        startTarget: String(r.get("startTarget")),
+        trigger: String(r.get("trigger")),
+        endTarget: String(r.get("endTarget")),
+        impact: String(r.get("impact")),
+        chainConfidence: typeof r.get("chainConfidence") === "number"
+          ? r.get("chainConfidence") as number
+          : parseFloat(String(r.get("chainConfidence")))
+      }));
+    });
+  } catch (err: unknown) {
+    console.error("detectVulnerabilityChains error:", err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
+export async function findOrphanedHighRiskFindings(
+  scanId: string
+): Promise<string[]> {
+  try {
+    return await withSession(async (session) => {
+      const result = await session.run(
+        `MATCH (n:DfsNode {scanId: $scanId})-[:HAS_FINDING]->(f:Finding)
+         WHERE f.severity IN ['high', 'critical']
+           AND (f.validationStatus = 'single_source' OR f.validationStatus IS NULL)
+           AND NOT EXISTS {
+             MATCH (n2:DfsNode {scanId: $scanId})-[:HAS_FINDING]->(f2:Finding)
+             WHERE f2.title = f.title AND f2.id <> f.id
+           }
+         RETURN f.id AS findingId`,
+        { scanId }
+      );
+      return result.records.map((r) => String(r.get("findingId")));
+    });
+  } catch (err: unknown) {
+    console.error("findOrphanedHighRiskFindings error:", err instanceof Error ? err.message : err);
     return [];
   }
 }

@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { Report, WsEvent } from "@synosec/contracts";
+import type { Report, VulnerabilityChain, WsEvent } from "@synosec/contracts";
 import { getAttackPaths, getFindingsForScan, getScan } from "../db/neo4j.js";
 
 // ---------------------------------------------------------------------------
@@ -18,7 +18,8 @@ interface ReportClaudeResponse {
 
 export async function generateReport(
   scanId: string,
-  broadcast: (event: WsEvent) => void
+  broadcast: (event: WsEvent) => void,
+  attackChains: VulnerabilityChain[] = []
 ): Promise<Report> {
   const [findings, attackPaths, scan] = await Promise.all([
     getFindingsForScan(scanId),
@@ -39,13 +40,21 @@ export async function generateReport(
   const findingsSummary = findings
     .map(
       (f) =>
-        `[${f.severity.toUpperCase()}] ${f.title} — Target: ${f.nodeId}, Technique: ${f.technique}\nDescription: ${f.description}`
+        `[${f.severity.toUpperCase()}] ${f.title} — Target: ${f.nodeId}, Technique: ${f.technique}, Validation: ${f.validationStatus ?? "unverified"}\nDescription: ${f.description}`
     )
     .join("\n\n");
 
   const attackPathsSummary = attackPaths.length > 0
     ? attackPaths.map((ap) => `- ${ap.description} (risk: ${ap.risk})`).join("\n")
     : "No high-severity attack paths identified.";
+
+  const chainsSummary = attackChains.length > 0
+    ? "\n\nGRACE VULNERABILITY CHAINS:\n" +
+      attackChains
+        .slice(0, 5)
+        .map((c) => `- [${(c.compositeRisk * 100).toFixed(0)}% risk] ${c.title}\n  ${c.narrative ?? `${c.startTarget} → ${c.endTarget}`}`)
+        .join("\n")
+    : "";
 
   const systemPrompt = `You are a senior penetration testing report writer. You produce clear, professional security reports that executives and engineers can act on.
 Respond ONLY with valid JSON, no markdown code blocks, no explanation.`;
@@ -62,7 +71,7 @@ DETAILED FINDINGS:
 ${findingsSummary || "No findings recorded."}
 
 ATTACK PATHS:
-${attackPathsSummary}
+${attackPathsSummary}${chainsSummary}
 
 Return ONLY this JSON:
 {
@@ -114,6 +123,7 @@ Include top 5 risks ordered by severity. Recommendations must be specific and ac
     findingsBySeverity,
     topRisks: claudeResult.topRisks.slice(0, 5),
     attackPaths,
+    attackChains,
     generatedAt: new Date().toISOString()
   };
 

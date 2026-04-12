@@ -1,10 +1,20 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { randomUUID } from "crypto";
-import type { DfsNode, Finding, Scan, WsEvent } from "@synosec/contracts";
+import type {
+  DfsNode,
+  Finding,
+  GraceAgentContext,
+  GraceReport,
+  Scan,
+  ValidationStatus,
+  WsEvent
+} from "@synosec/contracts";
 import {
+  boostNodeRiskScore,
   createAuditEntry,
   createFinding,
   getFindingsForScan,
+  getVulnerabilityChains,
   updateNodeStatus,
   updateScanStatus
 } from "../db/neo4j.js";
@@ -13,38 +23,37 @@ import { L4Agent } from "../agents/l4-agent.js";
 import { L5Agent } from "../agents/l5-agent.js";
 import { L6Agent } from "../agents/l6-agent.js";
 import { L7Agent } from "../agents/l7-agent.js";
+import { ToolBroker } from "../broker/tool-broker.js";
+import { confidenceEngine } from "../broker/confidence-engine.js";
+import { evidenceStore } from "../broker/evidence-store.js";
 import { DfsQueue } from "./dfs-graph.js";
+import { GraceReasoner } from "./grace-reasoner.js";
 import { generateReport } from "./report.js";
-import { reportStore } from "../seed/demo-data.js";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import { reportStore } from "../runtime/report-store.js";
 
 type SupportedLayer = "L3" | "L4" | "L5" | "L6" | "L7";
-
-// ---------------------------------------------------------------------------
-// Orchestrator
-// ---------------------------------------------------------------------------
 
 const abortSignals = new Map<string, boolean>();
 
 export class Orchestrator {
   private queue = new DfsQueue();
   private client = new Anthropic({ apiKey: process.env["ANTHROPIC_API_KEY"] });
+  private broker: ToolBroker;
+  private graceReasoner = new GraceReasoner();
+  private currentGraceContext: GraceAgentContext | undefined;
 
-  constructor(private broadcast: (event: WsEvent) => void) {}
+  constructor(private broadcast: (event: WsEvent) => void) {
+    this.broker = new ToolBroker({ broadcast });
+  }
 
   async run(scan: Scan): Promise<void> {
     const maxDepth = Number(process.env["SCAN_MAX_DEPTH"] ?? scan.scope.maxDepth ?? 3);
     abortSignals.set(scan.id, false);
 
-    // Step 1: Set scan to running
     await updateScanStatus(scan.id, "running");
     const runningState: Scan = { ...scan, status: "running" };
     this.broadcast({ type: "scan_status", scan: runningState });
 
-    // Step 2: Create root nodes for each target
     let nodesTotal = 0;
     const rootNodes: DfsNode[] = [];
 
@@ -67,7 +76,6 @@ export class Orchestrator {
 
     await updateScanStatus(scan.id, "running", { nodesTotal });
 
-    // Audit: scan started
     await createAuditEntry({
       id: randomUUID(),
       scanId: scan.id,
@@ -83,7 +91,6 @@ export class Orchestrator {
     let roundSummary = "";
     let completedCountForRound = 0;
 
-    // Step 4: Main loop
     const maxDurationMs =
       (Number(process.env["SCAN_MAX_DURATION_MINUTES"] ?? scan.scope.maxDurationMinutes ?? 10)) *
       60 *
@@ -91,7 +98,6 @@ export class Orchestrator {
     const deadline = Date.now() + maxDurationMs;
 
     while (Date.now() < deadline) {
-      // Check abort
       if (abortSignals.get(scan.id) === true) {
         await updateScanStatus(scan.id, "aborted", {
           completedAt: new Date().toISOString(),
@@ -112,11 +118,9 @@ export class Orchestrator {
         return;
       }
 
-      // Dequeue next node
       const node = await this.queue.dequeue(scan.id, maxDepth);
-      if (!node) break; // No more pending nodes
+      if (!node) break;
 
-      // Check abort again after dequeue
       if (abortSignals.get(scan.id) === true) {
         await updateScanStatus(scan.id, "aborted", {
           completedAt: new Date().toISOString(),
@@ -126,12 +130,10 @@ export class Orchestrator {
         return;
       }
 
-      // Mark in-progress
       await updateNodeStatus(node.id, "in-progress");
       const inProgressNode: DfsNode = { ...node, status: "in-progress" };
       this.broadcast({ type: "node_updated", node: inProgressNode });
 
-      // Validate scope
       const inScope = this.isInScope(node.target, scan);
       if (!inScope) {
         await updateNodeStatus(node.id, "skipped");
@@ -150,51 +152,61 @@ export class Orchestrator {
         continue;
       }
 
-      // Dispatch agent
       try {
         const agent = this.getAgent(node.layer as SupportedLayer);
         if (!agent) {
-          // Skip unsupported layers
           await updateNodeStatus(node.id, "skipped");
           this.broadcast({ type: "node_updated", node: { ...node, status: "skipped" } });
           continue;
         }
 
-        // Get parent findings for context
         const allFindings = await getFindingsForScan(scan.id);
-        const parentFindings = allFindings.filter(
-          (f) => f.nodeId === node.parentId
-        );
+        const parentFindings = allFindings.filter((finding) => finding.nodeId === node.parentId);
 
-        const result = await agent.execute(node, {
+        const agentContext = {
           scanId: scan.id,
           scope: scan.scope,
           parentFindings,
-          roundSummary
+          roundSummary,
+          ...(this.currentGraceContext ? { graceContext: this.currentGraceContext } : {})
+        };
+        const result = await agent.execute(node, agentContext);
+
+        const brokerResult = await this.broker.executeRequests({
+          scan,
+          nodeId: node.id,
+          agentId: agent.agentId,
+          requests: result.requestedToolRuns
         });
 
-        // Persist findings
-        for (const rawFinding of result.findings) {
-          const finding: Finding = {
+        for (const rawFinding of brokerResult.findings) {
+          let finding: Finding = {
             ...rawFinding,
-            nodeId: node.id,
-            scanId: scan.id,
             id: randomUUID(),
             createdAt: new Date().toISOString()
           };
           await createFinding(finding);
           this.broadcast({ type: "finding_added", finding });
+
+          // Propagate confidence through the engine — may upgrade validationStatus
+          finding = await confidenceEngine.propagateToFinding(finding, scan.id);
+          if (finding.validationStatus) {
+            this.broadcast({
+              type: "finding_validated",
+              findingId: finding.id,
+              validationStatus: finding.validationStatus,
+              reason: finding.confidenceReason ?? "Validation derived from tool evidence."
+            });
+          }
         }
 
-        // Cross-agent validation: HIGH/CRITICAL findings get re-verified
-        const highRiskFindings = result.findings.filter(
-          (f) => f.severity === "critical" || f.severity === "high"
+        const highRiskFindings = brokerResult.findings.filter(
+          (finding) => finding.severity === "critical" || finding.severity === "high"
         );
         if (highRiskFindings.length > 0) {
           await this.crossValidate(scan, node, highRiskFindings);
         }
 
-        // Persist child nodes and enqueue
         for (const rawChild of result.childNodes) {
           const child: DfsNode = {
             ...rawChild,
@@ -207,9 +219,7 @@ export class Orchestrator {
           nodesTotal++;
         }
 
-        // Update nodesTotal
         await updateScanStatus(scan.id, "running", { nodesTotal });
-
       } catch (err: unknown) {
         console.error(`Agent error for node ${node.id}:`, err instanceof Error ? err.message : err);
 
@@ -225,7 +235,6 @@ export class Orchestrator {
         });
       }
 
-      // Mark complete
       await updateNodeStatus(node.id, "complete");
       this.broadcast({ type: "node_updated", node: { ...node, status: "complete" } });
       nodesComplete++;
@@ -233,11 +242,29 @@ export class Orchestrator {
 
       await updateScanStatus(scan.id, "running", { nodesComplete, nodesTotal });
 
-      // Every 3 completed nodes: run orchestrator analysis
-      if (completedCountForRound >= 3) {
+      const graceRoundInterval = scan.scope.graceRoundInterval ?? 3;
+      if (completedCountForRound >= graceRoundInterval) {
         completedCountForRound = 0;
         currentRound++;
-        roundSummary = await this.orchestratorAnalysis(scan.id, currentRound);
+
+        // Run GRACE analysis if enabled
+        let graceReport: GraceReport | undefined;
+        if (scan.scope.graceEnabled !== false) {
+          try {
+            graceReport = await this.graceReasoner.runGraceAnalysis(scan.id);
+            await this.applyGraceFeedback(scan.id, graceReport);
+            this.broadcast({
+              type: "grace_analysis_complete",
+              round: currentRound,
+              chainsFound: graceReport.detectedChains.length,
+              prioritizedTargets: graceReport.prioritizedTargets
+            });
+          } catch (err: unknown) {
+            console.error("GRACE analysis error:", err instanceof Error ? err.message : err);
+          }
+        }
+
+        roundSummary = await this.orchestratorAnalysis(scan.id, currentRound, graceReport);
         this.broadcast({ type: "round_complete", round: currentRound, summary: roundSummary });
 
         await updateScanStatus(scan.id, "running", { currentRound });
@@ -249,14 +276,19 @@ export class Orchestrator {
           actor: "orchestrator",
           action: "round-complete",
           scopeValid: true,
-          details: { round: currentRound, summary: roundSummary }
+          details: {
+            round: currentRound,
+            summary: roundSummary,
+            chainsDetected: graceReport?.detectedChains.length ?? 0,
+            prioritizedTargets: graceReport?.prioritizedTargets ?? []
+          }
         });
       }
     }
 
-    // Step 5: Mark complete
     const completedAt = new Date().toISOString();
     await updateScanStatus(scan.id, "complete", { completedAt, nodesComplete, nodesTotal });
+    confidenceEngine.clearScan(scan.id);
 
     this.broadcast({
       type: "scan_status",
@@ -270,9 +302,9 @@ export class Orchestrator {
       }
     });
 
-    // Step 6: Generate report and store it
     try {
-      const report = await generateReport(scan.id, this.broadcast);
+      const chains = await getVulnerabilityChains(scan.id);
+      const report = await generateReport(scan.id, this.broadcast, chains);
       reportStore.set(scan.id, report);
     } catch (err: unknown) {
       console.error("Report generation error:", err instanceof Error ? err.message : err);
@@ -302,34 +334,55 @@ export class Orchestrator {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Cross-agent validation — second opinion for HIGH/CRITICAL findings
-  // ---------------------------------------------------------------------------
-
   private async crossValidate(
     scan: Scan,
     node: DfsNode,
     highRiskFindings: Array<Omit<Finding, "id" | "createdAt">>
   ): Promise<void> {
     try {
-      const summary = highRiskFindings
-        .map((f) => `[${f.severity.toUpperCase()}] ${f.title}: ${f.description}`)
+      const evidence = evidenceStore.getObservationsForNode(scan.id, node.id);
+      const evidenceSummary = evidence
+        .map((observation) => `- ${observation.title}: ${observation.summary}`)
+        .join("\n");
+      const findingsSummary = highRiskFindings
+        .map((finding) => `[${finding.severity.toUpperCase()}] ${finding.title}: ${finding.description}`)
         .join("\n");
 
-      const response = await this.client.messages.create({
-        model: process.env["CLAUDE_MODEL"] ?? "claude-sonnet-4-6",
-        max_tokens: 1024,
-        system: "You are a senior penetration tester doing a second-opinion review of flagged vulnerabilities. Be critical and verify if the findings are genuine.",
-        messages: [
-          {
-            role: "user",
-            content: `Validate these HIGH/CRITICAL findings on target ${node.target} (${node.layer} layer):\n\n${summary}\n\nFor each finding, respond with JSON array where each item has:\n{ "title": "...", "validated": true|false, "reason": "brief reason" }\nReturn ONLY valid JSON array.`
-          }
-        ]
-      });
+      const validations: Array<{ title: string; validationStatus: ValidationStatus; reason: string }> =
+        evidence.length >= 2
+          ? highRiskFindings.map((finding) => ({
+              title: finding.title,
+              validationStatus:
+                finding.validationStatus === "cross_validated" ? "cross_validated" : "single_source",
+              reason:
+                finding.validationStatus === "cross_validated"
+                  ? "Multiple corroborating observations support this finding."
+                  : "High-risk signal exists, but only a single evidence path is available."
+            }))
+          : [];
 
-      const text = response.content[0]?.type === "text" ? response.content[0].text : "";
-      const validations = JSON.parse(text) as Array<{ title: string; validated: boolean; reason: string }>;
+      if (validations.length === 0 && process.env["ANTHROPIC_API_KEY"]) {
+        const response = await this.client.messages.create({
+          model: process.env["CLAUDE_MODEL"] ?? "claude-sonnet-4-6",
+          max_tokens: 1024,
+          system:
+            "You review pentest evidence. Only confirm findings when the supplied tool evidence supports them.",
+          messages: [
+            {
+              role: "user",
+              content: `Target ${node.target} (${node.layer}) high-risk findings:\n${findingsSummary}\n\nEvidence:\n${evidenceSummary || "No evidence"}\n\nReturn JSON array with { "title": string, "validationStatus": "single_source|cross_validated|rejected", "reason": string }.`
+            }
+          ]
+        });
+
+        const text = response.content[0]?.type === "text" ? response.content[0].text : "[]";
+        const parsed = JSON.parse(text) as Array<{
+          title: string;
+          validationStatus: ValidationStatus;
+          reason: string;
+        }>;
+        validations.push(...parsed);
+      }
 
       await createAuditEntry({
         id: randomUUID(),
@@ -348,46 +401,91 @@ export class Orchestrator {
 
   private isInScope(target: string, scan: Scan): boolean {
     const { targets, exclusions } = scan.scope;
-
-    // Normalize: strip port for comparison (host.docker.internal:3000 → host.docker.internal)
-    const stripPort = (t: string) => t.replace(/:\d+$/, "");
+    const stripPort = (value: string) => value.replace(/:\d+$/, "");
     const targetHost = stripPort(target);
 
     for (const exclusion of exclusions) {
-      const excHost = stripPort(exclusion);
-      if (targetHost === excHost || targetHost.startsWith(excHost)) return false;
+      const exclusionHost = stripPort(exclusion);
+      if (targetHost === exclusionHost || targetHost.startsWith(exclusionHost)) return false;
     }
 
     for (const scopeTarget of targets) {
       const scopeHost = stripPort(scopeTarget);
-      // Exact hostname match (with or without port)
       if (target === scopeTarget || targetHost === scopeHost) return true;
-      // Prefix match (child of scoped target)
       if (target.startsWith(scopeTarget) || targetHost.startsWith(scopeHost)) return true;
-      // Reverse prefix (scope is a subnet prefix of target)
       if (scopeTarget.startsWith(target) || scopeHost.startsWith(targetHost)) return true;
     }
 
     return false;
   }
 
-  private async orchestratorAnalysis(scanId: string, round: number): Promise<string> {
+  private async applyGraceFeedback(scanId: string, report: GraceReport): Promise<void> {
+    // Broadcast each newly detected chain
+    for (const chain of report.detectedChains) {
+      this.broadcast({ type: "chain_detected", chain });
+    }
+
+    // Boost riskScore for nodes on prioritized targets
+    for (const target of report.prioritizedTargets) {
+      const layers = ["L3", "L4", "L5", "L6", "L7"] as const;
+      for (const layer of layers) {
+        await boostNodeRiskScore(scanId, target, layer, 0.15);
+      }
+    }
+
+    // Update the shared GRACE context used by all agents in the next round
+    const chains = await getVulnerabilityChains(scanId);
+    this.currentGraceContext = {
+      detectedChains: chains,
+      prioritizedTargets: report.prioritizedTargets,
+      knownOpenPorts: {},
+      confirmedServices: {}
+    };
+  }
+
+  private async orchestratorAnalysis(
+    scanId: string,
+    round: number,
+    graceReport?: GraceReport
+  ): Promise<string> {
     try {
       const findings = await getFindingsForScan(scanId);
+      const observations = evidenceStore.getObservationsForScan(scanId);
 
-      const summary = findings
-        .slice(-20) // last 20 findings for context
-        .map((f) => `[${f.severity}] ${f.title} on ${f.nodeId}`)
+      const findingSummary = findings
+        .slice(-20)
+        .map((finding) => `[${finding.severity}] ${finding.title} (${finding.validationStatus ?? "unverified"})`)
         .join("\n");
+      const observationSummary = observations
+        .slice(-10)
+        .map((observation) => `- ${observation.title} via ${observation.adapter}`)
+        .join("\n");
+
+      const graceSummary = graceReport && graceReport.detectedChains.length > 0
+        ? `\n\nGRACE CHAINS DETECTED (${graceReport.detectedChains.length}):\n` +
+          graceReport.detectedChains
+            .slice(0, 3)
+            .map((c) => `- ${c.title} (confidence: ${(c.confidence * 100).toFixed(0)}%, targets: ${c.startTarget} → ${c.endTarget})`)
+            .join("\n") +
+          `\n\nPRIORITIZED TARGETS: ${graceReport.prioritizedTargets.join(", ")}`
+        : "";
+
+      if (!process.env["ANTHROPIC_API_KEY"]) {
+        const chainNote = graceReport?.detectedChains.length
+          ? ` GRACE detected ${graceReport.detectedChains.length} vulnerability chain(s).`
+          : "";
+        return `Round ${round} complete.${chainNote} Prioritizing nodes with corroborated evidence and elevated severity.`;
+      }
 
       const response = await this.client.messages.create({
         model: process.env["CLAUDE_MODEL"] ?? "claude-sonnet-4-6",
         max_tokens: 512,
-        system: "You are an AI penetration testing orchestrator. Analyze findings and prioritize next steps.",
+        system:
+          "You are an AI pentest orchestrator. Prioritize next steps based on evidence-backed findings and GRACE chain analysis.",
         messages: [
           {
             role: "user",
-            content: `Round ${round} analysis. Current findings:\n${summary || "No findings yet."}\n\nAnalyze these findings. Which targets/services pose the highest risk? What should the next phase of testing focus on? Reply in 2-3 sentences.`
+            content: `Round ${round} evidence summary:\n${observationSummary || "No observations"}\n\nFindings:\n${findingSummary || "No findings yet."}${graceSummary}\n\nExplain the highest-priority next step in 2-3 sentences.`
           }
         ]
       });
@@ -402,5 +500,4 @@ export class Orchestrator {
   }
 }
 
-// Re-export abort signals map access for use in routes
 export { abortSignals };

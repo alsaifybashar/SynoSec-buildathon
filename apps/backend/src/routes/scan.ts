@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { createScanRequestSchema } from "@synosec/contracts";
-import type { Scan, WsEvent } from "@synosec/contracts";
+import type { EvidenceResponse, Scan, WsEvent } from "@synosec/contracts";
 
 // Typed route param helper
 type IdParam = { id: string };
@@ -13,10 +13,12 @@ import {
   getFindingsForScan,
   getGraphForScan,
   getScan,
+  getVulnerabilityChains,
   listScans
 } from "../db/neo4j.js";
 import { Orchestrator } from "../orchestrator/orchestrator.js";
-import { reportStore, seedDemoScan } from "../seed/demo-data.js";
+import { evidenceStore } from "../broker/evidence-store.js";
+import { reportStore } from "../runtime/report-store.js";
 
 // ---------------------------------------------------------------------------
 // Active orchestrators — keyed by scanId
@@ -70,17 +72,6 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
     res.json(scans);
   });
 
-  // GET /api/scan/seed — must come before /api/scan/:id to avoid route conflict
-  router.post("/api/scan/seed", async (_req: Request, res: Response) => {
-    try {
-      const scanId = await seedDemoScan();
-      res.status(201).json({ scanId });
-    } catch (err: unknown) {
-      console.error("Seed error:", err instanceof Error ? err.message : err);
-      res.status(500).json({ error: "Seed failed", message: err instanceof Error ? err.message : "Unknown error" });
-    }
-  });
-
   // GET /api/scan/:id — get scan status
   router.get("/api/scan/:id", async (req: ReqWithId, res: Response) => {
     const { id } = req.params;
@@ -120,6 +111,18 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
 
     const graph = await getGraphForScan(id);
     res.json(graph);
+  });
+
+  // GET /api/scan/:id/chains — GRACE vulnerability chains
+  router.get("/api/scan/:id/chains", async (req: ReqWithId, res: Response) => {
+    const { id } = req.params;
+    if (!id) {
+      res.status(400).json({ error: "Missing scan id" });
+      return;
+    }
+
+    const chains = await getVulnerabilityChains(id);
+    res.json(chains);
   });
 
   // GET /api/scan/:id/report
@@ -189,6 +192,30 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
 
     const audit = await getAuditForScan(id);
     res.json(audit);
+  });
+
+  router.get("/api/scan/:id/tool-runs", async (req: ReqWithId, res: Response) => {
+    const { id } = req.params;
+    if (!id) {
+      res.status(400).json({ error: "Missing scan id" });
+      return;
+    }
+
+    res.json(evidenceStore.getToolRunsForScan(id));
+  });
+
+  router.get("/api/scan/:id/evidence", async (req: ReqWithId, res: Response) => {
+    const { id } = req.params;
+    if (!id) {
+      res.status(400).json({ error: "Missing scan id" });
+      return;
+    }
+
+    const payload: EvidenceResponse = {
+      toolRuns: evidenceStore.getToolRunsForScan(id),
+      observations: evidenceStore.getObservationsForScan(id)
+    };
+    res.json(payload);
   });
 
   return router;

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
+  BrainCircuit,
   ClipboardList,
+  Command,
   FileText,
   LayoutDashboard,
   List,
@@ -24,6 +26,8 @@ import {
 import { Toaster } from "./components/ui/toaster";
 import { DfsGraph } from "./components/DfsGraph";
 import { FindingsPanel } from "./components/FindingsPanel";
+import { GraceChainsPanel } from "./components/GraceChainsPanel";
+import { ExecutionPanel } from "./components/ExecutionPanel";
 import { ReportView } from "./components/ReportView";
 import { ScanConfig } from "./components/ScanConfig";
 import { ScanStatus } from "./components/ScanStatus";
@@ -32,7 +36,7 @@ import { useScan } from "./hooks/useScan";
 import { useScanWebSocket } from "./hooks/useScanWebSocket";
 import { cn } from "./lib/utils";
 
-type ActiveView = "config" | "graph" | "findings" | "report" | "history" | "audit";
+type ActiveView = "config" | "graph" | "findings" | "execution" | "chains" | "report" | "history" | "audit";
 
 type NavItem = {
   id: ActiveView;
@@ -46,6 +50,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: "history", label: "Scans", icon: List },
   { id: "graph", label: "Graph", icon: Network, requiresScan: true },
   { id: "findings", label: "Findings", icon: AlertTriangle, requiresScan: true },
+  { id: "execution", label: "Execution", icon: Command, requiresScan: true },
+  { id: "chains", label: "GRACE", icon: BrainCircuit, requiresScan: true },
   { id: "report", label: "Report", icon: FileText, requiresScan: true },
   { id: "audit", label: "Audit Log", icon: ClipboardList, requiresScan: true },
 ];
@@ -135,10 +141,12 @@ export default function App() {
   const [activeScanId, setActiveScanId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ActiveView>("config");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedChainId, setSelectedChainId] = useState<string | null>(null);
   const [roundSummary, setRoundSummary] = useState("");
 
   const { lastEvent, isConnected } = useScanWebSocket();
-  const { scan, findings, graph, report, isLoading, refetch } = useScan(activeScanId, lastEvent);
+  const { scan, findings, graph, report, chains, prioritizedTargets, toolRuns, observations, isLoading, refetch } = useScan(activeScanId, lastEvent);
+  const selectedChain = chains.find((chain) => chain.id === selectedChainId) ?? null;
 
   // Process WS events for toast notifications and round summaries
   useEffect(() => {
@@ -165,12 +173,21 @@ export default function App() {
           description: lastEvent.finding.title,
         });
       }
+    } else if (lastEvent.type === "chain_detected") {
+      toast.info("GRACE chain detected", {
+        description: lastEvent.chain.title,
+      });
+    } else if (lastEvent.type === "grace_analysis_complete") {
+      toast("GRACE analysis complete", {
+        description: `${lastEvent.chainsFound} chain(s), ${lastEvent.prioritizedTargets.length} prioritized target(s)`,
+      });
     }
   }, [lastEvent, refetch]);
 
   function handleScanStarted(id: string) {
     setActiveScanId(id);
     setSelectedNodeId(null);
+    setSelectedChainId(null);
     setRoundSummary("");
     setActiveView("graph");
   }
@@ -178,6 +195,13 @@ export default function App() {
   function handleNodeClick(node: DfsNode) {
     setSelectedNodeId(node.id);
     setActiveView("findings");
+  }
+
+  function handleChainSelect(chainId: string | null) {
+    setSelectedChainId(chainId);
+    if (chainId) {
+      setSelectedNodeId(null);
+    }
   }
 
   async function handleAbort() {
@@ -235,14 +259,45 @@ export default function App() {
         }
         return (
           <div className="flex-1">
-            <DfsGraph graph={graph} findings={findings} onNodeClick={handleNodeClick} />
+            <DfsGraph
+              graph={graph}
+              findings={findings}
+              chains={chains}
+              selectedChainId={selectedChainId}
+              prioritizedTargets={prioritizedTargets}
+              onNodeClick={handleNodeClick}
+            />
           </div>
         );
 
       case "findings":
         return (
           <div className="flex flex-1 flex-col overflow-hidden">
-            <FindingsPanel findings={findings} selectedNodeId={selectedNodeId} />
+            <FindingsPanel
+              findings={findings}
+              selectedNodeId={selectedNodeId}
+              selectedChain={selectedChain}
+            />
+          </div>
+        );
+
+      case "execution":
+        return (
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <ExecutionPanel toolRuns={toolRuns} observations={observations} />
+          </div>
+        );
+
+      case "chains":
+        return (
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <GraceChainsPanel
+              chains={chains}
+              findings={findings}
+              selectedChainId={selectedChainId}
+              prioritizedTargets={prioritizedTargets}
+              onSelectChain={handleChainSelect}
+            />
           </div>
         );
 
