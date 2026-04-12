@@ -6,72 +6,46 @@ describe("App", () => {
   beforeEach(() => {
     vi.stubGlobal(
       "fetch",
-      vi.fn((input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-
-        if (url.includes("/api/health")) {
-          return Promise.resolve(
-            new Response(
-              JSON.stringify({
-                status: "ok",
-                service: "synosec-backend",
-                timestamp: "2026-04-12T12:00:00.000Z"
-              })
-            )
-          );
-        }
-
-        if (url.includes("/api/brief")) {
-          return Promise.resolve(
-            new Response(
-              JSON.stringify({
-                headline: "Manual backend fetch completed.",
-                actions: ["Enumerate targets", "Queue depth-first traversal"],
-                generatedAt: "2026-04-12T12:00:00.000Z"
-              })
-            )
-          );
-        }
-
-        return Promise.resolve(
+      vi.fn(() =>
+        Promise.resolve(
           new Response(
             JSON.stringify({
-              scanMode: "depth-first",
-              targetCount: 1,
-              findings: [
-                {
-                  id: "finding-1",
-                  target: "localhost",
-                  severity: "low",
-                  summary: "Test finding"
-                }
-              ]
+              headline: "Manual backend fetch completed.",
+              actions: ["Enumerate targets", "Queue depth-first traversal"],
+              generatedAt: "2026-04-12T12:00:00.000Z"
             })
           )
-        );
-      })
+        )
+      )
     );
   });
 
-  it("renders contract-backed data from the api", async () => {
+  it("renders the minimal dashboard shell", () => {
     render(<App />);
 
-    expect(await screen.findByText("Status: ok")).toBeInTheDocument();
-    expect(await screen.findByText("Targets queued: 1")).toBeInTheDocument();
-    expect(await screen.findByText(/Test finding/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Call backend" })).toBeInTheDocument();
+    expect(screen.getByText("Runtimes")).toBeInTheDocument();
+    expect(screen.getByText("Applications")).toBeInTheDocument();
+    expect(screen.getByText("Workflows")).toBeInTheDocument();
   });
 
-  it("fetches a brief when the button is clicked", async () => {
+  it("calls the backend from the dashboard button", async () => {
+    const fetchSpy = vi.mocked(fetch);
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Fetch backend brief" }));
+    fireEvent.click(screen.getByRole("button", { name: "Call backend" }));
 
-    expect(await screen.findByText("Manual backend fetch completed.")).toBeInTheDocument();
-    expect(await screen.findByText("Queue depth-first traversal")).toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenCalledWith("/api/brief");
+    expect(await screen.findByText("Backend connected")).toBeInTheDocument();
+  });
+
+  it("shows a coming soon toast for placeholder navigation", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByText("Runtimes"));
+
+    expect(await screen.findByText("Coming soon")).toBeInTheDocument();
+    expect(await screen.findByText("Runtimes is coming soon.")).toBeInTheDocument();
   });
 });

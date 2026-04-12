@@ -1,108 +1,54 @@
-:root {
-  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-  color: #f5f7fb;
-  background:
-    radial-gradient(circle at top, rgba(24, 109, 242, 0.35), transparent 38%),
-    linear-gradient(160deg, #07111f 0%, #0c1d33 55%, #091521 100%);
-  line-height: 1.5;
-  font-weight: 400;
-}
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;700&display=swap");
 
-* {
-  box-sizing: border-box;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-}
+@layer base {
+  :root {
+    --background: 40 33% 98%;
+    --foreground: 220 30% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 30% 14%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 30% 14%;
+    --primary: 188 79% 32%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 42 88% 94%;
+    --secondary-foreground: 24 35% 22%;
+    --muted: 45 38% 94%;
+    --muted-foreground: 214 16% 40%;
+    --accent: 191 60% 92%;
+    --accent-foreground: 220 30% 14%;
+    --destructive: 3 72% 52%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 158 64% 34%;
+    --success-foreground: 0 0% 100%;
+    --warning: 30 95% 45%;
+    --warning-foreground: 0 0% 100%;
+    --border: 40 25% 86%;
+    --input: 40 20% 88%;
+    --ring: 188 79% 32%;
+    --radius: 1rem;
+  }
 
-#root {
-  min-height: 100vh;
-}
+  * {
+    @apply border-border;
+  }
 
-.page {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 4rem 1.5rem;
-}
+  html {
+    @apply scroll-smooth;
+  }
 
-.hero {
-  margin-bottom: 2rem;
-}
+  body {
+    @apply min-h-screen bg-background font-sans text-foreground antialiased;
+    background-image:
+      radial-gradient(circle at top left, rgba(20, 184, 166, 0.16), transparent 28%),
+      radial-gradient(circle at top right, rgba(245, 158, 11, 0.15), transparent 22%),
+      linear-gradient(180deg, rgba(255, 253, 245, 1) 0%, rgba(250, 247, 238, 1) 100%);
+  }
 
-.eyebrow {
-  margin: 0 0 0.5rem;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: #7db4ff;
-  font-size: 0.8rem;
-}
-
-.hero h1 {
-  margin: 0;
-  font-size: clamp(2.5rem, 8vw, 4.8rem);
-  line-height: 0.96;
-  max-width: 12ch;
-}
-
-.lede {
-  max-width: 60ch;
-  color: #bfd2f1;
-}
-
-.grid {
-  display: grid;
-  gap: 1.25rem;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-}
-
-.card {
-  border: 1px solid rgba(125, 180, 255, 0.18);
-  border-radius: 24px;
-  padding: 1.25rem;
-  background: rgba(7, 17, 31, 0.72);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.24);
-}
-
-.card h2 {
-  margin-top: 0;
-}
-
-.actionButton {
-  border: 0;
-  border-radius: 999px;
-  padding: 0.8rem 1.15rem;
-  font: inherit;
-  font-weight: 600;
-  color: #07111f;
-  background: #7db4ff;
-  cursor: pointer;
-}
-
-.actionButton:hover {
-  background: #9cc6ff;
-}
-
-.findings {
-  padding: 0;
-  margin: 1rem 0 0;
-  list-style: none;
-  display: grid;
-  gap: 0.85rem;
-}
-
-.findings li {
-  display: grid;
-  gap: 0.25rem;
-}
-
-.findings strong {
-  color: #7db4ff;
-}
-
-.findings span {
-  color: #bfd2f1;
+  #root {
+    @apply min-h-screen;
+  }
 }
