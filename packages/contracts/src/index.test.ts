@@ -7,6 +7,7 @@ import {
   defensiveIterationRecordSchema,
   defensiveLoopContract,
   defensiveLoopStages,
+  prioritizeDefensiveAction,
   demoResponseSchema,
   healthResponseSchema,
   updateApplicationBodySchema
@@ -123,6 +124,7 @@ describe("contracts", () => {
     ]);
     expect(defensiveLoopContract.requiredOutputs.map((field) => field.key)).toEqual([
       "chosenAction",
+      "prioritization",
       "evidence",
       "residualRisk",
       "recommendedNextStep"
@@ -135,6 +137,52 @@ describe("contracts", () => {
   });
 
   it("accepts a completed defensive iteration record", () => {
+    const prioritization = prioritizeDefensiveAction({
+      findings: [
+        {
+          id: "finding-1",
+          title: "Public admin endpoint exposed",
+          severity: "high",
+          confidence: 0.92,
+          summary: "The admin endpoint is reachable from the internet without an IP restriction.",
+          evidence: "Ingress policy and probe output show the route is publicly reachable.",
+          source: "manual-review"
+        },
+        {
+          id: "finding-2",
+          title: "Missing privileged access logging",
+          severity: "medium",
+          confidence: 0.88,
+          summary: "Admin actions are not fully logged after authentication succeeds.",
+          evidence: "Audit log review shows missing events for role changes.",
+          source: "log-review"
+        }
+      ],
+      observations: [],
+      target: {
+        kind: "service",
+        id: "svc-admin-api",
+        displayName: "Admin API",
+        environment: "production",
+        locator: "admin-api.prod.internal"
+      },
+      assetContext: {
+        assetId: "asset-1",
+        assetName: "Admin API",
+        criticality: "critical",
+        internetExposed: true,
+        containsSensitiveData: true,
+        notes: ["Production admin surface"]
+      },
+      priorIteration: {
+        iterationId: "iter-000",
+        summary: "Previous iteration limited scanner rate but did not reduce exposure.",
+        residualRisk: "Admin API remains internet reachable.",
+        outstandingFindingIds: ["finding-0"],
+        recommendedNextStep: "Reduce exposure on the admin route."
+      }
+    });
+
     const result = defensiveIterationRecordSchema.safeParse({
       iterationId: "iter-001",
       stages: ["intake", "prioritize", "act", "verify", "record", "handoff"],
@@ -174,14 +222,8 @@ describe("contracts", () => {
           recommendedNextStep: "Reduce exposure on the admin route."
         }
       },
-      chosenAction: {
-        type: "access_restriction",
-        summary: "Restrict the admin ingress to office and VPN CIDRs.",
-        rationale: "This reduces exposure without changing application behavior.",
-        scope: "Ingress policy for the production admin service only.",
-        bounded: true,
-        safetyChecks: ["Confirm allowed CIDRs with operations", "Apply only to the admin ingress resource"]
-      },
+      prioritization,
+      chosenAction: prioritization.selectedAction.action,
       verification: {
         outcome: "verified",
         summary: "The route no longer responds from an untrusted source and still works from approved IP space.",
@@ -216,7 +258,118 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
+  it("ranks candidate actions and explains why alternatives were not selected", () => {
+    const result = prioritizeDefensiveAction({
+      findings: [
+        {
+          id: "finding-1",
+          title: "Public admin endpoint exposed",
+          severity: "high",
+          confidence: 0.92,
+          summary: "The admin endpoint is reachable from the internet without an IP restriction.",
+          evidence: "Ingress policy and probe output show the route is publicly reachable.",
+          source: "manual-review"
+        },
+        {
+          id: "finding-2",
+          title: "Missing privileged access logging",
+          severity: "medium",
+          confidence: 0.88,
+          summary: "Admin actions are not fully logged after authentication succeeds.",
+          evidence: "Audit log review shows missing events for role changes.",
+          source: "log-review"
+        }
+      ],
+      observations: [],
+      target: {
+        kind: "service",
+        id: "svc-admin-api",
+        displayName: "Admin API",
+        environment: "production",
+        locator: "admin-api.prod.internal"
+      },
+      assetContext: {
+        assetId: "asset-1",
+        assetName: "Admin API",
+        criticality: "critical",
+        internetExposed: true,
+        containsSensitiveData: true,
+        notes: ["Production admin surface"]
+      }
+    });
+
+    expect(result.selectedAction.action.type).toBe("access_restriction");
+    expect(result.rankedActions).toHaveLength(2);
+    expect(result.rankedActions[0]?.decision).toBe("selected");
+    expect(result.rankedActions[1]?.decision).toBe("not_selected");
+    expect(result.rankedActions[1]?.decisionReason).toContain("Not selected");
+    expect(result.followUp).toEqual([]);
+  });
+
+  it("marks low-confidence findings for follow-up instead of confirmed risk", () => {
+    const result = prioritizeDefensiveAction({
+      findings: [],
+      observations: [
+        {
+          id: "obs-1",
+          title: "Suspicious privileged path",
+          severity: "high",
+          confidence: 0.6,
+          summary: "The path may allow privilege escalation.",
+          evidence: "Single unverified report",
+          source: "scanner"
+        }
+      ],
+      target: {
+        kind: "application",
+        id: "app-1",
+        displayName: "Operator Portal"
+      },
+      assetContext: {
+        assetId: "asset-2",
+        assetName: "Operator Portal",
+        criticality: "high",
+        internetExposed: true,
+        containsSensitiveData: false,
+        notes: []
+      }
+    });
+
+    expect(result.selectedAction.action.type).toBe("manual_investigation");
+    expect(result.selectedAction.confidenceDisposition).toBe("follow_up_required");
+    expect(result.followUp).toHaveLength(1);
+    expect(result.followUp[0]?.recommendedAction).toContain("stronger evidence");
+  });
+
   it("rejects a blocked defensive iteration without a failure state", () => {
+    const prioritization = prioritizeDefensiveAction({
+      findings: [],
+      observations: [
+        {
+          id: "obs-1",
+          title: "Suspicious privileged path",
+          severity: "high",
+          confidence: 0.6,
+          summary: "The path may allow privilege escalation.",
+          evidence: "Single unverified report",
+          source: "scanner"
+        }
+      ],
+      target: {
+        kind: "application",
+        id: "app-1",
+        displayName: "Operator Portal"
+      },
+      assetContext: {
+        assetId: "asset-2",
+        assetName: "Operator Portal",
+        criticality: "high",
+        internetExposed: true,
+        containsSensitiveData: false,
+        notes: []
+      }
+    });
+
     const result = defensiveIterationRecordSchema.safeParse({
       iterationId: "iter-002",
       stages: ["intake", "prioritize", "act", "verify", "record", "handoff"],
@@ -247,14 +400,8 @@ describe("contracts", () => {
           notes: []
         }
       },
-      chosenAction: {
-        type: "defer",
-        summary: "Do not change production routing yet.",
-        rationale: "The report is too weak to justify a live change.",
-        scope: "No production change.",
-        bounded: true,
-        safetyChecks: ["Require stronger reproduction evidence"]
-      },
+      prioritization,
+      chosenAction: prioritization.selectedAction.action,
       verification: {
         outcome: "blocked",
         summary: "Execution was blocked before verification.",

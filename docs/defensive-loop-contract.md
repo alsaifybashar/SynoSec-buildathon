@@ -20,10 +20,31 @@ The defensive loop is a single bounded iteration. It accepts evidence-backed fin
 
 ## Required outputs
 
+- `prioritization`: ranked candidate actions with explicit scoring factors, one selected action, deferred follow-up items, and reasons the alternatives were not chosen.
 - `chosenAction`: the single bounded defensive action selected for the iteration, including rationale and safety checks.
 - `evidence`: reviewable artifacts showing what was checked, changed, or why the iteration stopped.
 - `residualRisk`: a plain-language statement of what risk remains after the iteration.
 - `recommendedNextStep`: the next safe action, or an explicit reason the loop cannot continue autonomously.
+
+## Prioritization model
+
+The prioritize stage is deterministic and human-reviewable. It scores candidate actions with explicit weights:
+
+- `severity`: how serious the issue is if left in place.
+- `exploitability`: how easy it appears to abuse from the evidence.
+- `exposure`: how much real-world surface area is affected based on internet exposure, sensitive data, and asset criticality.
+- `confidence`: how trustworthy the current finding or observation is.
+- `implementationSafety`: how safely the bounded action can be executed in one iteration.
+
+The current weighting favors fast exposure reduction without treating weak evidence as confirmed risk:
+
+- `severity`: `0.30`
+- `exploitability`: `0.25`
+- `exposure`: `0.20`
+- `confidence`: `0.15`
+- `implementationSafety`: `0.10`
+
+Low-confidence or ambiguous inputs are moved to follow-up instead of being prioritized as confirmed remediation work. If every input is low-confidence, the single selected action becomes bounded manual investigation rather than an autonomous production change.
 
 ## Failure states
 
@@ -38,4 +59,6 @@ The machine-readable contract lives in [packages/contracts/src/index.ts](../pack
 - `defensiveLoopContract`
 - `defensiveIterationInputSchema`
 - `defensiveIterationRecordSchema`
+- `defensivePrioritizationSchema`
+- `prioritizeDefensiveAction`
 - `defensiveFailureStateSchema`
