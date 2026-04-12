@@ -24,6 +24,10 @@ export function getNeo4jDriver(): Driver {
   return driver;
 }
 
+export async function ensureNeo4jAvailable(): Promise<void> {
+  await getNeo4jDriver().verifyConnectivity();
+}
+
 export async function closeNeo4jDriver(): Promise<void> {
   if (driver) {
     await driver.close();
@@ -46,34 +50,30 @@ async function withSession<T>(fn: (session: Session) => Promise<T>): Promise<T> 
 // ---------------------------------------------------------------------------
 
 export async function initNeo4jSchema(): Promise<void> {
-  try {
-    await withSession(async (session) => {
-      await session.run(
-        "CREATE CONSTRAINT scan_id_unique IF NOT EXISTS FOR (s:Scan) REQUIRE s.id IS UNIQUE"
-      );
-      await session.run(
-        "CREATE CONSTRAINT dfsnode_id_unique IF NOT EXISTS FOR (n:DfsNode) REQUIRE n.id IS UNIQUE"
-      );
-      await session.run(
-        "CREATE CONSTRAINT finding_id_unique IF NOT EXISTS FOR (f:Finding) REQUIRE f.id IS UNIQUE"
-      );
-      await session.run(
-        "CREATE CONSTRAINT auditentry_id_unique IF NOT EXISTS FOR (a:AuditEntry) REQUIRE a.id IS UNIQUE"
-      );
-      await session.run(
-        "CREATE INDEX dfsnode_scanid IF NOT EXISTS FOR (n:DfsNode) ON (n.scanId)"
-      );
-      await session.run(
-        "CREATE INDEX finding_scanid IF NOT EXISTS FOR (f:Finding) ON (f.scanId)"
-      );
-      await session.run(
-        "CREATE INDEX finding_nodeid IF NOT EXISTS FOR (f:Finding) ON (f.nodeId)"
-      );
-    });
-    console.log("Neo4j schema initialized");
-  } catch (err: unknown) {
-    console.error("Neo4j schema init error (continuing):", err instanceof Error ? err.message : err);
-  }
+  await withSession(async (session) => {
+    await session.run(
+      "CREATE CONSTRAINT scan_id_unique IF NOT EXISTS FOR (s:Scan) REQUIRE s.id IS UNIQUE"
+    );
+    await session.run(
+      "CREATE CONSTRAINT dfsnode_id_unique IF NOT EXISTS FOR (n:DfsNode) REQUIRE n.id IS UNIQUE"
+    );
+    await session.run(
+      "CREATE CONSTRAINT finding_id_unique IF NOT EXISTS FOR (f:Finding) REQUIRE f.id IS UNIQUE"
+    );
+    await session.run(
+      "CREATE CONSTRAINT auditentry_id_unique IF NOT EXISTS FOR (a:AuditEntry) REQUIRE a.id IS UNIQUE"
+    );
+    await session.run(
+      "CREATE INDEX dfsnode_scanid IF NOT EXISTS FOR (n:DfsNode) ON (n.scanId)"
+    );
+    await session.run(
+      "CREATE INDEX finding_scanid IF NOT EXISTS FOR (f:Finding) ON (f.scanId)"
+    );
+    await session.run(
+      "CREATE INDEX finding_nodeid IF NOT EXISTS FOR (f:Finding) ON (f.nodeId)"
+    );
+  });
+  console.log("Neo4j schema initialized");
 }
 
 // ---------------------------------------------------------------------------

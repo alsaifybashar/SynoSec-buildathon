@@ -4,7 +4,7 @@ import type { WsEvent } from "@synosec/contracts";
 import "./core/env/load-env.js";
 import { createApp } from "./app/create-app.js";
 import { createApplicationsRepositoryFromEnvironment } from "./modules/applications/create-applications-repository.js";
-import { closeNeo4jDriver, initNeo4jSchema, listScans } from "./db/neo4j.js";
+import { closeNeo4jDriver, ensureNeo4jAvailable, initNeo4jSchema, listScans } from "./db/neo4j.js";
 import { seedDemoScan } from "./seed/demo-data.js";
 
 const port = Number(process.env["BACKEND_PORT"] ?? "3001");
@@ -39,15 +39,17 @@ wss.on("connection", (socket) => {
   });
 });
 
-await initNeo4jSchema();
-
 try {
+  await ensureNeo4jAvailable();
+  await initNeo4jSchema();
+
   const existingScans = await listScans();
   if (existingScans.length === 0) {
     await seedDemoScan();
   }
 } catch (error) {
-  console.warn("Scan auto-seed skipped:", error instanceof Error ? error.message : error);
+  console.warn("Neo4j unavailable. Scan features will return 503 until the graph database is reachable.");
+  console.warn(error instanceof Error ? error.message : error);
 }
 
 server.listen(port, () => {
