@@ -15721,3 +15721,742 @@ index 5bebfbc8b89adc6f8f8dab12933b430f25ec11b5..65edc8668e14659a9bd754aebcc0035e
    ],
    failureStates: [
 
+exec
+/bin/bash -lc "git add -A && git commit -m \"Capture S5 run log\" && git status --porcelain && git show -s --format='%h %s' HEAD" in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+[main 8903d362] Capture S5 run log
+ 2 files changed, 1354 insertions(+)
+ create mode 100644 .ralph/runs/run-20260413-004709-513536-iter-4.md
+8903d362 Capture S5 run log
+
+diff --git a/.ralph/progress.md b/.ralph/progress.md
+index 92f5d709acd1f93c77ed1f5162f04a32d89f2a10..a2faf9e3fa38c594779f596f0251f566f42fe5cc
+--- a/.ralph/progress.md
++++ b/.ralph/progress.md
+@@ -5,6 +5,41 @@
+ - (add reusable patterns here)
+ 
+ ---
++## [2026-04-13 01:12:45 CEST] - S5: Close the loop with next-step guidance
++Thread: 019d83f2-2181-7a21-8f3d-85eebcb3b089
++Run: 20260413-004709-513536 (iteration 4)
++Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-4.log
++Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-4.md
++- Guardrails reviewed: yes
++- No-commit run: false
++- Commit: e79281a8 Close loop with next-step guidance
++- Post-commit status: `clean`
++- Verification:
++  - Command: `pnpm --filter @synosec/contracts test` -> PASS
++  - Command: `pnpm --filter @synosec/contracts typecheck` -> PASS
++  - Command: `pnpm build` -> PASS
++  - Command: `pnpm test` -> PASS
++  - Command: `pnpm lint` -> FAIL (existing ESLint typed-lint issue in `apps/backend/src/generated/prisma/client.js`)
++- Files changed:
++  - .ralph/activity.log
++  - .ralph/progress.md
++  - .ralph/runs/run-20260413-004709-513536-iter-4.log
++  - .ralph/runs/run-20260413-004709-513536-iter-4.md
++  - docs/defensive-loop-contract.md
++  - packages/contracts/src/index.test.ts
++  - packages/contracts/src/index.ts
++- What was implemented
++- Added a deterministic `closureSummary` to the defensive iteration record so each run ends with a short defensive-loop closeout that states what risk changed, what evidence supports that claim, what remains, and the next safe step.
++- Wired the closure summary into both completed and blocked execution paths so the loop either recommends the next bounded defensive action or clearly stops autonomous continuation when evidence or scope is not safe enough.
++- Updated shared-contract tests and the operator-facing contract document so the new handoff output is explicit, reviewable, and suitable for a buildathon demo.
++- **Learnings for future iterations:**
++  - Patterns discovered
++  - Shared contract helpers remain the right place for deterministic loop-close behavior that later backend or frontend surfaces can consume directly.
++  - Gotchas encountered
++  - Root `pnpm lint` still fails on generated Prisma code, so lint is useful as a regression signal but not yet a story-completion gate.
++  - Useful context
++  - `closureSummary` is intentionally compact and evidence-backed, which makes it a better demo closeout than relying on `handoffSummary` alone.
++---
+ ## [2026-04-13 01:05:30 CEST] - S4: Record evidence and residual risk
+ Thread: 
+ Run: 20260413-004709-513536 (iteration 3)
+diff --git a/.ralph/runs/run-20260413-004709-513536-iter-4.md b/.ralph/runs/run-20260413-004709-513536-iter-4.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..525ce20b5de0f2ed96cf5a43fd131fbda8f16222
+--- /dev/null
++++ b/.ralph/runs/run-20260413-004709-513536-iter-4.md
+@@ -0,0 +1,37 @@
++# Ralph Run Summary
++
++- Run ID: 20260413-004709-513536
++- Iteration: 4
++- Mode: build
++- Story: S5: Close the loop with next-step guidance
++- Started: 2026-04-13 01:06:16
++- Ended: 2026-04-13 01:12:45
++- Duration: 389s
++- Status: success
++- Log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-4.log
++
++## Git
++- Head (before): f5b94ca7a02f57e9f10462191c60c819160454e7
++- Head (after): 140bd4e1a9ab85c342b9fda3740862a50fd4bcf9
++
++### Commits
++- e79281a8 Close loop with next-step guidance
++- 140bd4e1 Log S5 progress
++
++### Changed Files (commits)
++- .agents/tasks/prd-defensive-loop.json
++- .ralph/.tmp/prompt-20260413-004709-513536-4.md
++- .ralph/.tmp/story-20260413-004709-513536-4.json
++- .ralph/.tmp/story-20260413-004709-513536-4.md
++- .ralph/activity.log
++- .ralph/errors.log
++- .ralph/progress.md
++- .ralph/runs/run-20260413-004709-513536-iter-3.log
++- .ralph/runs/run-20260413-004709-513536-iter-3.md
++- .ralph/runs/run-20260413-004709-513536-iter-4.log
++- docs/defensive-loop-contract.md
++- packages/contracts/src/index.test.ts
++- packages/contracts/src/index.ts
++
++### Uncommitted Changes
++- .ralph/runs/run-20260413-004709-513536-iter-4.log
+diff --git a/docs/defensive-loop-contract.md b/docs/defensive-loop-contract.md
+index 9e972d699cb4f224b40cd6cafe6d6e798acecb8b..a5ae36ff74e1dbac641e165ec32c55d87fb3e112
+--- a/docs/defensive-loop-contract.md
++++ b/docs/defensive-loop-contract.md
+@@ -25,6 +25,7 @@
+ - `evidence`: reviewable artifacts showing what was checked, changed, or why the iteration stopped.
+ - `residualRisk`: a plain-language statement of what risk remains after the iteration.
+ - `recommendedNextStep`: the next safe action, or an explicit reason the loop cannot continue autonomously.
++- `closureSummary`: a compact operator-facing loop closeout that states what risk changed, what evidence supports that claim, what remains, and whether the next iteration can continue safely.
+ 
+ ## Prioritization model
+ 
+@@ -66,6 +67,14 @@
+ 
+ When execution succeeds, the record explains the exact mitigation that landed, the verification checks that passed, the residual risk, the per-issue outcome (`fixed`, `mitigated`, `unverified`, or `skipped`), and the next bounded step. When execution is blocked, the record preserves the failure reason, marks which issues were intentionally skipped or still unverified, and states clearly that no change was applied.
+ 
++The handoff stage now also emits a compact `closureSummary` for demos and operator review. It is intentionally short and deterministic:
++
++- `headline`: reinforces that the product completed or blocked a defensive iteration.
++- `summary`: states what bounded risk was reduced, or that the loop stopped before claiming a change, plus what risk remains.
++- `evidenceHighlights`: one to three concrete evidence lines that support the claim.
++- `nextStep`: the exact next defensive action, or the reason the loop must stop safely.
++- `continueLoop`: whether another bounded iteration may proceed without human intervention.
++
+ ## Recorded iteration state
+ 
+ The record stage now preserves enough structure for the next iteration to start without rebuilding context by hand:
+@@ -76,6 +85,7 @@
+ - `finalOutcome`: whether the iteration ended as `fixed`, `mitigated`, or `blocked`.
+ - `issueOutcomes`: one entry per finding or observation showing whether it was `fixed`, `mitigated`, `unverified`, or intentionally `skipped`.
+ - `carryForward`: the next-iteration seed, including the target, asset context, resolved issues, outstanding issues, residual risk, and recommended next step.
++- `closureSummary`: the short end-of-iteration closeout that can be shown directly in a buildathon demo without losing the technical review trail.
+ 
+ ## Failure states
+ 
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+index 50353a08e16583bc39ce1aa2cecf4470d2fab41c..6f9fd5f24a6a33e79fbf99cd611bab9c75d1154e
+--- a/packages/contracts/src/index.test.ts
++++ b/packages/contracts/src/index.test.ts
+@@ -128,7 +128,8 @@
+       "prioritization",
+       "evidence",
+       "residualRisk",
+-      "recommendedNextStep"
++      "recommendedNextStep",
++      "closureSummary"
+     ]);
+     expect(defensiveLoopContract.failureStates.map((failure) => failure.reason)).toEqual([
+       "missing_evidence",
+@@ -313,6 +314,16 @@
+           continueLoop: true
+         }
+       },
++      closureSummary: {
++        headline: "Defensive iteration complete: one bounded risk reduction landed.",
++        summary: "Reduce external exposure for Admin API based on public admin endpoint exposed. Evidence supports the risk reduction claim, and remaining risk is: Exposure is reduced, but admin authentication hardening still needs review.",
++        evidenceHighlights: [
++          "Ingress manifest now limits source CIDRs.",
++          "Manual probes confirm the new network boundary."
++        ],
++        nextStep: "Review privileged admin authentication flows next.",
++        continueLoop: true
++      },
+       handoffSummary: "Ingress is restricted and the next iteration should focus on admin authentication hardening."
+     });
+ 
+@@ -543,6 +554,15 @@
+           continueLoop: false
+         }
+       },
++      closureSummary: {
++        headline: "Defensive iteration blocked: no unsupported remediation was applied.",
++        summary: "Reproduce and validate suspicious privileged path before any production change. The loop stopped before making a change. Remaining risk is: The suspected issue remains unresolved pending stronger evidence.",
++        evidenceHighlights: [
++          "The current report does not provide enough proof to act."
++        ],
++        nextStep: "Reproduce the finding with stronger evidence before any change.",
++        continueLoop: false
++      },
+       handoffSummary: "Pause autonomous action until the finding can be reproduced."
+     });
+ 
+@@ -616,6 +636,12 @@
+     expect(result.issueOutcomes[0]?.disposition).toBe("mitigated");
+     expect(result.carryForward.outstandingIssues[0]?.sourceId).toBe("finding-1");
+     expect(result.recommendedNextStep.continueLoop).toBe(true);
++    expect(result.closureSummary.headline).toContain("Defensive iteration complete");
++    expect(result.closureSummary.summary).toContain("remaining risk");
++    expect(result.closureSummary.evidenceHighlights).toEqual([
++      "Ingress allowlist narrowed to the approved source CIDRs.",
++      "Verification probes confirm the route now blocks untrusted access."
++    ]);
+     expect(result.handoffSummary).toContain("completed");
+   });
+ 
+@@ -701,6 +727,7 @@
+     expect(result.issueOutcomes.map((issue) => issue.disposition)).toEqual(["fixed", "skipped", "unverified"]);
+     expect(result.carryForward.resolvedIssues[0]?.sourceId).toBe("finding-patch-1");
+     expect(result.carryForward.outstandingIssues.map((issue) => issue.sourceId)).toEqual(["finding-skip-1", "obs-verify-1"]);
++    expect(result.closureSummary.nextStep).toContain("stronger evidence");
+   });
+ 
+   it("blocks an unsafe change that broadens beyond one reversible mitigation", () => {
+@@ -762,6 +789,8 @@
+     expect(result.verification.outcome).toBe("blocked");
+     expect(result.finalOutcome.status).toBe("blocked");
+     expect(result.issueOutcomes[0]?.disposition).toBe("skipped");
++    expect(result.closureSummary.headline).toContain("blocked");
++    expect(result.closureSummary.continueLoop).toBe(false);
+     expect(result.handoffSummary).toContain("No change was applied");
+   });
+ 
+@@ -822,5 +851,6 @@
+     expect(result.issueOutcomes[0]?.disposition).toBe("unverified");
+     expect(result.carryForward.outstandingIssues[0]?.sourceId).toBe("finding-2");
+     expect(result.recommendedNextStep.summary).toContain("stronger evidence");
++    expect(result.closureSummary.nextStep).toContain("stronger evidence");
+   });
+ });
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index 5bebfbc8b89adc6f8f8dab12933b430f25ec11b5..65edc8668e14659a9bd754aebcc0035e2eb114d9
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -561,6 +561,15 @@
+ });
+ export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
+ 
++export const defensiveClosureSummarySchema = z.object({
++  headline: z.string().min(1),
++  summary: z.string().min(1),
++  evidenceHighlights: z.array(z.string().min(1)).min(1).max(3),
++  nextStep: z.string().min(1),
++  continueLoop: z.boolean()
++});
++export type DefensiveClosureSummary = z.infer<typeof defensiveClosureSummarySchema>;
++
+ export const defensiveFinalOutcomeSchema = z.object({
+   status: z.enum(["fixed", "mitigated", "blocked"]),
+   summary: z.string().min(1),
+@@ -1141,6 +1150,35 @@
+     recommendedNextStep
+   });
+ 
++const buildClosureSummary = (
++  selectedAction: DefensiveChosenAction,
++  evidence: DefensiveEvidenceArtifact[],
++  residualRisk: DefensiveResidualRisk,
++  recommendedNextStep: DefensiveNextStep,
++  status: "completed" | "blocked"
++): DefensiveClosureSummary => {
++  const evidenceHighlights = evidence
++    .map((artifact) => artifact.summary.trim())
++    .filter((summary) => summary.length > 0)
++    .slice(0, 3);
++
++  const fallbackEvidence = status === "completed"
++    ? "The bounded change and verification checks are recorded for review."
++    : "The available review evidence is recorded before any autonomous change.";
++
++  return defensiveClosureSummarySchema.parse({
++    headline: status === "completed"
++      ? "Defensive iteration complete: one bounded risk reduction landed."
++      : "Defensive iteration blocked: no unsupported remediation was applied.",
++    summary: status === "completed"
++      ? `${selectedAction.summary} Evidence supports the risk reduction claim, and remaining risk is: ${residualRisk.summary}`
++      : `${selectedAction.summary} The loop stopped before making a change. Remaining risk is: ${residualRisk.summary}`,
++    evidenceHighlights: evidenceHighlights.length > 0 ? evidenceHighlights : [fallbackEvidence],
++    nextStep: recommendedNextStep.summary,
++    continueLoop: recommendedNextStep.continueLoop
++  });
++};
++
+ const buildFinalOutcome = (
+   selectedAction: DefensiveChosenAction,
+   verificationSummary: string,
+@@ -1191,6 +1229,13 @@
+     residualRisk,
+     recommendedNextStep
+   );
++  const closureSummary = buildClosureSummary(
++    selectedAction,
++    request.evidence,
++    residualRisk,
++    recommendedNextStep,
++    "blocked"
++  );
+ 
+   return defensiveIterationRecordSchema.parse({
+     iterationId: request.iterationId,
+@@ -1210,6 +1255,7 @@
+     residualRisk,
+     recommendedNextStep,
+     carryForward,
++    closureSummary,
+     handoffSummary: `${failure.summary} No change was applied.`,
+     failure
+   });
+@@ -1391,6 +1437,13 @@
+     residualRisk,
+     recommendedNextStep
+   );
++  const closureSummary = buildClosureSummary(
++    selectedAction,
++    request.evidence,
++    residualRisk,
++    recommendedNextStep,
++    "completed"
++  );
+ 
+   return defensiveIterationRecordSchema.parse({
+     iterationId: request.iterationId,
+@@ -1410,6 +1463,7 @@
+     residualRisk,
+     recommendedNextStep,
+     carryForward,
++    closureSummary,
+     handoffSummary: `${request.change.summary} completed. ${recommendedNextStep.summary}`
+   });
+ };
+@@ -1447,6 +1501,7 @@
+     residualRisk: defensiveResidualRiskSchema,
+     recommendedNextStep: defensiveNextStepSchema,
+     carryForward: defensiveCarryForwardStateSchema,
++    closureSummary: defensiveClosureSummarySchema,
+     handoffSummary: z.string().min(1),
+     failure: defensiveFailureStateSchema.optional()
+   })
+@@ -1566,7 +1621,7 @@
+       stage: "handoff",
+       purpose: "Recommend the next safe step so the following iteration starts with preserved context.",
+       consumes: ["iterationRecord", "residualRisk"],
+-      produces: ["recommendedNextStep", "handoffSummary"]
++      produces: ["recommendedNextStep", "closureSummary", "handoffSummary"]
+     }
+   ],
+   requiredInputs: [
+@@ -1616,6 +1671,11 @@
+       key: "recommendedNextStep",
+       required: true,
+       description: "The next safe action or explicit stop condition for the following iteration."
++    },
++    {
++      key: "closureSummary",
++      required: true,
++      description: "Compact end-of-iteration guidance that states what risk changed, what evidence supports that claim, what remains, and whether the loop can safely continue."
+     }
+   ],
+   failureStates: [
+
+codex
+The bookkeeping commits are in. I’m doing one last status check because these runner-managed log files can mutate after commit, and I need the worktree truly clean before I close the story.
+exec
+/bin/bash -lc 'git status --short' in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+ M .ralph/runs/run-20260413-004709-513536-iter-4.log
+
+exec
+/bin/bash -lc 'tail -n 40 .ralph/runs/run-20260413-004709-513536-iter-4.md' in /home/nilwi971/projects/SynoSec-buildathon
+exec
+/bin/bash -lc "git show -s --format='%h %s' HEAD" in /home/nilwi971/projects/SynoSec-buildathon
+ succeeded in 0ms:
+# Ralph Run Summary
+
+- Run ID: 20260413-004709-513536
+- Iteration: 4
+- Mode: build
+- Story: S5: Close the loop with next-step guidance
+- Started: 2026-04-13 01:06:16
+- Ended: 2026-04-13 01:12:45
+- Duration: 389s
+- Status: success
+- Log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-4.log
+
+## Git
+- Head (before): f5b94ca7a02f57e9f10462191c60c819160454e7
+- Head (after): 140bd4e1a9ab85c342b9fda3740862a50fd4bcf9
+
+### Commits
+- e79281a8 Close loop with next-step guidance
+- 140bd4e1 Log S5 progress
+
+### Changed Files (commits)
+- .agents/tasks/prd-defensive-loop.json
+- .ralph/.tmp/prompt-20260413-004709-513536-4.md
+- .ralph/.tmp/story-20260413-004709-513536-4.json
+- .ralph/.tmp/story-20260413-004709-513536-4.md
+- .ralph/activity.log
+- .ralph/errors.log
+- .ralph/progress.md
+- .ralph/runs/run-20260413-004709-513536-iter-3.log
+- .ralph/runs/run-20260413-004709-513536-iter-3.md
+- .ralph/runs/run-20260413-004709-513536-iter-4.log
+- docs/defensive-loop-contract.md
+- packages/contracts/src/index.test.ts
+- packages/contracts/src/index.ts
+
+### Uncommitted Changes
+- .ralph/runs/run-20260413-004709-513536-iter-4.log
+
+ succeeded in 0ms:
+8903d362 Capture S5 run log
+
+diff --git a/.ralph/progress.md b/.ralph/progress.md
+index 92f5d709acd1f93c77ed1f5162f04a32d89f2a10..a2faf9e3fa38c594779f596f0251f566f42fe5cc
+--- a/.ralph/progress.md
++++ b/.ralph/progress.md
+@@ -5,6 +5,41 @@
+ - (add reusable patterns here)
+ 
+ ---
++## [2026-04-13 01:12:45 CEST] - S5: Close the loop with next-step guidance
++Thread: 019d83f2-2181-7a21-8f3d-85eebcb3b089
++Run: 20260413-004709-513536 (iteration 4)
++Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-4.log
++Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-4.md
++- Guardrails reviewed: yes
++- No-commit run: false
++- Commit: e79281a8 Close loop with next-step guidance
++- Post-commit status: `clean`
++- Verification:
++  - Command: `pnpm --filter @synosec/contracts test` -> PASS
++  - Command: `pnpm --filter @synosec/contracts typecheck` -> PASS
++  - Command: `pnpm build` -> PASS
++  - Command: `pnpm test` -> PASS
++  - Command: `pnpm lint` -> FAIL (existing ESLint typed-lint issue in `apps/backend/src/generated/prisma/client.js`)
++- Files changed:
++  - .ralph/activity.log
++  - .ralph/progress.md
++  - .ralph/runs/run-20260413-004709-513536-iter-4.log
++  - .ralph/runs/run-20260413-004709-513536-iter-4.md
++  - docs/defensive-loop-contract.md
++  - packages/contracts/src/index.test.ts
++  - packages/contracts/src/index.ts
++- What was implemented
++- Added a deterministic `closureSummary` to the defensive iteration record so each run ends with a short defensive-loop closeout that states what risk changed, what evidence supports that claim, what remains, and the next safe step.
++- Wired the closure summary into both completed and blocked execution paths so the loop either recommends the next bounded defensive action or clearly stops autonomous continuation when evidence or scope is not safe enough.
++- Updated shared-contract tests and the operator-facing contract document so the new handoff output is explicit, reviewable, and suitable for a buildathon demo.
++- **Learnings for future iterations:**
++  - Patterns discovered
++  - Shared contract helpers remain the right place for deterministic loop-close behavior that later backend or frontend surfaces can consume directly.
++  - Gotchas encountered
++  - Root `pnpm lint` still fails on generated Prisma code, so lint is useful as a regression signal but not yet a story-completion gate.
++  - Useful context
++  - `closureSummary` is intentionally compact and evidence-backed, which makes it a better demo closeout than relying on `handoffSummary` alone.
++---
+ ## [2026-04-13 01:05:30 CEST] - S4: Record evidence and residual risk
+ Thread: 
+ Run: 20260413-004709-513536 (iteration 3)
+diff --git a/.ralph/runs/run-20260413-004709-513536-iter-4.md b/.ralph/runs/run-20260413-004709-513536-iter-4.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..525ce20b5de0f2ed96cf5a43fd131fbda8f16222
+--- /dev/null
++++ b/.ralph/runs/run-20260413-004709-513536-iter-4.md
+@@ -0,0 +1,37 @@
++# Ralph Run Summary
++
++- Run ID: 20260413-004709-513536
++- Iteration: 4
++- Mode: build
++- Story: S5: Close the loop with next-step guidance
++- Started: 2026-04-13 01:06:16
++- Ended: 2026-04-13 01:12:45
++- Duration: 389s
++- Status: success
++- Log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-4.log
++
++## Git
++- Head (before): f5b94ca7a02f57e9f10462191c60c819160454e7
++- Head (after): 140bd4e1a9ab85c342b9fda3740862a50fd4bcf9
++
++### Commits
++- e79281a8 Close loop with next-step guidance
++- 140bd4e1 Log S5 progress
++
++### Changed Files (commits)
++- .agents/tasks/prd-defensive-loop.json
++- .ralph/.tmp/prompt-20260413-004709-513536-4.md
++- .ralph/.tmp/story-20260413-004709-513536-4.json
++- .ralph/.tmp/story-20260413-004709-513536-4.md
++- .ralph/activity.log
++- .ralph/errors.log
++- .ralph/progress.md
++- .ralph/runs/run-20260413-004709-513536-iter-3.log
++- .ralph/runs/run-20260413-004709-513536-iter-3.md
++- .ralph/runs/run-20260413-004709-513536-iter-4.log
++- docs/defensive-loop-contract.md
++- packages/contracts/src/index.test.ts
++- packages/contracts/src/index.ts
++
++### Uncommitted Changes
++- .ralph/runs/run-20260413-004709-513536-iter-4.log
+diff --git a/docs/defensive-loop-contract.md b/docs/defensive-loop-contract.md
+index 9e972d699cb4f224b40cd6cafe6d6e798acecb8b..a5ae36ff74e1dbac641e165ec32c55d87fb3e112
+--- a/docs/defensive-loop-contract.md
++++ b/docs/defensive-loop-contract.md
+@@ -25,6 +25,7 @@
+ - `evidence`: reviewable artifacts showing what was checked, changed, or why the iteration stopped.
+ - `residualRisk`: a plain-language statement of what risk remains after the iteration.
+ - `recommendedNextStep`: the next safe action, or an explicit reason the loop cannot continue autonomously.
++- `closureSummary`: a compact operator-facing loop closeout that states what risk changed, what evidence supports that claim, what remains, and whether the next iteration can continue safely.
+ 
+ ## Prioritization model
+ 
+@@ -66,6 +67,14 @@
+ 
+ When execution succeeds, the record explains the exact mitigation that landed, the verification checks that passed, the residual risk, the per-issue outcome (`fixed`, `mitigated`, `unverified`, or `skipped`), and the next bounded step. When execution is blocked, the record preserves the failure reason, marks which issues were intentionally skipped or still unverified, and states clearly that no change was applied.
+ 
++The handoff stage now also emits a compact `closureSummary` for demos and operator review. It is intentionally short and deterministic:
++
++- `headline`: reinforces that the product completed or blocked a defensive iteration.
++- `summary`: states what bounded risk was reduced, or that the loop stopped before claiming a change, plus what risk remains.
++- `evidenceHighlights`: one to three concrete evidence lines that support the claim.
++- `nextStep`: the exact next defensive action, or the reason the loop must stop safely.
++- `continueLoop`: whether another bounded iteration may proceed without human intervention.
++
+ ## Recorded iteration state
+ 
+ The record stage now preserves enough structure for the next iteration to start without rebuilding context by hand:
+@@ -76,6 +85,7 @@
+ - `finalOutcome`: whether the iteration ended as `fixed`, `mitigated`, or `blocked`.
+ - `issueOutcomes`: one entry per finding or observation showing whether it was `fixed`, `mitigated`, `unverified`, or intentionally `skipped`.
+ - `carryForward`: the next-iteration seed, including the target, asset context, resolved issues, outstanding issues, residual risk, and recommended next step.
++- `closureSummary`: the short end-of-iteration closeout that can be shown directly in a buildathon demo without losing the technical review trail.
+ 
+ ## Failure states
+ 
+diff --git a/packages/contracts/src/index.test.ts b/packages/contracts/src/index.test.ts
+index 50353a08e16583bc39ce1aa2cecf4470d2fab41c..6f9fd5f24a6a33e79fbf99cd611bab9c75d1154e
+--- a/packages/contracts/src/index.test.ts
++++ b/packages/contracts/src/index.test.ts
+@@ -128,7 +128,8 @@
+       "prioritization",
+       "evidence",
+       "residualRisk",
+-      "recommendedNextStep"
++      "recommendedNextStep",
++      "closureSummary"
+     ]);
+     expect(defensiveLoopContract.failureStates.map((failure) => failure.reason)).toEqual([
+       "missing_evidence",
+@@ -313,6 +314,16 @@
+           continueLoop: true
+         }
+       },
++      closureSummary: {
++        headline: "Defensive iteration complete: one bounded risk reduction landed.",
++        summary: "Reduce external exposure for Admin API based on public admin endpoint exposed. Evidence supports the risk reduction claim, and remaining risk is: Exposure is reduced, but admin authentication hardening still needs review.",
++        evidenceHighlights: [
++          "Ingress manifest now limits source CIDRs.",
++          "Manual probes confirm the new network boundary."
++        ],
++        nextStep: "Review privileged admin authentication flows next.",
++        continueLoop: true
++      },
+       handoffSummary: "Ingress is restricted and the next iteration should focus on admin authentication hardening."
+     });
+ 
+@@ -543,6 +554,15 @@
+           continueLoop: false
+         }
+       },
++      closureSummary: {
++        headline: "Defensive iteration blocked: no unsupported remediation was applied.",
++        summary: "Reproduce and validate suspicious privileged path before any production change. The loop stopped before making a change. Remaining risk is: The suspected issue remains unresolved pending stronger evidence.",
++        evidenceHighlights: [
++          "The current report does not provide enough proof to act."
++        ],
++        nextStep: "Reproduce the finding with stronger evidence before any change.",
++        continueLoop: false
++      },
+       handoffSummary: "Pause autonomous action until the finding can be reproduced."
+     });
+ 
+@@ -616,6 +636,12 @@
+     expect(result.issueOutcomes[0]?.disposition).toBe("mitigated");
+     expect(result.carryForward.outstandingIssues[0]?.sourceId).toBe("finding-1");
+     expect(result.recommendedNextStep.continueLoop).toBe(true);
++    expect(result.closureSummary.headline).toContain("Defensive iteration complete");
++    expect(result.closureSummary.summary).toContain("remaining risk");
++    expect(result.closureSummary.evidenceHighlights).toEqual([
++      "Ingress allowlist narrowed to the approved source CIDRs.",
++      "Verification probes confirm the route now blocks untrusted access."
++    ]);
+     expect(result.handoffSummary).toContain("completed");
+   });
+ 
+@@ -701,6 +727,7 @@
+     expect(result.issueOutcomes.map((issue) => issue.disposition)).toEqual(["fixed", "skipped", "unverified"]);
+     expect(result.carryForward.resolvedIssues[0]?.sourceId).toBe("finding-patch-1");
+     expect(result.carryForward.outstandingIssues.map((issue) => issue.sourceId)).toEqual(["finding-skip-1", "obs-verify-1"]);
++    expect(result.closureSummary.nextStep).toContain("stronger evidence");
+   });
+ 
+   it("blocks an unsafe change that broadens beyond one reversible mitigation", () => {
+@@ -762,6 +789,8 @@
+     expect(result.verification.outcome).toBe("blocked");
+     expect(result.finalOutcome.status).toBe("blocked");
+     expect(result.issueOutcomes[0]?.disposition).toBe("skipped");
++    expect(result.closureSummary.headline).toContain("blocked");
++    expect(result.closureSummary.continueLoop).toBe(false);
+     expect(result.handoffSummary).toContain("No change was applied");
+   });
+ 
+@@ -822,5 +851,6 @@
+     expect(result.issueOutcomes[0]?.disposition).toBe("unverified");
+     expect(result.carryForward.outstandingIssues[0]?.sourceId).toBe("finding-2");
+     expect(result.recommendedNextStep.summary).toContain("stronger evidence");
++    expect(result.closureSummary.nextStep).toContain("stronger evidence");
+   });
+ });
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index 5bebfbc8b89adc6f8f8dab12933b430f25ec11b5..65edc8668e14659a9bd754aebcc0035e2eb114d9
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -561,6 +561,15 @@
+ });
+ export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
+ 
++export const defensiveClosureSummarySchema = z.object({
++  headline: z.string().min(1),
++  summary: z.string().min(1),
++  evidenceHighlights: z.array(z.string().min(1)).min(1).max(3),
++  nextStep: z.string().min(1),
++  continueLoop: z.boolean()
++});
++export type DefensiveClosureSummary = z.infer<typeof defensiveClosureSummarySchema>;
++
+ export const defensiveFinalOutcomeSchema = z.object({
+   status: z.enum(["fixed", "mitigated", "blocked"]),
+   summary: z.string().min(1),
+@@ -1141,6 +1150,35 @@
+     recommendedNextStep
+   });
+ 
++const buildClosureSummary = (
++  selectedAction: DefensiveChosenAction,
++  evidence: DefensiveEvidenceArtifact[],
++  residualRisk: DefensiveResidualRisk,
++  recommendedNextStep: DefensiveNextStep,
++  status: "completed" | "blocked"
++): DefensiveClosureSummary => {
++  const evidenceHighlights = evidence
++    .map((artifact) => artifact.summary.trim())
++    .filter((summary) => summary.length > 0)
++    .slice(0, 3);
++
++  const fallbackEvidence = status === "completed"
++    ? "The bounded change and verification checks are recorded for review."
++    : "The available review evidence is recorded before any autonomous change.";
++
++  return defensiveClosureSummarySchema.parse({
++    headline: status === "completed"
++      ? "Defensive iteration complete: one bounded risk reduction landed."
++      : "Defensive iteration blocked: no unsupported remediation was applied.",
++    summary: status === "completed"
++      ? `${selectedAction.summary} Evidence supports the risk reduction claim, and remaining risk is: ${residualRisk.summary}`
++      : `${selectedAction.summary} The loop stopped before making a change. Remaining risk is: ${residualRisk.summary}`,
++    evidenceHighlights: evidenceHighlights.length > 0 ? evidenceHighlights : [fallbackEvidence],
++    nextStep: recommendedNextStep.summary,
++    continueLoop: recommendedNextStep.continueLoop
++  });
++};
++
+ const buildFinalOutcome = (
+   selectedAction: DefensiveChosenAction,
+   verificationSummary: string,
+@@ -1191,6 +1229,13 @@
+     residualRisk,
+     recommendedNextStep
+   );
++  const closureSummary = buildClosureSummary(
++    selectedAction,
++    request.evidence,
++    residualRisk,
++    recommendedNextStep,
++    "blocked"
++  );
+ 
+   return defensiveIterationRecordSchema.parse({
+     iterationId: request.iterationId,
+@@ -1210,6 +1255,7 @@
+     residualRisk,
+     recommendedNextStep,
+     carryForward,
++    closureSummary,
+     handoffSummary: `${failure.summary} No change was applied.`,
+     failure
+   });
+@@ -1391,6 +1437,13 @@
+     residualRisk,
+     recommendedNextStep
+   );
++  const closureSummary = buildClosureSummary(
++    selectedAction,
++    request.evidence,
++    residualRisk,
++    recommendedNextStep,
++    "completed"
++  );
+ 
+   return defensiveIterationRecordSchema.parse({
+     iterationId: request.iterationId,
+@@ -1410,6 +1463,7 @@
+     residualRisk,
+     recommendedNextStep,
+     carryForward,
++    closureSummary,
+     handoffSummary: `${request.change.summary} completed. ${recommendedNextStep.summary}`
+   });
+ };
+@@ -1447,6 +1501,7 @@
+     residualRisk: defensiveResidualRiskSchema,
+     recommendedNextStep: defensiveNextStepSchema,
+     carryForward: defensiveCarryForwardStateSchema,
++    closureSummary: defensiveClosureSummarySchema,
+     handoffSummary: z.string().min(1),
+     failure: defensiveFailureStateSchema.optional()
+   })
+@@ -1566,7 +1621,7 @@
+       stage: "handoff",
+       purpose: "Recommend the next safe step so the following iteration starts with preserved context.",
+       consumes: ["iterationRecord", "residualRisk"],
+-      produces: ["recommendedNextStep", "handoffSummary"]
++      produces: ["recommendedNextStep", "closureSummary", "handoffSummary"]
+     }
+   ],
+   requiredInputs: [
+@@ -1616,6 +1671,11 @@
+       key: "recommendedNextStep",
+       required: true,
+       description: "The next safe action or explicit stop condition for the following iteration."
++    },
++    {
++      key: "closureSummary",
++      required: true,
++      description: "Compact end-of-iteration guidance that states what risk changed, what evidence supports that claim, what remains, and whether the loop can safely continue."
+     }
+   ],
+   failureStates: [
+
+codex
+The run log changed one more time after the last commit, which is the same bookkeeping issue noted in earlier iterations. I’m making one final log-capture commit now and then I’ll stop touching the workspace so the tree stays clean.
