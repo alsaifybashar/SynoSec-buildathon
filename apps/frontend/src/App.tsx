@@ -127,18 +127,36 @@ const workflowRecords: WorkflowRecord[] = [
   { id: "wf-003", name: "Inbound webhook triage", trigger: "webhook", state: "paused", runs: 12 }
 ];
 
+const runtimeStatusBadge: Record<RuntimeRecord["status"], string> = {
+  healthy: "bg-primary/10 text-primary",
+  degraded: "bg-secondary text-secondary-foreground",
+  retired: "bg-muted text-muted-foreground"
+};
+
 const runtimeColumns: ListPageColumn<RuntimeRecord>[] = [
-  { id: "name", header: "Name", cell: (row) => row.name, sortValue: (row) => row.name, searchValue: (row) => `${row.name} ${row.language}` },
-  { id: "language", header: "Language", cell: (row) => row.language, sortValue: (row) => row.language },
-  { id: "status", header: "Status", cell: (row) => row.status, sortValue: (row) => row.status },
-  { id: "region", header: "Region", cell: (row) => row.region, sortValue: (row) => row.region, className: "text-right" }
+  { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span>, sortValue: (row) => row.name, searchValue: (row) => `${row.name} ${row.language}` },
+  { id: "language", header: "Language", cell: (row) => <span className="text-muted-foreground">{row.language}</span>, sortValue: (row) => row.language },
+  { id: "status", header: "Status", cell: (row) => <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider ${runtimeStatusBadge[row.status]}`}>{row.status}</span>, sortValue: (row) => row.status },
+  { id: "region", header: "Region", cell: (row) => <span className="text-muted-foreground">{row.region}</span>, sortValue: (row) => row.region, className: "text-right" }
 ];
 
+const workflowStateBadge: Record<WorkflowRecord["state"], string> = {
+  active: "bg-primary/10 text-primary",
+  paused: "bg-secondary text-secondary-foreground",
+  draft: "bg-muted text-muted-foreground"
+};
+
+const workflowTriggerBadge: Record<WorkflowRecord["trigger"], string> = {
+  manual: "bg-primary/10 text-primary",
+  schedule: "bg-secondary text-secondary-foreground",
+  webhook: "bg-muted text-muted-foreground"
+};
+
 const workflowColumns: ListPageColumn<WorkflowRecord>[] = [
-  { id: "name", header: "Name", cell: (row) => row.name, sortValue: (row) => row.name, searchValue: (row) => `${row.name} ${row.trigger}` },
-  { id: "trigger", header: "Trigger", cell: (row) => row.trigger, sortValue: (row) => row.trigger },
-  { id: "state", header: "State", cell: (row) => row.state, sortValue: (row) => row.state },
-  { id: "runs", header: "Runs", cell: (row) => row.runs, sortValue: (row) => row.runs, className: "text-right" }
+  { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span>, sortValue: (row) => row.name, searchValue: (row) => `${row.name} ${row.trigger}` },
+  { id: "trigger", header: "Trigger", cell: (row) => <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider ${workflowTriggerBadge[row.trigger]}`}>{row.trigger}</span>, sortValue: (row) => row.trigger },
+  { id: "state", header: "State", cell: (row) => <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider ${workflowStateBadge[row.state]}`}>{row.state}</span>, sortValue: (row) => row.state },
+  { id: "runs", header: "Runs", cell: (row) => <span className="tabular-nums text-muted-foreground">{row.runs}</span>, sortValue: (row) => row.runs, className: "text-right" }
 ];
 
 const runtimeFilter: ListPageFilter<RuntimeRecord> = {

@@ -34,15 +34,35 @@ const statusLabels: Record<ApplicationStatus, string> = {
   archived: "Archived"
 };
 
+const environmentBadgeStyles: Record<ApplicationEnvironment, string> = {
+  production: "bg-primary/10 text-primary",
+  staging: "bg-secondary text-secondary-foreground",
+  development: "bg-muted text-muted-foreground"
+};
+
+const statusBadgeStyles: Record<ApplicationStatus, string> = {
+  active: "bg-primary/10 text-primary",
+  investigating: "bg-secondary text-secondary-foreground",
+  archived: "bg-muted text-muted-foreground"
+};
+
+function StatusBadge({ label, className }: { label: string; className: string }) {
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider ${className}`}>
+      {label}
+    </span>
+  );
+}
+
 const applicationColumns: ListPageColumn<Application>[] = [
-  { id: "name", header: "Name", cell: (row) => row.name, sortValue: (row) => row.name, searchValue: (row) => `${row.name} ${row.baseUrl ?? ""}` },
-  { id: "baseUrl", header: "Base URL", cell: (row) => row.baseUrl ?? "Not set", sortValue: (row) => row.baseUrl ?? "" },
-  { id: "environment", header: "Environment", cell: (row) => environmentLabels[row.environment], sortValue: (row) => row.environment },
-  { id: "status", header: "Status", cell: (row) => statusLabels[row.status], sortValue: (row) => row.status },
+  { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span>, sortValue: (row) => row.name, searchValue: (row) => `${row.name} ${row.baseUrl ?? ""}` },
+  { id: "baseUrl", header: "Base URL", cell: (row) => <span className="text-muted-foreground">{row.baseUrl ?? "Not set"}</span>, sortValue: (row) => row.baseUrl ?? "" },
+  { id: "environment", header: "Environment", cell: (row) => <StatusBadge label={environmentLabels[row.environment]} className={environmentBadgeStyles[row.environment]} />, sortValue: (row) => row.environment },
+  { id: "status", header: "Status", cell: (row) => <StatusBadge label={statusLabels[row.status]} className={statusBadgeStyles[row.status]} />, sortValue: (row) => row.status },
   {
     id: "lastScannedAt",
     header: "Last scanned",
-    cell: (row) => formatTimestamp(row.lastScannedAt),
+    cell: (row) => <span className="text-muted-foreground">{formatTimestamp(row.lastScannedAt)}</span>,
     sortValue: (row) => row.lastScannedAt ?? "",
     className: "text-right"
   }
