@@ -1,13 +1,27 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, RefreshCw, StopCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  FileText,
+  Layers3,
+  RefreshCw,
+  ShieldAlert,
+  StopCircle
+} from "lucide-react";
+import {
+  apiRoutes,
+  severityOrder,
+  type AuditEntry,
+  type DfsNode,
+  type Finding,
+  type OsiLayer,
+  type Report,
+  type Scan,
+  type ScanStatus,
+  type Severity
+} from "@synosec/contracts";
 import { toast } from "sonner";
-import { apiRoutes, type Scan, type ScanStatus } from "@synosec/contracts";
-import { AuditLog } from "./AuditLog";
-import { DfsGraph } from "./DfsGraph";
-import { FindingsPanel } from "./FindingsPanel";
-import { ReportView } from "./ReportView";
 import { ScanConfig } from "./ScanConfig";
-import { ScanStatus as ScanStatusPanel } from "./ScanStatus";
 import { DetailField, DetailFieldGroup, DetailPage, DetailSidebarItem } from "./detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "./list-page";
 import { Badge } from "./ui/badge";
@@ -16,6 +30,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/
 import { useScan } from "../hooks/useScan";
 import { useScanWebSocket } from "../hooks/useScanWebSocket";
 import { fetchJson } from "../lib/api";
+import { cn } from "../lib/utils";
 
 const scanStatusBadgeVariant: Record<ScanStatus, "outline" | "success" | "warning" | "destructive"> = {
   pending: "outline",
@@ -23,6 +38,23 @@ const scanStatusBadgeVariant: Record<ScanStatus, "outline" | "success" | "warnin
   complete: "success",
   aborted: "warning",
   failed: "destructive"
+};
+
+const severityBadgeVariant: Record<Severity, "outline" | "success" | "warning" | "destructive"> = {
+  info: "outline",
+  low: "outline",
+  medium: "warning",
+  high: "warning",
+  critical: "destructive"
+};
+
+const layerLabels: Record<OsiLayer, string> = {
+  L2: "Data link",
+  L3: "Network",
+  L4: "Transport",
+  L5: "Session",
+  L6: "Presentation",
+  L7: "Application"
 };
 
 function formatTimestamp(value?: string | null) {
@@ -44,6 +76,24 @@ function summarizeProgress(scan: Scan) {
   return `${Math.round((scan.nodesComplete / scan.nodesTotal) * 100)}%`;
 }
 
+function riskPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function findingsForNode(findings: Finding[], nodeId: string) {
+  return findings.filter((finding) => finding.nodeId === nodeId);
+}
+
+function groupFindingsBySeverity(findings: Finding[]) {
+  return findings.reduce<Record<Severity, Finding[]>>(
+    (acc, finding) => {
+      acc[finding.severity].push(finding);
+      return acc;
+    },
+    { critical: [], high: [], medium: [], low: [], info: [] }
+  );
+}
+
 async function fetchScans(): Promise<Scan[]> {
   return fetchJson<Scan[]>(apiRoutes.scanList);
 }
@@ -52,23 +102,304 @@ async function abortScan(scanId: string): Promise<void> {
   await fetchJson<void>(`/api/scan/${scanId}/abort`, { method: "POST" });
 }
 
+type QuickLink = {
+  id: string;
+  label: string;
+  shortcut: string;
+  meta?: string;
+};
+
+function ShortcutHint({ shortcut }: { shortcut: string }) {
+  return (
+    <span className="rounded-md border border-border/70 bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+      {shortcut}
+    </span>
+  );
+}
+
+function QuickLinkButton({ link }: { link: QuickLink }) {
+  return (
+    <button
+      type="button"
+      aria-keyshortcuts={link.shortcut}
+      onClick={() => {
+        document.getElementById(link.id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }}
+      className="flex w-full items-center justify-between gap-3 rounded-xl border border-border/70 bg-background/70 px-3 py-2 text-left transition hover:border-primary/30 hover:bg-accent"
+    >
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-foreground">{link.label}</span>
+        {link.meta ? <span className="block truncate text-xs text-muted-foreground">{link.meta}</span> : null}
+      </span>
+      <ShortcutHint shortcut={link.shortcut} />
+    </button>
+  );
+}
+
 function SectionCard({
+  id,
   title,
   description,
   children
 }: {
+  id: string;
   title: string;
   description: string;
   children: ReactNode;
 }) {
   return (
-    <Card className="overflow-hidden">
+    <Card id={id} className="scroll-mt-6 overflow-hidden">
       <CardHeader className="border-b border-border/70 pb-4">
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent className="p-0">{children}</CardContent>
+      <CardContent>{children}</CardContent>
     </Card>
+  );
+}
+
+function MetricCard({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "alert" }) {
+  return (
+    <div className={cn("rounded-2xl border p-4", tone === "alert" ? "border-warning/40 bg-warning/10" : "border-border/70 bg-muted/30")}>
+      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function NodeTable({
+  nodes,
+  findings,
+  selectedNodeId,
+  onSelectNode
+}: {
+  nodes: DfsNode[];
+  findings: Finding[];
+  selectedNodeId: string | null;
+  onSelectNode: (nodeId: string | null) => void;
+}) {
+  if (nodes.length === 0) {
+    return <p className="text-sm text-muted-foreground">No nodes discovered for this layer yet.</p>;
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-border/70">
+      <table className="w-full min-w-[42rem] text-sm">
+        <thead className="bg-muted/40 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+          <tr>
+            <th className="px-4 py-3 text-left">Target</th>
+            <th className="px-4 py-3 text-left">Service</th>
+            <th className="px-4 py-3 text-left">Status</th>
+            <th className="px-4 py-3 text-left">Depth</th>
+            <th className="px-4 py-3 text-left">Risk</th>
+            <th className="px-4 py-3 text-left">Findings</th>
+          </tr>
+        </thead>
+        <tbody>
+          {nodes.map((node) => {
+            const nodeFindings = findingsForNode(findings, node.id);
+            const active = selectedNodeId === node.id;
+
+            return (
+              <tr
+                key={node.id}
+                className={cn("border-t border-border/70 transition", active ? "bg-primary/5" : "hover:bg-muted/30")}
+              >
+                <td className="px-4 py-3">
+                  <button type="button" onClick={() => onSelectNode(active ? null : node.id)} className="text-left">
+                    <span className="block font-medium text-foreground">{node.target}</span>
+                    <span className="block font-mono text-[11px] text-muted-foreground">{node.id}</span>
+                  </button>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {node.service ?? (node.port ? `Port ${node.port}` : "Unknown")}
+                </td>
+                <td className="px-4 py-3">
+                  <Badge variant={node.status === "complete" ? "success" : "outline"}>{node.status}</Badge>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">{node.depth}</td>
+                <td className="px-4 py-3 text-muted-foreground">{riskPercent(node.riskScore)}</td>
+                <td className="px-4 py-3 text-muted-foreground">{nodeFindings.length}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FindingsList({
+  findings,
+  nodesById,
+  selectedNodeId
+}: {
+  findings: Finding[];
+  nodesById: Record<string, DfsNode>;
+  selectedNodeId: string | null;
+}) {
+  const filteredFindings = selectedNodeId ? findings.filter((finding) => finding.nodeId === selectedNodeId) : findings;
+  const grouped = groupFindingsBySeverity(
+    [...filteredFindings].sort((left, right) => severityOrder[right.severity] - severityOrder[left.severity])
+  );
+
+  if (filteredFindings.length === 0) {
+    return <p className="text-sm text-muted-foreground">No findings match the current selection.</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {(["critical", "high", "medium", "low", "info"] as Severity[]).map((severity) => {
+        const group = grouped[severity];
+        if (group.length === 0) {
+          return null;
+        }
+
+        return (
+          <div key={severity} className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Badge variant={severityBadgeVariant[severity]}>{severity}</Badge>
+              <span className="text-sm text-muted-foreground">{group.length} findings</span>
+            </div>
+            {group.map((finding) => {
+              const node = nodesById[finding.nodeId];
+              return (
+                <article key={finding.id} className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-base font-semibold text-foreground">{finding.title}</h4>
+                    <Badge variant="outline">{Math.round(finding.confidence * 100)}% confidence</Badge>
+                    {finding.validated ? <Badge variant="success">validated</Badge> : null}
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{finding.description}</p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span className="rounded-full bg-background px-2.5 py-1">{node?.layer ?? "Unknown layer"}</span>
+                    <span className="rounded-full bg-background px-2.5 py-1">{node?.target ?? finding.nodeId}</span>
+                    <span className="rounded-full bg-background px-2.5 py-1">{finding.technique}</span>
+                  </div>
+                  <details className="mt-4 rounded-xl border border-border/70 bg-background/80 p-3">
+                    <summary className="cursor-pointer text-sm font-medium text-foreground">Evidence</summary>
+                    <pre className="mt-3 overflow-x-auto whitespace-pre-wrap font-mono text-xs leading-6 text-muted-foreground">
+                      {finding.evidence}
+                    </pre>
+                    {finding.reproduceCommand ? (
+                      <div className="mt-3 border-t border-border/70 pt-3">
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Reproduce</p>
+                        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-xs leading-6 text-foreground">
+                          {finding.reproduceCommand}
+                        </pre>
+                      </div>
+                    ) : null}
+                  </details>
+                </article>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AuditTimeline({ entries, isLoading }: { entries: AuditEntry[]; isLoading: boolean }) {
+  if (isLoading) {
+    return <p className="text-sm text-muted-foreground">Loading audit trail...</p>;
+  }
+
+  if (entries.length === 0) {
+    return <p className="text-sm text-muted-foreground">No audit entries available yet.</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {entries.map((entry) => (
+        <div key={entry.id} className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className={cn("h-2.5 w-2.5 rounded-full", entry.scopeValid ? "bg-success" : "bg-warning")} />
+              <span className="font-medium text-foreground">{entry.actor}</span>
+              <Badge variant="outline">{entry.action}</Badge>
+            </div>
+            <span className="text-xs text-muted-foreground">{formatTimestamp(entry.timestamp)}</span>
+          </div>
+          {Object.keys(entry.details).length > 0 ? (
+            <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-xl bg-background/80 p-3 font-mono text-xs leading-6 text-muted-foreground">
+              {JSON.stringify(entry.details, null, 2)}
+            </pre>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ReportSection({ report }: { report: Report | null }) {
+  if (!report) {
+    return <p className="text-sm text-muted-foreground">Report becomes available when the scan completes.</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-sm leading-7 text-muted-foreground">{report.executiveSummary}</p>
+        <p className="mt-2 text-xs text-muted-foreground">Generated {formatTimestamp(report.generatedAt)}</p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-5">
+        {(["critical", "high", "medium", "low", "info"] as Severity[]).map((severity) => (
+          <MetricCard
+            key={severity}
+            label={severity}
+            value={String(report.findingsBySeverity[severity])}
+            tone={severity === "critical" || severity === "high" ? "alert" : "default"}
+          />
+        ))}
+      </div>
+
+      {report.topRisks.length > 0 ? (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-warning" />
+            <h4 className="text-base font-semibold text-foreground">Top Risks</h4>
+          </div>
+          {report.topRisks.map((risk, index) => (
+            <div key={`${risk.title}-${index}`} className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={severityBadgeVariant[risk.severity]}>{risk.severity}</Badge>
+                <h5 className="font-medium text-foreground">{risk.title}</h5>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">{risk.nodeTarget}</p>
+              <p className="mt-3 text-sm leading-6 text-foreground">{risk.recommendation}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {report.attackPaths.length > 0 ? (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-primary" />
+            <h4 className="text-base font-semibold text-foreground">Attack Paths</h4>
+          </div>
+          {report.attackPaths.map((path, index) => (
+            <div key={`${path.description}-${index}`} className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium text-foreground">Path {index + 1}</span>
+                <Badge variant={path.risk >= 0.6 ? "warning" : "outline"}>{riskPercent(path.risk)} risk</Badge>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
+                {path.nodeIds.map((nodeId, nodeIndex) => (
+                  <span key={nodeId} className="flex items-center gap-1.5">
+                    <span className="rounded-full bg-background px-2.5 py-1 font-mono text-foreground">{nodeId}</span>
+                    {nodeIndex < path.nodeIds.length - 1 ? <ChevronRight className="h-3 w-3 text-muted-foreground" /> : null}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{path.description}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -85,14 +416,48 @@ export function ScansPage({
 }) {
   const [roundSummary, setRoundSummary] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
   const { lastEvent, isConnected } = useScanWebSocket(scanId !== "new");
   const { scan, findings, graph, report, isLoading, refetch } = useScan(scanId && scanId !== "new" ? scanId : null, lastEvent);
   const isCreateMode = scanId === "new";
+  const auditRefreshRound = lastEvent?.type === "round_complete" ? lastEvent.round : 0;
 
   useEffect(() => {
     setRoundSummary("");
     setSelectedNodeId(null);
   }, [scanId]);
+
+  useEffect(() => {
+    if (!scanId || scanId === "new") {
+      setAuditEntries([]);
+      return;
+    }
+
+    let active = true;
+    setAuditLoading(true);
+
+    fetchJson<AuditEntry[]>(`/api/scan/${scanId}/audit`)
+      .then((entries) => {
+        if (active) {
+          setAuditEntries(entries);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAuditEntries([]);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setAuditLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [auditRefreshRound, scanId, scan?.status]);
 
   useEffect(() => {
     if (!lastEvent || !scanId || scanId === "new") {
@@ -198,13 +563,73 @@ export function ScansPage({
     }, {});
   }, [findings]);
 
-  const selectedNodeLabel = useMemo(() => {
-    if (!selectedNodeId || !graph) {
-      return null;
+  const nodes = useMemo(() => graph?.nodes ?? [], [graph]);
+  const nodesById = useMemo(() => Object.fromEntries(nodes.map((node) => [node.id, node])), [nodes]);
+
+  const layers = useMemo(() => {
+    return scan?.scope.layers.map((layer) => ({
+      layer,
+      nodes: nodes
+        .filter((node) => node.layer === layer)
+        .sort((left, right) => right.riskScore - left.riskScore)
+    })) ?? [];
+  }, [nodes, scan?.scope.layers]);
+
+  const selectedNodeLabel = selectedNodeId ? nodesById[selectedNodeId]?.target ?? selectedNodeId : null;
+
+  const quickLinks = useMemo<QuickLink[]>(() => {
+    const layerLinks = layers.map((entry, index) => ({
+      id: `layer-${entry.layer}`,
+      label: `${entry.layer} ${layerLabels[entry.layer]}`,
+      shortcut: String(index + 1),
+      meta: `${entry.nodes.length} nodes`
+    }));
+
+    return [
+      { id: "overview", label: "Overview", shortcut: "s", meta: `${scan?.scope.targets.length ?? 0} targets` },
+      ...layerLinks,
+      { id: "findings", label: "Findings", shortcut: "f", meta: `${findings.length} total` },
+      { id: "audit", label: "Audit", shortcut: "a", meta: `${auditEntries.length} events` },
+      { id: "report", label: "Report", shortcut: "r", meta: report ? `${report.totalFindings} findings` : "Pending" }
+    ];
+  }, [auditEntries.length, findings.length, layers, report, scan?.scope.targets.length]);
+
+  useEffect(() => {
+    if (!scanId || scanId === "new") {
+      return;
     }
 
-    return graph.nodes.find((node) => node.id === selectedNodeId)?.target ?? selectedNodeId;
-  }, [graph, selectedNodeId]);
+    const keyMap = Object.fromEntries(quickLinks.map((link) => [link.shortcut.toLowerCase(), link.id]));
+
+    function handleKeydown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        !target ||
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      const destination = keyMap[event.key.toLowerCase()];
+      if (!destination) {
+        return;
+      }
+
+      event.preventDefault();
+      document.getElementById(destination)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    window.addEventListener("keydown", handleKeydown);
+    return () => {
+      window.removeEventListener("keydown", handleKeydown);
+    };
+  }, [quickLinks, scanId]);
 
   const handleAbort = useCallback(async () => {
     if (!scanId || scanId === "new") {
@@ -220,6 +645,17 @@ export function ScansPage({
       });
     }
   }, [scanId]);
+
+  const handleRefresh = useCallback(() => {
+    void refetch();
+    if (scanId && scanId !== "new") {
+      setAuditLoading(true);
+      fetchJson<AuditEntry[]>(`/api/scan/${scanId}/audit`)
+        .then(setAuditEntries)
+        .catch(() => setAuditEntries([]))
+        .finally(() => setAuditLoading(false));
+    }
+  }, [refetch, scanId]);
 
   if (!scanId) {
     return (
@@ -255,7 +691,7 @@ export function ScansPage({
           <>
             <DetailSidebarItem label="Mode">Depth-first autonomous scan</DetailSidebarItem>
             <DetailSidebarItem label="Launch paths">Manual configuration or demo seed</DetailSidebarItem>
-            <DetailSidebarItem label="Outputs">Graph, findings, report, and audit trail</DetailSidebarItem>
+            <DetailSidebarItem label="Outputs">Layer inventory, findings, audit trail, and report</DetailSidebarItem>
           </>
         }
       >
@@ -267,7 +703,7 @@ export function ScansPage({
           </DetailField>
           <DetailField label="Workflow">
             <p className="text-sm text-muted-foreground">
-              Newly started scans open as detail pages so the graph, findings, report, and audit stay on one route.
+              Newly started scans open as detail pages so investigation stays on one route.
             </p>
           </DetailField>
         </DetailFieldGroup>
@@ -294,7 +730,7 @@ export function ScansPage({
               <ArrowLeft className="h-4 w-4" />
               Back
             </Button>
-            <Button type="button" variant="outline" onClick={() => void refetch()} disabled={isLoading}>
+            <Button type="button" variant="outline" onClick={handleRefresh} disabled={isLoading}>
               <RefreshCw className="h-4 w-4" />
               Refresh
             </Button>
@@ -322,7 +758,7 @@ export function ScansPage({
             <ArrowLeft className="h-4 w-4" />
             Back
           </Button>
-          <Button type="button" variant="outline" onClick={() => void refetch()} disabled={isLoading}>
+          <Button type="button" variant="outline" onClick={handleRefresh} disabled={isLoading}>
             <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
@@ -335,102 +771,131 @@ export function ScansPage({
         </div>
       }
       sidebar={
-        <>
-          <DetailSidebarItem label="Status">
-            <Badge variant={scanStatusBadgeVariant[scan.status]}>{scan.status}</Badge>
-          </DetailSidebarItem>
-          <DetailSidebarItem label="Realtime">{isConnected ? "Connected" : "Reconnecting"}</DetailSidebarItem>
-          <DetailSidebarItem label="Started">{formatTimestamp(scan.createdAt)}</DetailSidebarItem>
-          <DetailSidebarItem label="Completed">{formatTimestamp(scan.completedAt)}</DetailSidebarItem>
-          <DetailSidebarItem label="Targets">{scan.scope.targets.length}</DetailSidebarItem>
-          <DetailSidebarItem label="Layers">{scan.scope.layers.join(", ")}</DetailSidebarItem>
-          <DetailSidebarItem label="Depth / RPS">{scan.scope.maxDepth} / {scan.scope.rateLimitRps}</DetailSidebarItem>
-          <DetailSidebarItem label="Findings">
-            {findings.length} total
-            {(findingsBySeverity.critical ?? 0) > 0 ? ` · ${findingsBySeverity.critical} critical` : ""}
-            {(findingsBySeverity.high ?? 0) > 0 ? ` · ${findingsBySeverity.high} high` : ""}
-          </DetailSidebarItem>
-        </>
+        <div className="space-y-5 lg:sticky lg:top-6">
+          <div className="space-y-4">
+            <DetailSidebarItem label="Status">
+              <Badge variant={scanStatusBadgeVariant[scan.status]}>{scan.status}</Badge>
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Realtime">{isConnected ? "Connected" : "Reconnecting"}</DetailSidebarItem>
+            <DetailSidebarItem label="Started">{formatTimestamp(scan.createdAt)}</DetailSidebarItem>
+            <DetailSidebarItem label="Completed">{formatTimestamp(scan.completedAt)}</DetailSidebarItem>
+            <DetailSidebarItem label="Targets">{scan.scope.targets.length}</DetailSidebarItem>
+            <DetailSidebarItem label="Layers">{scan.scope.layers.join(", ")}</DetailSidebarItem>
+            <DetailSidebarItem label="Depth / RPS">{scan.scope.maxDepth} / {scan.scope.rateLimitRps}</DetailSidebarItem>
+            <DetailSidebarItem label="Findings">
+              {findings.length} total
+              {(findingsBySeverity.critical ?? 0) > 0 ? ` · ${findingsBySeverity.critical} critical` : ""}
+              {(findingsBySeverity.high ?? 0) > 0 ? ` · ${findingsBySeverity.high} high` : ""}
+            </DetailSidebarItem>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
+            <div className="flex items-center gap-2">
+              <Layers3 className="h-4 w-4 text-primary" />
+              <p className="text-sm font-semibold text-foreground">Jump To</p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Keyboard shortcuts: `s` overview, `1-6` layers, `f` findings, `a` audit, `r` report.
+            </p>
+            <div className="space-y-2">
+              {quickLinks.map((link) => (
+                <QuickLinkButton key={link.id} link={link} />
+              ))}
+            </div>
+            {selectedNodeLabel ? (
+              <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+                Focused node
+                <div className="mt-1 font-mono text-foreground">{selectedNodeLabel}</div>
+              </div>
+            ) : null}
+          </div>
+        </div>
       }
     >
       <div className="space-y-6">
-        <ScanStatusPanel scan={scan} onAbort={() => void handleAbort()} roundSummary={roundSummary} />
-
-        <DetailFieldGroup title="Scope">
-          <DetailField label="Targets">
-            <div className="space-y-1 text-sm text-muted-foreground">
-              {scan.scope.targets.map((target) => (
-                <div key={target} className="font-mono text-xs text-foreground">{target}</div>
-              ))}
-            </div>
-          </DetailField>
-          <DetailField label="Exclusions">
-            <p className="text-sm text-muted-foreground">
-              {scan.scope.exclusions.length > 0 ? scan.scope.exclusions.join(", ") : "No explicit exclusions"}
-            </p>
-          </DetailField>
-          <DetailField label="Execution">
-            <p className="text-sm text-muted-foreground">
-              {scan.scope.layers.join(", ")} layers, depth {scan.scope.maxDepth}, limit {scan.scope.maxDurationMinutes} minutes
-            </p>
-          </DetailField>
-          <DetailField label="Active exploits">
-            <p className="text-sm text-muted-foreground">{scan.scope.allowActiveExploits ? "Allowed" : "Disabled"}</p>
-          </DetailField>
-        </DetailFieldGroup>
-
-        <div className="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
-          <SectionCard
-            title="Traversal graph"
-            description="The DFS graph remains embedded in the detail page so the scan structure is visible without changing views."
-          >
-            <div className="h-[30rem] overflow-hidden bg-slate-950">
-              {graph ? (
-                <DfsGraph
-                  graph={graph}
-                  findings={findings}
-                  onNodeClick={(node) => setSelectedNodeId(node.id)}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center px-6 text-sm text-slate-400">
-                  {isLoading ? "Loading graph..." : "Graph data is not available yet."}
-                </div>
-              )}
-            </div>
-          </SectionCard>
-
-          <SectionCard
-            title="Findings"
-            description={selectedNodeLabel ? `Filtered to ${selectedNodeLabel}. Select another graph node to pivot.` : "High-signal findings stay beside the traversal graph."}
-          >
-            <div className="h-[30rem] overflow-hidden bg-slate-950">
-              <FindingsPanel findings={findings} selectedNodeId={selectedNodeId} />
-            </div>
-          </SectionCard>
-        </div>
-
         <SectionCard
-          title="Audit trail"
-          description="Execution events and scope decisions are preserved inline with the selected scan."
+          id="overview"
+          title="Overview"
+          description="Scan state, scope, and current execution summary."
         >
-          <div className="h-[24rem] overflow-hidden bg-slate-950">
-            <AuditLog scanId={scan.id} />
+          <div className="space-y-6">
+            <div className="grid gap-3 md:grid-cols-4">
+              <MetricCard label="Progress" value={summarizeProgress(scan)} />
+              <MetricCard label="Nodes" value={`${scan.nodesComplete}/${scan.nodesTotal}`} />
+              <MetricCard label="Round" value={String(scan.currentRound)} />
+              <MetricCard label="Findings" value={String(findings.length)} tone={(findingsBySeverity.critical ?? 0) > 0 ? "alert" : "default"} />
+            </div>
+
+            {roundSummary ? (
+              <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Latest Round</p>
+                <p className="mt-2 text-sm leading-6 text-foreground">{roundSummary}</p>
+              </div>
+            ) : null}
+
+            <DetailFieldGroup title="Scope">
+              <DetailField label="Targets">
+                <div className="space-y-1 text-sm text-muted-foreground">
+                  {scan.scope.targets.map((target) => (
+                    <div key={target} className="font-mono text-xs text-foreground">{target}</div>
+                  ))}
+                </div>
+              </DetailField>
+              <DetailField label="Exclusions">
+                <p className="text-sm text-muted-foreground">
+                  {scan.scope.exclusions.length > 0 ? scan.scope.exclusions.join(", ") : "No explicit exclusions"}
+                </p>
+              </DetailField>
+              <DetailField label="Execution">
+                <p className="text-sm text-muted-foreground">
+                  {scan.scope.layers.join(", ")} layers, depth {scan.scope.maxDepth}, limit {scan.scope.maxDurationMinutes} minutes
+                </p>
+              </DetailField>
+              <DetailField label="Active exploits">
+                <p className="text-sm text-muted-foreground">{scan.scope.allowActiveExploits ? "Allowed" : "Disabled"}</p>
+              </DetailField>
+            </DetailFieldGroup>
           </div>
         </SectionCard>
 
+        {layers.map((entry) => (
+          <SectionCard
+            key={entry.layer}
+            id={`layer-${entry.layer}`}
+            title={`${entry.layer} ${layerLabels[entry.layer]}`}
+            description="Nodes are grouped directly by the collected layer data, with per-node findings counts."
+          >
+            <NodeTable
+              nodes={entry.nodes}
+              findings={findings}
+              selectedNodeId={selectedNodeId}
+              onSelectNode={setSelectedNodeId}
+            />
+          </SectionCard>
+        ))}
+
         <SectionCard
-          title="Report"
-          description="The generated assessment appears here when the scan completes."
+          id="findings"
+          title="Findings"
+          description={selectedNodeLabel ? `Filtered to ${selectedNodeLabel}. Select the same node again to clear the focus.` : "Direct findings view built from the current scan payload."}
         >
-          {report ? (
-            <div className="bg-slate-950">
-              <ReportView report={report} />
-            </div>
-          ) : (
-            <div className="px-6 py-10 text-sm text-muted-foreground">
-              {scan.status === "complete" ? "Generating report..." : "Report becomes available when the scan completes."}
-            </div>
-          )}
+          <FindingsList findings={findings} nodesById={nodesById} selectedNodeId={selectedNodeId} />
+        </SectionCard>
+
+        <SectionCard
+          id="audit"
+          title="Audit"
+          description="Audit entries are shown inline for fast review without switching views."
+        >
+          <AuditTimeline entries={auditEntries} isLoading={auditLoading} />
+        </SectionCard>
+
+        <SectionCard
+          id="report"
+          title="Report"
+          description="Report sections are rendered directly from the generated report payload."
+        >
+          <ReportSection report={report} />
         </SectionCard>
       </div>
     </DetailPage>
