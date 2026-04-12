@@ -558,6 +558,33 @@ export const defensiveNextStepSchema = z.object({
 });
 export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
 
+export const defensiveMitigationChangeSchema = z.object({
+  summary: z.string().min(1),
+  scopeRef: z.string().min(1),
+  rolloutRef: z.string().min(1),
+  reversibleIntent: z.boolean(),
+  affectsMultipleComponents: z.boolean().default(false),
+  destructive: z.boolean().default(false)
+});
+export type DefensiveMitigationChange = z.infer<typeof defensiveMitigationChangeSchema>;
+
+export const defensiveVerificationPlanSchema = z.object({
+  successCriteria: z.string().min(1),
+  checks: z.array(z.string().min(1)).min(1).max(5)
+});
+export type DefensiveVerificationPlan = z.infer<typeof defensiveVerificationPlanSchema>;
+
+export const defensiveExecutionRequestSchema = z.object({
+  iterationId: z.string().min(1),
+  input: defensiveIterationInputSchema,
+  observations: z.array(defensiveIterationObservationSchema).default([]),
+  change: defensiveMitigationChangeSchema,
+  verificationPlan: defensiveVerificationPlanSchema,
+  evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
+  outcomeSummary: z.string().min(1)
+});
+export type DefensiveExecutionRequest = z.infer<typeof defensiveExecutionRequestSchema>;
+
 export const defensivePrioritizationSourceKindSchema = z.enum(["finding", "observation"]);
 export type DefensivePrioritizationSourceKind = z.infer<typeof defensivePrioritizationSourceKindSchema>;
 
@@ -898,6 +925,115 @@ const buildComparisonReason = (
   return `Not selected because its weighted priority score (${candidate.priorityScore}) is lower than the selected action (${selected.priorityScore}).`;
 };
 
+const matchesSelectedScope = (
+  selectedAction: DefensiveChosenAction,
+  change: DefensiveMitigationChange
+): boolean => {
+  const selectedScope = selectedAction.scope.toLowerCase();
+  const changeScope = `${change.summary} ${change.scopeRef}`.toLowerCase();
+
+  if (selectedScope.includes("access boundary")) {
+    return /(route|listener|policy|firewall|ingress|network|cidr|allowlist)/.test(changeScope);
+  }
+
+  if (selectedScope.includes("configuration")) {
+    return /(config|setting|flag|policy|env)/.test(changeScope);
+  }
+
+  if (selectedScope.includes("dependency") || selectedScope.includes("package")) {
+    return /(package|dependency|version|image)/.test(changeScope);
+  }
+
+  if (selectedScope.includes("logging") || selectedScope.includes("alerting")) {
+    return /(log|alert|telemetry|monitor)/.test(changeScope);
+  }
+
+  return true;
+};
+
+const deriveCompletionResidualRisk = (
+  prioritization: DefensivePrioritization,
+  input: DefensiveIterationInput
+): DefensiveResidualRisk => {
+  const highestDeferredSeverity = prioritization.followUp
+    .map((item) => {
+      const finding = input.findings.find((candidate) => candidate.id === item.sourceId);
+
+      return finding?.severity ?? "info";
+    })
+    .sort((left, right) => severityOrder[right] - severityOrder[left])[0];
+
+  const baseLevel = input.assetContext.internetExposed && prioritization.selectedAction.action.type === "access_restriction"
+    ? "medium"
+    : "low";
+  const level = highestDeferredSeverity && severityOrder[highestDeferredSeverity] > severityOrder[baseLevel]
+    ? highestDeferredSeverity
+    : baseLevel;
+
+  return defensiveResidualRiskSchema.parse({
+    level,
+    summary: prioritization.followUp.length > 0
+      ? `The selected mitigation completed, but ${prioritization.followUp.length} deferred item${prioritization.followUp.length === 1 ? "" : "s"} still require stronger evidence.`
+      : "The selected mitigation completed and no additional deferred issues were introduced in this iteration.",
+    remainingFindingIds: prioritization.followUp.map((item) => item.sourceId),
+    needsHumanReview: prioritization.followUp.length > 0
+  });
+};
+
+const buildCompletedNextStep = (prioritization: DefensivePrioritization): DefensiveNextStep => {
+  if (prioritization.followUp.length > 0) {
+    return defensiveNextStepSchema.parse({
+      summary: "Validate the deferred item with stronger evidence before expanding the hardening scope.",
+      rationale: "The current iteration applied one safe mitigation and should not broaden scope until the follow-up evidence improves.",
+      continueLoop: true
+    });
+  }
+
+  return defensiveNextStepSchema.parse({
+    summary: "Review the next-highest ranked defensive action before starting another bounded iteration.",
+    rationale: "Only one mitigation should land per iteration, even when other candidate actions remain.",
+    continueLoop: true
+  });
+};
+
+const blockDefensiveIteration = (
+  request: DefensiveExecutionRequest,
+  prioritization: DefensivePrioritization,
+  failure: DefensiveFailureState
+): DefensiveIterationRecord => {
+  const selectedAction = prioritization.selectedAction.action;
+
+  return defensiveIterationRecordSchema.parse({
+    iterationId: request.iterationId,
+    stages: defensiveLoopStages,
+    status: "blocked",
+    input: request.input,
+    prioritization,
+    chosenAction: selectedAction,
+    verification: {
+      outcome: "blocked",
+      summary: failure.summary,
+      checks: request.verificationPlan.checks
+    },
+    evidence: request.evidence,
+    residualRisk: {
+      level: request.input.findings
+        .map((finding) => finding.severity)
+        .sort((left, right) => severityOrder[right] - severityOrder[left])[0] ?? "info",
+      summary: "The hardening iteration was blocked, so the selected risk remains in place until scope or evidence improves.",
+      remainingFindingIds: prioritization.selectedAction.sourceIds,
+      needsHumanReview: true
+    },
+    recommendedNextStep: {
+      summary: failure.operatorAction,
+      rationale: failure.summary,
+      continueLoop: false
+    },
+    handoffSummary: `${failure.summary} No change was applied.`,
+    failure
+  });
+};
+
 export const prioritizeDefensiveAction = (
   rawInput: DefensivePrioritizationInput
 ): DefensivePrioritization => {
@@ -1003,6 +1139,79 @@ export const prioritizeDefensiveAction = (
     rankedActions,
     followUp,
     weights: defensivePrioritizationWeights
+  });
+};
+
+export const executeDefensiveIteration = (
+  rawRequest: DefensiveExecutionRequest
+): DefensiveIterationRecord => {
+  const request = defensiveExecutionRequestSchema.parse(rawRequest);
+  const prioritization = prioritizeDefensiveAction({
+    findings: request.input.findings,
+    observations: request.observations,
+    target: request.input.target,
+    assetContext: request.input.assetContext,
+    priorIteration: request.input.priorIteration
+  });
+  const selectedAction = prioritization.selectedAction.action;
+
+  if (prioritization.selectedAction.confidenceDisposition !== "confirmed_risk") {
+    return blockDefensiveIteration(request, prioritization, {
+      reason: "ambiguous_scope",
+      blockedStage: "act",
+      summary: "The selected action is not supported by high-confidence evidence, so autonomous hardening is blocked.",
+      operatorAction: "Reproduce the finding with stronger evidence before applying any mitigation."
+    });
+  }
+
+  if (!selectedAction.bounded || request.change.affectsMultipleComponents || request.change.destructive || !request.change.reversibleIntent) {
+    return blockDefensiveIteration(request, prioritization, {
+      reason: "unsafe_action",
+      blockedStage: "act",
+      summary: "The proposed change is broader than one reversible mitigation, so the iteration stops before execution.",
+      operatorAction: "Reduce the change to one reversible control update with a clear rollback path."
+    });
+  }
+
+  if (!matchesSelectedScope(selectedAction, request.change)) {
+    return blockDefensiveIteration(request, prioritization, {
+      reason: "ambiguous_scope",
+      blockedStage: "act",
+      summary: "The proposed change does not clearly match the selected action scope, so the iteration remains blocked.",
+      operatorAction: "Align the implementation to the selected mitigation scope before retrying."
+    });
+  }
+
+  const hasVerificationEvidence = request.evidence.some((artifact) => artifact.type === "test_result" || artifact.type === "command_output");
+
+  if (!hasVerificationEvidence) {
+    return blockDefensiveIteration(request, prioritization, {
+      reason: "missing_evidence",
+      blockedStage: "verify",
+      summary: "Verification evidence is missing, so the loop cannot claim the mitigation completed safely.",
+      operatorAction: "Capture focused verification output for the selected mitigation before recording completion."
+    });
+  }
+
+  const residualRisk = deriveCompletionResidualRisk(prioritization, request.input);
+  const recommendedNextStep = buildCompletedNextStep(prioritization);
+
+  return defensiveIterationRecordSchema.parse({
+    iterationId: request.iterationId,
+    stages: defensiveLoopStages,
+    status: "completed",
+    input: request.input,
+    prioritization,
+    chosenAction: selectedAction,
+    verification: {
+      outcome: "verified",
+      summary: request.outcomeSummary,
+      checks: request.verificationPlan.checks
+    },
+    evidence: request.evidence,
+    residualRisk,
+    recommendedNextStep,
+    handoffSummary: `${request.change.summary} completed. ${recommendedNextStep.summary}`
   });
 };
 

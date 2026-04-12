@@ -7,6 +7,7 @@ import {
   defensiveIterationRecordSchema,
   defensiveLoopContract,
   defensiveLoopStages,
+  executeDefensiveIteration,
   prioritizeDefensiveAction,
   demoResponseSchema,
   healthResponseSchema,
@@ -428,5 +429,189 @@ describe("contracts", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("executes one bounded hardening iteration with focused verification evidence", () => {
+    const result = executeDefensiveIteration({
+      iterationId: "iter-003",
+      input: {
+        findings: [
+          {
+            id: "finding-1",
+            title: "Public admin endpoint exposed",
+            severity: "high",
+            confidence: 0.93,
+            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
+            evidence: "Ingress policy and probe output show the route is publicly reachable.",
+            source: "manual-review"
+          }
+        ],
+        target: {
+          kind: "service",
+          id: "svc-admin-api",
+          displayName: "Admin API",
+          environment: "production",
+          locator: "admin-api.prod.internal"
+        },
+        assetContext: {
+          assetId: "asset-1",
+          assetName: "Admin API",
+          criticality: "critical",
+          internetExposed: true,
+          containsSensitiveData: true,
+          notes: ["Production admin surface"]
+        }
+      },
+      observations: [],
+      change: {
+        summary: "Restricted the admin ingress CIDR allowlist to approved office and VPN ranges.",
+        scopeRef: "admin-ingress.yaml allowlist policy",
+        rolloutRef: "git diff apps/infra/admin-ingress.yaml",
+        reversibleIntent: true,
+        affectsMultipleComponents: false,
+        destructive: false
+      },
+      verificationPlan: {
+        successCriteria: "The admin route is blocked from untrusted sources and still available to approved operators.",
+        checks: ["Curl from an untrusted IP is denied", "Smoke test from the approved VPN range succeeds"]
+      },
+      evidence: [
+        {
+          type: "config_diff",
+          summary: "Ingress allowlist narrowed to the approved source CIDRs.",
+          reference: "git diff apps/infra/admin-ingress.yaml"
+        },
+        {
+          type: "test_result",
+          summary: "Verification probes confirm the route now blocks untrusted access.",
+          reference: "probe-log-2026-04-13"
+        }
+      ],
+      outcomeSummary: "The ingress rule changed in one place and verification confirmed the route only serves approved sources."
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.verification.outcome).toBe("verified");
+    expect(result.chosenAction.type).toBe("access_restriction");
+    expect(result.evidence).toHaveLength(2);
+    expect(result.recommendedNextStep.continueLoop).toBe(true);
+    expect(result.handoffSummary).toContain("completed");
+  });
+
+  it("blocks an unsafe change that broadens beyond one reversible mitigation", () => {
+    const result = executeDefensiveIteration({
+      iterationId: "iter-004",
+      input: {
+        findings: [
+          {
+            id: "finding-1",
+            title: "Public admin endpoint exposed",
+            severity: "high",
+            confidence: 0.93,
+            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
+            evidence: "Ingress policy and probe output show the route is publicly reachable.",
+            source: "manual-review"
+          }
+        ],
+        target: {
+          kind: "service",
+          id: "svc-admin-api",
+          displayName: "Admin API",
+          environment: "production",
+          locator: "admin-api.prod.internal"
+        },
+        assetContext: {
+          assetId: "asset-1",
+          assetName: "Admin API",
+          criticality: "critical",
+          internetExposed: true,
+          containsSensitiveData: true,
+          notes: ["Production admin surface"]
+        }
+      },
+      observations: [],
+      change: {
+        summary: "Updated ingress, rotated certificates, and changed admin authentication in one rollout.",
+        scopeRef: "admin-ingress.yaml and auth-service deployment",
+        rolloutRef: "change-request-42",
+        reversibleIntent: false,
+        affectsMultipleComponents: true,
+        destructive: false
+      },
+      verificationPlan: {
+        successCriteria: "Every admin control is tightened.",
+        checks: ["Review rollout plan"]
+      },
+      evidence: [
+        {
+          type: "review_note",
+          summary: "The proposed rollout includes multiple services and no rollback path.",
+          reference: "change-request-42"
+        }
+      ],
+      outcomeSummary: "Execution stopped before rollout."
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.failure?.reason).toBe("unsafe_action");
+    expect(result.verification.outcome).toBe("blocked");
+    expect(result.handoffSummary).toContain("No change was applied");
+  });
+
+  it("blocks execution when the selected action is not high-confidence enough for autonomous mitigation", () => {
+    const result = executeDefensiveIteration({
+      iterationId: "iter-005",
+      input: {
+        findings: [
+          {
+            id: "finding-2",
+            title: "Suspicious privileged path",
+            severity: "high",
+            confidence: 0.6,
+            summary: "The path may allow privilege escalation.",
+            evidence: "Single unverified report",
+            source: "scanner"
+          }
+        ],
+        target: {
+          kind: "application",
+          id: "app-1",
+          displayName: "Operator Portal"
+        },
+        assetContext: {
+          assetId: "asset-2",
+          assetName: "Operator Portal",
+          criticality: "high",
+          internetExposed: true,
+          containsSensitiveData: false,
+          notes: []
+        }
+      },
+      observations: [],
+      change: {
+        summary: "Planned to disable the suspected path.",
+        scopeRef: "operator-routing config",
+        rolloutRef: "change-request-99",
+        reversibleIntent: true,
+        affectsMultipleComponents: false,
+        destructive: false
+      },
+      verificationPlan: {
+        successCriteria: "The path no longer responds.",
+        checks: ["Capture a reproducible failing request first"]
+      },
+      evidence: [
+        {
+          type: "review_note",
+          summary: "The issue is still only supported by a single unverified report.",
+          reference: "finding-2"
+        }
+      ],
+      outcomeSummary: "Execution stopped before rollout."
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.failure?.reason).toBe("ambiguous_scope");
+    expect(result.recommendedNextStep.summary).toContain("stronger evidence");
   });
 });

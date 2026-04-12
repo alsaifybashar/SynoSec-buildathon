@@ -46,6 +46,26 @@ The current weighting favors fast exposure reduction without treating weak evide
 
 Low-confidence or ambiguous inputs are moved to follow-up instead of being prioritized as confirmed remediation work. If every input is low-confidence, the single selected action becomes bounded manual investigation rather than an autonomous production change.
 
+## Bounded hardening execution
+
+The `act` stage applies exactly one reversible mitigation for the selected action. The current shared contract enforces this with an execution request that includes:
+
+- one `change` record with a single `scopeRef` and `rolloutRef`
+- `reversibleIntent: true`
+- `affectsMultipleComponents: false`
+- `destructive: false`
+- a focused `verificationPlan` with explicit checks
+- reviewable `evidence` that includes verification output
+
+The loop blocks instead of executing when:
+
+- the selected action is low-confidence and only suitable for manual investigation
+- the proposed implementation broadens beyond one component or lacks a rollback path
+- the proposed change does not match the selected mitigation scope
+- verification evidence is missing, so the loop cannot claim success
+
+When execution succeeds, the record explains the exact mitigation that landed, the verification checks that passed, the residual risk, and the next bounded step. When execution is blocked, the record preserves the failure reason and states clearly that no change was applied.
+
 ## Failure states
 
 - `missing_evidence`: block the loop when verification or outcome claims cannot be backed by concrete evidence.
@@ -61,4 +81,6 @@ The machine-readable contract lives in [packages/contracts/src/index.ts](../pack
 - `defensiveIterationRecordSchema`
 - `defensivePrioritizationSchema`
 - `prioritizeDefensiveAction`
+- `defensiveExecutionRequestSchema`
+- `executeDefensiveIteration`
 - `defensiveFailureStateSchema`
