@@ -58,18 +58,19 @@ describe("App", () => {
     );
   });
 
-  it("renders contract-backed data from the api", async () => {
+  it("renders contract-backed data in the refreshed dashboard", async () => {
     render(<App />);
 
     expect(await screen.findByText("Status: ok")).toBeInTheDocument();
     expect(await screen.findByText("Targets queued: 1")).toBeInTheDocument();
-    expect(await screen.findByText(/Test finding/)).toBeInTheDocument();
+    expect(await screen.findByText("Test finding")).toBeInTheDocument();
+    expect(await screen.findByText("Mission-ready frontend baseline")).toBeInTheDocument();
   });
 
   it("fetches a brief when the button is clicked", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Fetch backend brief" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Fetch backend brief/i }));
 
     expect(await screen.findByText("Manual backend fetch completed.")).toBeInTheDocument();
     expect(await screen.findByText("Queue depth-first traversal")).toBeInTheDocument();
