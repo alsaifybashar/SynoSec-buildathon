@@ -384,7 +384,7 @@ export async function getAttackPaths(
       const result = await session.run(
         `MATCH path=(root:DfsNode {scanId: $scanId, depth: 0})-[:DISCOVERED*]->(n:DfsNode)-[:HAS_FINDING]->(f:Finding)
          WHERE f.severity IN ['high', 'critical']
-         WITH path, f, nodes(path) AS pathNodes
+         WITH path, f, n, nodes(path) AS pathNodes
          RETURN [node IN pathNodes | node.id] AS nodeIds,
                 f.severity AS severity,
                 f.title AS title,

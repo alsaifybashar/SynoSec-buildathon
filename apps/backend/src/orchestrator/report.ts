@@ -1,6 +1,5 @@
 import type { Report, ScanLlmConfig, WsEvent } from "@synosec/contracts";
-import { getAttackPaths, getFindingsForScan, getScan } from "../db/neo4j.js";
-import { createLlmClient } from "../llm/client.js";
+import { getAttackPaths, getFindingsForScan, getGraphForScan, getScan } from "../db/neo4j.js";
 
 // ---------------------------------------------------------------------------
 // Report generation via Claude
@@ -16,15 +15,76 @@ interface ReportClaudeResponse {
   }>;
 }
 
+function buildFallbackExecutiveSummary(
+  findingsCount: number,
+  findingsBySeverity: Report["findingsBySeverity"],
+  scopeTargets: string[]
+): string {
+  const severityLevels = Object.entries(findingsBySeverity)
+    .filter(([, count]) => count > 0)
+    .map(([severity]) => severity)
+    .join(", ");
+
+  const highestSeverity = findingsBySeverity.critical > 0
+    ? "critical"
+    : findingsBySeverity.high > 0
+      ? "high"
+      : findingsBySeverity.medium > 0
+        ? "medium"
+        : findingsBySeverity.low > 0
+          ? "low"
+          : "informational";
+
+  return [
+    `Security assessment of ${scopeTargets.join(", ")} produced ${findingsCount} findings across ${severityLevels || "no"} severity tiers.`,
+    `The highest observed severity was ${highestSeverity}.`,
+    findingsBySeverity.high > 0 || findingsBySeverity.critical > 0
+      ? "Immediate remediation should focus on externally exposed high-risk services and directly reachable administrative surfaces."
+      : "The current results are dominated by exposure and hardening issues rather than immediately critical compromise paths."
+  ].join(" ");
+}
+
+function buildFallbackTopRisks(
+  findings: Awaited<ReturnType<typeof getFindingsForScan>>,
+  nodeTargetById: Map<string, string>
+): ReportClaudeResponse["topRisks"] {
+  return findings
+    .filter((f) => f.severity !== "info")
+    .sort((a, b) => {
+      const severityRank = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+      return severityRank[b.severity] - severityRank[a.severity];
+    })
+    .slice(0, 5)
+    .map((finding) => ({
+      title: finding.title,
+      severity: finding.severity,
+      nodeTarget: nodeTargetById.get(finding.nodeId) ?? finding.nodeId,
+      recommendation: `Validate and remediate ${finding.title.toLowerCase()} on ${nodeTargetById.get(finding.nodeId) ?? finding.nodeId}. Start with the service exposed by ${finding.technique.toLowerCase()} and harden configuration before the next scan.`
+    }));
+}
+
+function buildDeterministicReportData(
+  findings: Awaited<ReturnType<typeof getFindingsForScan>>,
+  findingsBySeverity: Report["findingsBySeverity"],
+  scopeTargets: string[],
+  nodeTargetById: Map<string, string>
+): ReportClaudeResponse {
+  return {
+    executiveSummary: buildFallbackExecutiveSummary(findings.length, findingsBySeverity, scopeTargets),
+    topRisks: buildFallbackTopRisks(findings, nodeTargetById)
+  };
+}
+
 export async function generateReport(
   scanId: string,
   broadcast: (event: WsEvent) => void,
   llmConfig?: ScanLlmConfig
 ): Promise<Report> {
-  const [findings, attackPaths, scan] = await Promise.all([
+  const [findings, attackPaths, scan, graph] = await Promise.all([
     getFindingsForScan(scanId),
     getAttackPaths(scanId),
-    getScan(scanId)
+    getScan(scanId),
+    getGraphForScan(scanId)
   ]);
 
   const findingsBySeverity = {
@@ -35,75 +95,10 @@ export async function generateReport(
     critical: findings.filter((f) => f.severity === "critical").length
   };
 
-  const llmClient = createLlmClient(llmConfig);
-
-  const findingsSummary = findings
-    .map(
-      (f) =>
-        `[${f.severity.toUpperCase()}] ${f.title} — Target: ${f.nodeId}, Technique: ${f.technique}\nDescription: ${f.description}`
-    )
-    .join("\n\n");
-
-  const attackPathsSummary = attackPaths.length > 0
-    ? attackPaths.map((ap) => `- ${ap.description} (risk: ${ap.risk})`).join("\n")
-    : "No high-severity attack paths identified.";
-
-  const systemPrompt = `You are a senior penetration testing report writer. You produce clear, professional security reports that executives and engineers can act on.
-Respond ONLY with valid JSON, no markdown code blocks, no explanation.`;
-
-  const userPrompt = `Generate a penetration test report for scan ${scanId}.
-
-TARGET SCOPE: ${scan ? JSON.stringify(scan.scope.targets) : "Unknown"}
-
-FINDINGS SUMMARY:
-Total: ${findings.length}
-Critical: ${findingsBySeverity.critical}, High: ${findingsBySeverity.high}, Medium: ${findingsBySeverity.medium}, Low: ${findingsBySeverity.low}, Info: ${findingsBySeverity.info}
-
-DETAILED FINDINGS:
-${findingsSummary || "No findings recorded."}
-
-ATTACK PATHS:
-${attackPathsSummary}
-
-Return ONLY this JSON:
-{
-  "executiveSummary": "2-3 paragraph executive summary describing the overall security posture, key risks found, and urgency",
-  "topRisks": [
-    {
-      "title": "string",
-      "severity": "info|low|medium|high|critical",
-      "nodeTarget": "ip or hostname",
-      "recommendation": "specific actionable recommendation"
-    }
-  ]
-}
-
-Include top 5 risks ordered by severity. Recommendations must be specific and actionable.`;
-
-  let claudeResult: ReportClaudeResponse;
-
-  try {
-    const text = await llmClient.generateText({
-      system: systemPrompt,
-      user: userPrompt,
-      maxTokens: 3000
-    });
-    claudeResult = JSON.parse(text) as ReportClaudeResponse;
-  } catch (err: unknown) {
-    console.error("Report generation LLM error:", err instanceof Error ? err.message : err);
-    claudeResult = {
-      executiveSummary: `Security assessment of the target environment revealed ${findings.length} findings across ${Object.keys(findingsBySeverity).filter((k) => findingsBySeverity[k as keyof typeof findingsBySeverity] > 0).length} severity levels. ${findingsBySeverity.critical > 0 ? `Critical vulnerabilities were identified that require immediate remediation.` : "No critical vulnerabilities were found."} The overall security posture requires attention, particularly around web application security and network service exposure. Immediate action is recommended for high and critical findings.`,
-      topRisks: findings
-        .filter((f) => f.severity === "critical" || f.severity === "high")
-        .slice(0, 5)
-        .map((f) => ({
-          title: f.title,
-          severity: f.severity,
-          nodeTarget: f.nodeId,
-          recommendation: `Remediate ${f.title} immediately. Review ${f.technique} controls and implement defense in depth.`
-        }))
-    };
-  }
+  const nodeTargetById = new Map(graph.nodes.map((node) => [node.id, node.target]));
+  const scopeTargets = scan?.scope.targets ?? ["unknown target"];
+  void llmConfig;
+  const claudeResult = buildDeterministicReportData(findings, findingsBySeverity, scopeTargets, nodeTargetById);
 
   const report: Report = {
     scanId,
