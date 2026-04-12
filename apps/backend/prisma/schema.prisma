@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ApplicationEnvironment {
+  production
+  staging
+  development
+}
+
+enum ApplicationStatus {
+  active
+  investigating
+  archived
+}
+
+model Application {
+  id            String                 @id @db.Uuid
+  name          String
+  baseUrl       String?                @map("base_url")
+  environment   ApplicationEnvironment
+  status        ApplicationStatus
+  lastScannedAt DateTime?              @map("last_scanned_at")
+  createdAt     DateTime               @default(now()) @map("created_at")
+  updatedAt     DateTime               @updatedAt @map("updated_at")
+
+  @@map("applications")
+}
