@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
@@ -20,14 +20,12 @@ describe("App", () => {
     );
   });
 
-  it("renders the minimal dashboard shell", () => {
+  it("renders the dashboard shell", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Call backend" })).toBeInTheDocument();
     expect(screen.getByText("Runtimes")).toBeInTheDocument();
-    expect(screen.getByText("Applications")).toBeInTheDocument();
-    expect(screen.getByText("Workflows")).toBeInTheDocument();
   });
 
   it("calls the backend from the dashboard button", async () => {
@@ -40,12 +38,45 @@ describe("App", () => {
     expect(await screen.findByText("Backend connected")).toBeInTheDocument();
   });
 
-  it("shows a coming soon toast for placeholder navigation", async () => {
+  it("renders the generic runtimes list page", async () => {
     render(<App />);
 
     fireEvent.click(screen.getByText("Runtimes"));
 
-    expect(await screen.findByText("Coming soon")).toBeInTheDocument();
-    expect(await screen.findByText("Runtimes is coming soon.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Runtimes" })).toBeInTheDocument();
+    expect(screen.getByText("Start")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add Runtime" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search runtimes...")).toBeInTheDocument();
+    expect(await screen.findByText("Node Runtime 20")).toBeInTheDocument();
+  });
+
+  it("filters the generic list page", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByText("Applications"));
+
+    expect(await screen.findByText("Operator Portal")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Search applications..."), {
+      target: { value: "Queue" }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Queue Reconciler")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Operator Portal")).not.toBeInTheDocument();
+  });
+
+  it("shows placeholder toasts for add and row click actions", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByText("Workflows"));
+    expect(await screen.findByText("Nightly inventory sync")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add Workflow" }));
+    expect(await screen.findByText("Add workflow is coming soon.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Nightly inventory sync"));
+    expect(await screen.findByText("Workflow detail is coming soon.")).toBeInTheDocument();
   });
 });

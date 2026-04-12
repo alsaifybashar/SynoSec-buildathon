@@ -31,7 +31,7 @@ export function Sidebar({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return (
     <aside
       className={cn(
-        "sticky top-0 hidden h-screen shrink-0 border-r border-border/70 bg-card/80 p-4 backdrop-blur xl:block",
+        "sticky top-0 hidden h-screen shrink-0 border-r border-border/70 bg-card/80 backdrop-blur xl:block",
         collapsed ? "w-[88px]" : "w-[280px]",
         className
       )}
