@@ -67,7 +67,10 @@
         "Failure states are documented for missing evidence, ambiguous scope, or unsafe actions."
       ],
       "dependsOn": [],
-      "status": "open"
+      "status": "in_progress",
+      "startedAt": "2026-04-12T22:40:18.202448+00:00",
+      "completedAt": null,
+      "updatedAt": "2026-04-12T22:40:18.202458+00:00"
     },
     {
       "id": "S2",

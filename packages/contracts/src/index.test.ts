@@ -4,6 +4,9 @@ import {
   briefResponseSchema,
   createScanRequestSchema,
   createApplicationBodySchema,
+  defensiveIterationRecordSchema,
+  defensiveLoopContract,
+  defensiveLoopStages,
   demoResponseSchema,
   healthResponseSchema,
   updateApplicationBodySchema
@@ -104,5 +107,179 @@ describe("contracts", () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it("defines the defensive loop stages in order", () => {
+    expect(defensiveLoopStages).toEqual(["intake", "prioritize", "act", "verify", "record", "handoff"]);
+    expect(defensiveLoopContract.stages.map((stage) => stage.stage)).toEqual(defensiveLoopStages);
+  });
+
+  it("documents the required defensive loop fields and blocked states", () => {
+    expect(defensiveLoopContract.requiredInputs.map((field) => field.key)).toEqual([
+      "findings",
+      "target",
+      "assetContext",
+      "priorIteration"
+    ]);
+    expect(defensiveLoopContract.requiredOutputs.map((field) => field.key)).toEqual([
+      "chosenAction",
+      "evidence",
+      "residualRisk",
+      "recommendedNextStep"
+    ]);
+    expect(defensiveLoopContract.failureStates.map((failure) => failure.reason)).toEqual([
+      "missing_evidence",
+      "ambiguous_scope",
+      "unsafe_action"
+    ]);
+  });
+
+  it("accepts a completed defensive iteration record", () => {
+    const result = defensiveIterationRecordSchema.safeParse({
+      iterationId: "iter-001",
+      stages: ["intake", "prioritize", "act", "verify", "record", "handoff"],
+      status: "completed",
+      input: {
+        findings: [
+          {
+            id: "finding-1",
+            title: "Public admin endpoint exposed",
+            severity: "high",
+            confidence: 0.92,
+            summary: "The admin endpoint is reachable from the internet without an IP restriction.",
+            evidence: "Ingress policy and probe output show the route is publicly reachable.",
+            source: "manual-review"
+          }
+        ],
+        target: {
+          kind: "service",
+          id: "svc-admin-api",
+          displayName: "Admin API",
+          environment: "production",
+          locator: "admin-api.prod.internal"
+        },
+        assetContext: {
+          assetId: "asset-1",
+          assetName: "Admin API",
+          criticality: "critical",
+          internetExposed: true,
+          containsSensitiveData: true,
+          notes: ["Production admin surface"]
+        },
+        priorIteration: {
+          iterationId: "iter-000",
+          summary: "Previous iteration limited scanner rate but did not reduce exposure.",
+          residualRisk: "Admin API remains internet reachable.",
+          outstandingFindingIds: ["finding-0"],
+          recommendedNextStep: "Reduce exposure on the admin route."
+        }
+      },
+      chosenAction: {
+        type: "access_restriction",
+        summary: "Restrict the admin ingress to office and VPN CIDRs.",
+        rationale: "This reduces exposure without changing application behavior.",
+        scope: "Ingress policy for the production admin service only.",
+        bounded: true,
+        safetyChecks: ["Confirm allowed CIDRs with operations", "Apply only to the admin ingress resource"]
+      },
+      verification: {
+        outcome: "verified",
+        summary: "The route no longer responds from an untrusted source and still works from approved IP space.",
+        checks: ["Curl from blocked source fails", "Smoke test from approved source passes"]
+      },
+      evidence: [
+        {
+          type: "config_diff",
+          summary: "Ingress manifest now limits source CIDRs.",
+          reference: "git diff apps/infra/admin-ingress.yaml"
+        },
+        {
+          type: "test_result",
+          summary: "Manual probes confirm the new network boundary.",
+          reference: "probe-log-2026-04-13"
+        }
+      ],
+      residualRisk: {
+        level: "medium",
+        summary: "Exposure is reduced, but admin authentication hardening still needs review.",
+        remainingFindingIds: ["finding-auth-1"],
+        needsHumanReview: false
+      },
+      recommendedNextStep: {
+        summary: "Review privileged admin authentication flows next.",
+        rationale: "The highest remaining risk is credential misuse rather than internet exposure.",
+        continueLoop: true
+      },
+      handoffSummary: "Ingress is restricted and the next iteration should focus on admin authentication hardening."
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a blocked defensive iteration without a failure state", () => {
+    const result = defensiveIterationRecordSchema.safeParse({
+      iterationId: "iter-002",
+      stages: ["intake", "prioritize", "act", "verify", "record", "handoff"],
+      status: "blocked",
+      input: {
+        findings: [
+          {
+            id: "finding-2",
+            title: "Suspicious privileged path",
+            severity: "high",
+            confidence: 0.6,
+            summary: "The path may allow privilege escalation.",
+            evidence: "Single unverified report",
+            source: "scanner"
+          }
+        ],
+        target: {
+          kind: "application",
+          id: "app-1",
+          displayName: "Operator Portal"
+        },
+        assetContext: {
+          assetId: "asset-2",
+          assetName: "Operator Portal",
+          criticality: "high",
+          internetExposed: true,
+          containsSensitiveData: false,
+          notes: []
+        }
+      },
+      chosenAction: {
+        type: "defer",
+        summary: "Do not change production routing yet.",
+        rationale: "The report is too weak to justify a live change.",
+        scope: "No production change.",
+        bounded: true,
+        safetyChecks: ["Require stronger reproduction evidence"]
+      },
+      verification: {
+        outcome: "blocked",
+        summary: "Execution was blocked before verification.",
+        checks: ["Confirmed the evidence is incomplete"]
+      },
+      evidence: [
+        {
+          type: "review_note",
+          summary: "The current report does not provide enough proof to act."
+        }
+      ],
+      residualRisk: {
+        level: "high",
+        summary: "The suspected issue remains unresolved pending stronger evidence.",
+        remainingFindingIds: ["finding-2"],
+        needsHumanReview: true
+      },
+      recommendedNextStep: {
+        summary: "Reproduce the finding with stronger evidence before any change.",
+        rationale: "The scope and exploitability are still ambiguous.",
+        continueLoop: false
+      },
+      handoffSummary: "Pause autonomous action until the finding can be reproduced."
+    });
+
+    expect(result.success).toBe(false);
   });
 });

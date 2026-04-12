@@ -430,6 +430,320 @@ export const evidenceResponseSchema = z.object({
 export type EvidenceResponse = z.infer<typeof evidenceResponseSchema>;
 
 // ---------------------------------------------------------------------------
+// Defensive iteration loop contract
+// ---------------------------------------------------------------------------
+
+export const defensiveLoopStageSchema = z.enum(["intake", "prioritize", "act", "verify", "record", "handoff"]);
+export type DefensiveLoopStage = z.infer<typeof defensiveLoopStageSchema>;
+
+export const defensiveLoopStages = [
+  "intake",
+  "prioritize",
+  "act",
+  "verify",
+  "record",
+  "handoff"
+] as const satisfies readonly DefensiveLoopStage[];
+
+export const defensiveTargetKindSchema = z.enum(["application", "runtime", "service", "host", "repository", "manual"]);
+export type DefensiveTargetKind = z.infer<typeof defensiveTargetKindSchema>;
+
+export const defensiveAssetCriticalitySchema = z.enum(["low", "moderate", "high", "critical"]);
+export type DefensiveAssetCriticality = z.infer<typeof defensiveAssetCriticalitySchema>;
+
+export const defensiveIterationFindingSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  severity: severitySchema,
+  confidence: z.number().min(0).max(1),
+  summary: z.string().min(1),
+  evidence: z.string().min(1),
+  source: z.string().min(1)
+});
+export type DefensiveIterationFinding = z.infer<typeof defensiveIterationFindingSchema>;
+
+export const defensiveTargetIdentitySchema = z.object({
+  kind: defensiveTargetKindSchema,
+  id: z.string().min(1),
+  displayName: z.string().min(1),
+  environment: applicationEnvironmentSchema.optional(),
+  locator: z.string().min(1).optional()
+});
+export type DefensiveTargetIdentity = z.infer<typeof defensiveTargetIdentitySchema>;
+
+export const defensiveAssetContextSchema = z.object({
+  assetId: z.string().min(1),
+  assetName: z.string().min(1),
+  criticality: defensiveAssetCriticalitySchema,
+  internetExposed: z.boolean(),
+  containsSensitiveData: z.boolean(),
+  notes: z.array(z.string().min(1)).default([])
+});
+export type DefensiveAssetContext = z.infer<typeof defensiveAssetContextSchema>;
+
+export const priorIterationStateSchema = z.object({
+  iterationId: z.string().min(1),
+  summary: z.string().min(1),
+  residualRisk: z.string().min(1),
+  outstandingFindingIds: z.array(z.string().min(1)).default([]),
+  recommendedNextStep: z.string().min(1).optional()
+});
+export type PriorIterationState = z.infer<typeof priorIterationStateSchema>;
+
+export const defensiveIterationInputSchema = z.object({
+  findings: z.array(defensiveIterationFindingSchema).min(1),
+  target: defensiveTargetIdentitySchema,
+  assetContext: defensiveAssetContextSchema,
+  priorIteration: priorIterationStateSchema.optional()
+});
+export type DefensiveIterationInput = z.infer<typeof defensiveIterationInputSchema>;
+
+export const defensiveActionTypeSchema = z.enum([
+  "patch",
+  "configuration_change",
+  "access_restriction",
+  "monitoring",
+  "manual_investigation",
+  "defer"
+]);
+export type DefensiveActionType = z.infer<typeof defensiveActionTypeSchema>;
+
+export const defensiveChosenActionSchema = z.object({
+  type: defensiveActionTypeSchema,
+  summary: z.string().min(1),
+  rationale: z.string().min(1),
+  scope: z.string().min(1),
+  bounded: z.boolean(),
+  safetyChecks: z.array(z.string().min(1)).min(1)
+});
+export type DefensiveChosenAction = z.infer<typeof defensiveChosenActionSchema>;
+
+export const defensiveVerificationSchema = z.object({
+  outcome: z.enum(["verified", "partial", "blocked"]),
+  summary: z.string().min(1),
+  checks: z.array(z.string().min(1)).min(1)
+});
+export type DefensiveVerification = z.infer<typeof defensiveVerificationSchema>;
+
+export const defensiveEvidenceArtifactSchema = z.object({
+  type: z.enum(["command_output", "config_diff", "test_result", "review_note", "ticket"]),
+  summary: z.string().min(1),
+  reference: z.string().min(1).optional()
+});
+export type DefensiveEvidenceArtifact = z.infer<typeof defensiveEvidenceArtifactSchema>;
+
+export const defensiveResidualRiskSchema = z.object({
+  level: severitySchema,
+  summary: z.string().min(1),
+  remainingFindingIds: z.array(z.string().min(1)).default([]),
+  needsHumanReview: z.boolean()
+});
+export type DefensiveResidualRisk = z.infer<typeof defensiveResidualRiskSchema>;
+
+export const defensiveNextStepSchema = z.object({
+  summary: z.string().min(1),
+  rationale: z.string().min(1),
+  continueLoop: z.boolean()
+});
+export type DefensiveNextStep = z.infer<typeof defensiveNextStepSchema>;
+
+export const defensiveFailureReasonSchema = z.enum(["missing_evidence", "ambiguous_scope", "unsafe_action"]);
+export type DefensiveFailureReason = z.infer<typeof defensiveFailureReasonSchema>;
+
+export const defensiveFailureStateSchema = z.object({
+  reason: defensiveFailureReasonSchema,
+  blockedStage: defensiveLoopStageSchema,
+  summary: z.string().min(1),
+  operatorAction: z.string().min(1)
+});
+export type DefensiveFailureState = z.infer<typeof defensiveFailureStateSchema>;
+
+export const defensiveIterationRecordSchema = z
+  .object({
+    iterationId: z.string().min(1),
+    stages: z.tuple([
+      z.literal("intake"),
+      z.literal("prioritize"),
+      z.literal("act"),
+      z.literal("verify"),
+      z.literal("record"),
+      z.literal("handoff")
+    ]),
+    status: z.enum(["completed", "blocked"]),
+    input: defensiveIterationInputSchema,
+    chosenAction: defensiveChosenActionSchema,
+    verification: defensiveVerificationSchema,
+    evidence: z.array(defensiveEvidenceArtifactSchema).min(1),
+    residualRisk: defensiveResidualRiskSchema,
+    recommendedNextStep: defensiveNextStepSchema,
+    handoffSummary: z.string().min(1),
+    failure: defensiveFailureStateSchema.optional()
+  })
+  .superRefine((value, ctx) => {
+    if (value.status === "blocked" && !value.failure) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Blocked iterations must include a failure state.",
+        path: ["failure"]
+      });
+    }
+
+    if (value.status === "completed" && value.failure) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Completed iterations cannot include a failure state.",
+        path: ["failure"]
+      });
+    }
+  });
+export type DefensiveIterationRecord = z.infer<typeof defensiveIterationRecordSchema>;
+
+export const defensiveLoopContractFieldSchema = z.object({
+  key: z.string().min(1),
+  required: z.boolean(),
+  description: z.string().min(1)
+});
+export type DefensiveLoopContractField = z.infer<typeof defensiveLoopContractFieldSchema>;
+
+export const defensiveLoopStageDefinitionSchema = z.object({
+  stage: defensiveLoopStageSchema,
+  purpose: z.string().min(1),
+  consumes: z.array(z.string().min(1)),
+  produces: z.array(z.string().min(1))
+});
+export type DefensiveLoopStageDefinition = z.infer<typeof defensiveLoopStageDefinitionSchema>;
+
+export const defensiveLoopContractSchema = z.object({
+  name: z.literal("defensive-iteration"),
+  version: z.literal("1.0"),
+  stages: z.tuple([
+    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("intake") }),
+    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("prioritize") }),
+    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("act") }),
+    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("verify") }),
+    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("record") }),
+    defensiveLoopStageDefinitionSchema.extend({ stage: z.literal("handoff") })
+  ]),
+  requiredInputs: z.array(defensiveLoopContractFieldSchema).min(4),
+  requiredOutputs: z.array(defensiveLoopContractFieldSchema).min(4),
+  failureStates: z
+    .array(
+      defensiveFailureStateSchema.extend({
+        reason: defensiveFailureReasonSchema
+      })
+    )
+    .min(3)
+});
+export type DefensiveLoopContract = z.infer<typeof defensiveLoopContractSchema>;
+
+export const defensiveLoopContract = defensiveLoopContractSchema.parse({
+  name: "defensive-iteration",
+  version: "1.0",
+  stages: [
+    {
+      stage: "intake",
+      purpose: "Collect validated findings, target identity, asset context, and prior state before making any change.",
+      consumes: ["findings", "target", "assetContext", "priorIteration"],
+      produces: ["iterationInput"]
+    },
+    {
+      stage: "prioritize",
+      purpose: "Choose one bounded defensive action using the intake evidence and known asset risk.",
+      consumes: ["iterationInput"],
+      produces: ["chosenAction"]
+    },
+    {
+      stage: "act",
+      purpose: "Execute the selected defensive action only when scope and safety checks are clear.",
+      consumes: ["chosenAction"],
+      produces: ["executionArtifacts"]
+    },
+    {
+      stage: "verify",
+      purpose: "Confirm the action outcome with explicit checks instead of assuming risk reduction.",
+      consumes: ["executionArtifacts"],
+      produces: ["verification", "evidence"]
+    },
+    {
+      stage: "record",
+      purpose: "Persist what changed, what evidence supports it, and what residual risk remains.",
+      consumes: ["chosenAction", "verification", "evidence"],
+      produces: ["iterationRecord", "residualRisk"]
+    },
+    {
+      stage: "handoff",
+      purpose: "Recommend the next safe step so the following iteration starts with preserved context.",
+      consumes: ["iterationRecord", "residualRisk"],
+      produces: ["recommendedNextStep", "handoffSummary"]
+    }
+  ],
+  requiredInputs: [
+    {
+      key: "findings",
+      required: true,
+      description: "At least one finding with severity, confidence, source, and evidence."
+    },
+    {
+      key: "target",
+      required: true,
+      description: "Target identity including kind, stable identifier, and display name."
+    },
+    {
+      key: "assetContext",
+      required: true,
+      description: "Asset criticality and exposure context used to explain prioritization."
+    },
+    {
+      key: "priorIteration",
+      required: false,
+      description: "Previous iteration summary and carry-forward risk when available."
+    }
+  ],
+  requiredOutputs: [
+    {
+      key: "chosenAction",
+      required: true,
+      description: "The single bounded action selected for the iteration with rationale and safety checks."
+    },
+    {
+      key: "evidence",
+      required: true,
+      description: "Artifacts that show what was checked, changed, or deliberately blocked."
+    },
+    {
+      key: "residualRisk",
+      required: true,
+      description: "Plain-language statement of remaining risk after the iteration."
+    },
+    {
+      key: "recommendedNextStep",
+      required: true,
+      description: "The next safe action or explicit stop condition for the following iteration."
+    }
+  ],
+  failureStates: [
+    {
+      reason: "missing_evidence",
+      blockedStage: "verify",
+      summary: "Stop when the action cannot be supported by concrete evidence or verification output.",
+      operatorAction: "Collect stronger evidence before claiming the risk changed."
+    },
+    {
+      reason: "ambiguous_scope",
+      blockedStage: "prioritize",
+      summary: "Stop when the target boundary or affected assets are unclear.",
+      operatorAction: "Clarify ownership, targets, or impacted components before acting."
+    },
+    {
+      reason: "unsafe_action",
+      blockedStage: "act",
+      summary: "Stop when the proposed change is destructive, irreversible, or exceeds the bounded scope.",
+      operatorAction: "Escalate for human review or choose a safer defensive action."
+    }
+  ]
+});
+
+// ---------------------------------------------------------------------------
 // Scan
 // ---------------------------------------------------------------------------
 
