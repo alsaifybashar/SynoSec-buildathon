@@ -14,6 +14,7 @@ export function DetailPage({
   onSave,
   onDismiss,
   saveLabel = "Save",
+  sidebar,
   children
 }: {
   title: string;
@@ -24,6 +25,7 @@ export function DetailPage({
   onSave: () => void | Promise<void>;
   onDismiss: () => void;
   saveLabel?: string;
+  sidebar?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -43,9 +45,68 @@ export function DetailPage({
         </Button>
       </div>
 
-      <Card className="m-3">
-        <CardContent className="grid gap-5 p-6 md:grid-cols-2">{children}</CardContent>
-      </Card>
+      {sidebar ? (
+        <div className="m-3 grid gap-4 lg:grid-cols-[2fr_1fr]">
+          <Card>
+            <CardContent className="space-y-2 p-6">{children}</CardContent>
+          </Card>
+          <Card className="self-start bg-muted/40">
+            <CardContent className="space-y-4 p-5">{sidebar}</CardContent>
+          </Card>
+        </div>
+      ) : (
+        <Card className="m-3">
+          <CardContent className="space-y-2 p-6">{children}</CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+export function DetailFieldGroup({
+  title,
+  tinted = false,
+  className,
+  children
+}: {
+  title?: string;
+  tinted?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={[
+        "grid gap-5 md:grid-cols-2 rounded-lg p-4 -mx-1",
+        tinted ? "bg-muted/30" : "",
+        className
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {title ? (
+        <p className="col-span-full text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+          {title}
+        </p>
+      ) : null}
+      {children}
+    </div>
+  );
+}
+
+export function DetailSidebarItem({
+  label,
+  children
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      <p className="text-[0.65rem] font-semibold uppercase tracking-widest text-muted-foreground">
+        {label}
+      </p>
+      <div className="text-sm text-foreground">{children}</div>
     </div>
   );
 }

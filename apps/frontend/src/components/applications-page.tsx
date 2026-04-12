@@ -9,7 +9,7 @@ import {
   type ListApplicationsResponse
 } from "@synosec/contracts";
 import { fetchJson } from "../lib/api";
-import { DetailField, DetailPage } from "./detail-page";
+import { DetailField, DetailFieldGroup, DetailPage, DetailSidebarItem } from "./detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "./list-page";
 import { Input } from "./ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
@@ -318,61 +318,89 @@ export function ApplicationsPage({
       onSave={handleSave}
       onDismiss={handleDismiss}
       saveLabel={isCreateMode ? "Save" : "Save"}
+      sidebar={
+        !isCreateMode && application ? (
+          <>
+            <DetailSidebarItem label="ID">
+              <span className="font-mono text-xs break-all">{application.id}</span>
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Status">
+              <StatusBadge label={statusLabels[application.status]} className={statusBadgeStyles[application.status]} />
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Environment">
+              <StatusBadge label={environmentLabels[application.environment]} className={environmentBadgeStyles[application.environment]} />
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Last scanned">
+              {formatTimestamp(application.lastScannedAt)}
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Created">
+              {formatTimestamp(application.createdAt)}
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Updated">
+              {formatTimestamp(application.updatedAt)}
+            </DetailSidebarItem>
+          </>
+        ) : undefined
+      }
     >
-      <DetailField
-        label="Name"
-        required
-        {...definedString(errors.name)}
-      >
-        <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
-      </DetailField>
+      <DetailFieldGroup title="General">
+        <DetailField
+          label="Name"
+          required
+          {...definedString(errors.name)}
+        >
+          <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
+        </DetailField>
 
-      <DetailField
-        label="Base URL"
-        hint="Optional. Include the primary absolute URL when this application exposes a reachable web surface."
-        {...definedString(errors.baseUrl)}
-      >
-        <Input value={formValues.baseUrl} onChange={(event) => handleFieldChange("baseUrl", event.target.value)} aria-label="Base URL" />
-      </DetailField>
+        <DetailField
+          label="Base URL"
+          hint="Optional. Include the primary absolute URL when this application exposes a reachable web surface."
+          {...definedString(errors.baseUrl)}
+        >
+          <Input value={formValues.baseUrl} onChange={(event) => handleFieldChange("baseUrl", event.target.value)} aria-label="Base URL" />
+        </DetailField>
+      </DetailFieldGroup>
 
-      <DetailField label="Environment" required hint="Choose the environment that best reflects how this application is currently operated.">
-        <Select value={formValues.environment} onValueChange={(value: ApplicationEnvironment) => handleFieldChange("environment", value)}>
-          <SelectTrigger aria-label="Environment" className="w-fit min-w-[10rem] max-w-[12rem]">
-            <SelectValue placeholder="Select environment" />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(environmentLabels).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </DetailField>
+      <DetailFieldGroup title="Configuration" tinted>
+        <DetailField label="Environment" required hint="Choose the environment that best reflects how this application is currently operated.">
+          <Select value={formValues.environment} onValueChange={(value: ApplicationEnvironment) => handleFieldChange("environment", value)}>
+            <SelectTrigger aria-label="Environment" className="w-fit min-w-[10rem] max-w-[12rem]">
+              <SelectValue placeholder="Select environment" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(environmentLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
 
-      <DetailField label="Status" required hint="Use status to reflect whether the application is active, under investigation, or archived.">
-        <Select value={formValues.status} onValueChange={(value: ApplicationStatus) => handleFieldChange("status", value)}>
-          <SelectTrigger aria-label="Status" className="w-fit min-w-[10rem] max-w-[12rem]">
-            <SelectValue placeholder="Select status" />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(statusLabels).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </DetailField>
+        <DetailField label="Status" required hint="Use status to reflect whether the application is active, under investigation, or archived.">
+          <Select value={formValues.status} onValueChange={(value: ApplicationStatus) => handleFieldChange("status", value)}>
+            <SelectTrigger aria-label="Status" className="w-fit min-w-[10rem] max-w-[12rem]">
+              <SelectValue placeholder="Select status" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(statusLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
 
-      <DetailField label="Last scanned" hint="Optional. Use the most recent known successful scan timestamp when there is one.">
-        <Input
-          type="datetime-local"
-          value={formValues.lastScannedAt}
-          onChange={(event) => handleFieldChange("lastScannedAt", event.target.value)}
-          aria-label="Last scanned"
-        />
-      </DetailField>
+        <DetailField label="Last scanned" hint="Optional. Use the most recent known successful scan timestamp when there is one.">
+          <Input
+            type="datetime-local"
+            value={formValues.lastScannedAt}
+            onChange={(event) => handleFieldChange("lastScannedAt", event.target.value)}
+            aria-label="Last scanned"
+          />
+        </DetailField>
+      </DetailFieldGroup>
     </DetailPage>
   );
 }

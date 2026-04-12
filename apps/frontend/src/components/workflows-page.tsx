@@ -12,7 +12,7 @@ import {
   type WorkflowTrigger
 } from "@synosec/contracts";
 import { fetchJson } from "../lib/api";
-import { DetailField, DetailPage } from "./detail-page";
+import { DetailField, DetailFieldGroup, DetailPage, DetailSidebarItem } from "./detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "./list-page";
 import { Input } from "./ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
@@ -110,6 +110,11 @@ function validateForm(values: WorkflowFormValues) {
   }
 
   return errors;
+}
+
+function formatTimestamp(value: string | null) {
+  if (!value) return "Never";
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
 function definedString(value: string | undefined) {
@@ -370,82 +375,110 @@ export function WorkflowsPage({
       onBack={onNavigateToList}
       onSave={handleSave}
       onDismiss={handleDismiss}
+      sidebar={
+        !isCreateMode && workflow ? (
+          <>
+            <DetailSidebarItem label="ID">
+              <span className="font-mono text-xs break-all">{workflow.id}</span>
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Status">
+              <StatusBadge label={statusLabels[workflow.status]} className={statusBadgeStyles[workflow.status]} />
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Trigger">
+              <StatusBadge label={triggerLabels[workflow.trigger]} className={triggerBadgeStyles[workflow.trigger]} />
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Application">
+              {applicationLookup[workflow.applicationId ?? ""] ?? "Unlinked"}
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Created">
+              {formatTimestamp(workflow.createdAt)}
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Updated">
+              {formatTimestamp(workflow.updatedAt)}
+            </DetailSidebarItem>
+          </>
+        ) : undefined
+      }
     >
-      <DetailField label="Name" required {...definedString(errors.name)}>
-        <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
-      </DetailField>
+      <DetailFieldGroup title="General">
+        <DetailField label="Name" required {...definedString(errors.name)}>
+          <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
+        </DetailField>
 
-      <DetailField label="Trigger" required hint="How the playbook is started.">
-        <Select value={formValues.trigger} onValueChange={(value: WorkflowTrigger) => handleFieldChange("trigger", value)}>
-          <SelectTrigger aria-label="Trigger" className="w-fit min-w-[10rem] max-w-[12rem]">
-            <SelectValue placeholder="Select trigger" />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(triggerLabels).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </DetailField>
+        <DetailField label="Trigger" required hint="How the playbook is started.">
+          <Select value={formValues.trigger} onValueChange={(value: WorkflowTrigger) => handleFieldChange("trigger", value)}>
+            <SelectTrigger aria-label="Trigger" className="w-fit min-w-[10rem] max-w-[12rem]">
+              <SelectValue placeholder="Select trigger" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(triggerLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
 
-      <DetailField label="Status" required hint="Use status to reflect whether the playbook is draft, active, or paused.">
-        <Select value={formValues.status} onValueChange={(value: WorkflowStatus) => handleFieldChange("status", value)}>
-          <SelectTrigger aria-label="Status" className="w-fit min-w-[10rem] max-w-[12rem]">
-            <SelectValue placeholder="Select status" />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(statusLabels).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </DetailField>
+        <DetailField label="Status" required hint="Use status to reflect whether the playbook is draft, active, or paused.">
+          <Select value={formValues.status} onValueChange={(value: WorkflowStatus) => handleFieldChange("status", value)}>
+            <SelectTrigger aria-label="Status" className="w-fit min-w-[10rem] max-w-[12rem]">
+              <SelectValue placeholder="Select status" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(statusLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
+      </DetailFieldGroup>
 
-      <DetailField label="Max depth" required hint="Limit how deep the playbook can explore.">
-        <Input
-          type="number"
-          min={1}
-          max={8}
-          value={formValues.maxDepth}
-          onChange={(event) => handleFieldChange("maxDepth", event.target.value)}
-          aria-label="Max depth"
-        />
-      </DetailField>
+      <DetailFieldGroup title="Scan configuration" tinted>
+        <DetailField label="Max depth" required hint="Limit how deep the playbook can explore.">
+          <Input
+            type="number"
+            min={1}
+            max={8}
+            value={formValues.maxDepth}
+            onChange={(event) => handleFieldChange("maxDepth", event.target.value)}
+            aria-label="Max depth"
+          />
+        </DetailField>
 
-      <DetailField label="Target mode" required hint="Choose whether this playbook targets an application, a runtime, or an ad-hoc manual scope.">
-        <Select value={formValues.targetMode} onValueChange={(value: WorkflowTargetMode) => handleFieldChange("targetMode", value)}>
-          <SelectTrigger aria-label="Target mode" className="w-fit min-w-[10rem] max-w-[12rem]">
-            <SelectValue placeholder="Select target mode" />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(targetModeLabels).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </DetailField>
+        <DetailField label="Target mode" required hint="Choose whether this playbook targets an application, a runtime, or an ad-hoc manual scope.">
+          <Select value={formValues.targetMode} onValueChange={(value: WorkflowTargetMode) => handleFieldChange("targetMode", value)}>
+            <SelectTrigger aria-label="Target mode" className="w-fit min-w-[10rem] max-w-[12rem]">
+              <SelectValue placeholder="Select target mode" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(targetModeLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
 
-      <DetailField label="Application" hint="Optionally link this playbook to an application inventory record.">
-        <Select value={formValues.applicationId || "__none__"} onValueChange={(value) => handleFieldChange("applicationId", value === "__none__" ? "" : value)}>
-          <SelectTrigger aria-label="Application" className="w-fit min-w-[12rem] max-w-[16rem]">
-            <SelectValue placeholder="Select application" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">No application</SelectItem>
-            {applications.map((application) => (
-              <SelectItem key={application.id} value={application.id}>
-                {application.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </DetailField>
+        <DetailField label="Application" hint="Optionally link this playbook to an application inventory record.">
+          <Select value={formValues.applicationId || "__none__"} onValueChange={(value) => handleFieldChange("applicationId", value === "__none__" ? "" : value)}>
+            <SelectTrigger aria-label="Application" className="w-fit min-w-[12rem] max-w-[16rem]">
+              <SelectValue placeholder="Select application" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">No application</SelectItem>
+              {applications.map((application) => (
+                <SelectItem key={application.id} value={application.id}>
+                  {application.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
+      </DetailFieldGroup>
     </DetailPage>
   );
 }

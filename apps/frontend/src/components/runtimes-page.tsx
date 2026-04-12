@@ -13,7 +13,7 @@ import {
   type RuntimeStatus
 } from "@synosec/contracts";
 import { fetchJson } from "../lib/api";
-import { DetailField, DetailPage } from "./detail-page";
+import { DetailField, DetailFieldGroup, DetailPage, DetailSidebarItem } from "./detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "./list-page";
 import { Input } from "./ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
@@ -122,6 +122,11 @@ function validateForm(values: RuntimeFormValues) {
   }
 
   return errors;
+}
+
+function formatTimestamp(value: string | null) {
+  if (!value) return "Never";
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
 function definedString(value: string | undefined) {
@@ -382,90 +387,117 @@ export function RuntimesPage({
       onBack={onNavigateToList}
       onSave={handleSave}
       onDismiss={handleDismiss}
+      sidebar={
+        !isCreateMode && runtime ? (
+          <>
+            <DetailSidebarItem label="ID">
+              <span className="font-mono text-xs break-all">{runtime.id}</span>
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Status">
+              <StatusBadge label={statusLabels[runtime.status]} className={statusBadgeStyles[runtime.status]} />
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Application">
+              {applicationLookup[runtime.applicationId ?? ""] ?? "Unlinked"}
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Created">
+              {formatTimestamp(runtime.createdAt)}
+            </DetailSidebarItem>
+            <DetailSidebarItem label="Updated">
+              {formatTimestamp(runtime.updatedAt)}
+            </DetailSidebarItem>
+          </>
+        ) : undefined
+      }
     >
-      <DetailField label="Name" required {...definedString(errors.name)}>
-        <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
-      </DetailField>
+      <DetailFieldGroup title="Identity">
+        <DetailField label="Name" required {...definedString(errors.name)}>
+          <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
+        </DetailField>
 
-      <DetailField label="Service type" required hint="Choose the runtime's primary operational role.">
-        <Select value={formValues.serviceType} onValueChange={(value: RuntimeServiceType) => handleFieldChange("serviceType", value)}>
-          <SelectTrigger aria-label="Service type" className="w-fit min-w-[10rem] max-w-[12rem]">
-            <SelectValue placeholder="Select service type" />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(serviceTypeLabels).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </DetailField>
+        <DetailField label="Region" required {...definedString(errors.region)}>
+          <Input value={formValues.region} onChange={(event) => handleFieldChange("region", event.target.value)} aria-label="Region" />
+        </DetailField>
+      </DetailFieldGroup>
 
-      <DetailField label="Provider" required hint="Record the platform or hosting provider backing this runtime.">
-        <Select value={formValues.provider} onValueChange={(value: RuntimeProvider) => handleFieldChange("provider", value)}>
-          <SelectTrigger aria-label="Provider" className="w-fit min-w-[10rem] max-w-[12rem]">
-            <SelectValue placeholder="Select provider" />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(providerLabels).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </DetailField>
+      <DetailFieldGroup title="Infrastructure" tinted>
+        <DetailField label="Service type" required hint="Choose the runtime's primary operational role.">
+          <Select value={formValues.serviceType} onValueChange={(value: RuntimeServiceType) => handleFieldChange("serviceType", value)}>
+            <SelectTrigger aria-label="Service type" className="w-fit min-w-[10rem] max-w-[12rem]">
+              <SelectValue placeholder="Select service type" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(serviceTypeLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
 
-      <DetailField label="Environment" required>
-        <Select value={formValues.environment} onValueChange={(value: ApplicationEnvironment) => handleFieldChange("environment", value)}>
-          <SelectTrigger aria-label="Environment" className="w-fit min-w-[10rem] max-w-[12rem]">
-            <SelectValue placeholder="Select environment" />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(environmentLabels).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </DetailField>
+        <DetailField label="Provider" required hint="Record the platform or hosting provider backing this runtime.">
+          <Select value={formValues.provider} onValueChange={(value: RuntimeProvider) => handleFieldChange("provider", value)}>
+            <SelectTrigger aria-label="Provider" className="w-fit min-w-[10rem] max-w-[12rem]">
+              <SelectValue placeholder="Select provider" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(providerLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
 
-      <DetailField label="Region" required {...definedString(errors.region)}>
-        <Input value={formValues.region} onChange={(event) => handleFieldChange("region", event.target.value)} aria-label="Region" />
-      </DetailField>
+        <DetailField label="Environment" required>
+          <Select value={formValues.environment} onValueChange={(value: ApplicationEnvironment) => handleFieldChange("environment", value)}>
+            <SelectTrigger aria-label="Environment" className="w-fit min-w-[10rem] max-w-[12rem]">
+              <SelectValue placeholder="Select environment" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(environmentLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
+      </DetailFieldGroup>
 
-      <DetailField label="Status" required hint="Reflect whether the runtime is healthy, degraded, or retired.">
-        <Select value={formValues.status} onValueChange={(value: RuntimeStatus) => handleFieldChange("status", value)}>
-          <SelectTrigger aria-label="Status" className="w-fit min-w-[10rem] max-w-[12rem]">
-            <SelectValue placeholder="Select status" />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(statusLabels).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </DetailField>
+      <DetailFieldGroup title="Status & linking">
+        <DetailField label="Status" required hint="Reflect whether the runtime is healthy, degraded, or retired.">
+          <Select value={formValues.status} onValueChange={(value: RuntimeStatus) => handleFieldChange("status", value)}>
+            <SelectTrigger aria-label="Status" className="w-fit min-w-[10rem] max-w-[12rem]">
+              <SelectValue placeholder="Select status" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(statusLabels).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
 
-      <DetailField label="Application" hint="Optionally link this runtime to an application inventory record.">
-        <Select value={formValues.applicationId || "__none__"} onValueChange={(value) => handleFieldChange("applicationId", value === "__none__" ? "" : value)}>
-          <SelectTrigger aria-label="Application" className="w-fit min-w-[12rem] max-w-[16rem]">
-            <SelectValue placeholder="Select application" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">No application</SelectItem>
-            {applications.map((application) => (
-              <SelectItem key={application.id} value={application.id}>
-                {application.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </DetailField>
+        <DetailField label="Application" hint="Optionally link this runtime to an application inventory record.">
+          <Select value={formValues.applicationId || "__none__"} onValueChange={(value) => handleFieldChange("applicationId", value === "__none__" ? "" : value)}>
+            <SelectTrigger aria-label="Application" className="w-fit min-w-[12rem] max-w-[16rem]">
+              <SelectValue placeholder="Select application" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">No application</SelectItem>
+              {applications.map((application) => (
+                <SelectItem key={application.id} value={application.id}>
+                  {application.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
+      </DetailFieldGroup>
     </DetailPage>
   );
 }
