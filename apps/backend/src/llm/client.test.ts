@@ -96,4 +96,35 @@ describe("llm client", () => {
       workflow: "synosec-scan"
     });
   });
+
+  it("fails fast when the local provider times out", async () => {
+    process.env["LLM_LOCAL_TIMEOUT_MS"] = "10";
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockImplementation((_input, init) => {
+        const signal = init?.signal;
+        return new Promise<Response>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => {
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        });
+      })
+    );
+
+    const client = createLlmClient({
+      provider: "local",
+      baseUrl: "http://127.0.0.1:8010",
+      apiPath: "/generate",
+      model: "Qwen/Qwen3-1.7B"
+    });
+
+    await expect(
+      client.generateText({
+        system: "Return JSON only.",
+        user: "Say hello.",
+        maxTokens: 64
+      })
+    ).rejects.toThrow(/timed out/i);
+  });
 });
