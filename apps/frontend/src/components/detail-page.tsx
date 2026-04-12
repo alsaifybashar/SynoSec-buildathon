@@ -138,7 +138,7 @@ export function DetailField({
             </button>
             <span
               role="tooltip"
-              className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 hidden w-56 -translate-x-1/2 rounded-md bg-foreground px-3 py-2 text-left text-xs leading-relaxed text-background shadow-md peer-hover:block peer-focus-visible:block"
+              className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden w-56 -translate-x-1/2 rounded-md bg-foreground px-3 py-2 text-left text-xs leading-relaxed text-background shadow-md peer-hover:block peer-focus-visible:block"
             >
               {hint}
             </span>
