@@ -1,37 +1,43 @@
-# SynoSec-buildathon
+# SynoSec Buildathon
 
- - [] Utveckla UI/UX
- - [Bashar] Implementera testning för varje lager. 
- 
- - [] Utveckla ett system med sårbarheter att testa emot.
- - [] Peka testningen mot ett specifikt server URL, NAMN, ID, IP.
- - [] Konfigurera att Ai gör en depth-first sökning.
- - [] 
+SynoSec is an AI-assisted security scanning demo built for a buildathon. It runs a frontend, a backend orchestrator, supporting data stores, and an intentionally vulnerable target so the workflow can be demonstrated end to end in a controlled environment.
 
+## What's in the repo
 
+- `apps/frontend` - UI for configuring scans and viewing findings, graphs, and reports
+- `apps/backend` - API, orchestration, agents, and persistence
+- `targets/vulnerable-app` - intentionally unsafe demo target used for local scanning exercises
 
-## AI config:
-1. Avgöra vilk system som ska testas.
-2. Gör en planering för Agenterna.
-3. Agenterna ska samla information om systemet.
-4. Testa och notera resultatet.
-5. Synkronisera resultaten med ai och resterande agenter.
-6. Bestämma bästa möjliga resultat för nästa steg. 
-7. Avsluta när alla noder har utforskats.
+## Run locally
 
-## Smoke test
+1. Copy `.env.example` to `.env`.
+2. Set `ANTHROPIC_API_KEY` in `.env` if you want to use Anthropic models.
+3. Start the full stack:
 
-Run the Docker E2E smoke test:
+```bash
+make docker-up
+```
+
+4. Run the smoke demo:
 
 ```bash
 make smoke-e2e
 ```
 
-The smoke run starts the stack, scans `synosec-target:8888`, and prints:
+## Endpoints
 
-- the derived graph nodes
-- tool-run authorization/denial state
-- findings discovered
-- audit highlights that illustrate the workflow
-- the generated report summary
- 
+- Frontend: `http://localhost:5173`
+- Backend API: `http://localhost:3001`
+- Neo4j Browser: `http://localhost:7474`
+- Vulnerable target: `http://localhost:8888`
+
+## Key commands
+
+```bash
+make docker-up
+make docker-down
+make smoke-e2e
+make dev
+make test
+pnpm build
+```
