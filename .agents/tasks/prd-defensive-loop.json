@@ -67,7 +67,10 @@
         "Failure states are documented for missing evidence, ambiguous scope, or unsafe actions."
       ],
       "dependsOn": [],
-      "status": "open"
+      "status": "done",
+      "startedAt": "2026-04-12T22:40:18.202448+00:00",
+      "completedAt": "2026-04-12T22:46:18.115107+00:00",
+      "updatedAt": "2026-04-12T22:46:18.115081+00:00"
     },
     {
       "id": "S2",
@@ -82,7 +85,10 @@
       "dependsOn": [
         "S1"
       ],
-      "status": "open"
+      "status": "done",
+      "startedAt": "2026-04-12T22:47:09.549402+00:00",
+      "completedAt": "2026-04-12T22:54:36.418370+00:00",
+      "updatedAt": "2026-04-12T22:54:36.418360+00:00"
     },
     {
       "id": "S3",
@@ -97,7 +103,10 @@
       "dependsOn": [
         "S2"
       ],
-      "status": "open"
+      "status": "done",
+      "startedAt": "2026-04-12T22:54:38.463140+00:00",
+      "completedAt": "2026-04-12T22:59:58.132929+00:00",
+      "updatedAt": "2026-04-12T22:59:58.132914+00:00"
     },
     {
       "id": "S4",
@@ -112,7 +121,10 @@
       "dependsOn": [
         "S3"
       ],
-      "status": "open"
+      "status": "done",
+      "startedAt": "2026-04-12T23:00:00.185477+00:00",
+      "completedAt": "2026-04-12T23:06:14.484117+00:00",
+      "updatedAt": "2026-04-12T23:06:14.484109+00:00"
     },
     {
       "id": "S5",
@@ -127,7 +139,10 @@
       "dependsOn": [
         "S4"
       ],
-      "status": "open"
+      "status": "in_progress",
+      "startedAt": "2026-04-12T23:06:16.535472+00:00",
+      "completedAt": null,
+      "updatedAt": "2026-04-12T23:06:16.535479+00:00"
     }
   ]
 }

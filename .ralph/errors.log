@@ -1,0 +1,8 @@
+# Error Log
+
+> Failures and repeated issues. Use this to add guardrails.
+
+[2026-04-13 00:46:18] ITERATION 1 left uncommitted changes; review run summary at /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004018-509304-iter-1.md
+[2026-04-13 00:54:36] ITERATION 1 left uncommitted changes; review run summary at /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-1.md
+[2026-04-13 00:59:58] ITERATION 2 left uncommitted changes; review run summary at /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-2.md
+[2026-04-13 01:06:14] ITERATION 3 left uncommitted changes; review run summary at /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260413-004709-513536-iter-3.md

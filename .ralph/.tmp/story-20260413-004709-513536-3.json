@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "total": 5,
+  "remaining": 2,
+  "quality_gates": [
+    "Every story must preserve a minimal end-to-end loop: intake, prioritization, action, evidence, and next-step output.",
+    "Security decisions must be explainable in plain language and tied to observed findings or known asset context.",
+    "The loop must avoid unsafe autonomous behavior such as destructive actions or irreversible remediation without explicit evidence and scope.",
+    "Outputs must be deterministic enough that a human can review what happened and why before trusting another iteration.",
+    "Any user-visible workflow must remain minimal and understandable for a buildathon demo."
+  ],
+  "id": "S4",
+  "title": "Record evidence and residual risk"
+}
