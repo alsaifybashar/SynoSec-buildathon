@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import type {
+  AgentNote,
   Finding,
   Observation,
   Scan,
@@ -63,7 +64,9 @@ function commandPreview(request: ToolRequest): string {
     case "network_scan":
       return `nmap -sn ${host}`;
     case "service_scan":
-      return `nmap -sV ${host}${port ? ` -p ${port}` : ""}`;
+      return port
+        ? `nmap -sCV -A -p ${port} ${host}`
+        : `nmap -sCV -A -p- ${host}`;
     case "session_audit":
       return request.service === "smb"
         ? `smbclient -L ${host} -N`
@@ -138,6 +141,22 @@ function findingFromObservationGroup(
 export class ToolBroker {
   constructor(private readonly options: BrokerOptions) {}
 
+  private publishAgentNote(
+    scanId: string,
+    agentId: string,
+    input: Omit<AgentNote, "id" | "scanId" | "agentId" | "createdAt">
+  ): void {
+    const agentNote: AgentNote = {
+      id: randomUUID(),
+      scanId,
+      agentId,
+      createdAt: new Date().toISOString(),
+      ...input
+    };
+    evidenceStore.addAgentNote(agentNote);
+    this.options.broadcast({ type: "agent_note_added", agentNote });
+  }
+
   async executeRequests(input: ExecuteRequestsInput): Promise<ExecuteRequestsResult> {
     const toolRuns: ToolRun[] = [];
     const observations: Observation[] = [];
@@ -165,6 +184,14 @@ export class ToolBroker {
       evidenceStore.addToolRun(toolRun);
       toolRuns.push(toolRun);
       this.options.broadcast({ type: "tool_run_started", toolRun });
+      this.publishAgentNote(input.scan.id, input.agentId, {
+        nodeId: input.nodeId,
+        toolRunId: toolRun.id,
+        stage: "execution",
+        title: `Queued ${request.adapter}`,
+        summary: `Scheduled ${request.tool} against ${request.target}${request.port !== undefined ? `:${request.port}` : ""}.`,
+        detail: `${request.justification}\n\nCommand preview:\n${toolRun.commandPreview}`
+      });
 
       await createAuditEntry({
         id: randomUUID(),
@@ -201,6 +228,14 @@ export class ToolBroker {
           evidenceStore.addObservation(observation);
           observations.push(observation);
           this.options.broadcast({ type: "observation_added", observation });
+          this.publishAgentNote(input.scan.id, input.agentId, {
+            nodeId: input.nodeId,
+            toolRunId: toolRun.id,
+            stage: "analysis",
+            title: observation.title,
+            summary: observation.summary,
+            detail: observation.evidence
+          });
         }
 
         const completedToolRun: ToolRun = {
@@ -213,6 +248,14 @@ export class ToolBroker {
         evidenceStore.updateToolRun(completedToolRun);
         toolRuns[toolRuns.length - 1] = completedToolRun;
         this.options.broadcast({ type: "tool_run_completed", toolRun: completedToolRun });
+        this.publishAgentNote(input.scan.id, input.agentId, {
+          nodeId: input.nodeId,
+          toolRunId: completedToolRun.id,
+          stage: "execution",
+          title: `${request.adapter} completed`,
+          summary: `Completed ${request.tool} against ${request.target}${request.port !== undefined ? `:${request.port}` : ""} with exit code ${adapterResult.exitCode}.`,
+          detail: adapterResult.output
+        });
       } catch (error: unknown) {
         const reason = error instanceof Error ? error.message : String(error);
         const failedToolRun: ToolRun = {
@@ -233,6 +276,14 @@ export class ToolBroker {
         evidenceStore.updateToolRun(failedToolRun);
         toolRuns[toolRuns.length - 1] = failedToolRun;
         this.options.broadcast({ type: "tool_run_completed", toolRun: failedToolRun });
+        this.publishAgentNote(input.scan.id, input.agentId, {
+          nodeId: input.nodeId,
+          toolRunId: failedToolRun.id,
+          stage: "execution",
+          title: `${request.adapter} failed`,
+          summary: `Execution failed for ${request.tool} against ${request.target}${request.port !== undefined ? `:${request.port}` : ""}.`,
+          detail: reason
+        });
 
         await createAuditEntry({
           id: randomUUID(),
@@ -269,6 +320,16 @@ export class ToolBroker {
     const findings = [...grouped.values()].map((group) =>
       findingFromObservationGroup(input.scan.id, input.nodeId, input.agentId, group)
     );
+
+    for (const finding of findings) {
+      this.publishAgentNote(input.scan.id, input.agentId, {
+        nodeId: input.nodeId,
+        stage: "finding",
+        title: finding.title,
+        summary: finding.description,
+        detail: finding.evidence
+      });
+    }
 
     return { toolRuns, observations, findings };
   }

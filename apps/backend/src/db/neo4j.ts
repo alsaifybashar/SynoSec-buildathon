@@ -336,6 +336,20 @@ export async function createDfsNode(node: DfsNode): Promise<void> {
   }
 }
 
+export async function linkDiscoveredNodes(parentId: string, childId: string): Promise<void> {
+  try {
+    await withSession(async (session) => {
+      await session.run(
+        `MATCH (parent:DfsNode {id: $parentId}), (child:DfsNode {id: $childId})
+         MERGE (parent)-[:DISCOVERED]->(child)`,
+        { parentId, childId }
+      );
+    });
+  } catch (err: unknown) {
+    console.error("linkDiscoveredNodes error:", err instanceof Error ? err.message : err);
+  }
+}
+
 export async function getDfsNode(id: string): Promise<DfsNode | null> {
   try {
     return await withSession(async (session) => {

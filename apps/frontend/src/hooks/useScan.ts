@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  AgentNote,
   EvidenceResponse,
   Finding,
   GraphResponse,
@@ -20,6 +21,7 @@ interface UseScanResult {
   prioritizedTargets: string[];
   toolRuns: ToolRun[];
   observations: Observation[];
+  agentNotes: AgentNote[];
   isLoading: boolean;
   refetch: () => void;
 }
@@ -39,6 +41,7 @@ export function useScan(scanId: string | null, lastEvent: WsEvent | null = null)
   const [prioritizedTargets, setPrioritizedTargets] = useState<string[]>([]);
   const [toolRuns, setToolRuns] = useState<ToolRun[]>([]);
   const [observations, setObservations] = useState<Observation[]>([]);
+  const [agentNotes, setAgentNotes] = useState<AgentNote[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
@@ -61,6 +64,7 @@ export function useScan(scanId: string | null, lastEvent: WsEvent | null = null)
       setChains(chainsData);
       setToolRuns(evidenceData.toolRuns);
       setObservations(evidenceData.observations);
+      setAgentNotes(evidenceData.agentNotes);
       setPrioritizedTargets(evidenceData.prioritizedTargets);
 
       if (scanData.status === "complete") {
@@ -93,6 +97,7 @@ export function useScan(scanId: string | null, lastEvent: WsEvent | null = null)
       setPrioritizedTargets([]);
       setToolRuns([]);
       setObservations([]);
+      setAgentNotes([]);
       return;
     }
 
@@ -160,6 +165,12 @@ export function useScan(scanId: string | null, lastEvent: WsEvent | null = null)
         if (prev.find((observation) => observation.id === lastEvent.observation.id)) return prev;
         return [lastEvent.observation, ...prev];
       });
+    } else if (lastEvent.type === "agent_note_added") {
+      if (lastEvent.agentNote.scanId !== scanId) return;
+      setAgentNotes((prev) => {
+        if (prev.find((agentNote) => agentNote.id === lastEvent.agentNote.id)) return prev;
+        return [lastEvent.agentNote, ...prev];
+      });
     } else if (lastEvent.type === "grace_analysis_complete") {
       setPrioritizedTargets(lastEvent.prioritizedTargets);
     } else if (lastEvent.type === "scan_status") {
@@ -181,6 +192,7 @@ export function useScan(scanId: string | null, lastEvent: WsEvent | null = null)
     prioritizedTargets,
     toolRuns,
     observations,
+    agentNotes,
     isLoading,
     refetch
   };

@@ -61,7 +61,9 @@ function buildCommandPreview(toolRun: Pick<ToolRun, "adapter" | "tool" | "target
     case "network_scan":
       return `nmap -sn ${host}`;
     case "service_scan":
-      return `nmap -sV ${host}${port ? ` -p ${port}` : ""}`;
+      return port
+        ? `nmap -sCV -A -p ${port} ${host}`
+        : `nmap -sCV -A -p- ${host}`;
     case "session_audit":
       return toolRun.tool === "smbclient"
         ? `smbclient -L ${host} -N`
@@ -451,6 +453,7 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
     const payload: EvidenceResponse = {
       toolRuns: await getToolRunsForScanWithAuditFallback(id),
       observations: evidenceStore.getObservationsForScan(id),
+      agentNotes: evidenceStore.getAgentNotesForScan(id),
       prioritizedTargets
     };
     res.json(payload);

@@ -9,7 +9,13 @@ vi.mock("../db/neo4j.js", () => ({
   createAuditEntry: mockCreateAuditEntry
 }));
 
-const { ScanToolRunner, isExecutionTargetAllowed, isTargetInScope, parseScanTarget } = await import("./scan-tools.js");
+const {
+  ScanToolRunner,
+  analyzeTargetInput,
+  isExecutionTargetAllowed,
+  isTargetInScope,
+  parseScanTarget
+} = await import("./scan-tools.js");
 
 describe("scan tools", () => {
   let httpServer: http.Server;
@@ -86,6 +92,13 @@ describe("scan tools", () => {
 
     expect(isTargetInScope("localhost", scope)).toBe(true);
     expect(isTargetInScope("10.0.0.5", scope)).toBe(false);
+  });
+
+  it("repairs malformed web-style target input before scanning", () => {
+    expect(analyzeTargetInput("https//example.com/login").normalizedTarget).toBe("example.com:443");
+    expect(analyzeTargetInput("http://example.com/admin?debug=true").normalizedTarget).toBe("example.com:80");
+    expect(analyzeTargetInput("example.com/path/to/app").normalizedTarget).toBe("example.com:80");
+    expect(analyzeTargetInput("synosec-target:8888").normalizedTarget).toBe("synosec-target:8888");
   });
 
   it("checks TCP ports and grabs banners", async () => {

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import {
   apiRoutes,
+  type AgentNote,
   type AuditEntry,
   type DfsNode,
   type Finding,
@@ -32,6 +33,7 @@ import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { useScan } from "../hooks/useScan";
 import { useScanWebSocket } from "../hooks/useScanWebSocket";
+import { FindingsGraph } from "./FindingsGraph";
 import { fetchJson } from "../lib/api";
 import { cn } from "../lib/utils";
 
@@ -163,6 +165,21 @@ function summarizeScanOutcome(scan: Scan, findings: Finding[], toolRuns: ToolRun
   const failedText = failedRuns > 0 ? ` ${failedRuns} checks failed during execution.` : "";
 
   return `Completed ${toolRuns.length} checks and produced ${findings.length} findings.${severityText}${skippedText}${failedText}`;
+}
+
+function noteStageLabel(stage: AgentNote["stage"]) {
+  switch (stage) {
+    case "plan":
+      return "plan";
+    case "execution":
+      return "execution";
+    case "analysis":
+      return "analysis";
+    case "finding":
+      return "finding";
+    default:
+      return stage;
+  }
 }
 
 function summarizeLayerChecks(nodes: DfsNode[], toolRunsByNodeId: Map<string, ToolRun[]>) {
@@ -679,6 +696,43 @@ function LayerEvidenceSection({
   );
 }
 
+function AgentNotebookSection({ notes }: { notes: AgentNote[] }) {
+  if (notes.length === 0) {
+    return <p className="text-xs text-muted-foreground">No shared agent notes have been recorded for this scan.</p>;
+  }
+
+  const orderedNotes = [...notes].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+  return (
+    <div className="space-y-3">
+      {orderedNotes.map((note) => (
+        <article key={note.id} className="rounded-lg border border-border/60 bg-background/40 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">{noteStageLabel(note.stage)}</Badge>
+                <span className="text-xs font-medium text-foreground">{note.title}</span>
+              </div>
+              <div className="flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+                <span>{note.agentId}</span>
+                {note.nodeId ? <span>node {note.nodeId}</span> : null}
+                {note.toolRunId ? <span>tool {note.toolRunId}</span> : null}
+              </div>
+            </div>
+            <span className="text-[10px] text-muted-foreground">{formatTimestamp(note.createdAt)}</span>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-foreground">{note.summary}</p>
+          {note.detail ? (
+            <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-md bg-muted/30 p-2 font-mono text-[10px] leading-5 text-muted-foreground">
+              {note.detail}
+            </pre>
+          ) : null}
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export function ScansPage({
   scanId,
   onNavigateToList,
@@ -696,7 +750,7 @@ export function ScansPage({
   const [selectedChainId, setSelectedChainId] = useState<string | null>(null);
   const reportedFailedToolRunsRef = useRef(new Set<string>());
   const { lastEvent, isConnected } = useScanWebSocket(scanId !== "new");
-  const { scan, findings, graph, report, chains, prioritizedTargets, toolRuns, observations, isLoading, refetch } = useScan(scanId && scanId !== "new" ? scanId : null, lastEvent);
+  const { scan, findings, graph, report, chains, prioritizedTargets, toolRuns, observations, agentNotes, isLoading, refetch } = useScan(scanId && scanId !== "new" ? scanId : null, lastEvent);
   const isCreateMode = scanId === "new";
   const auditRefreshRound = lastEvent?.type === "round_complete" ? lastEvent.round : 0;
 
@@ -914,12 +968,14 @@ export function ScansPage({
     return [
       { id: "overview", label: "Overview", shortcut: "s", meta: `${scan?.scope.targets.length ?? 0} targets` },
       ...layerLinks,
+      { id: "agent-notes", label: "Notebook", shortcut: "n", meta: `${agentNotes.length} notes` },
+      { id: "finding-tree", label: "Finding Tree", shortcut: "t", meta: `${findings.length} findings` },
       { id: "execution", label: "Execution", shortcut: "e", meta: `${toolRuns.length} runs` },
       { id: "grace-chains", label: "GRACE Chains", shortcut: "g", meta: chains.length > 0 ? `${chains.length} chains` : "Pending" },
       { id: "audit", label: "Audit", shortcut: "a", meta: `${auditEntries.length} events` },
       { id: "report", label: "Report", shortcut: "r", meta: report ? `${report.totalFindings} findings` : "Pending" }
     ];
-  }, [auditEntries.length, chains.length, layers, report, scan?.scope.targets.length, toolRuns.length]);
+  }, [agentNotes.length, auditEntries.length, chains.length, layers, report, scan?.scope.targets.length, toolRuns.length]);
 
   useEffect(() => {
     if (!scanId || scanId === "new") {
@@ -1126,6 +1182,7 @@ export function ScansPage({
               <CompactDetail label="Progress" value={`${scan.nodesComplete}/${scan.nodesTotal} nodes · ${summarizeProgress(scan)}`} />
               <CompactDetail label="Round" value={String(scan.currentRound)} />
               <CompactDetail label="Evidence" value={`${toolRuns.length} runs · ${observations.length} observations · ${findings.length} findings`} />
+              <CompactDetail label="Shared notebook" value={`${agentNotes.length} note${agentNotes.length === 1 ? "" : "s"}`} />
               <CompactDetail
                 label="Targets"
                 value={
@@ -1175,6 +1232,27 @@ export function ScansPage({
             />
           </SectionCard>
         ))}
+
+        <SectionCard id="agent-notes" title="Shared Notebook">
+          <AgentNotebookSection notes={agentNotes} />
+        </SectionCard>
+
+        <SectionCard id="finding-tree" title="Finding Tree">
+          <div className="flex items-center justify-between px-6 py-2 bg-muted/20 border-b border-border/60">
+            <p className="text-[11px] text-muted-foreground">Interactive map of discovered findings and identified vulnerability chains.</p>
+            <ShortcutHint shortcut="t" />
+          </div>
+          <div className="h-[500px] w-full">
+            <FindingsGraph 
+              findings={findings} 
+              chains={chains}
+              onFindingClick={(finding) => {
+                const element = document.getElementById(`layer-${findingsByNodeId.get(finding.id)?.[0]?.nodeId ?? ""}`);
+                if (element) element.scrollIntoView({ behavior: "smooth" });
+              }}
+            />
+          </div>
+        </SectionCard>
 
         <SectionCard id="execution" title="Execution">
           <ExecutionPanel toolRuns={toolRuns} observations={observations} />

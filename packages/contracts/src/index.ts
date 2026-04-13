@@ -426,9 +426,28 @@ export const observationSchema = z.object({
 });
 export type Observation = z.infer<typeof observationSchema>;
 
+export const agentNoteStageSchema = z.enum(["plan", "execution", "analysis", "finding"]);
+export type AgentNoteStage = z.infer<typeof agentNoteStageSchema>;
+
+export const agentNoteSchema = z.object({
+  id: z.string(),
+  scanId: z.string(),
+  agentId: z.string(),
+  nodeId: z.string().optional(),
+  toolRunId: z.string().optional(),
+  findingId: z.string().optional(),
+  stage: agentNoteStageSchema,
+  title: z.string(),
+  summary: z.string(),
+  detail: z.string().optional(),
+  createdAt: z.string().datetime()
+});
+export type AgentNote = z.infer<typeof agentNoteSchema>;
+
 export const evidenceResponseSchema = z.object({
   toolRuns: z.array(toolRunSchema),
   observations: z.array(observationSchema),
+  agentNotes: z.array(agentNoteSchema).default([]),
   prioritizedTargets: z.array(z.string()).default([])
 });
 export type EvidenceResponse = z.infer<typeof evidenceResponseSchema>;
@@ -519,6 +538,7 @@ export const wsEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("tool_run_started"), toolRun: toolRunSchema }),
   z.object({ type: z.literal("tool_run_completed"), toolRun: toolRunSchema }),
   z.object({ type: z.literal("observation_added"), observation: observationSchema }),
+  z.object({ type: z.literal("agent_note_added"), agentNote: agentNoteSchema }),
   z.object({
     type: z.literal("finding_validated"),
     findingId: z.string(),

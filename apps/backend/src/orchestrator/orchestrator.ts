@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import type {
+  AgentNote,
   DfsNode,
   Finding,
   GraceReport,
@@ -7,6 +8,7 @@ import type {
   OsiLayer,
   Scan,
   ScanLlmConfig,
+  ToolRun,
   ValidationStatus,
   WsEvent
 } from "@synosec/contracts";
@@ -15,6 +17,7 @@ import {
   createAuditEntry,
   createFinding,
   getFindingsForScan,
+  linkDiscoveredNodes,
   getVulnerabilityChains,
   updateNodeStatus,
   updateScanStatus
@@ -37,6 +40,7 @@ import {
   normalizeScopeForRun,
   shouldRunSecondaryLlmPasses
 } from "./execution-policy.js";
+import { analyzeTargetInput } from "../tools/scan-tools.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,6 +55,7 @@ export class Orchestrator {
   private llmClient: LlmClient;
   private broker: ToolBroker;
   private graceReasoner = new GraceReasoner();
+  private pathState = new Map<string, { nodeId: string; evidenceKeys: Set<string> }>();
 
   constructor(
     private broadcast: (event: WsEvent) => void,
@@ -58,6 +63,21 @@ export class Orchestrator {
   ) {
     this.llmClient = createLlmClient(llmConfig);
     this.broker = new ToolBroker({ broadcast });
+  }
+
+  private publishAgentNote(
+    scanId: string,
+    input: Omit<AgentNote, "id" | "scanId" | "agentId" | "createdAt">
+  ): void {
+    const agentNote: AgentNote = {
+      id: randomUUID(),
+      scanId,
+      agentId: "orchestrator",
+      createdAt: new Date().toISOString(),
+      ...input
+    };
+    evidenceStore.addAgentNote(agentNote);
+    this.broadcast({ type: "agent_note_added", agentNote });
   }
 
   async run(scan: Scan): Promise<void> {
@@ -109,6 +129,29 @@ export class Orchestrator {
       }
     });
 
+    const preflightAnalyses = scan.scope.targets.map((target) => analyzeTargetInput(target));
+    const repairedTargets = preflightAnalyses.filter((analysis) => analysis.changed);
+    this.publishAgentNote(scan.id, {
+      stage: "plan",
+      title: "Target preflight analysis",
+      summary:
+        repairedTargets.length > 0
+          ? `Normalized ${repairedTargets.length} target input${repairedTargets.length === 1 ? "" : "s"} before scanning.`
+          : "Validated target input before scanning. No target repairs were required.",
+      detail: preflightAnalyses
+        .map((analysis) => {
+          const reasonText = analysis.reasons.length > 0 ? `\nReasons: ${analysis.reasons.join(" ")}` : "";
+          return `- ${analysis.input} -> ${analysis.normalizedTarget}${reasonText}`;
+        })
+        .join("\n")
+    });
+    this.publishAgentNote(scan.id, {
+      stage: "plan",
+      title: "DFS scan initialized",
+      summary: `Created ${rootNodes.length} root node${rootNodes.length === 1 ? "" : "s"} across ${effectiveScan.scope.layers.join(", ")} with maximum depth ${maxDepth}.`,
+      detail: `Targets: ${effectiveScan.scope.targets.join(", ")}\nLLM: ${this.llmClient.provider}/${this.llmClient.model}`
+    });
+
     let nodesComplete = 0;
     let currentRound = 0;
     let roundSummary = "";
@@ -156,6 +199,13 @@ export class Orchestrator {
       await updateNodeStatus(node.id, "in-progress");
       const inProgressNode: DfsNode = { ...node, status: "in-progress" };
       this.broadcast({ type: "node_updated", node: inProgressNode });
+      this.publishAgentNote(scan.id, {
+        nodeId: node.id,
+        stage: "plan",
+        title: `Evaluating ${node.layer} node`,
+        summary: `Dequeued ${node.target}${node.port !== undefined ? `:${node.port}` : ""} at depth ${node.depth} with risk ${(node.riskScore * 100).toFixed(0)}%.`,
+        detail: `Layer=${node.layer}${node.service ? `\nService=${node.service}` : ""}`
+      });
 
       const inScope = this.isInScope(node.target, effectiveScan);
       if (!inScope) {
@@ -192,46 +242,140 @@ export class Orchestrator {
           parentFindings,
           roundSummary
         };
-        const result = await agent.execute(node, agentContext);
 
-        const brokerResult = await this.broker.executeRequests({
-          scan,
+        // ---------------------------------------------------------------
+        // Agentic reasoning loop
+        // Each iteration:
+        //   1. Run the agent's planned tool requests
+        //   2. Analyze results (is this reasonable? what does it tell us?)
+        //   3. Decide: fix errors, probe deeper, or stop
+        // ---------------------------------------------------------------
+        const initialResult = await agent.execute(node, agentContext);
+        this.publishAgentNote(scan.id, {
           nodeId: node.id,
-          agentId: agent.agentId,
-          requests: result.requestedToolRuns
+          stage: "plan",
+          title: `${agent.agentId} planned next actions`,
+          summary: initialResult.agentSummary,
+          detail: initialResult.requestedToolRuns.length > 0
+            ? initialResult.requestedToolRuns
+                .map((r) => `- ${r.adapter} -> ${r.target}${r.port !== undefined ? `:${r.port}` : ""} (${r.riskTier})`)
+                .join("\n")
+            : "No direct tool requests were queued."
         });
 
-        for (const rawFinding of brokerResult.findings) {
-          let finding: Finding = {
-            ...rawFinding,
-            id: randomUUID(),
-            createdAt: new Date().toISOString()
-          };
-          await createFinding(finding);
-          this.broadcast({ type: "finding_added", finding });
+        const allObservations: Observation[] = [];
+        const allToolRuns: ToolRun[] = [];
+        const allBrokerFindings: Array<Omit<Finding, "id" | "createdAt">> = [];
+        const allChildNodes: Array<Omit<DfsNode, "id" | "createdAt" | "scanId" | "parentId">> = [
+          ...initialResult.childNodes
+        ];
 
-          // Propagate confidence through the engine — may upgrade validationStatus
-          finding = await confidenceEngine.propagateToFinding(finding, scan.id);
-          if (finding.validationStatus) {
-            this.broadcast({
-              type: "finding_validated",
+        const maxAgentIterations = Number(process.env["AGENT_MAX_ITERATIONS"] ?? 3);
+        let currentRequests = initialResult.requestedToolRuns;
+        // Start loop only if agent opted in (isDone !== false means done after first pass)
+        let agentWantsContinuation = initialResult.isDone === false;
+
+        for (let iteration = 0; iteration < maxAgentIterations; iteration++) {
+          if (currentRequests.length === 0) break;
+
+          const brokerResult = await this.broker.executeRequests({
+            scan,
+            nodeId: node.id,
+            agentId: agent.agentId,
+            requests: currentRequests
+          });
+
+          for (const rawFinding of brokerResult.findings) {
+            let finding: Finding = {
+              ...rawFinding,
+              id: randomUUID(),
+              createdAt: new Date().toISOString()
+            };
+            await createFinding(finding);
+            this.broadcast({ type: "finding_added", finding });
+            this.publishAgentNote(scan.id, {
+              nodeId: node.id,
               findingId: finding.id,
-              validationStatus: finding.validationStatus,
-              reason: finding.confidenceReason ?? "Validation derived from tool evidence."
+              stage: "finding",
+              title: finding.title,
+              summary: finding.description,
+              detail: finding.evidence
             });
+
+            finding = await confidenceEngine.propagateToFinding(finding, scan.id);
+            if (finding.validationStatus) {
+              this.broadcast({
+                type: "finding_validated",
+                findingId: finding.id,
+                validationStatus: finding.validationStatus,
+                reason: finding.confidenceReason ?? "Validation derived from tool evidence."
+              });
+            }
           }
+
+          const highRiskFindings = brokerResult.findings.filter(
+            (finding) => finding.severity === "critical" || finding.severity === "high"
+          );
+          if (highRiskFindings.length > 0 && shouldRunSecondaryLlmPasses(this.llmConfig)) {
+            await this.crossValidate(scan, node, highRiskFindings);
+          }
+
+          allObservations.push(...brokerResult.observations);
+          allToolRuns.push(...brokerResult.toolRuns);
+          allBrokerFindings.push(...brokerResult.findings);
+
+          // Stop if agent said it's done or we've hit the iteration cap
+          if (!agentWantsContinuation || iteration >= maxAgentIterations - 1) break;
+
+          // Ask the agent: given what we found, what's the next step?
+          const nextResult = await agent.analyzeAndPlan(
+            node,
+            agentContext,
+            allObservations,
+            allBrokerFindings,
+            iteration + 1,
+            allToolRuns
+          );
+
+          this.publishAgentNote(scan.id, {
+            nodeId: node.id,
+            stage: "analysis",
+            title: `${agent.agentId} iteration ${iteration + 1} reasoning`,
+            summary: nextResult.agentSummary,
+            detail: nextResult.requestedToolRuns.length > 0
+              ? nextResult.requestedToolRuns
+                  .map((r) => `- ${r.adapter} -> ${r.target}${r.port !== undefined ? `:${r.port}` : ""}`)
+                  .join("\n")
+              : "No further tool runs needed."
+          });
+
+          if (nextResult.childNodes.length > 0) {
+            allChildNodes.push(...nextResult.childNodes);
+          }
+
+          agentWantsContinuation = nextResult.isDone === false && nextResult.requestedToolRuns.length > 0;
+          if (!agentWantsContinuation) break;
+
+          currentRequests = nextResult.requestedToolRuns;
         }
 
-        const highRiskFindings = brokerResult.findings.filter(
-          (finding) => finding.severity === "critical" || finding.severity === "high"
-        );
-        if (highRiskFindings.length > 0 && shouldRunSecondaryLlmPasses(this.llmConfig)) {
-          await this.crossValidate(scan, node, highRiskFindings);
+        // Derive child nodes using all accumulated observations
+        const derivedChildNodes = this.deriveChildNodes(node, allObservations);
+        const evidenceKey = this.buildEvidenceKey(node, allObservations, allBrokerFindings);
+
+        if (derivedChildNodes.length > 0) {
+          this.publishAgentNote(scan.id, {
+            nodeId: node.id,
+            stage: "analysis",
+            title: "Derived new DFS branches",
+            summary: `Generated ${derivedChildNodes.length} downstream node${derivedChildNodes.length === 1 ? "" : "s"} from observed evidence.`,
+            detail: derivedChildNodes
+              .map((child) => `- ${child.layer} ${child.target}${child.port !== undefined ? `:${child.port}` : ""}${child.service ? ` (${child.service})` : ""}`)
+              .join("\n")
+          });
         }
 
-        const derivedChildNodes = this.deriveChildNodes(node, brokerResult.observations);
-
-        for (const rawChild of [...result.childNodes, ...derivedChildNodes]) {
+        for (const rawChild of [...allChildNodes, ...derivedChildNodes]) {
           if (!effectiveScan.scope.layers.includes(rawChild.layer)) {
             await createAuditEntry({
               id: randomUUID(),
@@ -246,9 +390,21 @@ export class Orchestrator {
             continue;
           }
 
+          const decision = await this.registerPathCandidate(scan.id, node.id, rawChild, evidenceKey);
+          if (decision.outcome === "linked") {
+            this.publishAgentNote(scan.id, {
+              nodeId: node.id,
+              stage: "analysis",
+              title: "Skipped known pentest path",
+              summary: `Path ${decision.pathKey} was already discovered, so it was linked instead of being considered for discovery again.`,
+              detail: `Existing node: ${decision.nodeId}\nEvidence key: ${evidenceKey}`
+            });
+            continue;
+          }
+
           const child: DfsNode = {
             ...rawChild,
-            id: randomUUID(),
+            id: decision.nodeId,
             scanId: scan.id,
             parentId: node.id,
             createdAt: new Date().toISOString()
@@ -341,6 +497,14 @@ export class Orchestrator {
           roundSummary = `Round ${currentRound} complete. Continuing tool-backed scan.`;
         }
         this.broadcast({ type: "round_complete", round: currentRound, summary: roundSummary });
+        this.publishAgentNote(scan.id, {
+          stage: "analysis",
+          title: `Round ${currentRound} analysis`,
+          summary: roundSummary,
+          detail: graceReport
+            ? `Prioritized targets: ${graceReport.prioritizedTargets.join(", ") || "none"}\nChains detected: ${graceReport.detectedChains.length}`
+            : undefined
+        });
 
         await updateScanStatus(scan.id, "running", { currentRound });
 
@@ -376,6 +540,12 @@ export class Orchestrator {
         currentRound,
         completedAt
       }
+    });
+    this.publishAgentNote(scan.id, {
+      stage: "analysis",
+      title: "Scan completed",
+      summary: `Completed ${nodesComplete} of ${nodesTotal} nodes across ${currentRound} analysis round${currentRound === 1 ? "" : "s"}.`,
+      detail: `Final status: complete`
     });
 
     try {
@@ -463,6 +633,15 @@ export class Orchestrator {
         scopeValid: true,
         details: { validations, findingsReviewed: highRiskFindings.length }
       });
+      this.publishAgentNote(scan.id, {
+        nodeId: node.id,
+        stage: "analysis",
+        title: "Cross-validation finished",
+        summary: `Reviewed ${highRiskFindings.length} high-risk finding${highRiskFindings.length === 1 ? "" : "s"} for ${node.target}.`,
+        detail: validations
+          .map((validation) => `- ${validation.title}: ${validation.validationStatus} (${validation.reason})`)
+          .join("\n")
+      });
     } catch (err: unknown) {
       console.error("Cross-validation error:", err instanceof Error ? err.message : err);
     }
@@ -527,6 +706,61 @@ export class Orchestrator {
     }
 
     return [...children.values()];
+  }
+
+  private buildPathKey(
+    node: Omit<DfsNode, "id" | "createdAt" | "scanId" | "parentId">
+  ): string {
+    return [
+      node.layer,
+      node.target,
+      node.port ?? "none",
+      node.service ?? "none"
+    ].join(":");
+  }
+
+  private buildEvidenceKey(
+    node: DfsNode,
+    observations: Observation[],
+    findings: Array<Omit<Finding, "id" | "createdAt">>
+  ): string {
+    const observationKeys = observations
+      .map((observation) => `${observation.key}:${observation.port ?? "none"}`)
+      .sort()
+      .join("|");
+    const findingKeys = findings
+      .map((finding) => `${finding.title}:${finding.technique}:${finding.severity}`)
+      .sort()
+      .join("|");
+
+    return `parent=${node.id};observations=${observationKeys || "none"};findings=${findingKeys || "none"}`;
+  }
+
+  private async registerPathCandidate(
+    scanId: string,
+    parentNodeId: string,
+    node: Omit<DfsNode, "id" | "createdAt" | "scanId" | "parentId">,
+    evidenceKey: string
+  ): Promise<
+    | { outcome: "linked"; nodeId: string; pathKey: string }
+    | { outcome: "new"; nodeId: string; pathKey: string }
+  > {
+    const pathKey = this.buildPathKey(node);
+    const stateKey = `${scanId}:${pathKey}`;
+    const existingState = this.pathState.get(stateKey);
+
+    if (existingState) {
+      existingState.evidenceKeys.add(evidenceKey);
+      await linkDiscoveredNodes(parentNodeId, existingState.nodeId);
+      return { outcome: "linked", nodeId: existingState.nodeId, pathKey };
+    }
+
+    const nodeId = randomUUID();
+    const nextEvidenceKeys = new Set<string>();
+    nextEvidenceKeys.add(evidenceKey);
+    this.pathState.set(stateKey, { nodeId, evidenceKeys: nextEvidenceKeys });
+
+    return { outcome: "new", nodeId, pathKey };
   }
 
   private mapObservationToChildNodes(

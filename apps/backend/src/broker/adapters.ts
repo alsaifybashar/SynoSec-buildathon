@@ -79,6 +79,23 @@ function shouldFallbackToolExecution(error: unknown, tool: string): boolean {
   return isMissingToolError(error, tool);
 }
 
+function hasBrokenNmapRuntime(output: string): boolean {
+  const lowered = output.toLowerCase();
+  return lowered.includes("failed to initialize the script engine")
+    && lowered.includes("could not locate nse_main.lua");
+}
+
+function assertHealthyNmapOutput(output: string): void {
+  if (!hasBrokenNmapRuntime(output)) {
+    return;
+  }
+
+  throw new Error(
+    "nmap is installed but its NSE runtime is incomplete. Install the script payload " +
+    "(for Alpine: `apk add nmap-scripts`) so `/usr/share/nmap/nse_main.lua` is available."
+  );
+}
+
 async function runTool(
   file: string,
   args: string[],
@@ -157,6 +174,7 @@ function parseNmapHostUp(output: string, target: string): DerivedObservationInpu
 async function executeNetworkScan(context: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   try {
     const { output, exitCode } = await runTool("nmap", ["-sn", context.request.target], 30000);
+    assertHealthyNmapOutput(output);
     return {
       observations: parseNmapHostUp(output, context.request.target).map((obs) =>
         createObservation(context, obs)
@@ -194,12 +212,25 @@ async function executeServiceScan(context: AdapterExecutionContext): Promise<Ada
   const ports = Array.isArray(context.request.parameters["ports"])
     ? (context.request.parameters["ports"] as string[]).join(",")
     : undefined;
-  const args = ["-sV", "--open"];
-  if (ports) args.push("-p", ports);
+  const fullPortScan = context.request.parameters["fullPortScan"] === true;
+  const aggressive = context.request.parameters["aggressive"] === true;
+  const args = ["--open"];
+  if (aggressive) {
+    args.unshift("-A");
+    args.unshift("-sCV");
+  } else {
+    args.unshift("-sV");
+  }
+  if (ports) {
+    args.push("-p", ports);
+  } else if (fullPortScan) {
+    args.push("-p-");
+  }
   args.push(target);
 
   try {
     const { output, exitCode } = await runTool("nmap", args, 60000);
+    assertHealthyNmapOutput(output);
     return {
       observations: parseOpenPorts(output).map(({ port, service, version }) =>
         createObservation(context, {

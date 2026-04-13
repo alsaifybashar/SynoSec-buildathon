@@ -11,6 +11,7 @@ vi.mock("../db/neo4j.js", async () => {
     createAuditEntry: vi.fn().mockResolvedValue(undefined),
     createFinding: vi.fn().mockResolvedValue(undefined),
     getFindingsForScan: vi.fn().mockResolvedValue([]),
+    linkDiscoveredNodes: vi.fn().mockResolvedValue(undefined),
     updateNodeStatus: vi.fn().mockResolvedValue(undefined),
     updateScanStatus: vi.fn().mockResolvedValue(undefined)
   };
@@ -84,5 +85,37 @@ describe("Orchestrator service-driven expansion", () => {
     }).deriveChildNodes(makeNode({ layer: "L7" }), [makeObservation()]);
 
     expect(children).toEqual([]);
+  });
+
+  it("never rediscoveres an already known path", async () => {
+    const orchestrator = new Orchestrator(() => undefined, { provider: "local" });
+    const child = {
+      target: "staging.synosec.local",
+      layer: "L7" as const,
+      service: "https",
+      port: 443,
+      riskScore: 0.68,
+      status: "pending" as const,
+      depth: 1
+    };
+
+    const registerPathCandidate = (orchestrator as unknown as {
+      registerPathCandidate: (
+        scanId: string,
+        parentNodeId: string,
+        node: typeof child,
+        evidenceKey: string
+      ) => Promise<{ outcome: string; nodeId: string }>;
+    }).registerPathCandidate.bind(orchestrator);
+
+    const first = await registerPathCandidate("scan-1", "parent-1", child, "evidence-a");
+    const duplicate = await registerPathCandidate("scan-1", "parent-2", child, "evidence-a");
+    const samePathWithNewEvidence = await registerPathCandidate("scan-1", "parent-3", child, "evidence-b");
+
+    expect(first.outcome).toBe("new");
+    expect(duplicate.outcome).toBe("linked");
+    expect(duplicate.nodeId).toBe(first.nodeId);
+    expect(samePathWithNewEvidence.outcome).toBe("linked");
+    expect(samePathWithNewEvidence.nodeId).toBe(first.nodeId);
   });
 });

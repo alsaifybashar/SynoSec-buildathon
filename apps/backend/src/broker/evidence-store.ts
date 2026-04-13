@@ -1,8 +1,9 @@
-import type { Observation, ToolRun } from "@synosec/contracts";
+import type { AgentNote, Observation, ToolRun } from "@synosec/contracts";
 
 class EvidenceStore {
   private toolRunsByScan = new Map<string, ToolRun[]>();
   private observationsByScan = new Map<string, Observation[]>();
+  private agentNotesByScan = new Map<string, AgentNote[]>();
 
   addToolRun(toolRun: ToolRun): void {
     const existing = this.toolRunsByScan.get(toolRun.scanId) ?? [];
@@ -22,6 +23,12 @@ class EvidenceStore {
     this.observationsByScan.set(observation.scanId, existing);
   }
 
+  addAgentNote(agentNote: AgentNote): void {
+    const existing = this.agentNotesByScan.get(agentNote.scanId) ?? [];
+    existing.push(agentNote);
+    this.agentNotesByScan.set(agentNote.scanId, existing);
+  }
+
   getToolRunsForScan(scanId: string): ToolRun[] {
     return [...(this.toolRunsByScan.get(scanId) ?? [])];
   }
@@ -34,9 +41,14 @@ class EvidenceStore {
     return this.getObservationsForScan(scanId).filter((observation) => observation.nodeId === nodeId);
   }
 
+  getAgentNotesForScan(scanId: string): AgentNote[] {
+    return [...(this.agentNotesByScan.get(scanId) ?? [])];
+  }
+
   clear(): void {
     this.toolRunsByScan.clear();
     this.observationsByScan.clear();
+    this.agentNotesByScan.clear();
   }
 }
 

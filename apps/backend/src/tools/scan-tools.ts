@@ -52,6 +52,16 @@ export interface ParsedTarget {
   scheme: string | null;
 }
 
+export interface TargetPreflightAnalysis {
+  input: string;
+  normalizedTarget: string;
+  host: string;
+  port: number | null;
+  scheme: string | null;
+  changed: boolean;
+  reasons: string[];
+}
+
 export class ScanToolRunner {
   constructor(private readonly context: ToolExecutionContext) {}
 
@@ -280,6 +290,74 @@ export function parseScanTarget(target: string): ParsedTarget {
   };
 }
 
+export function analyzeTargetInput(input: string): TargetPreflightAnalysis {
+  const trimmed = input.trim();
+  let candidate = trimmed;
+  const reasons: string[] = [];
+
+  // Repair common malformed web inputs like https//example.com or http:example.com.
+  if (/^[a-z]+\/\//i.test(candidate) && !/^[a-z]+:\/\//i.test(candidate)) {
+    candidate = candidate.replace(/^([a-z]+)\/\//i, "$1://");
+    reasons.push("Inserted missing colon after URL scheme.");
+  } else if (/^[a-z]+:[^/]/i.test(candidate) && !/^[a-z]+:\/\//i.test(candidate)) {
+    candidate = candidate.replace(/^([a-z]+):/i, "$1://");
+    reasons.push("Inserted missing slashes after URL scheme.");
+  }
+
+  const looksLikeWebInput =
+    /^[a-z]+:\/\//i.test(candidate)
+    || /[/?#]/.test(candidate)
+    || /:\d+\/.+/.test(candidate);
+
+  let parsed: ParsedTarget;
+  let normalizedTarget: string;
+
+  if (looksLikeWebInput) {
+    const withDefaultScheme = /^[a-z]+:\/\//i.test(candidate) ? candidate : `http://${candidate}`;
+    const url = new URL(withDefaultScheme);
+    parsed = {
+      host: url.hostname,
+      port: url.port ? Number(url.port) : inferDefaultPort(url.protocol.replace(/:$/, "")),
+      scheme: url.protocol.replace(/:$/, "")
+    };
+    normalizedTarget = parsed.port ? `${parsed.host}:${parsed.port}` : parsed.host;
+
+    if (!/^[a-z]+:\/\//i.test(trimmed)) {
+      reasons.push("Assumed HTTP scheme for web-style target input.");
+    }
+    if ((url.pathname && url.pathname !== "/") || url.search || url.hash) {
+      reasons.push("Dropped path, query, or fragment because scan scope targets must identify the host/service.");
+    }
+  } else {
+    parsed = parseScanTarget(candidate);
+    normalizedTarget = parsed.port ? `${parsed.host}:${parsed.port}` : parsed.host;
+  }
+
+  if (parsed.port == null && parsed.scheme != null) {
+    const scheme = parsed.scheme;
+    const inferredPort = inferDefaultPort(scheme);
+    if (inferredPort != null) {
+      parsed = { ...parsed, port: inferredPort };
+      normalizedTarget = `${parsed.host}:${inferredPort}`;
+      reasons.push(`Inferred default ${scheme.toUpperCase()} port ${inferredPort}.`);
+    }
+  }
+
+  if (trimmed !== normalizedTarget && reasons.length === 0) {
+    reasons.push("Canonicalized target format for scanner compatibility.");
+  }
+
+  return {
+    input: trimmed,
+    normalizedTarget,
+    host: parsed.host,
+    port: parsed.port,
+    scheme: parsed.scheme,
+    changed: trimmed !== normalizedTarget,
+    reasons
+  };
+}
+
 export function isTargetInScope(target: string, scope: ScanScope): boolean {
   const normalizedTarget = normalizeScopeToken(target);
 
@@ -322,7 +400,7 @@ export function isExecutionTargetAllowed(target: string, scope: ScanScope): bool
 
 function normalizeScopeToken(value: string): string {
   try {
-    const parsed = parseScanTarget(value);
+    const parsed = analyzeTargetInput(value);
     return parsed.host;
   } catch {
     return value.replace(/:\d+$/, "");
@@ -352,6 +430,17 @@ function getExecutionHostCandidates(host: string): string[] {
 
 function ensureTrailingSlash(url: string): string {
   return url.endsWith("/") ? url : `${url}/`;
+}
+
+function inferDefaultPort(scheme: string | null): number | null {
+  switch (scheme) {
+    case "http":
+      return 80;
+    case "https":
+      return 443;
+    default:
+      return null;
+  }
 }
 
 function parseStatusCode(text: string): number | null {
