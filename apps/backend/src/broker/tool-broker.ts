@@ -66,7 +66,7 @@ function commandPreview(request: ToolRequest): string {
     case "service_scan":
       return port
         ? `nmap -sCV -A -p ${port} ${host}`
-        : `nmap -sCV -A -p- ${host}`;
+        : `nmap -sCV -A ${host}`;
     case "session_audit":
       return request.service === "smb"
         ? `smbclient -L ${host} -N`
@@ -77,6 +77,20 @@ function commandPreview(request: ToolRequest): string {
       return `curl -I ${baseUrl}`;
     case "web_fingerprint":
       return `whatweb ${baseUrl}`;
+    case "subdomain_enum":
+      return request.tool === "amass"
+        ? `amass enum -passive -d ${host}`
+        : `subfinder -silent -d ${host}`;
+    case "httpx_probe":
+      return `httpx -silent -status-code -title -tech-detect -u ${baseUrl}`;
+    case "web_crawl":
+      return `katana -u ${baseUrl} -silent`;
+    case "historical_urls":
+      return request.tool === "gau"
+        ? `gau ${host}`
+        : `waybackurls ${host}`;
+    case "feroxbuster_scan":
+      return `feroxbuster -u ${baseUrl} --silent`;
     case "db_injection_check":
       return `sqlmap -u ${baseUrl}/ --batch`;
     case "content_discovery":
@@ -87,6 +101,13 @@ function commandPreview(request: ToolRequest): string {
       return `nuclei -u ${baseUrl} -severity medium,high,critical`;
     case "vuln_check":
       return `curl -k -s ${baseUrl}/search?q=%3Cscript%3E`;
+    case "external_tool": {
+      const binary = typeof request.parameters["binary"] === "string" ? request.parameters["binary"] : request.tool;
+      const args = Array.isArray(request.parameters["args"])
+        ? (request.parameters["args"] as string[]).join(" ")
+        : `${host}${port ? ` ${port}` : ""}`;
+      return `${binary} ${args}`.trim();
+    }
     default:
       return `${request.tool} ${host}${port ? `:${port}` : ""}`;
   }

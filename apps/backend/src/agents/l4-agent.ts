@@ -1,4 +1,4 @@
-import type { DfsNode, Finding, Observation, OsiLayer, ToolRun } from "@synosec/contracts";
+import type { DfsNode, Finding, Observation, OsiLayer, ToolRequest, ToolRun } from "@synosec/contracts";
 import { BaseAgent, type AgentContext, type AgentResult } from "./base-agent.js";
 import { parseScanTarget } from "../tools/scan-tools.js";
 
@@ -27,14 +27,14 @@ export class L4Agent extends BaseAgent {
           target: node.target,
           layer: "L4",
           riskTier: "passive",
-          justification: "Run an aggressive full-port discovery pass before queueing session, TLS, and application analysis.",
+          justification: "Run an aggressive default-port discovery pass before queueing session, TLS, and application analysis.",
           parameters: explicitPort != null
             ? { ports: [String(explicitPort)], aggressive: true, scripts: "default" }
-            : { fullPortScan: true, aggressive: true, scripts: "default" }
+            : { aggressive: true, scripts: "default" }
         }
       ],
       childNodes: [],
-      agentSummary: `Layer 4 queued aggressive service discovery for ${node.target}; downstream nodes will be created from observed open services.`,
+      agentSummary: `Layer 4 queued aggressive default-port service discovery for ${node.target}; downstream nodes will be created from observed open services.`,
       isDone: false // signal that we want to analyze the results
     };
   }
@@ -47,12 +47,12 @@ export class L4Agent extends BaseAgent {
     iteration: number,
     toolRuns: ToolRun[]
   ): Promise<AgentResult> {
-    // Only run one follow-up iteration
-    if (iteration >= 2) {
+    const maxIterations = Number(process.env["AGENT_MAX_ITERATIONS"] ?? 3);
+    if (iteration >= maxIterations) {
       return {
         requestedToolRuns: [],
         childNodes: [],
-        agentSummary: "Layer 4 analysis complete.",
+        agentSummary: `Layer 4 analysis complete after ${iteration} iteration(s).`,
         isDone: true
       };
     }
@@ -101,27 +101,87 @@ export class L4Agent extends BaseAgent {
           .map((o) => `[${o.adapter}] ${o.title}: ${o.summary}`)
           .join("\n");
 
+        const attemptedAdapters = toolRuns.map((r) => r.adapter).join(", ") || "none";
+        const maxIter = Number(process.env["AGENT_MAX_ITERATIONS"] ?? 3);
+        const remainingIterations = maxIter - iteration;
+
         interface L4Analysis {
           isValid: boolean;
           reasoning: string;
           openServices: string[];
-          needsFollowUp: boolean;
+          shouldContinue: boolean;
+          nextScan: {
+            adapter: "service_scan" | "network_scan";
+            justification: string;
+            ports?: string[];
+            scripts?: string;
+          } | null;
         }
 
         const analysis = await this.generateJson<L4Analysis>({
           system:
-            "You are a network penetration testing agent. Analyze nmap scan results. Return JSON only — no markdown.",
-          user: `Target: ${node.target} (Layer 4 service scan)\n\nObservations:\n${observationSummary}\n\nAnswer:\n1. Is this output valid and reasonable?\n2. What open services were discovered?\n3. Are any results suspicious or worth a follow-up scan?\n\nReturn JSON: { "isValid": boolean, "reasoning": "string", "openServices": ["string"], "needsFollowUp": boolean }`,
+            "You are a network penetration testing agent operating in an AI-driven iterative scan loop. " +
+            "Analyze scan results and decide if a follow-up scan is needed to deepen port/service intelligence. " +
+            "Return JSON only — no markdown.",
+          user: [
+            `Target: ${node.target} (Layer 4 transport scan)`,
+            `Iteration: ${iteration} of ${maxIter} (${remainingIterations} remaining)`,
+            `Adapters already run: ${attemptedAdapters}`,
+            ``,
+            `Observations:`,
+            observationSummary,
+            ``,
+            `Answer:`,
+            `1. Are the results valid and complete?`,
+            `2. What open services have been confirmed?`,
+            `3. Should we run another targeted scan? (e.g., specific port scripts, UDP scan, version-specific probes)`,
+            ``,
+            `Return JSON:`,
+            `{`,
+            `  "isValid": boolean,`,
+            `  "reasoning": "string",`,
+            `  "openServices": ["port/service"],`,
+            `  "shouldContinue": boolean,`,
+            `  "nextScan": null | { "adapter": "service_scan", "justification": "string", "ports": ["optional port list"], "scripts": "optional nmap scripts" }`,
+            `}`
+          ].join("\n"),
           maxTokens: 512
         });
 
-        return {
-          requestedToolRuns: [],
-          childNodes: [],
-          agentSummary: `${analysis.reasoning} Open services: ${analysis.openServices.join(", ") || "none detected"}.`,
-          isDone: true
+        const agentSummary = `${analysis.reasoning} Open services: ${analysis.openServices.join(", ") || "none detected"}.`;
+
+        if (!analysis.shouldContinue || !analysis.nextScan) {
+          return {
+            requestedToolRuns: [],
+            childNodes: [],
+            agentSummary,
+            isDone: true
+          };
+        }
+
+        // Queue the follow-up scan the LLM decided on
+        const followUp: ToolRequest = {
+          tool: "nmap",
+          adapter: analysis.nextScan.adapter,
+          target: node.target,
+          layer: "L4",
+          riskTier: "passive",
+          justification: analysis.nextScan.justification,
+          parameters: {
+            ...(analysis.nextScan.ports?.length ? { ports: analysis.nextScan.ports } : {}),
+            ...(analysis.nextScan.scripts ? { scripts: analysis.nextScan.scripts } : {}),
+            aggressive: true
+          }
         };
-      } catch {
+
+        return {
+          requestedToolRuns: [followUp],
+          childNodes: [],
+          agentSummary: `${agentSummary} → Queuing follow-up: ${analysis.nextScan.justification}`,
+          isDone: false
+        };
+      } catch (err) {
+        console.warn(`[l4-agent] LLM analyzeAndPlan failed at iteration ${iteration}:`, err instanceof Error ? err.message : err);
         // LLM unavailable or returned invalid JSON — fall through to static summary
       }
     }

@@ -24,6 +24,7 @@ import { evidenceStore } from "../broker/evidence-store.js";
 import { reportStore } from "../runtime/report-store.js";
 import { seedDemoScan } from "../seed/demo-data.js";
 import { parseScanTarget } from "../tools/scan-tools.js";
+import { getToolCapabilities } from "../tools/tool-catalog.js";
 
 // ---------------------------------------------------------------------------
 // Active orchestrators — keyed by scanId
@@ -43,9 +44,15 @@ const knownToolAdapters = new Set<ToolAdapter>([
   "web_fingerprint",
   "db_injection_check",
   "content_discovery",
+  "subdomain_enum",
+  "httpx_probe",
+  "web_crawl",
+  "historical_urls",
+  "feroxbuster_scan",
   "nikto_scan",
   "nuclei_scan",
-  "vuln_check"
+  "vuln_check",
+  "external_tool"
 ]);
 
 const knownRiskTiers = new Set<ToolRiskTier>(["passive", "active", "controlled-exploit"]);
@@ -63,7 +70,7 @@ function buildCommandPreview(toolRun: Pick<ToolRun, "adapter" | "tool" | "target
     case "service_scan":
       return port
         ? `nmap -sCV -A -p ${port} ${host}`
-        : `nmap -sCV -A -p- ${host}`;
+        : `nmap -sCV -A ${host}`;
     case "session_audit":
       return toolRun.tool === "smbclient"
         ? `smbclient -L ${host} -N`
@@ -74,6 +81,20 @@ function buildCommandPreview(toolRun: Pick<ToolRun, "adapter" | "tool" | "target
       return `curl -I ${baseUrl}`;
     case "web_fingerprint":
       return `whatweb ${baseUrl}`;
+    case "subdomain_enum":
+      return toolRun.tool === "amass"
+        ? `amass enum -passive -d ${host}`
+        : `subfinder -silent -d ${host}`;
+    case "httpx_probe":
+      return `httpx -silent -status-code -title -tech-detect -u ${baseUrl}`;
+    case "web_crawl":
+      return `katana -u ${baseUrl} -silent`;
+    case "historical_urls":
+      return toolRun.tool === "gau"
+        ? `gau ${host}`
+        : `waybackurls ${host}`;
+    case "feroxbuster_scan":
+      return `feroxbuster -u ${baseUrl} --silent`;
     case "db_injection_check":
       return `sqlmap -u ${baseUrl}/ --batch`;
     case "content_discovery":
@@ -84,6 +105,9 @@ function buildCommandPreview(toolRun: Pick<ToolRun, "adapter" | "tool" | "target
       return `nuclei -target ${baseUrl} -t default-templates`;
     case "vuln_check":
       return `synosec-vuln-check --target ${baseUrl}`;
+    case "external_tool": {
+      return `${toolRun.tool} ${host}${port ? `:${port}` : ""}`;
+    }
     default:
       return `${toolRun.tool} ${host}${port ? `:${port}` : ""}`;
   }
@@ -457,6 +481,10 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
       prioritizedTargets
     };
     res.json(payload);
+  });
+
+  router.get("/api/tools/capabilities", async (_req: Request, res: Response) => {
+    res.json(await getToolCapabilities());
   });
 
   return router;

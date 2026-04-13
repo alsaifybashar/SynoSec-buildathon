@@ -1,5 +1,15 @@
-import type { DfsNode, Finding, Observation, OsiLayer, ToolAdapter, ToolRequest, ToolRun } from "@synosec/contracts";
+import type {
+  DfsNode,
+  Finding,
+  Observation,
+  OsiLayer,
+  ToolAdapter,
+  ToolCapability,
+  ToolRequest,
+  ToolRun
+} from "@synosec/contracts";
 import { BaseAgent, type AgentContext, type AgentResult } from "./base-agent.js";
+import { getToolCapabilities } from "../tools/tool-catalog.js";
 
 const DATABASE_PORTS = new Set([3306, 5432, 27017, 6379]);
 
@@ -44,12 +54,13 @@ export class L7Agent extends BaseAgent {
     iteration: number,
     toolRuns: ToolRun[]
   ): Promise<AgentResult> {
-    // Only run one follow-up iteration
-    if (iteration >= 2) {
+    const maxIterations = Number(process.env["AGENT_MAX_ITERATIONS"] ?? 3);
+    // Allow up to maxIterations - 1 follow-up rounds (iteration is 1-indexed here)
+    if (iteration >= maxIterations) {
       return {
         requestedToolRuns: [],
         childNodes: [],
-        agentSummary: "Layer 7 analysis complete.",
+        agentSummary: `Layer 7 analysis complete after ${iteration} iteration(s).`,
         isDone: true
       };
     }
@@ -101,7 +112,7 @@ export class L7Agent extends BaseAgent {
     }
 
     // --- LLM-powered analysis (when API key is present) ---
-    if (process.env["ANTHROPIC_API_KEY"] && observations.length > 0) {
+    if (process.env["ANTHROPIC_API_KEY"]) {
       try {
         interface L7Analysis {
           isValid: boolean;
@@ -109,18 +120,41 @@ export class L7Agent extends BaseAgent {
           errorSummary: string | null;
           insights: string;
           technologiesFound: string[];
+          shouldContinue: boolean;
           nextTools: Array<{
-            adapter: string;
+            adapter:
+              | "http_probe"
+              | "web_fingerprint"
+              | "vuln_check"
+              | "nikto_scan"
+              | "nuclei_scan"
+              | "subdomain_enum"
+              | "httpx_probe"
+              | "web_crawl"
+              | "historical_urls"
+              | "feroxbuster_scan"
+              | "db_injection_check"
+              | "external_tool";
+            binary?: string;
+            args?: string[];
             justification: string;
-            riskTier: "passive" | "active";
+            riskTier: "passive" | "active" | "controlled-exploit";
           }> | null;
         }
 
-        const observationSummary = observations
-          .slice(0, 12)
+        const capabilities = await getToolCapabilities();
+        const installedTools = capabilities.capabilities
+          .filter((capability: ToolCapability) => capability.available)
+          .filter((capability: ToolCapability) => ["web", "content", "dns", "subdomain", "network"].includes(capability.category))
+          .map((capability: ToolCapability) => `${capability.displayName} (${capability.binary ?? "manual"})`)
+          .slice(0, 25)
+          .join(", ");
+
+        const allObservationsSummary = observations
+          .slice(-15)
           .map(
             (o) =>
-              `[${o.adapter}] ${o.title}\nSummary: ${o.summary}\nEvidence (truncated): ${o.evidence.slice(0, 300)}`
+              `[iter:${iteration}][${o.adapter}] ${o.title}\n  Summary: ${o.summary}\n  Evidence: ${o.evidence.slice(0, 400)}`
           )
           .join("\n---\n");
 
@@ -129,49 +163,131 @@ export class L7Agent extends BaseAgent {
             ? findings
                 .map((f) => `[${f.severity.toUpperCase()}] ${f.title}: ${f.description}`)
                 .join("\n")
-            : "No findings yet.";
+            : "No confirmed findings yet.";
+
+        // Track which adapters have already been run to avoid redundancy
+        const attemptedAdapters = toolRuns.map((r) => r.adapter).join(", ") || "none";
+        const maxIter = Number(process.env["AGENT_MAX_ITERATIONS"] ?? 3);
+        const remainingIterations = maxIter - iteration;
 
         const analysis = await this.generateJson<L7Analysis>({
           system:
-            "You are a web application penetration testing agent. Analyze tool outputs to decide next steps. Return JSON only — no markdown.",
-          user: `Target: ${node.target}:${port} (${service})\n\nTool outputs from this iteration:\n${observationSummary}\n\nFindings so far:\n${findingsSummary}\n\nAnalyze:\n1. Are the outputs valid and reasonable, or do they contain errors?\n2. What do they reveal about the target's technology stack and security posture?\n3. What additional targeted tests would be most valuable right now (if any)?\n\nAllowed adapters for next tools: http_probe, web_fingerprint, vuln_check, nikto_scan, nuclei_scan\n\nReturn JSON: {\n  "isValid": boolean,\n  "errorDetected": boolean,\n  "errorSummary": "string or null",\n  "insights": "key observations about the target",\n  "technologiesFound": ["string"],\n  "nextTools": null | [{ "adapter": "http_probe|web_fingerprint|vuln_check|nikto_scan|nuclei_scan", "justification": "string", "riskTier": "passive|active" }]\n}`,
-          maxTokens: 768
+            "You are an expert web application penetration tester operating in an autonomous AI-driven scan loop. " +
+            "Your job: analyze what has been found so far, then decide which specific tool to run NEXT to deepen the investigation. " +
+            "Think like an attacker chaining discoveries — each result should lead to a targeted follow-up. " +
+            "If you see an admin panel, probe it. If you find a CMS, check for known CVEs. If headers reveal a framework, look for framework-specific vulns. " +
+            "Return JSON only — no markdown, no explanation outside the JSON.",
+          user: [
+            `Target: ${node.target}:${port} (${service})`,
+            `Scan iteration: ${iteration} of ${maxIter} (${remainingIterations} remaining)`,
+            `Adapters already run: ${attemptedAdapters}`,
+            ``,
+            `=== ACCUMULATED TOOL OUTPUTS (all iterations) ===`,
+            allObservationsSummary || "No observations collected yet.",
+            ``,
+            `=== CONFIRMED FINDINGS SO FAR ===`,
+            findingsSummary,
+            ``,
+            `=== INSTALLED TOOLS ===`,
+            installedTools || "none detected",
+            ``,
+            `Analyze:`,
+            `1. What vulnerabilities or attack surfaces have been revealed?`,
+            `2. What is the most valuable NEXT probe given what we know? (avoid re-running completed adapters)`,
+            `3. Should we keep iterating, or is the L7 surface sufficiently covered?`,
+            ``,
+            `Allowed adapters: http_probe, web_fingerprint, vuln_check, nikto_scan, nuclei_scan, subdomain_enum, httpx_probe, web_crawl, historical_urls, feroxbuster_scan, db_injection_check, external_tool`,
+            `For external_tool: choose from installed list, provide binary + args.`,
+            `For db_injection_check: only request if SQL-injectable endpoint was observed.`,
+            ``,
+            `Return JSON:`,
+            `{`,
+            `  "isValid": boolean,`,
+            `  "errorDetected": boolean,`,
+            `  "errorSummary": "string or null",`,
+            `  "insights": "key findings and what they imply for next steps",`,
+            `  "technologiesFound": ["string"],`,
+            `  "shouldContinue": boolean,`,
+            `  "nextTools": null | [{ "adapter": "...", "binary": "optional", "args": ["optional"], "justification": "why this next", "riskTier": "passive|active|controlled-exploit" }]`,
+            `}`
+          ].join("\n"),
+          maxTokens: 1024
         });
 
         const agentSummary = [
-          analysis.insights,
-          analysis.errorDetected ? `Error: ${analysis.errorSummary}` : null,
+          `[Iter ${iteration}] ${analysis.insights}`,
+          analysis.errorDetected ? `⚠ Error: ${analysis.errorSummary}` : null,
           analysis.technologiesFound.length > 0
-            ? `Stack: ${analysis.technologiesFound.join(", ")}`
-            : null
+            ? `Stack detected: ${analysis.technologiesFound.join(", ")}`
+            : null,
+          analysis.shouldContinue ? `→ Continuing scan.` : `→ Marking L7 surface as covered.`
         ]
           .filter(Boolean)
           .join(" | ");
+
+        if (!analysis.shouldContinue || !analysis.nextTools?.length) {
+          return {
+            requestedToolRuns: [],
+            childNodes: [],
+            agentSummary: agentSummary || "Layer 7 LLM determined surface is sufficiently covered.",
+            isDone: true
+          };
+        }
 
         const allowedAdapters = new Set([
           "http_probe",
           "web_fingerprint",
           "vuln_check",
           "nikto_scan",
-          "nuclei_scan"
+          "nuclei_scan",
+          "subdomain_enum",
+          "httpx_probe",
+          "web_crawl",
+          "historical_urls",
+          "feroxbuster_scan",
+          "db_injection_check",
+          "external_tool"
         ]);
 
         const nextRequests = (analysis.nextTools ?? [])
           .filter((t) => allowedAdapters.has(t.adapter))
           .map((t) => ({
-            tool: t.adapter.includes("nikto")
-              ? "nikto"
-              : t.adapter.includes("nuclei")
-                ? "nuclei"
-                : "curl",
+            tool: t.adapter === "external_tool"
+              ? (t.binary ?? "external-tool")
+              : t.adapter === "subdomain_enum"
+                ? "subfinder"
+                : t.adapter === "httpx_probe"
+                  ? "httpx"
+                  : t.adapter === "web_crawl"
+                    ? "katana"
+                    : t.adapter === "historical_urls"
+                      ? "gau"
+                      : t.adapter === "feroxbuster_scan"
+                        ? "feroxbuster"
+                        : t.adapter === "db_injection_check"
+                          ? "sqlmap"
+                          : t.adapter.includes("nikto")
+                            ? "nikto"
+                            : t.adapter.includes("nuclei")
+                              ? "nuclei"
+                              : "curl",
             adapter: t.adapter as ToolAdapter,
             target: node.target,
             port,
             service,
             layer: "L7" as const,
-            riskTier: t.riskTier,
+            riskTier: t.riskTier as "passive" | "active" | "controlled-exploit",
             justification: t.justification,
-            parameters: {}
+            parameters: t.adapter === "external_tool"
+              ? {
+                  ...(t.binary ? { binary: t.binary } : {}),
+                  ...(Array.isArray(t.args) ? { args: t.args } : {})
+                }
+              : t.adapter === "subdomain_enum"
+                ? { passive: true }
+                : t.adapter === "db_injection_check"
+                  ? { level: 1, risk: 1, batch: true }
+                  : {}
           }));
 
         return {
@@ -180,7 +296,8 @@ export class L7Agent extends BaseAgent {
           agentSummary: agentSummary || "Layer 7 LLM analysis complete.",
           isDone: nextRequests.length === 0
         };
-      } catch {
+      } catch (err) {
+        console.warn(`[l7-agent] LLM analyzeAndPlan failed at iteration ${iteration}:`, err instanceof Error ? err.message : err);
         // LLM unavailable or returned invalid JSON — fall through to rule-based analysis
       }
     }
@@ -279,6 +396,17 @@ export class L7Agent extends BaseAgent {
     const allowActive = context.scope.allowActiveExploits === true;
 
     return [
+      {
+        tool: "subfinder",
+        adapter: "subdomain_enum" as const,
+        target: node.target,
+        port,
+        service,
+        layer: "L7" as const,
+        riskTier: "passive" as const,
+        justification: "Enumerate subdomains to widen the reachable attack surface before deeper application testing.",
+        parameters: { passive: true }
+      },
       // 1. HTTP header audit + known-path probing
       {
         tool: "curl",
@@ -326,6 +454,50 @@ export class L7Agent extends BaseAgent {
         riskTier: allowActive ? "active" as const : "passive" as const,
         justification: "Enumerate in-scope paths and hidden endpoints.",
         parameters: { wordlist: "common.txt", limit: 50 }
+      },
+      {
+        tool: "httpx",
+        adapter: "httpx_probe" as const,
+        target: node.target,
+        port,
+        service,
+        layer: "L7" as const,
+        riskTier: "passive" as const,
+        justification: "Probe the target with HTTPx to collect status, title, and technology hints.",
+        parameters: {}
+      },
+      {
+        tool: "katana",
+        adapter: "web_crawl" as const,
+        target: node.target,
+        port,
+        service,
+        layer: "L7" as const,
+        riskTier: "passive" as const,
+        justification: "Crawl the target to discover deeper application paths for follow-up testing.",
+        parameters: {}
+      },
+      {
+        tool: "gau",
+        adapter: "historical_urls" as const,
+        target: node.target,
+        port,
+        service,
+        layer: "L7" as const,
+        riskTier: "passive" as const,
+        justification: "Recover historical URLs to expand the reachable application surface.",
+        parameters: {}
+      },
+      {
+        tool: "feroxbuster",
+        adapter: "feroxbuster_scan" as const,
+        target: node.target,
+        port,
+        service,
+        layer: "L7" as const,
+        riskTier: allowActive ? "active" as const : "passive" as const,
+        justification: "Enumerate content and hidden directories with feroxbuster.",
+        parameters: {}
       },
       // 5. Nuclei template scan (active — conditional)
       {

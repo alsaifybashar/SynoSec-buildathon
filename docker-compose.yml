@@ -65,9 +65,10 @@ services:
       NEO4J_PASSWORD: synosec-dev
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-6}
-      SCAN_MAX_DEPTH: ${SCAN_MAX_DEPTH:-3}
-      SCAN_MAX_DURATION_MINUTES: ${SCAN_MAX_DURATION_MINUTES:-10}
+      SCAN_MAX_DEPTH: ${SCAN_MAX_DEPTH:-4}
+      SCAN_MAX_DURATION_MINUTES: ${SCAN_MAX_DURATION_MINUTES:-20}
       SCAN_RATE_LIMIT_RPS: ${SCAN_RATE_LIMIT_RPS:-5}
+      AGENT_MAX_ITERATIONS: ${AGENT_MAX_ITERATIONS:-5}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/backend prisma:generate && pnpm --filter @synosec/backend prisma:push && pnpm --filter @synosec/backend dev"

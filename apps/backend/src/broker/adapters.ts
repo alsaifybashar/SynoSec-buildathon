@@ -14,6 +14,7 @@ import type {
   ToolRun
 } from "@synosec/contracts";
 import { parseScanTarget } from "../tools/scan-tools.js";
+import { getToolCatalog, isToolCatalogEntryAvailable } from "../tools/tool-catalog.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -116,9 +117,19 @@ async function runTool(
       const stdout = String((error as NodeJS.ErrnoException & { stdout?: unknown }).stdout ?? "");
       const stderr = String((error as NodeJS.ErrnoException & { stderr?: unknown }).stderr ?? "");
       const code = (error as NodeJS.ErrnoException & { code?: unknown }).code;
+      const signal = (error as NodeJS.ErrnoException & { signal?: unknown }).signal;
+      const killed = (error as NodeJS.ErrnoException & { killed?: unknown }).killed === true;
       const exitCode = typeof (error as { status?: number }).status === "number"
         ? (error as unknown as { status: number }).status
         : 1;
+
+      if (code === "ETIMEDOUT" || signal === "SIGTERM" || killed) {
+        throw new Error(
+          `${file} scan timed out after ${timeoutMs}ms before producing a complete result.\n\n` +
+          `${stdout}${stderr ? `\n${stderr}` : ""}`.trim()
+        );
+      }
+
       if (stdout.length > 0 || stderr.length > 0) {
         return {
           output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
@@ -167,6 +178,40 @@ function parseNmapHostUp(output: string, target: string): DerivedObservationInpu
   ];
 }
 
+function uniqueNonEmptyLines(output: string, limit = 50): string[] {
+  const seen = new Set<string>();
+  const values: string[] = [];
+  for (const rawLine of output.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.length === 0 || seen.has(line)) continue;
+    seen.add(line);
+    values.push(line);
+    if (values.length >= limit) break;
+  }
+  return values;
+}
+
+function extractHostname(value: string): string | null {
+  const trimmed = value.trim();
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+    try {
+      return new URL(trimmed).hostname;
+    } catch {
+      return null;
+    }
+  }
+  const hostname = trimmed.replace(/^https?:\/\//i, "").split(/[/?#:]/)[0] ?? "";
+  return /^[a-z0-9.-]+$/i.test(hostname) ? hostname : null;
+}
+
+function extractUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Adapters
 // ---------------------------------------------------------------------------
@@ -212,8 +257,11 @@ async function executeServiceScan(context: AdapterExecutionContext): Promise<Ada
   const ports = Array.isArray(context.request.parameters["ports"])
     ? (context.request.parameters["ports"] as string[]).join(",")
     : undefined;
-  const fullPortScan = context.request.parameters["fullPortScan"] === true;
   const aggressive = context.request.parameters["aggressive"] === true;
+  const timeoutMs = Number(
+    process.env[aggressive ? "SCAN_SERVICE_SCAN_TIMEOUT_MS" : "SCAN_SERVICE_SCAN_FAST_TIMEOUT_MS"]
+      ?? (aggressive ? "600000" : "120000")
+  );
   const args = ["--open"];
   if (aggressive) {
     args.unshift("-A");
@@ -223,13 +271,11 @@ async function executeServiceScan(context: AdapterExecutionContext): Promise<Ada
   }
   if (ports) {
     args.push("-p", ports);
-  } else if (fullPortScan) {
-    args.push("-p-");
   }
   args.push(target);
 
   try {
-    const { output, exitCode } = await runTool("nmap", args, 60000);
+    const { output, exitCode } = await runTool("nmap", args, timeoutMs);
     assertHealthyNmapOutput(output);
     return {
       observations: parseOpenPorts(output).map(({ port, service, version }) =>
@@ -254,6 +300,148 @@ async function executeServiceScan(context: AdapterExecutionContext): Promise<Ada
     }
     return fallbackServiceScan(context);
   }
+}
+
+async function executeSubdomainEnum(context: AdapterExecutionContext): Promise<AdapterExecutionResult> {
+  const parsed = parseScanTarget(context.request.target);
+  const binary = context.request.tool === "amass" ? "amass" : "subfinder";
+  const args = binary === "amass"
+    ? ["enum", "-passive", "-d", parsed.host]
+    : ["-silent", "-d", parsed.host];
+  const { output, exitCode } = await runTool(binary, args, Number(process.env["SCAN_SUBDOMAIN_TIMEOUT_MS"] ?? "180000"));
+  const subdomains = uniqueNonEmptyLines(output)
+    .map(extractHostname)
+    .filter((value): value is string => value != null);
+  const observations = subdomains.map((subdomain) =>
+    createObservation(context, {
+      key: `subdomain:${subdomain}`,
+      title: "Subdomain discovered",
+      summary: `${subdomain} was identified as part of the target attack surface.`,
+      severity: "info",
+      confidence: 0.86,
+      evidence: output,
+      technique: `${binary} enumeration`,
+      relatedKeys: []
+    })
+  );
+
+  return { observations, output, exitCode };
+}
+
+async function executeHttpxProbe(context: AdapterExecutionContext): Promise<AdapterExecutionResult> {
+  const parsed = parseScanTarget(context.request.target);
+  const port = context.request.port ?? parsed.port;
+  const scheme = parsed.scheme ?? (port === 443 || port === 8443 ? "https" : "http");
+  const baseUrl = `${scheme}://${parsed.host}${port ? `:${port}` : ""}`;
+  const { output, exitCode } = await runTool(
+    "httpx",
+    ["-silent", "-status-code", "-title", "-tech-detect", "-u", baseUrl],
+    Number(process.env["SCAN_HTTPX_TIMEOUT_MS"] ?? "120000")
+  );
+  const lines = uniqueNonEmptyLines(output);
+  const observations = lines.map((line) =>
+    createObservation(context, {
+      key: `httpx:${baseUrl}:${line}`,
+      title: "HTTPx probe result",
+      summary: line,
+      severity: "info",
+      confidence: 0.85,
+      ...(port ? { port } : {}),
+      evidence: output,
+      technique: "HTTPx probe",
+      relatedKeys: []
+    })
+  );
+
+  return { observations, output, exitCode };
+}
+
+async function executeWebCrawl(context: AdapterExecutionContext): Promise<AdapterExecutionResult> {
+  const parsed = parseScanTarget(context.request.target);
+  const port = context.request.port ?? parsed.port;
+  const scheme = parsed.scheme ?? (port === 443 || port === 8443 ? "https" : "http");
+  const baseUrl = `${scheme}://${parsed.host}${port ? `:${port}` : ""}`;
+  const { output, exitCode } = await runTool(
+    "katana",
+    ["-u", baseUrl, "-silent"],
+    Number(process.env["SCAN_CRAWL_TIMEOUT_MS"] ?? "180000")
+  );
+  const urls = uniqueNonEmptyLines(output)
+    .map(extractUrl)
+    .filter((value): value is string => value != null);
+  const observations = urls.map((url) =>
+    createObservation(context, {
+      key: `crawl-url:${url}`,
+      title: "Crawled URL discovered",
+      summary: `${url} was discovered during application crawling.`,
+      severity: "info",
+      confidence: 0.82,
+      ...(port ? { port } : {}),
+      evidence: output,
+      technique: "Katana crawl",
+      relatedKeys: []
+    })
+  );
+
+  return { observations, output, exitCode };
+}
+
+async function executeHistoricalUrls(context: AdapterExecutionContext): Promise<AdapterExecutionResult> {
+  const parsed = parseScanTarget(context.request.target);
+  const binary = context.request.tool === "gau" ? "gau" : "waybackurls";
+  const args = [parsed.host];
+  const { output, exitCode } = await runTool(
+    binary,
+    args,
+    Number(process.env["SCAN_HISTORICAL_URLS_TIMEOUT_MS"] ?? "120000")
+  );
+  const urls = uniqueNonEmptyLines(output)
+    .map(extractUrl)
+    .filter((value): value is string => value != null);
+  const observations = urls.map((url) =>
+    createObservation(context, {
+      key: `historical-url:${url}`,
+      title: "Historical URL discovered",
+      summary: `${url} was recovered from historical URL sources.`,
+      severity: "info",
+      confidence: 0.78,
+      evidence: output,
+      technique: `${binary} archive query`,
+      relatedKeys: []
+    })
+  );
+
+  return { observations, output, exitCode };
+}
+
+async function executeFeroxbusterScan(context: AdapterExecutionContext): Promise<AdapterExecutionResult> {
+  const parsed = parseScanTarget(context.request.target);
+  const port = context.request.port ?? parsed.port;
+  const scheme = parsed.scheme ?? (port === 443 || port === 8443 ? "https" : "http");
+  const baseUrl = `${scheme}://${parsed.host}${port ? `:${port}` : ""}`;
+  const { output, exitCode } = await runTool(
+    "feroxbuster",
+    ["-u", baseUrl, "--silent"],
+    Number(process.env["SCAN_FEROXBUSTER_TIMEOUT_MS"] ?? "180000")
+  );
+  const urls = uniqueNonEmptyLines(output)
+    .map(extractUrl)
+    .filter((value): value is string => value != null);
+  const observations = urls.map((url) =>
+    createObservation(context, {
+      key: `feroxbuster:${url}`,
+      title: "Discovered path from feroxbuster",
+      summary: `${url} was discovered during directory and file enumeration.`,
+      severity: "info",
+      confidence: 0.84,
+      ...(port ? { port } : {}),
+      evidence: output,
+      technique: "Feroxbuster content discovery",
+      relatedKeys: []
+    })
+  );
+
+  return { observations, output, exitCode };
 }
 
 async function executeSessionAudit(context: AdapterExecutionContext): Promise<AdapterExecutionResult> {
@@ -879,6 +1067,48 @@ async function executeVulnCheck(context: AdapterExecutionContext): Promise<Adapt
   };
 }
 
+async function executeExternalTool(context: AdapterExecutionContext): Promise<AdapterExecutionResult> {
+  const binary = typeof context.request.parameters["binary"] === "string"
+    ? context.request.parameters["binary"]
+    : context.request.tool;
+  const args = Array.isArray(context.request.parameters["args"])
+    ? (context.request.parameters["args"] as string[])
+    : [];
+  const catalogEntry = getToolCatalog().find((entry) => entry.binary === binary || entry.id === binary);
+
+  if (!catalogEntry) {
+    throw new Error(`External tool ${binary} is not in the approved tool catalog.`);
+  }
+
+  const available = await isToolCatalogEntryAvailable(catalogEntry.id);
+  if (!available) {
+    throw new Error(`External tool ${catalogEntry.displayName} (${binary}) is not installed in the runtime.`);
+  }
+
+  const { output, exitCode } = await runTool(
+    binary,
+    args,
+    Number(process.env["SCAN_EXTERNAL_TOOL_TIMEOUT_MS"] ?? "180000")
+  );
+
+  return {
+    observations: [
+      createObservation(context, {
+        key: `external-tool:${catalogEntry.id}:${context.request.target}`,
+        title: `${catalogEntry.displayName} output captured`,
+        summary: `${catalogEntry.displayName} executed against ${context.request.target}.`,
+        severity: "info",
+        confidence: 0.8,
+        evidence: output,
+        technique: `External tool: ${catalogEntry.displayName}`,
+        relatedKeys: []
+      })
+    ],
+    output,
+    exitCode
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Adapter registry
 // ---------------------------------------------------------------------------
@@ -892,9 +1122,15 @@ const adapterExecutors: Record<ToolAdapter, (context: AdapterExecutionContext) =
   web_fingerprint: executeWebFingerprint,
   db_injection_check: executeDbInjectionCheck,
   content_discovery: executeContentDiscovery,
+  subdomain_enum: executeSubdomainEnum,
+  httpx_probe: executeHttpxProbe,
+  web_crawl: executeWebCrawl,
+  historical_urls: executeHistoricalUrls,
+  feroxbuster_scan: executeFeroxbusterScan,
   nikto_scan: executeNiktoScan,
   nuclei_scan: executeNucleiScan,
-  vuln_check: executeVulnCheck
+  vuln_check: executeVulnCheck,
+  external_tool: executeExternalTool
 };
 
 export async function executeAdapter(context: AdapterExecutionContext): Promise<AdapterExecutionResult> {

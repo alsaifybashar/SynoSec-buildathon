@@ -18,7 +18,8 @@ export const apiRoutes = {
   scanAudit: "/api/scan/:id/audit",
   scanToolRuns: "/api/scan/:id/tool-runs",
   scanEvidence: "/api/scan/:id/evidence",
-  scanSeed: "/api/scan/seed"
+  scanSeed: "/api/scan/seed",
+  toolCapabilities: "/api/tools/capabilities"
 } as const;
 
 export const localDemoTargetDefaults = {
@@ -363,11 +364,54 @@ export const toolAdapterSchema = z.enum([
   "web_fingerprint",
   "db_injection_check",
   "content_discovery",
+  "subdomain_enum",
+  "httpx_probe",
+  "web_crawl",
+  "historical_urls",
+  "feroxbuster_scan",
   "nikto_scan",
   "nuclei_scan",
-  "vuln_check"
+  "vuln_check",
+  "external_tool"
 ]);
 export type ToolAdapter = z.infer<typeof toolAdapterSchema>;
+
+export const toolCategorySchema = z.enum([
+  "network",
+  "web",
+  "content",
+  "dns",
+  "subdomain",
+  "password",
+  "cloud",
+  "kubernetes",
+  "windows",
+  "forensics",
+  "reversing",
+  "exploitation",
+  "utility"
+]);
+export type ToolCategory = z.infer<typeof toolCategorySchema>;
+
+export const toolCapabilityStatusSchema = z.enum(["installed", "missing", "manual"]);
+export type ToolCapabilityStatus = z.infer<typeof toolCapabilityStatusSchema>;
+
+export const toolCapabilitySchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  binary: z.string().nullable(),
+  category: toolCategorySchema,
+  status: toolCapabilityStatusSchema,
+  available: z.boolean(),
+  implementedAdapter: toolAdapterSchema.optional(),
+  notes: z.string().optional()
+});
+export type ToolCapability = z.infer<typeof toolCapabilitySchema>;
+
+export const toolCapabilitiesResponseSchema = z.object({
+  capabilities: z.array(toolCapabilitySchema)
+});
+export type ToolCapabilitiesResponse = z.infer<typeof toolCapabilitiesResponseSchema>;
 
 export const toolRunStatusSchema = z.enum(["pending", "running", "completed", "failed", "denied"]);
 export type ToolRunStatus = z.infer<typeof toolRunStatusSchema>;

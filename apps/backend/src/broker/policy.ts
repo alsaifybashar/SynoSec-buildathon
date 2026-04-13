@@ -12,7 +12,13 @@ const PASSIVE_ADAPTERS = new Set<ToolAdapter>([
   "tls_audit",
   "http_probe",
   "web_fingerprint",
-  "content_discovery"
+  "content_discovery",
+  "subdomain_enum",
+  "httpx_probe",
+  "web_crawl",
+  "historical_urls",
+  "feroxbuster_scan",
+  "external_tool"
 ]);
 
 // Adapters that probe/test but do not exploit — allowed when scan is active (default)
