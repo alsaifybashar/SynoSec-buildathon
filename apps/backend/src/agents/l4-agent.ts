@@ -13,9 +13,14 @@ export class L4Agent extends BaseAgent {
     });
     const parsedTarget = parseScanTarget(node.target);
     const explicitPort = parsedTarget.port;
+    // Top web/service ports for real pentesting coverage
     const candidatePorts = explicitPort != null
       ? [String(explicitPort)]
-      : ["22", "80", "443", "445", "5432"];
+      : [
+          "21", "22", "23", "25", "53", "80", "110", "111", "135", "139",
+          "143", "443", "445", "993", "995", "1723", "3306", "3389",
+          "5432", "5900", "6379", "8080", "8443", "8888", "27017"
+        ];
     await this.audit(context.scanId, "l4-scan-complete", node.id, {
       requestedToolRuns: 1,
       childNodesCount: 0,

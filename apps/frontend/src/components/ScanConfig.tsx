@@ -38,6 +38,7 @@ export function ScanConfig({ onScanStarted }: ScanConfigProps) {
     { label: "Host Service", value: localDemoTargetDefaults.hostGatewayTarget },
     { label: "Container Host", value: localDemoTargetDefaults.internalHost },
     { label: "192.168.1.0/24", value: "192.168.1.0/24" },
+    { label: "SecurePent", value: "securepent.com" },
   ];
 
   function toggleLayer(layer: OsiLayer) {

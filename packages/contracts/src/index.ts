@@ -362,7 +362,10 @@ export const toolAdapterSchema = z.enum([
   "http_probe",
   "web_fingerprint",
   "db_injection_check",
-  "content_discovery"
+  "content_discovery",
+  "nikto_scan",
+  "nuclei_scan",
+  "vuln_check"
 ]);
 export type ToolAdapter = z.infer<typeof toolAdapterSchema>;
 
@@ -425,7 +428,8 @@ export type Observation = z.infer<typeof observationSchema>;
 
 export const evidenceResponseSchema = z.object({
   toolRuns: z.array(toolRunSchema),
-  observations: z.array(observationSchema)
+  observations: z.array(observationSchema),
+  prioritizedTargets: z.array(z.string()).default([])
 });
 export type EvidenceResponse = z.infer<typeof evidenceResponseSchema>;
 

@@ -77,7 +77,13 @@ function commandPreview(request: ToolRequest): string {
     case "db_injection_check":
       return `sqlmap -u ${baseUrl}/ --batch`;
     case "content_discovery":
-      return `ffuf -u ${baseUrl}/FUZZ`;
+      return `ffuf -u ${baseUrl}/FUZZ -w /usr/share/dirb/wordlists/common.txt`;
+    case "nikto_scan":
+      return `nikto -h ${host} -p ${port ?? 80} -Tuning x 6 2`;
+    case "nuclei_scan":
+      return `nuclei -u ${baseUrl} -severity medium,high,critical`;
+    case "vuln_check":
+      return `curl -k -s ${baseUrl}/search?q=%3Cscript%3E`;
     default:
       return `${request.tool} ${host}${port ? `:${port}` : ""}`;
   }
@@ -244,20 +250,12 @@ export class ToolBroker {
           }
         });
 
-        throw new BrokerExecutionError(
-          `Tool broker failed for ${request.adapter} (${request.tool}) on ${request.target}${request.port !== undefined ? `:${request.port}` : ""}: ${reason}`,
-          {
-            scanId: input.scan.id,
-            nodeId: input.nodeId,
-            agentId: input.agentId,
-            adapter: request.adapter,
-            tool: request.tool,
-            target: request.target,
-            ...(request.port !== undefined ? { port: request.port } : {}),
-            toolRunId: failedToolRun.id,
-            reason
-          }
+        // Log the failure but continue — a single tool failure must not terminate the scan.
+        // BrokerExecutionError is reserved for hard policy violations, not tool-level errors.
+        console.warn(
+          `[broker] tool-run-failed adapter=${request.adapter} tool=${request.tool} target=${request.target} reason=${reason}`
         );
+        continue;
       }
     }
 

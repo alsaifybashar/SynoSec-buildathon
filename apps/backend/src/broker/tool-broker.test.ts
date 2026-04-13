@@ -131,33 +131,35 @@ describe("ToolBroker", () => {
     expect(result.findings).toHaveLength(0);
   });
 
-  it("marks tool runs as failed when a real tool execution errors", async () => {
+  it("marks tool runs as failed but continues scan when a tool execution errors", async () => {
+    // Tool failures are logged and skipped — they must NOT terminate the scan.
+    // BrokerExecutionError is reserved for hard policy violations, not tool-level errors.
     mockExecuteAdapter.mockRejectedValueOnce(new Error("nmap execution failed: spawn ENOENT"));
 
     const broker = new ToolBroker({ broadcast: vi.fn() });
-    await expect(() =>
-      broker.executeRequests({
-        scan: makeScan({
-          scope: {
-            ...makeScan().scope,
-            allowActiveExploits: true
-          }
-        }),
-        nodeId: "node-1",
-        agentId: "l4-transport-agent",
-        requests: [
-          makeRequest({
-            tool: "nmap",
-            adapter: "service_scan",
-            layer: "L4"
-          })
-        ]
-      })
-    ).rejects.toBeInstanceOf(BrokerExecutionError);
+    const result = await broker.executeRequests({
+      scan: makeScan({
+        scope: {
+          ...makeScan().scope,
+          allowActiveExploits: true
+        }
+      }),
+      nodeId: "node-1",
+      agentId: "l4-transport-agent",
+      requests: [
+        makeRequest({
+          tool: "nmap",
+          adapter: "service_scan",
+          layer: "L4"
+        })
+      ]
+    });
 
-    const [run] = evidenceStore.getToolRunsForScan("scan-1");
-    expect(run?.status).toBe("failed");
-    expect(run?.statusReason).toContain("ENOENT");
-    expect(run?.output).toContain("adapter=service_scan");
+    // Scan continues — no exception thrown
+    expect(result.toolRuns[0]?.status).toBe("failed");
+    expect(result.toolRuns[0]?.statusReason).toContain("ENOENT");
+    // No findings derived from the failed run
+    expect(result.findings).toHaveLength(0);
+    expect(result.observations).toHaveLength(0);
   });
 });

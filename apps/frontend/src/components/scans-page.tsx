@@ -23,6 +23,8 @@ import {
 } from "@synosec/contracts";
 import { toast } from "sonner";
 import { ScanConfig } from "./ScanConfig";
+import { ExecutionPanel } from "./ExecutionPanel";
+import { GraceChainsPanel } from "./GraceChainsPanel";
 import { DetailField, DetailFieldGroup, DetailPage, DetailSidebarItem } from "./detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "./list-page";
 import { Badge } from "./ui/badge";
@@ -82,6 +84,12 @@ function adapterLabel(adapter: ToolRun["adapter"]) {
       return "Session review";
     case "db_injection_check":
       return "Database injection check";
+    case "nikto_scan":
+      return "Nikto web scan";
+    case "nuclei_scan":
+      return "Nuclei template scan";
+    case "vuln_check":
+      return "Vulnerability checks";
     default:
       return sentenceCase(adapter);
   }
@@ -124,6 +132,12 @@ function describeToolRun(toolRun: ToolRun) {
       return `Checked remote session exposure on ${target}.`;
     case "db_injection_check":
       return `Checked for database injection risk on ${target}.`;
+    case "nikto_scan":
+      return `Ran Nikto web vulnerability scanner against ${target}.`;
+    case "nuclei_scan":
+      return `Ran Nuclei template-based scanner against ${target}.`;
+    case "vuln_check":
+      return `Checked for XSS, SQLi, CORS issues, and PII exposure on ${target}.`;
     default:
       return `Checked ${target} with ${toolRun.tool}.`;
   }
@@ -679,9 +693,10 @@ export function ScansPage({
   const [roundSummary, setRoundSummary] = useState("");
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [selectedChainId, setSelectedChainId] = useState<string | null>(null);
   const reportedFailedToolRunsRef = useRef(new Set<string>());
   const { lastEvent, isConnected } = useScanWebSocket(scanId !== "new");
-  const { scan, findings, graph, report, toolRuns, observations, isLoading, refetch } = useScan(scanId && scanId !== "new" ? scanId : null, lastEvent);
+  const { scan, findings, graph, report, chains, prioritizedTargets, toolRuns, observations, isLoading, refetch } = useScan(scanId && scanId !== "new" ? scanId : null, lastEvent);
   const isCreateMode = scanId === "new";
   const auditRefreshRound = lastEvent?.type === "round_complete" ? lastEvent.round : 0;
 
@@ -899,10 +914,12 @@ export function ScansPage({
     return [
       { id: "overview", label: "Overview", shortcut: "s", meta: `${scan?.scope.targets.length ?? 0} targets` },
       ...layerLinks,
+      { id: "execution", label: "Execution", shortcut: "e", meta: `${toolRuns.length} runs` },
+      { id: "grace-chains", label: "GRACE Chains", shortcut: "g", meta: chains.length > 0 ? `${chains.length} chains` : "Pending" },
       { id: "audit", label: "Audit", shortcut: "a", meta: `${auditEntries.length} events` },
       { id: "report", label: "Report", shortcut: "r", meta: report ? `${report.totalFindings} findings` : "Pending" }
     ];
-  }, [auditEntries.length, layers, report, scan?.scope.targets.length]);
+  }, [auditEntries.length, chains.length, layers, report, scan?.scope.targets.length, toolRuns.length]);
 
   useEffect(() => {
     if (!scanId || scanId === "new") {
@@ -1158,6 +1175,20 @@ export function ScansPage({
             />
           </SectionCard>
         ))}
+
+        <SectionCard id="execution" title="Execution">
+          <ExecutionPanel toolRuns={toolRuns} observations={observations} />
+        </SectionCard>
+
+        <SectionCard id="grace-chains" title="GRACE Chains">
+          <GraceChainsPanel
+            chains={chains}
+            findings={findings}
+            selectedChainId={selectedChainId}
+            prioritizedTargets={prioritizedTargets}
+            onSelectChain={setSelectedChainId}
+          />
+        </SectionCard>
 
         <SectionCard id="audit" title="Audit">
           <AuditTimeline entries={auditEntries} isLoading={auditLoading} />

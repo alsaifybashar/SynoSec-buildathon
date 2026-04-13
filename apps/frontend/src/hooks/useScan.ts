@@ -61,6 +61,7 @@ export function useScan(scanId: string | null, lastEvent: WsEvent | null = null)
       setChains(chainsData);
       setToolRuns(evidenceData.toolRuns);
       setObservations(evidenceData.observations);
+      setPrioritizedTargets(evidenceData.prioritizedTargets);
 
       if (scanData.status === "complete") {
         const reportData = await fetchJson<Report>(`/api/scan/${id}/report`);

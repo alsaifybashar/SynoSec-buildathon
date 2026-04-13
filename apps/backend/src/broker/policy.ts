@@ -1,17 +1,32 @@
-import type { Scan, ToolRequest } from "@synosec/contracts";
+import type { Scan, ToolAdapter, ToolRequest } from "@synosec/contracts";
 
 export interface PolicyDecision {
   allowed: boolean;
   reason: string;
 }
 
-function isControlledExploitAllowed(scan: Scan): boolean {
-  return scan.scope.allowActiveExploits === true;
-}
+// Adapters that perform read-only reconnaissance — always allowed in scope
+const PASSIVE_ADAPTERS = new Set<ToolAdapter>([
+  "network_scan",
+  "service_scan",
+  "tls_audit",
+  "http_probe",
+  "web_fingerprint",
+  "content_discovery"
+]);
 
-function isNonPassiveToolAllowed(scan: Scan): boolean {
-  return scan.scope.allowActiveExploits === true;
-}
+// Adapters that probe/test but do not exploit — allowed when scan is active (default)
+const ACTIVE_RECON_ADAPTERS = new Set<ToolAdapter>([
+  "session_audit",
+  "nikto_scan",
+  "nuclei_scan",
+  "vuln_check"
+]);
+
+// Adapters that may send exploit-class payloads — require explicit opt-in
+const EXPLOIT_ADAPTERS = new Set<ToolAdapter>([
+  "db_injection_check"
+]);
 
 function isTargetInScope(scan: Scan, target: string): boolean {
   const stripPort = (value: string) => value.replace(/:\d+$/, "");
@@ -42,22 +57,37 @@ export function authorizeToolRequest(scan: Scan, request: ToolRequest): PolicyDe
     };
   }
 
-  if (request.riskTier === "controlled-exploit" && !isControlledExploitAllowed(scan)) {
+  // controlled-exploit risk tier always requires explicit opt-in — checked first
+  if (request.riskTier === "controlled-exploit" && scan.scope.allowActiveExploits !== true) {
     return {
       allowed: false,
       reason: "Controlled exploit tooling is disabled for this scan."
     };
   }
 
-  if (request.riskTier === "active" && !isNonPassiveToolAllowed(scan)) {
+  // Exploit-class adapters (e.g. sqlmap) require allowActiveExploits
+  if (EXPLOIT_ADAPTERS.has(request.adapter)) {
+    if (scan.scope.allowActiveExploits !== true) {
+      return {
+        allowed: false,
+        reason: `Exploit adapter ${request.adapter} requires allowActiveExploits=true.`
+      };
+    }
+    return { allowed: true, reason: `Exploit adapter authorized for ${request.adapter}.` };
+  }
+
+  // Active recon adapters (nikto, nuclei, vuln_check, session_audit) are always permitted
+  if (ACTIVE_RECON_ADAPTERS.has(request.adapter)) {
     return {
-      allowed: false,
-      reason: "Active tooling is disabled for this scan."
+      allowed: true,
+      reason: `Active reconnaissance adapter ${request.adapter} is permitted.`
     };
   }
 
-  return {
-    allowed: true,
-    reason: `Allowed by ${request.riskTier} policy for ${request.adapter}.`
-  };
+  // Passive adapters are always allowed
+  if (PASSIVE_ADAPTERS.has(request.adapter)) {
+    return { allowed: true, reason: `Passive reconnaissance allowed for ${request.adapter}.` };
+  }
+
+  return { allowed: true, reason: `Allowed by ${request.riskTier} policy for ${request.adapter}.` };
 }

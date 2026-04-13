@@ -15,6 +15,7 @@ import {
   getGraphForScan,
   getScan,
   getVulnerabilityChains,
+  getAttackSurfaceClusters,
   listScans
 } from "../db/neo4j.js";
 import { Orchestrator } from "../orchestrator/orchestrator.js";
@@ -41,7 +42,10 @@ const knownToolAdapters = new Set<ToolAdapter>([
   "http_probe",
   "web_fingerprint",
   "db_injection_check",
-  "content_discovery"
+  "content_discovery",
+  "nikto_scan",
+  "nuclei_scan",
+  "vuln_check"
 ]);
 
 const knownRiskTiers = new Set<ToolRiskTier>(["passive", "active", "controlled-exploit"]);
@@ -72,6 +76,12 @@ function buildCommandPreview(toolRun: Pick<ToolRun, "adapter" | "tool" | "target
       return `sqlmap -u ${baseUrl}/ --batch`;
     case "content_discovery":
       return `ffuf -u ${baseUrl}/FUZZ`;
+    case "nikto_scan":
+      return `nikto -host ${host}${port ? ` -port ${port}` : ""}`;
+    case "nuclei_scan":
+      return `nuclei -target ${baseUrl} -t default-templates`;
+    case "vuln_check":
+      return `synosec-vuln-check --target ${baseUrl}`;
     default:
       return `${toolRun.tool} ${host}${port ? `:${port}` : ""}`;
   }
@@ -435,9 +445,13 @@ export function createScanRouter(broadcast: (event: WsEvent) => void): Router {
       return;
     }
 
+    const clusters = await getAttackSurfaceClusters(id);
+    const prioritizedTargets = clusters.slice(0, 3).map((c) => c.target);
+
     const payload: EvidenceResponse = {
       toolRuns: await getToolRunsForScanWithAuditFallback(id),
-      observations: evidenceStore.getObservationsForScan(id)
+      observations: evidenceStore.getObservationsForScan(id),
+      prioritizedTargets
     };
     res.json(payload);
   });

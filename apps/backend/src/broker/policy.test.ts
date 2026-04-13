@@ -71,7 +71,9 @@ describe("authorizeToolRequest", () => {
     expect(decision.reason).toContain("disabled");
   });
 
-  it("denies active requests when scan policy disallows them", () => {
+  it("allows active recon adapters even without allowActiveExploits", () => {
+    // session_audit (and nikto, nuclei, vuln_check) are recon tools, not exploits —
+    // they are permitted regardless of the allowActiveExploits flag
     const decision = authorizeToolRequest(
       makeScan(),
       makeRequest({
@@ -82,7 +84,21 @@ describe("authorizeToolRequest", () => {
       })
     );
 
+    expect(decision.allowed).toBe(true);
+  });
+
+  it("denies db_injection_check when allowActiveExploits is false", () => {
+    const decision = authorizeToolRequest(
+      makeScan(),
+      makeRequest({
+        adapter: "db_injection_check",
+        riskTier: "active",
+        tool: "sqlmap",
+        layer: "L7"
+      })
+    );
+
     expect(decision.allowed).toBe(false);
-    expect(decision.reason).toContain("Active tooling");
+    expect(decision.reason).toContain("requires allowActiveExploits");
   });
 });
