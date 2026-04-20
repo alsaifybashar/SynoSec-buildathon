@@ -15,6 +15,8 @@ interface StoredExecutionConfig {
   defaultArgs?: AiTool["defaultArgs"];
   timeoutMs?: AiTool["timeoutMs"];
   scriptPath?: AiTool["scriptPath"];
+  scriptVersion?: AiTool["scriptVersion"];
+  scriptSource?: AiTool["scriptSource"];
   capabilities?: AiTool["capabilities"];
 }
 
@@ -38,7 +40,7 @@ export function stripExecutionConfig<T>(schema: T): T {
 
 export function attachExecutionConfig<T>(
   schema: T,
-  tool: Pick<AiTool, "executionMode" | "sandboxProfile" | "privilegeProfile" | "defaultArgs" | "timeoutMs" | "scriptPath" | "capabilities">
+  tool: Pick<AiTool, "executionMode" | "sandboxProfile" | "privilegeProfile" | "defaultArgs" | "timeoutMs" | "scriptPath" | "scriptVersion" | "scriptSource" | "capabilities">
 ): T {
   const record = asJsonRecord(schema);
   const next: JsonRecord = {
@@ -50,6 +52,8 @@ export function attachExecutionConfig<T>(
       defaultArgs: tool.defaultArgs,
       timeoutMs: tool.timeoutMs,
       scriptPath: tool.scriptPath,
+      scriptVersion: tool.scriptVersion,
+      scriptSource: tool.scriptSource,
       capabilities: tool.capabilities
     }
   };
@@ -58,7 +62,7 @@ export function attachExecutionConfig<T>(
 
 export function mapToolExecutionFields(
   inputSchema: unknown
-): Pick<AiTool, "executionMode" | "sandboxProfile" | "privilegeProfile" | "defaultArgs" | "timeoutMs" | "scriptPath" | "capabilities"> {
+): Pick<AiTool, "executionMode" | "sandboxProfile" | "privilegeProfile" | "defaultArgs" | "timeoutMs" | "scriptPath" | "scriptVersion" | "scriptSource" | "capabilities"> {
   const stored = readStoredExecutionConfig(inputSchema);
   return {
     executionMode: stored.executionMode === "sandboxed" ? "sandboxed" : "catalog",
@@ -67,6 +71,8 @@ export function mapToolExecutionFields(
     defaultArgs: Array.isArray(stored.defaultArgs) ? stored.defaultArgs.filter((value): value is string => typeof value === "string") : [],
     timeoutMs: typeof stored.timeoutMs === "number" ? stored.timeoutMs : null,
     scriptPath: typeof stored.scriptPath === "string" ? stored.scriptPath : null,
+    scriptVersion: typeof stored.scriptVersion === "string" ? stored.scriptVersion : null,
+    scriptSource: typeof stored.scriptSource === "string" ? stored.scriptSource : null,
     capabilities: Array.isArray(stored.capabilities) ? stored.capabilities.filter((value): value is string => typeof value === "string") : []
   };
 }
@@ -81,6 +87,8 @@ export function encodeCreateToolInput(input: CreateAiToolBody) {
       defaultArgs: input.defaultArgs,
       timeoutMs: input.timeoutMs ?? null,
       scriptPath: input.scriptPath ?? null,
+      scriptVersion: input.scriptVersion ?? null,
+      scriptSource: input.scriptSource ?? null,
       capabilities: input.capabilities
     })
   };
@@ -95,6 +103,8 @@ export function encodeUpdateToolInput(input: UpdateAiToolBody, current: AiTool) 
     input.defaultArgs !== undefined ||
     input.timeoutMs !== undefined ||
     input.scriptPath !== undefined ||
+    input.scriptVersion !== undefined ||
+    input.scriptSource !== undefined ||
     input.capabilities !== undefined
   );
 
@@ -109,6 +119,8 @@ export function encodeUpdateToolInput(input: UpdateAiToolBody, current: AiTool) 
           defaultArgs: input.defaultArgs ?? current.defaultArgs,
           timeoutMs: input.timeoutMs === undefined ? current.timeoutMs : input.timeoutMs ?? null,
           scriptPath: input.scriptPath === undefined ? current.scriptPath : input.scriptPath ?? null,
+          scriptVersion: input.scriptVersion === undefined ? current.scriptVersion : input.scriptVersion ?? null,
+          scriptSource: input.scriptSource === undefined ? current.scriptSource : input.scriptSource ?? null,
           capabilities: input.capabilities ?? current.capabilities
         })
   };

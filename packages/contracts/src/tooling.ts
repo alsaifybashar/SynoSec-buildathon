@@ -52,6 +52,7 @@ export const toolRequestSchema = z.object({
   toolId: z.string().min(1).optional(),
   tool: z.string().min(1),
   scriptPath: z.string().min(1).optional(),
+  scriptVersion: z.string().min(1).optional(),
   capabilities: z.array(toolCapabilityTagSchema).default([]),
   target: z.string().min(1),
   port: z.number().int().optional(),
@@ -71,6 +72,13 @@ export const toolRequestSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: "Script path is required for scripted tool execution.",
       path: ["scriptPath"]
+    });
+  }
+  if (!value.scriptVersion) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Script version is required for scripted tool execution.",
+      path: ["scriptVersion"]
     });
   }
   if (value.capabilities.length === 0) {
@@ -101,6 +109,20 @@ export const toolRequestSchema = z.object({
       path: ["parameters", "scriptPath"]
     });
   }
+  if (typeof value.parameters["scriptVersion"] !== "string") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Script version is required in structured parameters for scripted tool execution.",
+      path: ["parameters", "scriptVersion"]
+    });
+  }
+  if (typeof value.parameters["scriptSource"] !== "string") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Script source is required in structured parameters for scripted tool execution.",
+      path: ["parameters", "scriptSource"]
+    });
+  }
   if (!Array.isArray(value.parameters["scriptArgs"])) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -119,6 +141,7 @@ export const toolRunSchema = z.object({
   toolId: z.string().optional(),
   tool: z.string(),
   scriptPath: z.string().optional(),
+  scriptVersion: z.string().optional(),
   capabilities: z.array(toolCapabilityTagSchema).default([]),
   target: z.string(),
   port: z.number().int().optional(),

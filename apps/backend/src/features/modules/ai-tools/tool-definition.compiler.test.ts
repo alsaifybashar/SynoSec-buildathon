@@ -10,6 +10,8 @@ const sandboxedTool: AiTool = {
   description: "DB-backed recon tool",
   binary: "curl",
   scriptPath: "scripts/tools/http-recon.sh",
+  scriptVersion: "v1",
+  scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
   capabilities: ["web-recon"],
   category: "utility",
   riskTier: "passive",
@@ -37,12 +39,15 @@ describe("tool definition compiler", () => {
       toolId: "tool-1",
       tool: "HTTP Recon",
       scriptPath: "scripts/tools/http-recon.sh",
+      scriptVersion: "v1",
       capabilities: ["web-recon"],
       target: "example.com",
       sandboxProfile: "network-recon",
       privilegeProfile: "read-only-network"
     });
     expect(result.parameters["scriptPath"]).toBe("scripts/tools/http-recon.sh");
+    expect(result.parameters["scriptVersion"]).toBe("v1");
+    expect(result.parameters["scriptSource"]).toContain("#!/usr/bin/env bash");
     expect(result.parameters["scriptArgs"]).toEqual(["-I", "http://example.com"]);
     expect(result.parameters["timeoutMs"]).toBe(15000);
   });

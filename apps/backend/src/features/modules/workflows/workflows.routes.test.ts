@@ -74,6 +74,8 @@ const seedTools: AiTool[] = [
     description: "HTTP reconnaissance",
     binary: "httpx",
     scriptPath: "scripts/tools/http-recon.sh",
+    scriptVersion: "v1",
+    scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
     capabilities: ["web-recon", "passive"],
     category: "web",
     riskTier: "passive",

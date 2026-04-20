@@ -1,5 +1,7 @@
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import type {
   Observation,
   Severity,
@@ -46,6 +48,22 @@ function resolveScriptPath(scriptPath: string): string {
   return path.isAbsolute(scriptPath)
     ? scriptPath
     : path.resolve(process.cwd(), scriptPath);
+}
+
+async function materializeScript(
+  scriptPath: string,
+  scriptVersion: string,
+  scriptSource: string
+): Promise<{ executablePath: string; cleanup: () => Promise<void> }> {
+  const tempDir = await mkdtemp(path.join(tmpdir(), "synosec-tool-"));
+  const fileName = path.basename(scriptPath) || `tool-${scriptVersion}.sh`;
+  const executablePath = path.join(tempDir, fileName);
+  await writeFile(executablePath, scriptSource, "utf8");
+  await chmod(executablePath, 0o700);
+  return {
+    executablePath,
+    cleanup: () => rm(tempDir, { recursive: true, force: true })
+  };
 }
 
 function normalizeObservation(
@@ -115,7 +133,18 @@ export async function executeScriptedTool(
     throw new Error(`No script path configured for ${context.request.tool}.`);
   }
 
-  const resolvedScriptPath = resolveScriptPath(scriptPath);
+  const scriptVersion = typeof context.request.parameters["scriptVersion"] === "string"
+    ? context.request.parameters["scriptVersion"]
+    : context.request.scriptVersion;
+  const scriptSource = typeof context.request.parameters["scriptSource"] === "string"
+    ? context.request.parameters["scriptSource"]
+    : null;
+  const materialized = scriptSource && scriptVersion
+    ? await materializeScript(scriptPath, scriptVersion, scriptSource)
+    : null;
+  const resolvedScriptPath = materialized
+    ? materialized.executablePath
+    : resolveScriptPath(scriptPath);
   const scriptArgs = Array.isArray(context.request.parameters["scriptArgs"])
     ? context.request.parameters["scriptArgs"].filter((value): value is string => typeof value === "string")
     : [];
@@ -137,6 +166,7 @@ export async function executeScriptedTool(
         return;
       }
       settled = true;
+      void materialized?.cleanup();
       child.kill("SIGTERM");
       resolve({
         observations: [],
@@ -158,6 +188,7 @@ export async function executeScriptedTool(
       }
       settled = true;
       clearTimeout(timer);
+      void materialized?.cleanup();
       reject(error);
     });
     child.on("close", (code) => {
@@ -166,6 +197,7 @@ export async function executeScriptedTool(
       }
       settled = true;
       clearTimeout(timer);
+      void materialized?.cleanup();
       resolve(parseStructuredResult(context, stdout, stderr, code ?? 1));
     });
 

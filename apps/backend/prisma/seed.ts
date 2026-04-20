@@ -133,6 +133,8 @@ async function main() {
             defaultArgs: [...tool.defaultArgs],
             timeoutMs: tool.timeoutMs,
             scriptPath: tool.scriptPath,
+            scriptVersion: tool.scriptVersion,
+            scriptSource: tool.scriptSource,
             capabilities: [...tool.capabilities]
           }),
           outputSchema: tool.outputSchema
@@ -155,6 +157,8 @@ async function main() {
             defaultArgs: [...tool.defaultArgs],
             timeoutMs: tool.timeoutMs,
             scriptPath: tool.scriptPath,
+            scriptVersion: tool.scriptVersion,
+            scriptSource: tool.scriptSource,
             capabilities: [...tool.capabilities]
           }),
           outputSchema: tool.outputSchema

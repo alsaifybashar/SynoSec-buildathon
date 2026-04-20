@@ -7,6 +7,31 @@ export const localWorkflowId = "2a3761a0-c424-4634-83ad-5145fbd2697c";
 export type SeededProviderKey = "anthropic" | "local";
 export type SeededRoleKey = "orchestrator" | "qa-analyst" | "pen-tester" | "reporter";
 
+function createStoredToolScript(binary: string) {
+  return [
+    "#!/usr/bin/env bash",
+    "set -euo pipefail",
+    "",
+    `tool_binary=${JSON.stringify(binary)}`,
+    'payload="$(cat)"',
+    "mapfile -t script_args < <(",
+    "  printf '%s' \"$payload\" | node -e '",
+    '    let input = "";',
+    '    process.stdin.setEncoding("utf8");',
+    '    process.stdin.on("data", (chunk) => { input += chunk; });',
+    '    process.stdin.on("end", () => {',
+    '      const parsed = JSON.parse(input || "{}");',
+    '      const args = parsed?.request?.parameters?.scriptArgs;',
+    '      if (Array.isArray(args)) {',
+    '        for (const value of args) process.stdout.write(String(value) + "\\n");',
+    "      }",
+    "    });",
+    "  '",
+    ")",
+    'exec "$tool_binary" "${script_args[@]}"'
+  ].join("\n");
+}
+
 export function getSeededProviderDefinitions(env: NodeJS.ProcessEnv = process.env) {
   return [
     {
@@ -38,6 +63,8 @@ export const seededToolDefinitions = [
     name: "HTTP Recon",
     description: "Probe targets, collect headers, status codes, titles, and initial fingerprints.",
     scriptPath: "scripts/tools/http-recon.sh",
+    scriptVersion: "2026-04-21.http-recon.v1",
+    scriptSource: createStoredToolScript("httpx"),
     capabilities: ["web-recon", "passive"],
     binary: "httpx",
     category: "web" as const,
@@ -69,6 +96,8 @@ export const seededToolDefinitions = [
     name: "Web Crawl",
     description: "Crawl discovered web targets to expand reachable content and endpoints.",
     scriptPath: "scripts/tools/web-crawl.sh",
+    scriptVersion: "2026-04-21.web-crawl.v1",
+    scriptSource: createStoredToolScript("katana"),
     capabilities: ["web-recon", "content-discovery", "passive"],
     binary: "katana",
     category: "content" as const,
@@ -99,6 +128,8 @@ export const seededToolDefinitions = [
     name: "Service Scan",
     description: "Enumerate exposed ports and identify reachable network services.",
     scriptPath: "scripts/tools/service-scan.sh",
+    scriptVersion: "2026-04-21.service-scan.v1",
+    scriptSource: createStoredToolScript("nmap"),
     capabilities: ["network-recon", "passive"],
     binary: "nmap",
     category: "network" as const,
@@ -129,6 +160,8 @@ export const seededToolDefinitions = [
     name: "Content Discovery",
     description: "Brute-force common content paths to expand the application attack surface.",
     scriptPath: "scripts/tools/content-discovery.sh",
+    scriptVersion: "2026-04-21.content-discovery.v1",
+    scriptSource: createStoredToolScript("ffuf"),
     capabilities: ["content-discovery", "active-recon"],
     binary: "ffuf",
     category: "content" as const,
@@ -158,6 +191,8 @@ export const seededToolDefinitions = [
     name: "Vulnerability Audit",
     description: "Run known issue checks against a target and summarize likely findings.",
     scriptPath: "scripts/tools/vulnerability-audit.sh",
+    scriptVersion: "2026-04-21.vulnerability-audit.v1",
+    scriptSource: createStoredToolScript("nuclei"),
     capabilities: ["vulnerability-audit", "active-recon"],
     binary: "nuclei",
     category: "web" as const,
@@ -187,6 +222,8 @@ export const seededToolDefinitions = [
     name: "SQL Injection Check",
     description: "Perform controlled database injection validation against approved targets.",
     scriptPath: "scripts/tools/sql-injection-check.sh",
+    scriptVersion: "2026-04-21.sql-injection-check.v1",
+    scriptSource: createStoredToolScript("sqlmap"),
     capabilities: ["database-security", "controlled-exploit"],
     binary: "sqlmap",
     category: "web" as const,
@@ -217,6 +254,8 @@ export const seededToolDefinitions = [
     name: "Evidence Review",
     description: "Review gathered evidence, normalize observations, and mark confidence gaps.",
     scriptPath: null,
+    scriptVersion: null,
+    scriptSource: null,
     capabilities: [],
     binary: null,
     category: "utility" as const,
@@ -246,6 +285,8 @@ export const seededToolDefinitions = [
     name: "Report Writer",
     description: "Transform findings and evidence into an executive and technical report structure.",
     scriptPath: null,
+    scriptVersion: null,
+    scriptSource: null,
     capabilities: [],
     binary: null,
     category: "utility" as const,

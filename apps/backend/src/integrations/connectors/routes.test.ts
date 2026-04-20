@@ -135,6 +135,7 @@ describe("connector routes", () => {
           toolId: "tool-1",
           tool: "curl",
           scriptPath: "scripts/tools/http-recon.sh",
+          scriptVersion: "v1",
           capabilities: ["web-recon"],
           target: "example.com",
           layer: "L7",
@@ -144,6 +145,8 @@ describe("connector routes", () => {
           privilegeProfile: "read-only-network",
           parameters: {
             scriptPath: "scripts/tools/http-recon.sh",
+            scriptVersion: "v1",
+            scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
             scriptArgs: ["-I", "http://example.com"]
           }
         }
@@ -203,6 +206,7 @@ describe("connector routes", () => {
           toolId: "tool-1",
           tool: "curl",
           scriptPath: "scripts/tools/http-recon.sh",
+          scriptVersion: "v1",
           capabilities: ["web-recon"],
           target: "example.com",
           layer: "L7",
@@ -212,6 +216,8 @@ describe("connector routes", () => {
           privilegeProfile: "read-only-network",
           parameters: {
             scriptPath: "scripts/tools/http-recon.sh",
+            scriptVersion: "v1",
+            scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
             scriptArgs: ["-I", "http://example.com"]
           }
         }

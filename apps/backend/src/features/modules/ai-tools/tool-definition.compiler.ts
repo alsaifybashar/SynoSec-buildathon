@@ -2,7 +2,7 @@ import type { AiTool, OsiLayer, ToolRequest } from "@synosec/contracts";
 
 type CompilableTool = Pick<
   AiTool,
-  "id" | "name" | "scriptPath" | "executionMode" | "riskTier" | "sandboxProfile" | "privilegeProfile" | "timeoutMs"
+  "id" | "name" | "scriptPath" | "scriptVersion" | "scriptSource" | "executionMode" | "riskTier" | "sandboxProfile" | "privilegeProfile" | "timeoutMs"
 > & {
   capabilities: readonly string[];
   defaultArgs: readonly string[];
@@ -29,6 +29,8 @@ export function compileToolRequestFromDefinition(tool: CompilableTool, input: Co
     || !tool.sandboxProfile
     || !tool.privilegeProfile
     || !tool.scriptPath
+    || !tool.scriptVersion
+    || !tool.scriptSource
     || tool.capabilities.length === 0
   ) {
     throw new Error(`Tool ${tool.id} is not configured for sandboxed execution.`);
@@ -38,6 +40,7 @@ export function compileToolRequestFromDefinition(tool: CompilableTool, input: Co
     toolId: tool.id,
     tool: tool.name,
     scriptPath: tool.scriptPath,
+    scriptVersion: tool.scriptVersion,
     capabilities: [...tool.capabilities],
     target: input.target,
     ...(input.port == null ? {} : { port: input.port }),
@@ -48,6 +51,8 @@ export function compileToolRequestFromDefinition(tool: CompilableTool, input: Co
     privilegeProfile: tool.privilegeProfile,
     parameters: {
       scriptPath: tool.scriptPath,
+      scriptVersion: tool.scriptVersion,
+      scriptSource: tool.scriptSource,
       scriptArgs: [...tool.defaultArgs].map((argument) => interpolateArgument(argument, input)),
       ...(tool.timeoutMs == null ? {} : { timeoutMs: tool.timeoutMs })
     }

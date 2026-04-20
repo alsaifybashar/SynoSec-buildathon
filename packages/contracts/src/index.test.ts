@@ -264,6 +264,7 @@ describe("contracts", () => {
           tool: "curl",
           toolId: "tool-1",
           scriptPath: "scripts/tools/http-recon.sh",
+          scriptVersion: "v1",
           capabilities: ["web-recon"],
           target: "example.com",
           status: "running",
@@ -280,6 +281,7 @@ describe("contracts", () => {
           toolId: "tool-1",
           tool: "curl",
           scriptPath: "scripts/tools/http-recon.sh",
+          scriptVersion: "v1",
           capabilities: ["web-recon"],
           target: "example.com",
           layer: "L7",
@@ -289,6 +291,8 @@ describe("contracts", () => {
           privilegeProfile: "read-only-network",
           parameters: {
             scriptPath: "scripts/tools/http-recon.sh",
+            scriptVersion: "v1",
+            scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
             scriptArgs: ["-I", "http://example.com"]
           }
         }
@@ -362,6 +366,8 @@ describe("contracts", () => {
       description: "Sandboxed HTTP probe",
       binary: "httpx",
       scriptPath: "scripts/tools/http-recon.sh",
+      scriptVersion: "v1",
+      scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
       capabilities: ["web-recon"],
       category: "web",
       riskTier: "passive",
@@ -388,6 +394,8 @@ describe("contracts", () => {
       description: "Missing sandbox policy",
       binary: "curl",
       scriptPath: "scripts/tools/http-recon.sh",
+      scriptVersion: "v1",
+      scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
       capabilities: ["web-recon"],
       category: "utility",
       riskTier: "passive",
@@ -406,6 +414,7 @@ describe("contracts", () => {
       toolId: "tool-1",
       tool: "HTTP Recon",
       scriptPath: "scripts/tools/http-recon.sh",
+      scriptVersion: "v1",
       capabilities: ["web-recon"],
       target: "example.com",
       layer: "L7",
@@ -413,6 +422,8 @@ describe("contracts", () => {
       justification: "Run the db-backed tool definition.",
       parameters: {
         scriptPath: "scripts/tools/http-recon.sh",
+        scriptVersion: "v1",
+        scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
         scriptArgs: ["-silent", "-u", "http://example.com"]
       }
     });
@@ -425,6 +436,7 @@ describe("contracts", () => {
       toolId: "tool-1",
       tool: "HTTP Recon",
       scriptPath: "scripts/tools/http-recon.sh",
+      scriptVersion: "v1",
       capabilities: ["web-recon"],
       target: "example.com",
       layer: "L7",
@@ -434,6 +446,8 @@ describe("contracts", () => {
       privilegeProfile: "read-only-network",
       parameters: {
         scriptPath: "scripts/tools/http-recon.sh",
+        scriptVersion: "v1",
+        scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
         scriptArgs: ["-silent", "-u", "http://example.com"]
       }
     });

@@ -204,6 +204,8 @@ export const aiToolSchema = z.object({
   description: z.string().nullable(),
   binary: z.string().nullable(),
   scriptPath: z.string().nullable().default(null),
+  scriptVersion: z.string().nullable().default(null),
+  scriptSource: z.string().nullable().default(null),
   capabilities: z.array(z.lazy(() => toolCapabilityTagSchema)).default([]),
   category: z.lazy(() => toolCategorySchema),
   riskTier: z.lazy(() => toolRiskTierSchema),
@@ -238,6 +240,8 @@ const aiToolBodyBaseSchema = z.object({
   description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
   binary: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
   scriptPath: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
+  scriptVersion: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
+  scriptSource: z.union([z.string(), z.literal(""), z.null()]).transform((value) => value || null).optional(),
   capabilities: z.array(z.lazy(() => toolCapabilityTagSchema)).default([]),
   category: z.lazy(() => toolCategorySchema),
   riskTier: z.lazy(() => toolRiskTierSchema),
@@ -265,6 +269,20 @@ export const createAiToolBodySchema = aiToolBodyBaseSchema.superRefine((value, c
         code: z.ZodIssueCode.custom,
         message: "Script path is required for sandboxed tools.",
         path: ["scriptPath"]
+      });
+    }
+    if (!value.scriptVersion) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Script version is required for sandboxed tools.",
+        path: ["scriptVersion"]
+      });
+    }
+    if (!value.scriptSource) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Script source is required for sandboxed tools.",
+        path: ["scriptSource"]
       });
     }
     if (value.capabilities.length === 0) {
@@ -304,6 +322,20 @@ export const updateAiToolBodySchema = aiToolBodyBaseSchema
           code: z.ZodIssueCode.custom,
           message: "Script path is required for sandboxed tools.",
           path: ["scriptPath"]
+        });
+      }
+      if ("scriptVersion" in value && !value.scriptVersion) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Script version is required for sandboxed tools.",
+          path: ["scriptVersion"]
+        });
+      }
+      if ("scriptSource" in value && !value.scriptSource) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Script source is required for sandboxed tools.",
+          path: ["scriptSource"]
         });
       }
       if ("capabilities" in value && value.capabilities?.length === 0) {

@@ -1,3 +1,6 @@
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { spawn } from "node:child_process";
 import type {
   ConnectorExecutionJob,
@@ -73,16 +76,22 @@ function validateSandboxedJob(
   const binary = typeof job.request.parameters["scriptPath"] === "string"
     ? job.request.parameters["scriptPath"]
     : null;
+  const scriptVersion = typeof job.request.parameters["scriptVersion"] === "string"
+    ? job.request.parameters["scriptVersion"]
+    : null;
+  const scriptSource = typeof job.request.parameters["scriptSource"] === "string"
+    ? job.request.parameters["scriptSource"]
+    : null;
   const args = Array.isArray(job.request.parameters["scriptArgs"])
     ? job.request.parameters["scriptArgs"].filter((value): value is string => typeof value === "string")
     : null;
 
-  if (!binary || !args) {
+  if (!binary || !args || !scriptVersion || !scriptSource) {
     return {
       output: "",
       exitCode: 1,
       observations: [],
-      statusReason: "Structured script path and args are required for scripted tool execution."
+      statusReason: "Structured script path, version, source, and args are required for scripted tool execution."
     };
   }
 
@@ -101,14 +110,30 @@ export async function executeSandboxedConnectorJob(
   return executeStructuredCommand(
     validated.binary,
     validated.args,
+    job,
     options.commandTimeoutMs ?? 30000
   );
 }
 
-async function executeStructuredCommand(binary: string, args: string[], timeoutMs: number): Promise<ConnectorExecutionResult> {
+async function materializeScript(binary: string, scriptVersion: string, scriptSource: string) {
+  const tempDir = await mkdtemp(path.join(tmpdir(), "synosec-connector-tool-"));
+  const fileName = path.basename(binary) || `tool-${scriptVersion}.sh`;
+  const executablePath = path.join(tempDir, fileName);
+  await writeFile(executablePath, scriptSource, "utf8");
+  await chmod(executablePath, 0o700);
+  return {
+    executablePath,
+    cleanup: () => rm(tempDir, { recursive: true, force: true })
+  };
+}
+
+async function executeStructuredCommand(binary: string, args: string[], job: ConnectorExecutionJob, timeoutMs: number): Promise<ConnectorExecutionResult> {
+  const scriptVersion = String(job.request.parameters["scriptVersion"]);
+  const scriptSource = String(job.request.parameters["scriptSource"]);
+  const materialized = await materializeScript(binary, scriptVersion, scriptSource);
   return new Promise<ConnectorExecutionResult>((resolve) => {
-    const child = spawn(binary, args, {
-      stdio: ["ignore", "pipe", "pipe"]
+    const child = spawn(materialized.executablePath, args, {
+      stdio: ["pipe", "pipe", "pipe"]
     });
 
     let stdout = "";
@@ -120,6 +145,7 @@ async function executeStructuredCommand(binary: string, args: string[], timeoutM
       }
       settled = true;
       child.kill("SIGTERM");
+      void materialized.cleanup();
       resolve({
         output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
         exitCode: 124,
@@ -134,6 +160,13 @@ async function executeStructuredCommand(binary: string, args: string[], timeoutM
     child.stderr.on("data", (chunk: Buffer | string) => {
       stderr += chunk.toString();
     });
+    child.stdin.write(JSON.stringify({
+      scanId: job.scanId,
+      tacticId: job.tacticId,
+      toolRun: job.toolRun,
+      request: job.request
+    }));
+    child.stdin.end();
 
     child.on("close", (code) => {
       if (settled) {
@@ -141,6 +174,7 @@ async function executeStructuredCommand(binary: string, args: string[], timeoutM
       }
       settled = true;
       clearTimeout(timer);
+      void materialized.cleanup();
       resolve({
         output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
         exitCode: code ?? 1,
@@ -154,6 +188,7 @@ async function executeStructuredCommand(binary: string, args: string[], timeoutM
       }
       settled = true;
       clearTimeout(timer);
+      void materialized.cleanup();
       resolve({
         output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
         exitCode: 1,

@@ -61,6 +61,7 @@ function makeJob(overrides: Partial<ConnectorExecutionJob> = {}): ConnectorExecu
       tool: "curl",
       toolId: "tool-1",
       scriptPath: "scripts/tools/http-recon.sh",
+      scriptVersion: "v1",
       capabilities: ["web-recon"],
       target: "example.com",
       status: "running",
@@ -74,6 +75,7 @@ function makeJob(overrides: Partial<ConnectorExecutionJob> = {}): ConnectorExecu
       toolId: "tool-1",
       tool: "curl",
       scriptPath: "scripts/tools/http-recon.sh",
+      scriptVersion: "v1",
       capabilities: ["web-recon"],
       target: "example.com",
       layer: "L7",
@@ -83,6 +85,8 @@ function makeJob(overrides: Partial<ConnectorExecutionJob> = {}): ConnectorExecu
       privilegeProfile: "read-only-network",
       parameters: {
         scriptPath: "scripts/tools/http-recon.sh",
+        scriptVersion: "v1",
+        scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
         scriptArgs: ["-I", "http://example.com"]
       }
     },
@@ -178,6 +182,8 @@ describe("connector client", () => {
           privilegeProfile: undefined,
           parameters: {
             scriptPath: "scripts/tools/http-recon.sh",
+            scriptVersion: "v1",
+            scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
             scriptArgs: ["hello"]
           }
         },
@@ -211,6 +217,8 @@ describe("connector client", () => {
           privilegeProfile: "read-only-network",
           parameters: {
             scriptPath: "scripts/tools/http-recon.sh",
+            scriptVersion: "v1",
+            scriptSource: "#!/usr/bin/env bash\necho hello",
             scriptArgs: ["-h"]
           }
         },

@@ -28,6 +28,8 @@ type ToolFormValues = {
   description: string;
   binary: string;
   scriptPath: string;
+  scriptVersion: string;
+  scriptSource: string;
   capabilitiesText: string;
   category: ToolCategory;
   riskTier: ToolRiskTier;
@@ -62,6 +64,8 @@ function createEmptyFormValues(): ToolFormValues {
     description: "",
     binary: "",
     scriptPath: "",
+    scriptVersion: "v1",
+    scriptSource: "",
     capabilitiesText: "",
     category: "utility",
     riskTier: "passive",
@@ -84,6 +88,8 @@ function toFormValues(tool: AiTool): ToolFormValues {
     description: tool.description ?? "",
     binary: tool.binary ?? "",
     scriptPath: tool.scriptPath ?? "",
+    scriptVersion: tool.scriptVersion ?? "",
+    scriptSource: tool.scriptSource ?? "",
     capabilitiesText: tool.capabilities.join("\n"),
     category: tool.category,
     riskTier: tool.riskTier,
@@ -141,6 +147,8 @@ function parseRequestBody(values: ToolFormValues): { body?: CreateAiToolBody; er
       description: values.description.trim() || null,
       binary: values.binary.trim() || null,
       scriptPath: values.scriptPath.trim() || null,
+      scriptVersion: values.scriptVersion.trim() || null,
+      scriptSource: values.scriptSource || null,
       capabilities: values.capabilitiesText
         .split("\n")
         .map((value) => value.trim())
@@ -393,8 +401,14 @@ export function AiToolsPage({
         <DetailField label="Script path">
           <Input value={formValues.scriptPath} onChange={(event) => handleFieldChange("scriptPath", event.target.value)} aria-label="Script path" disabled={Boolean(isSystemTool)} />
         </DetailField>
+        <DetailField label="Script version">
+          <Input value={formValues.scriptVersion} onChange={(event) => handleFieldChange("scriptVersion", event.target.value)} aria-label="Script version" disabled={Boolean(isSystemTool)} />
+        </DetailField>
         <DetailField label="Capabilities" className="md:col-span-2">
           <Textarea value={formValues.capabilitiesText} onChange={(event) => handleFieldChange("capabilitiesText", event.target.value)} aria-label="Capabilities" rows={4} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
+        </DetailField>
+        <DetailField label="Script source" className="md:col-span-2">
+          <Textarea value={formValues.scriptSource} onChange={(event) => handleFieldChange("scriptSource", event.target.value)} aria-label="Script source" rows={10} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
         </DetailField>
         <DetailField label="Category">
           <Select value={formValues.category} onValueChange={(value) => handleFieldChange("category", value as ToolCategory)} disabled={Boolean(isSystemTool)}>
