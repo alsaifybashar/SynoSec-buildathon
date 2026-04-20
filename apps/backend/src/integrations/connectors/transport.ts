@@ -1,5 +1,5 @@
 import type { ConnectorExecutionResult, ToolRequest, ToolRun } from "@synosec/contracts";
-import { executeAdapter, type AdapterExecutionResult } from "@/workflows/broker/adapters.js";
+import { executeScriptedTool, type ScriptExecutionResult } from "@/workflows/tools/script-executor.js";
 import { connectorControlPlane } from "@/integrations/connectors/control-plane.js";
 
 export interface ToolExecutionInput {
@@ -10,7 +10,7 @@ export interface ToolExecutionInput {
   request: ToolRequest;
 }
 
-export interface ToolExecutionOutput extends AdapterExecutionResult {
+export interface ToolExecutionOutput extends ScriptExecutionResult {
   dispatchMode: ToolRun["dispatchMode"];
   connectorId?: string;
   leasedAt?: string;
@@ -27,7 +27,7 @@ export class LocalToolExecutionTransport implements ToolExecutionTransport {
   readonly dispatchMode = "local" as const;
 
   async execute(input: ToolExecutionInput): Promise<ToolExecutionOutput> {
-    const result = await executeAdapter({
+    const result = await executeScriptedTool({
       scanId: input.scanId,
       tacticId: input.tacticId,
       toolRun: input.toolRun,

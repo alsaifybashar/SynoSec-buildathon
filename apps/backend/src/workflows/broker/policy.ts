@@ -1,37 +1,25 @@
-import type { Scan, ToolAdapter, ToolRequest } from "@synosec/contracts";
+import type { Scan, ToolRequest } from "@synosec/contracts";
 
 export interface PolicyDecision {
   allowed: boolean;
   reason: string;
 }
 
-// Adapters that perform read-only reconnaissance — always allowed in scope
-const PASSIVE_ADAPTERS = new Set<ToolAdapter>([
-  "network_scan",
-  "service_scan",
-  "tls_audit",
-  "http_probe",
-  "web_fingerprint",
-  "content_discovery",
-  "subdomain_enum",
-  "httpx_probe",
-  "web_crawl",
-  "historical_urls",
-  "feroxbuster_scan",
-  "external_tool"
+const PASSIVE_CAPABILITIES = new Set([
+  "passive",
+  "web-recon",
+  "network-recon",
+  "content-discovery"
 ]);
 
-// Adapters that probe/test but do not exploit — allowed when scan is active (default)
-const ACTIVE_RECON_ADAPTERS = new Set<ToolAdapter>([
-  "session_audit",
-  "nikto_scan",
-  "nuclei_scan",
-  "vuln_check"
+const ACTIVE_RECON_CAPABILITIES = new Set([
+  "active-recon",
+  "vulnerability-audit"
 ]);
 
-// Adapters that may send exploit-class payloads — require explicit opt-in
-const EXPLOIT_ADAPTERS = new Set<ToolAdapter>([
-  "db_injection_check"
+const EXPLOIT_CAPABILITIES = new Set([
+  "controlled-exploit",
+  "database-security"
 ]);
 
 function isTargetInScope(scan: Scan, target: string): boolean {
@@ -48,11 +36,15 @@ function isTargetInScope(scan: Scan, target: string): boolean {
   return scan.scope.targets.some((scopeTarget) => {
     const normalized = stripPort(scopeTarget);
     return (
-      candidate === normalized ||
-      candidate.startsWith(normalized) ||
-      normalized.startsWith(candidate)
+      candidate === normalized
+      || candidate.startsWith(normalized)
+      || normalized.startsWith(candidate)
     );
   });
+}
+
+function hasCapability(request: ToolRequest, allowed: Set<string>): boolean {
+  return request.capabilities.some((capability) => allowed.has(capability));
 }
 
 export function authorizeToolRequest(scan: Scan, request: ToolRequest): PolicyDecision {
@@ -63,7 +55,6 @@ export function authorizeToolRequest(scan: Scan, request: ToolRequest): PolicyDe
     };
   }
 
-  // controlled-exploit risk tier always requires explicit opt-in — checked first
   if (request.riskTier === "controlled-exploit" && scan.scope.allowActiveExploits !== true) {
     return {
       allowed: false,
@@ -71,29 +62,29 @@ export function authorizeToolRequest(scan: Scan, request: ToolRequest): PolicyDe
     };
   }
 
-  // Exploit-class adapters (e.g. sqlmap) require allowActiveExploits
-  if (EXPLOIT_ADAPTERS.has(request.adapter)) {
+  if (hasCapability(request, EXPLOIT_CAPABILITIES)) {
     if (scan.scope.allowActiveExploits !== true) {
       return {
         allowed: false,
-        reason: `Exploit adapter ${request.adapter} requires allowActiveExploits=true.`
+        reason: `Exploit capabilities ${request.capabilities.join(", ")} require allowActiveExploits=true.`
       };
     }
-    return { allowed: true, reason: `Exploit adapter authorized for ${request.adapter}.` };
+    return { allowed: true, reason: `Exploit capabilities authorized for ${request.tool}.` };
   }
 
-  // Active recon adapters (nikto, nuclei, vuln_check, session_audit) are always permitted
-  if (ACTIVE_RECON_ADAPTERS.has(request.adapter)) {
+  if (hasCapability(request, ACTIVE_RECON_CAPABILITIES)) {
     return {
       allowed: true,
-      reason: `Active reconnaissance adapter ${request.adapter} is permitted.`
+      reason: `Active reconnaissance capabilities are permitted for ${request.tool}.`
     };
   }
 
-  // Passive adapters are always allowed
-  if (PASSIVE_ADAPTERS.has(request.adapter)) {
-    return { allowed: true, reason: `Passive reconnaissance allowed for ${request.adapter}.` };
+  if (hasCapability(request, PASSIVE_CAPABILITIES) || request.riskTier === "passive") {
+    return {
+      allowed: true,
+      reason: `Passive reconnaissance allowed for ${request.tool}.`
+    };
   }
 
-  return { allowed: true, reason: `Allowed by ${request.riskTier} policy for ${request.adapter}.` };
+  return { allowed: true, reason: `Allowed by ${request.riskTier} policy for ${request.tool}.` };
 }

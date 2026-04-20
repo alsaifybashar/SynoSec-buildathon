@@ -11,7 +11,7 @@ import { fetchJson } from "@/lib/api";
 import { useResourceDetail } from "@/hooks/useResourceDetail";
 import { useResourceList } from "@/hooks/useResourceList";
 import { aiProvidersResource } from "@/lib/resources";
-import { DetailField, DetailFieldGroup, DetailPage, DetailSidebarItem } from "@/components/detail-page";
+import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/components/list-page";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -114,14 +114,16 @@ function definedString(value: string | undefined) {
 
 export function AiProvidersPage({
   providerId,
+  providerNameHint,
   onNavigateToList,
   onNavigateToCreate,
   onNavigateToDetail
 }: {
   providerId?: string;
+  providerNameHint?: string;
   onNavigateToList: () => void;
   onNavigateToCreate: () => void;
-  onNavigateToDetail: (id: string) => void;
+  onNavigateToDetail: (id: string, label?: string) => void;
 }) {
   const [provider, setProvider] = useState<AiProvider | null>(null);
   const [formValues, setFormValues] = useState<ProviderFormValues>(createEmptyFormValues);
@@ -153,6 +155,11 @@ export function AiProvidersPage({
     }
 
     if (providerDetail.state !== "loaded") {
+      const empty = createEmptyFormValues();
+      setProvider(null);
+      setFormValues(empty);
+      setInitialValues(empty);
+      setErrors({});
       return;
     }
 
@@ -215,7 +222,7 @@ export function AiProvidersPage({
           body
         });
         toast.success("AI provider created");
-        onNavigateToDetail(created.id);
+        onNavigateToDetail(created.id, created.name);
         return;
       }
 
@@ -258,7 +265,18 @@ export function AiProvidersPage({
         onPageSizeChange={providerList.setPageSize}
         onRetry={providerList.refetch}
         onAddRecord={onNavigateToCreate}
-        onRowClick={(row) => onNavigateToDetail(row.id)}
+        onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
+      />
+    );
+  }
+
+  if (!isCreateMode && providerDetail.state !== "loaded") {
+    return (
+      <DetailLoadingState
+        title={providerNameHint ?? "AI provider detail"}
+        breadcrumbs={["Start", "AI Providers", providerNameHint ?? "Loading"]}
+        onBack={onNavigateToList}
+        message="Loading AI provider..."
       />
     );
   }

@@ -1,5 +1,5 @@
 import type { Finding, Observation, ValidationStatus } from "@synosec/contracts";
-import { updateFindingValidation } from "@/platform/db/neo4j.js";
+import { updateFindingValidation } from "@/platform/db/scan-store.js";
 
 // ---------------------------------------------------------------------------
 // Confidence Engine
@@ -60,7 +60,7 @@ export class ConfidenceEngine {
 
   /**
    * Derive updated validation status for a finding based on aggregated evidence.
-   * Persists the update to Neo4j and returns the updated finding.
+ * Persists the update to the scan store and returns the updated finding.
    */
   async propagateToFinding(finding: Finding, scanId: string): Promise<Finding> {
     const key = this.makeKey(scanId, finding.title);

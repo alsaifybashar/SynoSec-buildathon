@@ -2,6 +2,7 @@ import {
   apiRoutes,
   createWorkflowBodySchema,
   listWorkflowsResponseSchema,
+  workflowRunStreamMessageSchema,
   workflowRunSchema,
   workflowSchema,
   workflowsListQuerySchema,
@@ -11,11 +12,17 @@ import { type Express } from "express";
 import { handlePaginatedListRoute } from "../../../platform/core/http/paginated-list-route.js";
 import type { WorkflowsRepository } from "./workflows.repository.js";
 import { WorkflowExecutionService } from "./workflow-execution.service.js";
+import { WorkflowRunStream } from "./workflow-run-stream.js";
+
+function writeSseMessage(response: { write: (chunk: string) => void }, payload: unknown) {
+  response.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
 
 export function registerWorkflowsRoutes(
   app: Express,
   repository: WorkflowsRepository,
-  executionService: WorkflowExecutionService
+  executionService: WorkflowExecutionService,
+  workflowRunStream: WorkflowRunStream
 ) {
   app.get(apiRoutes.workflows, async (request, response, next) => {
     await handlePaginatedListRoute({
@@ -91,6 +98,26 @@ export function registerWorkflowsRoutes(
     }
   });
 
+  app.get(`${apiRoutes.workflows}/:id/runs/latest`, async (request, response, next) => {
+    try {
+      const workflow = await repository.getById(request.params.id);
+      if (!workflow) {
+        response.status(404).json({ message: "Workflow not found." });
+        return;
+      }
+
+      const run = await repository.getLatestRunByWorkflowId(request.params.id);
+      if (!run) {
+        response.status(404).json({ message: "Workflow run not found." });
+        return;
+      }
+
+      response.json(workflowRunSchema.parse(run));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get(`${apiRoutes.workflowRuns}/:id`, async (request, response, next) => {
     try {
       const run = await repository.getRunById(request.params.id);
@@ -100,6 +127,41 @@ export function registerWorkflowsRoutes(
       }
 
       response.json(workflowRunSchema.parse(run));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get(`${apiRoutes.workflowRuns}/:id/events`, async (request, response, next) => {
+    try {
+      const run = await repository.getRunById(request.params.id);
+      if (!run) {
+        response.status(404).json({ message: "Workflow run not found." });
+        return;
+      }
+
+      response.setHeader("Content-Type", "text/event-stream");
+      response.setHeader("Cache-Control", "no-cache, no-transform");
+      response.setHeader("Connection", "keep-alive");
+      response.flushHeaders?.();
+
+      writeSseMessage(response, workflowRunStreamMessageSchema.parse({
+        type: "snapshot",
+        run
+      }));
+
+      const unsubscribe = workflowRunStream.subscribe(run.id, (message) => {
+        writeSseMessage(response, workflowRunStreamMessageSchema.parse(message));
+      });
+
+      const heartbeat = setInterval(() => {
+        response.write(": keepalive\n\n");
+      }, 15000);
+
+      request.on("close", () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+      });
     } catch (error) {
       next(error);
     }

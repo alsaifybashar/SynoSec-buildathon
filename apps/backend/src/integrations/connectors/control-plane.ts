@@ -58,7 +58,9 @@ class ConnectorControlPlane {
       connectorId,
       name: input.name,
       version: input.version,
-      allowedAdapters: input.allowedAdapters,
+      allowedCapabilities: input.allowedCapabilities,
+      allowedSandboxProfiles: input.allowedSandboxProfiles,
+      allowedPrivilegeProfiles: input.allowedPrivilegeProfiles,
       runMode: input.runMode,
       concurrency: input.concurrency,
       capabilities: input.capabilities,
@@ -118,7 +120,7 @@ class ConnectorControlPlane {
     }
 
     const pendingIndex = this.pendingJobs.findIndex((job) =>
-      connector.allowedAdapters.includes(job.request.adapter)
+      job.request.capabilities.some((capability) => connector.allowedCapabilities.includes(capability))
     );
 
     this.connectors.set(connectorId, { ...connector, lastSeenAt: now });

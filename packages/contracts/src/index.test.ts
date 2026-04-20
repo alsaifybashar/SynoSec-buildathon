@@ -6,6 +6,7 @@ import {
   connectorPollResponseSchema,
   connectorRegistrationRequestSchema,
   connectorTestDispatchRequestSchema,
+  createAiToolBodySchema,
   createScanRequestSchema,
   createApplicationBodySchema,
   createAiProviderBodySchema,
@@ -19,6 +20,8 @@ import {
   listApplicationsResponseSchema,
   listScansResponseSchema,
   scansListQuerySchema,
+  aiToolSchema,
+  toolRequestSchema,
   toolRunSchema,
   updateAiProviderBodySchema,
   updateApplicationBodySchema
@@ -231,7 +234,7 @@ describe("contracts", () => {
     const result = connectorRegistrationRequestSchema.safeParse({
       name: "local-connector",
       version: "0.1.0",
-      allowedAdapters: ["http_probe", "service_scan"],
+      allowedCapabilities: ["web-recon", "network-recon"],
       runMode: "dry-run",
       concurrency: 1,
       capabilities: [{ key: "hostname", value: "vps-01" }]
@@ -259,7 +262,9 @@ describe("contracts", () => {
           tacticId: "tactic-1",
           agentId: "agent-1",
           tool: "curl",
-          adapter: "http_probe",
+          toolId: "tool-1",
+          scriptPath: "scripts/tools/http-recon.sh",
+          capabilities: ["web-recon"],
           target: "example.com",
           status: "running",
           riskTier: "passive",
@@ -272,13 +277,20 @@ describe("contracts", () => {
           leaseExpiresAt: "2026-04-20T12:00:15.000Z"
         },
         request: {
+          toolId: "tool-1",
           tool: "curl",
-          adapter: "http_probe",
+          scriptPath: "scripts/tools/http-recon.sh",
+          capabilities: ["web-recon"],
           target: "example.com",
           layer: "L7",
           riskTier: "passive",
           justification: "Check HTTP headers.",
-          parameters: {}
+          sandboxProfile: "network-recon",
+          privilegeProfile: "read-only-network",
+          parameters: {
+            scriptPath: "scripts/tools/http-recon.sh",
+            scriptArgs: ["-I", "http://example.com"]
+          }
         }
       }
     });
@@ -302,7 +314,7 @@ describe("contracts", () => {
       },
       request: {
         tool: "curl",
-        adapter: "http_probe",
+        capabilities: ["web-recon"],
         target: "example.com",
         layer: "L7",
         riskTier: "passive",
@@ -323,7 +335,9 @@ describe("contracts", () => {
       tacticId: "tactic-1",
       agentId: "agent-1",
       tool: "curl",
-      adapter: "http_probe",
+      toolId: "tool-1",
+      scriptPath: "scripts/tools/http-recon.sh",
+      capabilities: ["web-recon"],
       target: "example.com",
       status: "running",
       riskTier: "passive",
@@ -337,6 +351,94 @@ describe("contracts", () => {
     if (result.success) {
       expect(result.data.dispatchMode).toBe("local");
     }
+  });
+
+  it("accepts executable ai tools with sandbox and privilege policy", () => {
+    const result = aiToolSchema.safeParse({
+      id: "tool-1",
+      name: "HTTP Recon",
+      status: "active",
+      source: "custom",
+      description: "Sandboxed HTTP probe",
+      binary: "httpx",
+      scriptPath: "scripts/tools/http-recon.sh",
+      capabilities: ["web-recon"],
+      category: "web",
+      riskTier: "passive",
+      notes: null,
+      executionMode: "sandboxed",
+      sandboxProfile: "network-recon",
+      privilegeProfile: "read-only-network",
+      defaultArgs: ["-silent", "-u", "{baseUrl}"],
+      timeoutMs: 30000,
+      inputSchema: { type: "object", properties: { target: { type: "string" } } },
+      outputSchema: { type: "object", properties: { summary: { type: "string" } } },
+      createdAt: "2026-04-21T12:00:00.000Z",
+      updatedAt: "2026-04-21T12:00:00.000Z"
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects executable ai tools without sandbox metadata", () => {
+    const result = createAiToolBodySchema.safeParse({
+      name: "Unsafe Custom Tool",
+      status: "active",
+      source: "custom",
+      description: "Missing sandbox policy",
+      binary: "curl",
+      scriptPath: "scripts/tools/http-recon.sh",
+      capabilities: ["web-recon"],
+      category: "utility",
+      riskTier: "passive",
+      notes: null,
+      executionMode: "sandboxed",
+      defaultArgs: ["-I", "{baseUrl}"],
+      inputSchema: { type: "object", properties: {} },
+      outputSchema: { type: "object", properties: {} }
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("requires sandboxed tool requests to carry db-backed execution metadata", () => {
+    const result = toolRequestSchema.safeParse({
+      toolId: "tool-1",
+      tool: "HTTP Recon",
+      scriptPath: "scripts/tools/http-recon.sh",
+      capabilities: ["web-recon"],
+      target: "example.com",
+      layer: "L7",
+      riskTier: "passive",
+      justification: "Run the db-backed tool definition.",
+      parameters: {
+        scriptPath: "scripts/tools/http-recon.sh",
+        scriptArgs: ["-silent", "-u", "http://example.com"]
+      }
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts sandboxed tool requests with privilege and sandbox metadata", () => {
+    const result = toolRequestSchema.safeParse({
+      toolId: "tool-1",
+      tool: "HTTP Recon",
+      scriptPath: "scripts/tools/http-recon.sh",
+      capabilities: ["web-recon"],
+      target: "example.com",
+      layer: "L7",
+      riskTier: "passive",
+      justification: "Run the db-backed tool definition.",
+      sandboxProfile: "network-recon",
+      privilegeProfile: "read-only-network",
+      parameters: {
+        scriptPath: "scripts/tools/http-recon.sh",
+        scriptArgs: ["-silent", "-u", "http://example.com"]
+      }
+    });
+
+    expect(result.success).toBe(true);
   });
 
   it("defines the defensive loop stages in order", () => {

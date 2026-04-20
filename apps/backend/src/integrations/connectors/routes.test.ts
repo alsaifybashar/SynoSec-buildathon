@@ -7,32 +7,34 @@ import { MemoryAiAgentsRepository } from "@/features/modules/ai-agents/memory-ai
 import { MemoryAiToolsRepository } from "@/features/modules/ai-tools/memory-ai-tools.repository.js";
 import type { ApplicationsRepository } from "@/features/modules/applications/applications.repository.js";
 import type { RuntimesRepository } from "@/features/modules/runtimes/runtimes.repository.js";
+import { MemoryWorkflowsRepository } from "@/features/modules/workflows/memory-workflows.repository.js";
 import { connectorControlPlane } from "@/integrations/connectors/control-plane.js";
 
 const {
   mockCreateAuditEntry,
   mockCreateScan,
   mockGetScan,
-  mockExecuteAdapter
+  mockExecuteScriptedTool
 } = vi.hoisted(() => ({
   mockCreateAuditEntry: vi.fn().mockResolvedValue(undefined),
   mockCreateScan: vi.fn().mockResolvedValue(undefined),
   mockGetScan: vi.fn().mockResolvedValue(null),
-  mockExecuteAdapter: vi.fn().mockResolvedValue({
+  mockExecuteScriptedTool: vi.fn().mockResolvedValue({
     observations: [],
-    output: "local adapter output",
+    output: "local tool output",
     exitCode: 0
   })
 }));
 
-vi.mock("../../platform/db/neo4j.js", () => ({
+vi.mock("../../platform/db/scan-store.js", () => ({
   createAuditEntry: mockCreateAuditEntry,
   createScan: mockCreateScan,
   getScan: mockGetScan
 }));
 
-vi.mock("../../workflows/broker/adapters.js", () => ({
-  executeAdapter: mockExecuteAdapter
+vi.mock("../../workflows/tools/script-executor.js", () => ({
+  buildScriptCommandPreview: vi.fn(() => "scripts/tools/http-recon.sh"),
+  executeScriptedTool: mockExecuteScriptedTool
 }));
 
 function createTestApp() {
@@ -57,12 +59,15 @@ function createTestApp() {
     remove: async () => false
   };
 
+  const aiAgentsRepository = new MemoryAiAgentsRepository(aiProvidersRepository, aiToolsRepository);
+
   return createApp({
     applicationsRepository,
     runtimesRepository,
     aiProvidersRepository,
-    aiAgentsRepository: new MemoryAiAgentsRepository(aiProvidersRepository, aiToolsRepository),
-    aiToolsRepository
+    aiAgentsRepository,
+    aiToolsRepository,
+    workflowsRepository: new MemoryWorkflowsRepository(applicationsRepository, runtimesRepository, aiAgentsRepository)
   });
 }
 
@@ -91,7 +96,7 @@ describe("connector routes", () => {
       .send({
         name: "test-connector",
         version: "0.1.0",
-        allowedAdapters: ["http_probe"],
+        allowedCapabilities: ["web-recon"],
         runMode: "dry-run",
         concurrency: 1,
         capabilities: []
@@ -127,13 +132,20 @@ describe("connector routes", () => {
           cyberRangeMode: "simulation"
         },
         request: {
+          toolId: "tool-1",
           tool: "curl",
-          adapter: "http_probe",
+          scriptPath: "scripts/tools/http-recon.sh",
+          capabilities: ["web-recon"],
           target: "example.com",
           layer: "L7",
           riskTier: "passive",
           justification: "connector smoke",
-          parameters: {}
+          sandboxProfile: "network-recon",
+          privilegeProfile: "read-only-network",
+          parameters: {
+            scriptPath: "scripts/tools/http-recon.sh",
+            scriptArgs: ["-I", "http://example.com"]
+          }
         }
       });
 
@@ -188,13 +200,20 @@ describe("connector routes", () => {
           cyberRangeMode: "simulation"
         },
         request: {
+          toolId: "tool-1",
           tool: "curl",
-          adapter: "http_probe",
+          scriptPath: "scripts/tools/http-recon.sh",
+          capabilities: ["web-recon"],
           target: "example.com",
           layer: "L7",
           riskTier: "passive",
           justification: "connector smoke",
-          parameters: {}
+          sandboxProfile: "network-recon",
+          privilegeProfile: "read-only-network",
+          parameters: {
+            scriptPath: "scripts/tools/http-recon.sh",
+            scriptArgs: ["-I", "http://example.com"]
+          }
         }
       });
 

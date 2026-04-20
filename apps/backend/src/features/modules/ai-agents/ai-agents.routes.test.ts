@@ -13,6 +13,7 @@ import type { RuntimesRepository } from "../runtimes/runtimes.repository.js";
 import { MemoryAiProvidersRepository } from "../ai-providers/memory-ai-providers.repository.js";
 import { MemoryAiToolsRepository } from "../ai-tools/memory-ai-tools.repository.js";
 import { MemoryAiAgentsRepository } from "../ai-agents/memory-ai-agents.repository.js";
+import { MemoryWorkflowsRepository } from "../workflows/memory-workflows.repository.js";
 
 const seedProviders: Array<AiProvider & { apiKey: string | null }> = [
   {
@@ -52,11 +53,17 @@ const seedTools: AiTool[] = [
     status: "active",
     source: "system",
     description: null,
-    adapter: "httpx_probe",
     binary: "httpx",
+    scriptPath: "scripts/tools/http-recon.sh",
+    capabilities: ["web-recon", "passive"],
     category: "web",
     riskTier: "passive",
     notes: null,
+    executionMode: "sandboxed",
+    sandboxProfile: "network-recon",
+    privilegeProfile: "read-only-network",
+    defaultArgs: ["-silent", "-u", "{baseUrl}"],
+    timeoutMs: 30000,
     inputSchema: { type: "object", properties: {} },
     outputSchema: { type: "object", properties: {} },
     createdAt: "2026-04-12T12:00:00.000Z",
@@ -68,11 +75,17 @@ const seedTools: AiTool[] = [
     status: "active",
     source: "system",
     description: null,
-    adapter: "web_crawl",
     binary: "katana",
+    scriptPath: "scripts/tools/web-crawl.sh",
+    capabilities: ["web-recon", "content-discovery", "passive"],
     category: "web",
     riskTier: "passive",
     notes: null,
+    executionMode: "sandboxed",
+    sandboxProfile: "network-recon",
+    privilegeProfile: "read-only-network",
+    defaultArgs: ["-u", "{baseUrl}", "-silent"],
+    timeoutMs: 30000,
     inputSchema: { type: "object", properties: {} },
     outputSchema: { type: "object", properties: {} },
     createdAt: "2026-04-12T12:00:00.000Z",
@@ -103,13 +116,19 @@ const runtimesRepository: RuntimesRepository = {
 function createTestApp() {
   const aiProvidersRepository = new MemoryAiProvidersRepository(seedProviders.map((provider) => ({ ...provider })));
   const aiToolsRepository = new MemoryAiToolsRepository(seedTools.map((tool) => ({ ...tool })));
+  const aiAgentsRepository = new MemoryAiAgentsRepository(
+    aiProvidersRepository,
+    aiToolsRepository,
+    seedAgents.map((agent) => ({ ...agent }))
+  );
 
   return createApp({
     applicationsRepository,
     runtimesRepository,
     aiProvidersRepository,
-    aiAgentsRepository: new MemoryAiAgentsRepository(aiProvidersRepository, aiToolsRepository, seedAgents.map((agent) => ({ ...agent }))),
-    aiToolsRepository
+    aiAgentsRepository,
+    aiToolsRepository,
+    workflowsRepository: new MemoryWorkflowsRepository(applicationsRepository, runtimesRepository, aiAgentsRepository)
   });
 }
 

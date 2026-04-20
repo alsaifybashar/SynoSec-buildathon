@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { spawn } from "node:child_process";
 import { localDemoTargetDefaults } from "@synosec/contracts";
-import { createAuditEntry } from "@/platform/db/neo4j.js";
+import { createAuditEntry } from "@/platform/db/scan-store.js";
 import type { AuditEntry, ScanScope } from "@synosec/contracts";
 
 const commandTimeoutMs = Number(process.env["SCAN_COMMAND_TIMEOUT_MS"] ?? "5000");

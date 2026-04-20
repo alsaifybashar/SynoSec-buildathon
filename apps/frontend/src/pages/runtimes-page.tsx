@@ -14,7 +14,7 @@ import { fetchJson } from "@/lib/api";
 import { useResourceDetail } from "@/hooks/useResourceDetail";
 import { useResourceList } from "@/hooks/useResourceList";
 import { applicationsResource, runtimesResource } from "@/lib/resources";
-import { DetailField, DetailFieldGroup, DetailPage, DetailSidebarItem } from "@/components/detail-page";
+import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/components/list-page";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -136,14 +136,16 @@ function definedString(value: string | undefined) {
 
 export function RuntimesPage({
   runtimeId,
+  runtimeNameHint,
   onNavigateToList,
   onNavigateToCreate,
   onNavigateToDetail
 }: {
   runtimeId?: string;
+  runtimeNameHint?: string;
   onNavigateToList: () => void;
   onNavigateToCreate: () => void;
-  onNavigateToDetail: (id: string) => void;
+  onNavigateToDetail: (id: string, label?: string) => void;
 }) {
   const [runtime, setRuntime] = useState<Runtime | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
@@ -201,6 +203,11 @@ export function RuntimesPage({
     }
 
     if (runtimeDetail.state !== "loaded") {
+      const empty = createEmptyFormValues();
+      setRuntime(null);
+      setFormValues(empty);
+      setInitialValues(empty);
+      setErrors({});
       return;
     }
 
@@ -312,7 +319,7 @@ export function RuntimesPage({
           body
         });
         toast.success("Runtime created");
-        onNavigateToDetail(created.id);
+        onNavigateToDetail(created.id, created.name);
         return;
       }
 
@@ -363,7 +370,18 @@ export function RuntimesPage({
         onPageSizeChange={runtimeList.setPageSize}
         onRetry={runtimeList.refetch}
         onAddRecord={onNavigateToCreate}
-        onRowClick={(selected) => onNavigateToDetail(selected.id)}
+        onRowClick={(selected) => onNavigateToDetail(selected.id, selected.name)}
+      />
+    );
+  }
+
+  if (!isCreateMode && runtimeDetail.state !== "loaded") {
+    return (
+      <DetailLoadingState
+        title={runtimeNameHint ?? "Runtime detail"}
+        breadcrumbs={["Start", "Runtimes", runtimeNameHint ?? "Loading"]}
+        onBack={onNavigateToList}
+        message="Loading runtime..."
       />
     );
   }
@@ -372,6 +390,7 @@ export function RuntimesPage({
     <DetailPage
       title={isCreateMode ? "New runtime" : runtime?.name ?? "Runtime detail"}
       breadcrumbs={["Start", "Runtimes", isCreateMode ? "New" : runtime?.name ?? "Detail"]}
+      {...(!isCreateMode && runtime ? { subtitle: runtime.id, timestamp: formatTimestamp(runtime.updatedAt) } : {})}
       isDirty={isDirty}
       isSaving={saving}
       onBack={onNavigateToList}

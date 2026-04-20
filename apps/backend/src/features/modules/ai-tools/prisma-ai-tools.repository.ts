@@ -9,6 +9,7 @@ import { Prisma, PrismaClient } from "../../../platform/generated/prisma/index.j
 import type { PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
 import { mapAiToolRow } from "../ai-tools/ai-tools.mapper.js";
 import { type AiToolsRepository } from "../ai-tools/ai-tools.repository.js";
+import { encodeCreateToolInput, encodeUpdateToolInput } from "./tool-execution-config.js";
 
 export class PrismaAiToolsRepository implements AiToolsRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -49,20 +50,21 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
   }
 
   async create(input: CreateAiToolBody): Promise<AiTool> {
+    const encoded = encodeCreateToolInput(input);
     const tool = await this.prisma.aiTool.create({
       data: {
         id: randomUUID(),
-        name: input.name,
-        status: input.status,
+        name: encoded.name,
+        status: encoded.status,
         source: "custom",
-        description: input.description,
-        adapter: input.adapter ?? null,
-        binary: input.binary ?? null,
-        category: input.category,
-        riskTier: input.riskTier,
-        notes: input.notes,
-        inputSchema: input.inputSchema as Prisma.InputJsonValue,
-        outputSchema: input.outputSchema as Prisma.InputJsonValue
+        description: encoded.description,
+        adapter: null,
+        binary: encoded.binary ?? null,
+        category: encoded.category,
+        riskTier: encoded.riskTier,
+        notes: encoded.notes,
+        inputSchema: encoded.inputSchema as Prisma.InputJsonValue,
+        outputSchema: encoded.outputSchema as Prisma.InputJsonValue
       }
     });
 
@@ -75,19 +77,20 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
       return null;
     }
 
+    const encoded = encodeUpdateToolInput(input, mapAiToolRow(current as never));
     const tool = await this.prisma.aiTool.update({
       where: { id },
       data: {
-        name: input.name ?? current.name,
-        status: input.status ?? current.status,
-        description: input.description === undefined ? current.description : input.description,
-        adapter: input.adapter ?? current.adapter,
-        binary: input.binary === undefined ? current.binary : input.binary ?? null,
-        category: input.category ?? current.category,
-        riskTier: input.riskTier ?? current.riskTier,
-        notes: input.notes === undefined ? current.notes : input.notes,
-        inputSchema: (input.inputSchema ?? current.inputSchema) as Prisma.InputJsonValue,
-        outputSchema: (input.outputSchema ?? current.outputSchema) as Prisma.InputJsonValue
+        name: encoded.name ?? current.name,
+        status: encoded.status ?? current.status,
+        description: encoded.description === undefined ? current.description : encoded.description,
+        adapter: current.adapter,
+        binary: encoded.binary === undefined ? current.binary : encoded.binary ?? null,
+        category: encoded.category ?? current.category,
+        riskTier: encoded.riskTier ?? current.riskTier,
+        notes: encoded.notes === undefined ? current.notes : encoded.notes,
+        inputSchema: (encoded.inputSchema ?? current.inputSchema) as Prisma.InputJsonValue,
+        outputSchema: (encoded.outputSchema ?? current.outputSchema) as Prisma.InputJsonValue
       }
     });
 

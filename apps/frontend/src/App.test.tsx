@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiAgent, AiProvider, AiTool, Application, Runtime } from "@synosec/contracts";
+import type { AiAgent, AiProvider, AiTool, Application, Runtime, Workflow } from "@synosec/contracts";
 import App from "@/App";
 
 function createPaginatedPayload<T>(key: string, items: T[]) {
@@ -19,6 +19,7 @@ describe("App", () => {
   let providers: AiProvider[];
   let agents: AiAgent[];
   let tools: AiTool[];
+  let workflows: Workflow[];
 
   beforeEach(() => {
     applications = [
@@ -71,11 +72,17 @@ describe("App", () => {
         status: "active",
         source: "system",
         description: null,
-        adapter: "httpx_probe",
         binary: "httpx",
+        scriptPath: "scripts/tools/http-recon.sh",
+        capabilities: ["web-recon", "passive"],
         category: "web",
         riskTier: "passive",
         notes: null,
+        executionMode: "sandboxed",
+        sandboxProfile: "network-recon",
+        privilegeProfile: "read-only-network",
+        defaultArgs: ["-silent", "-u", "{baseUrl}"],
+        timeoutMs: 30000,
         inputSchema: { type: "object", properties: {} },
         outputSchema: { type: "object", properties: {} },
         createdAt: "2026-04-12T12:00:00.000Z",
@@ -87,11 +94,17 @@ describe("App", () => {
         status: "active",
         source: "custom",
         description: "Internal browser automation bridge",
-        adapter: "external_tool",
         binary: null,
+        scriptPath: null,
+        capabilities: [],
         category: "utility",
         riskTier: "passive",
         notes: "Wraps an MCP bridge",
+        executionMode: "catalog",
+        sandboxProfile: null,
+        privilegeProfile: null,
+        defaultArgs: [],
+        timeoutMs: null,
         inputSchema: { type: "object", properties: {} },
         outputSchema: { type: "object", properties: {} },
         createdAt: "2026-04-12T12:00:00.000Z",
@@ -109,6 +122,27 @@ describe("App", () => {
         systemPrompt: "Enumerate the target and summarize the result.",
         modelOverride: null,
         toolIds: ["httpx"],
+        createdAt: "2026-04-12T12:00:00.000Z",
+        updatedAt: "2026-04-12T12:00:00.000Z"
+      }
+    ];
+
+    workflows = [
+      {
+        id: "f5bbd721-7f5b-4336-b9f5-a8b3804cf1e1",
+        name: "Local Vulnerable App Walkthrough",
+        status: "active",
+        description: "Seeded workflow for the local target",
+        applicationId: applications[0]?.id ?? "",
+        runtimeId: runtimes[0]?.id ?? null,
+        stages: [
+          {
+            id: "80ad5033-136b-49dd-ae1f-c19136205cec",
+            label: "Initial Recon",
+            agentId: agents[0]?.id ?? "",
+            ord: 0
+          }
+        ],
         createdAt: "2026-04-12T12:00:00.000Z",
         updatedAt: "2026-04-12T12:00:00.000Z"
       }
@@ -175,6 +209,16 @@ describe("App", () => {
           ? new Response(JSON.stringify(tool))
           : new Response(JSON.stringify({ message: "AI tool not found." }), { status: 404 });
       }
+      if ((url === "/api/workflows" || url.startsWith("/api/workflows?")) && method === "GET") {
+        return new Response(JSON.stringify(createPaginatedPayload("workflows", workflows)));
+      }
+      if (url.startsWith("/api/workflows/") && method === "GET") {
+        const id = url.split("/").pop() ?? "";
+        const workflow = workflows.find((candidate) => candidate.id === id);
+        return workflow
+          ? new Response(JSON.stringify(workflow))
+          : new Response(JSON.stringify({ message: "Workflow not found." }), { status: 404 });
+      }
 
       throw new Error(`Unhandled fetch: ${method} ${url}`);
     }));
@@ -199,6 +243,9 @@ describe("App", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "AI Tools" })[0]!);
     expect(await screen.findByRole("heading", { name: "AI Tools" })).toBeInTheDocument();
 
+    fireEvent.click(screen.getAllByRole("button", { name: "Workflows" })[0]!);
+    expect(await screen.findByRole("heading", { name: "Workflows" })).toBeInTheDocument();
+
     expect(screen.queryByText("Templates")).not.toBeInTheDocument();
   });
 
@@ -210,7 +257,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "Primary Anthropic" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/ai-providers/2ef12df8-fdf6-4ef0-89ce-01d34b4f3af7");
-    expect(screen.getByPlaceholderText("Configured; leave blank to keep current value")).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText("Configured; leave blank to keep current value")).toBeInTheDocument();
   });
 
 });

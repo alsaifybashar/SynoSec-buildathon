@@ -1,34 +1,42 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Manrope:wght@400;500;600;700;800&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+  :root,
+  :root[data-theme="synosec"] {
+    --background: 40 33% 98%;
+    --foreground: 220 30% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 220 30% 14%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
+    --popover-foreground: 220 30% 14%;
+    --primary: 188 79% 32%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
+    --secondary: 42 88% 94%;
+    --secondary-foreground: 24 35% 22%;
+    --muted: 45 38% 94%;
+    --muted-foreground: 214 16% 40%;
+    --accent: 191 60% 92%;
+    --accent-foreground: 220 30% 14%;
+    --destructive: 3 72% 52%;
     --destructive-foreground: 0 0% 100%;
-    --success: 142.1 76.2% 36.3%;
+    --success: 158 64% 34%;
     --success-foreground: 0 0% 100%;
-    --warning: 32 95% 44%;
+    --warning: 30 95% 45%;
     --warning-foreground: 0 0% 100%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 40 25% 86%;
+    --input: 40 20% 88%;
+    --ring: 188 79% 32%;
+    --sidebar: 200 12% 32%;
+    --sidebar-foreground: 40 24% 94%;
+    --sidebar-muted-foreground: 200 8% 74%;
+    --sidebar-border: 200 10% 44%;
+    --sidebar-accent: 200 10% 38%;
+    --sidebar-accent-foreground: 40 24% 96%;
+    --sidebar-primary: 188 62% 62%;
     --radius: 1rem;
   }
 
@@ -56,62 +64,16 @@
     --border: 217 19% 24%;
     --input: 217 19% 20%;
     --ring: 196 84% 58%;
+    --sidebar: 222 30% 6%;
+    --sidebar-foreground: 210 33% 96%;
+    --sidebar-muted-foreground: 216 14% 68%;
+    --sidebar-border: 217 20% 20%;
+    --sidebar-accent: 222 22% 13%;
+    --sidebar-accent-foreground: 210 33% 96%;
+    --sidebar-primary: 196 84% 58%;
     --radius: 1rem;
   }
 
-  :root[data-theme="synosec"] {
-    --background: 40 33% 98%;
-    --foreground: 220 30% 14%;
-    --card: 0 0% 100%;
-    --card-foreground: 220 30% 14%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 30% 14%;
-    --primary: 188 79% 32%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 42 88% 94%;
-    --secondary-foreground: 24 35% 22%;
-    --muted: 45 38% 94%;
-    --muted-foreground: 214 16% 40%;
-    --accent: 191 60% 92%;
-    --accent-foreground: 220 30% 14%;
-    --destructive: 3 72% 52%;
-    --destructive-foreground: 0 0% 100%;
-    --success: 158 64% 34%;
-    --success-foreground: 0 0% 100%;
-    --warning: 30 95% 45%;
-    --warning-foreground: 0 0% 100%;
-    --border: 40 25% 86%;
-    --input: 40 20% 88%;
-    --ring: 188 79% 32%;
-    --radius: 1rem;
-  }
-
-  :root[data-theme="amber"] {
-    --background: 35 45% 96%;
-    --foreground: 24 30% 16%;
-    --card: 42 60% 99%;
-    --card-foreground: 24 30% 16%;
-    --popover: 42 60% 99%;
-    --popover-foreground: 24 30% 16%;
-    --primary: 24 92% 42%;
-    --primary-foreground: 48 100% 98%;
-    --secondary: 48 92% 88%;
-    --secondary-foreground: 24 35% 20%;
-    --muted: 38 44% 91%;
-    --muted-foreground: 26 18% 38%;
-    --accent: 32 86% 86%;
-    --accent-foreground: 24 30% 16%;
-    --destructive: 4 72% 50%;
-    --destructive-foreground: 0 0% 100%;
-    --success: 150 58% 34%;
-    --success-foreground: 48 100% 98%;
-    --warning: 32 95% 45%;
-    --warning-foreground: 48 100% 98%;
-    --border: 35 34% 80%;
-    --input: 35 30% 84%;
-    --ring: 24 92% 42%;
-    --radius: 1rem;
-  }
 
   * {
     @apply border-border;
@@ -123,7 +85,8 @@
 
   body {
     @apply min-h-screen bg-background font-sans text-foreground antialiased;
-    font-family: "Space Grotesk", system-ui, sans-serif;
+    font-family: "Manrope", system-ui, sans-serif;
+    font-feature-settings: "ss01", "ss02", "cv11";
   }
 
   #root {
@@ -131,6 +94,6 @@
   }
 
   code, pre, .font-mono {
-    font-family: "IBM Plex Mono", "Fira Code", ui-monospace, monospace;
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
   }
 }

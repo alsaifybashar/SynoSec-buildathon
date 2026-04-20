@@ -53,6 +53,15 @@ const config = {
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))"
+        },
+        sidebar: {
+          DEFAULT: "hsl(var(--sidebar))",
+          foreground: "hsl(var(--sidebar-foreground))",
+          "muted-foreground": "hsl(var(--sidebar-muted-foreground))",
+          border: "hsl(var(--sidebar-border))",
+          accent: "hsl(var(--sidebar-accent))",
+          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
+          primary: "hsl(var(--sidebar-primary))"
         }
       },
       borderRadius: {
@@ -61,8 +70,8 @@ const config = {
         sm: "calc(var(--radius) - 4px)"
       },
       fontFamily: {
-        sans: ['"Space Grotesk"', '"Segoe UI"', "sans-serif"],
-        mono: ['"IBM Plex Mono"', "monospace"]
+        sans: ['"Manrope"', '"Segoe UI"', "sans-serif"],
+        mono: ['"JetBrains Mono"', "monospace"]
       },
       keyframes: {
         "accordion-down": {

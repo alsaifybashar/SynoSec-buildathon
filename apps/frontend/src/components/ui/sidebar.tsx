@@ -10,7 +10,7 @@ export function Sidebar({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return (
     <aside
       className={cn(
-        "sticky top-0 hidden h-screen w-[196px] shrink-0 border-r border-border/70 bg-card/80 backdrop-blur xl:block",
+        "sticky top-0 hidden h-screen w-[208px] shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground xl:block",
         className
       )}
       {...props}
@@ -23,26 +23,34 @@ export function SidebarHeader({ className, ...props }: HTMLAttributes<HTMLDivEle
 }
 
 export function SidebarContent({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("flex flex-col gap-6", className)} {...props} />;
+  return <div className={cn("flex flex-col gap-5", className)} {...props} />;
 }
 
 export function SidebarGroup({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("space-y-3", className)} {...props} />;
+  return <div className={cn("space-y-2", className)} {...props} />;
 }
 
 export function SidebarGroupLabel({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={cn("px-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground", className)} {...props} />;
+  return (
+    <p
+      className={cn(
+        "px-3 font-mono text-[0.625rem] font-medium uppercase tracking-[0.3em] text-sidebar-muted-foreground/80",
+        className
+      )}
+      {...props}
+    />
+  );
 }
 
 export function SidebarMenu({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("grid gap-1", className)} {...props} />;
+  return <div className={cn("grid gap-0.5", className)} {...props} />;
 }
 
 export function SidebarMenuItem({ className, ...props }: HTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       className={cn(
-        "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition hover:bg-accent hover:text-accent-foreground",
+        "relative flex w-full items-center gap-3 rounded-l-none rounded-r-[3px] px-3 py-2 text-left text-[0.8125rem] font-medium text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
         className
       )}
       type="button"

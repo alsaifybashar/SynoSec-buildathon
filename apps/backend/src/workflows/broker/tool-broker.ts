@@ -9,11 +9,11 @@ import type {
   ValidationStatus,
   WsEvent
 } from "@synosec/contracts";
-import { createAuditEntry } from "@/platform/db/neo4j.js";
+import { createAuditEntry } from "@/platform/db/scan-store.js";
 import { confidenceEngine } from "@/workflows/broker/confidence-engine.js";
 import { evidenceStore } from "@/workflows/broker/evidence-store.js";
 import { authorizeToolRequest } from "@/workflows/broker/policy.js";
-import { parseScanTarget } from "@/workflows/tools/scan-tools.js";
+import { buildScriptCommandPreview } from "@/workflows/tools/script-executor.js";
 import {
   createToolExecutionTransport,
   type ToolExecutionTransport
@@ -44,7 +44,7 @@ export class BrokerExecutionError extends Error {
       scanId: string;
       tacticId: string;
       agentId: string;
-      adapter: string;
+      toolId?: string;
       tool: string;
       target: string;
       port?: number;
@@ -58,63 +58,7 @@ export class BrokerExecutionError extends Error {
 }
 
 function commandPreview(request: ToolRequest): string {
-  const parsedTarget = parseScanTarget(request.target);
-  const host = parsedTarget.host;
-  const port = request.port ?? parsedTarget.port;
-  const scheme = parsedTarget.scheme ?? (port === 443 || port === 8443 ? "https" : "http");
-  const baseUrl = `${scheme}://${host}${port ? `:${port}` : ""}`;
-
-  switch (request.adapter) {
-    case "network_scan":
-      return `nmap -sn ${host}`;
-    case "service_scan":
-      return port
-        ? `nmap -sCV -A -p ${port} ${host}`
-        : `nmap -sCV -A ${host}`;
-    case "session_audit":
-      return request.service === "smb"
-        ? `smbclient -L ${host} -N`
-        : `ssh-audit ${host}`;
-    case "tls_audit":
-      return `sslscan ${host}:${port ?? 443}`;
-    case "http_probe":
-      return `curl -I ${baseUrl}`;
-    case "web_fingerprint":
-      return `whatweb ${baseUrl}`;
-    case "subdomain_enum":
-      return request.tool === "amass"
-        ? `amass enum -passive -d ${host}`
-        : `subfinder -silent -d ${host}`;
-    case "httpx_probe":
-      return `httpx -silent -status-code -title -tech-detect -u ${baseUrl}`;
-    case "web_crawl":
-      return `katana -u ${baseUrl} -silent`;
-    case "historical_urls":
-      return request.tool === "gau"
-        ? `gau ${host}`
-        : `waybackurls ${host}`;
-    case "feroxbuster_scan":
-      return `feroxbuster -u ${baseUrl} --silent`;
-    case "db_injection_check":
-      return `sqlmap -u ${baseUrl}/ --batch`;
-    case "content_discovery":
-      return `ffuf -u ${baseUrl}/FUZZ -w /usr/share/dirb/wordlists/common.txt`;
-    case "nikto_scan":
-      return `nikto -h ${host} -p ${port ?? 80} -Tuning x 6 2`;
-    case "nuclei_scan":
-      return `nuclei -u ${baseUrl} -severity medium,high,critical`;
-    case "vuln_check":
-      return `curl -k -s ${baseUrl}/search?q=%3Cscript%3E`;
-    case "external_tool": {
-      const binary = typeof request.parameters["binary"] === "string" ? request.parameters["binary"] : request.tool;
-      const args = Array.isArray(request.parameters["args"])
-        ? (request.parameters["args"] as string[]).join(" ")
-        : `${host}${port ? ` ${port}` : ""}`;
-      return `${binary} ${args}`.trim();
-    }
-    default:
-      return `${request.tool} ${host}${port ? `:${port}` : ""}`;
-  }
+  return buildScriptCommandPreview(request);
 }
 
 function validationStatusFor(observationGroup: Observation[]): ValidationStatus {
@@ -143,8 +87,9 @@ function findingFromObservationGroup(
     evidence: observations.map((observation) => observation.evidence).join("\n\n"),
     technique: primary?.technique ?? "Observation synthesis",
     reproduceCommand: primary ? commandPreview({
-      tool: primary.adapter,
-      adapter: primary.adapter,
+      ...(primary.toolId ? { toolId: primary.toolId } : {}),
+      tool: primary.tool,
+      capabilities: primary.capabilities,
       target: primary.target,
       port: primary.port,
       layer: "L7",
@@ -159,7 +104,7 @@ function findingFromObservationGroup(
     confidenceReason:
       validationStatus === "cross_validated"
         ? "Multiple corroborating observations were recorded for the same hypothesis."
-        : "Single adapter produced the current evidence set."
+        : "Single tool execution produced the current evidence set."
   };
 }
 
@@ -198,8 +143,10 @@ export class ToolBroker {
         scanId: input.scan.id,
         tacticId: input.tacticId,
         agentId: input.agentId,
-        adapter: request.adapter,
+        ...(request.toolId ? { toolId: request.toolId } : {}),
         tool: request.tool,
+        ...(request.scriptPath ? { scriptPath: request.scriptPath } : {}),
+        capabilities: request.capabilities,
         target: request.target,
         ...(request.port !== undefined ? { port: request.port } : {}),
         status: decision.allowed ? "running" : "denied",
@@ -218,7 +165,7 @@ export class ToolBroker {
         tacticId: input.tacticId,
         toolRunId: toolRun.id,
         stage: "execution",
-        title: `Queued ${request.adapter}`,
+        title: `Queued ${request.tool}`,
         summary: `Scheduled ${request.tool} against ${request.target}${request.port !== undefined ? `:${request.port}` : ""}.`,
         detail: `${request.justification}\n\nCommand preview:\n${toolRun.commandPreview}`
       });
@@ -232,8 +179,9 @@ export class ToolBroker {
         targetTacticId: input.tacticId,
         scopeValid: decision.allowed,
         details: {
-          adapter: request.adapter,
+          toolId: request.toolId,
           tool: request.tool,
+          capabilities: request.capabilities,
           target: request.target,
           riskTier: request.riskTier,
           reason: decision.reason
@@ -287,7 +235,7 @@ export class ToolBroker {
           tacticId: input.tacticId,
           toolRunId: completedToolRun.id,
           stage: "execution",
-          title: `${request.adapter} completed`,
+          title: `${request.tool} completed`,
           summary: `Completed ${request.tool} against ${request.target}${request.port !== undefined ? `:${request.port}` : ""} with exit code ${adapterResult.exitCode}.`,
           detail: adapterResult.output
         });
@@ -299,8 +247,8 @@ export class ToolBroker {
           completedAt: new Date().toISOString(),
           statusReason: reason,
           output: [
-            `Broker adapter failure`,
-            `adapter=${request.adapter}`,
+            `Broker tool execution failure`,
+            `toolId=${request.toolId ?? "n/a"}`,
             `tool=${request.tool}`,
             `target=${request.target}${request.port !== undefined ? `:${request.port}` : ""}`,
             "",
@@ -315,7 +263,7 @@ export class ToolBroker {
           tacticId: input.tacticId,
           toolRunId: failedToolRun.id,
           stage: "execution",
-          title: `${request.adapter} failed`,
+          title: `${request.tool} failed`,
           summary: `Execution failed for ${request.tool} against ${request.target}${request.port !== undefined ? `:${request.port}` : ""}.`,
           detail: reason
         });
@@ -329,7 +277,7 @@ export class ToolBroker {
           targetTacticId: input.tacticId,
           scopeValid: true,
           details: {
-            adapter: request.adapter,
+            toolId: request.toolId,
             tool: request.tool,
             target: request.target,
             error: reason
@@ -339,7 +287,7 @@ export class ToolBroker {
         // Log the failure but continue — a single tool failure must not terminate the scan.
         // BrokerExecutionError is reserved for hard policy violations, not tool-level errors.
         console.warn(
-          `[broker] tool-run-failed adapter=${request.adapter} tool=${request.tool} target=${request.target} reason=${reason}`
+          `[broker] tool-run-failed toolId=${request.toolId ?? "n/a"} tool=${request.tool} target=${request.target} reason=${reason}`
         );
         continue;
       }

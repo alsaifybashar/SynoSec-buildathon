@@ -11,6 +11,7 @@ import type { RuntimesRepository } from "../runtimes/runtimes.repository.js";
 import { MemoryAiProvidersRepository } from "../ai-providers/memory-ai-providers.repository.js";
 import { MemoryAiAgentsRepository } from "../ai-agents/memory-ai-agents.repository.js";
 import { MemoryAiToolsRepository } from "../ai-tools/memory-ai-tools.repository.js";
+import { MemoryWorkflowsRepository } from "../workflows/memory-workflows.repository.js";
 
 const seedCustomTools: AiTool[] = [
   {
@@ -19,11 +20,17 @@ const seedCustomTools: AiTool[] = [
     status: "active",
     source: "custom",
     description: "Internal browser automation bridge",
-    adapter: "external_tool",
     binary: null,
+    scriptPath: "scripts/tools/http-recon.sh",
+    capabilities: ["web-recon"],
     category: "utility",
     riskTier: "passive",
     notes: "Wraps an MCP bridge",
+    executionMode: "sandboxed",
+    sandboxProfile: "network-recon",
+    privilegeProfile: "read-only-network",
+    defaultArgs: ["--url", "{target}"],
+    timeoutMs: 30000,
     inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
     outputSchema: { type: "object", properties: { html: { type: "string" } } },
     createdAt: "2026-04-12T12:00:00.000Z",
@@ -60,7 +67,8 @@ function createTestApp() {
     runtimesRepository,
     aiProvidersRepository,
     aiAgentsRepository: new MemoryAiAgentsRepository(aiProvidersRepository, aiToolsRepository),
-    aiToolsRepository
+    aiToolsRepository,
+    workflowsRepository: new MemoryWorkflowsRepository(applicationsRepository, runtimesRepository, new MemoryAiAgentsRepository(aiProvidersRepository, aiToolsRepository))
   });
 }
 
@@ -88,11 +96,17 @@ describe("ai tool routes", () => {
       status: "active",
       source: "custom",
       description: "Calls an internal webhook",
-      adapter: "external_tool",
-      binary: "",
+      binary: "curl",
+      scriptPath: "scripts/tools/http-recon.sh",
+      capabilities: ["web-recon"],
       category: "utility",
       riskTier: "passive",
       notes: "",
+      executionMode: "sandboxed",
+      sandboxProfile: "network-recon",
+      privilegeProfile: "read-only-network",
+      defaultArgs: ["-sS", "{baseUrl}"],
+      timeoutMs: 15000,
       inputSchema: { type: "object", properties: { payload: { type: "string" } } },
       outputSchema: { type: "object", properties: { ok: { type: "boolean" } } }
     });
@@ -100,6 +114,31 @@ describe("ai tool routes", () => {
     expect(response.status).toBe(201);
     expect(aiToolSchema.safeParse(response.body).success).toBe(true);
     expect(response.body.source).toBe("custom");
+    expect(response.body.executionMode).toBe("sandboxed");
+    expect(response.body.sandboxProfile).toBe("network-recon");
+  });
+
+  it("rejects executable tools without privilege metadata", async () => {
+    const response = await request(createTestApp()).post("/api/ai-tools").send({
+      name: "Unsafe Tool",
+      status: "active",
+      source: "custom",
+      description: "Missing privilege profile",
+      binary: "curl",
+      scriptPath: "scripts/tools/http-recon.sh",
+      capabilities: ["web-recon"],
+      category: "utility",
+      riskTier: "passive",
+      notes: "",
+      executionMode: "sandboxed",
+      sandboxProfile: "network-recon",
+      defaultArgs: ["-sS", "{baseUrl}"],
+      timeoutMs: 15000,
+      inputSchema: { type: "object", properties: {} },
+      outputSchema: { type: "object", properties: {} }
+    });
+
+    expect(response.status).toBe(400);
   });
 
   it("updates a custom tool", async () => {

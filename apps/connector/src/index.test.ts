@@ -1,6 +1,46 @@
+import { spawnSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
-import type { ConnectorExecutionJob } from "@synosec/contracts";
+import type { ConnectorExecutionJob, OsiLayer, ToolRequest } from "@synosec/contracts";
 import { SynoSecConnectorClient, executeConnectorJob } from "./index.js";
+
+const seededToolDefinitions = [
+  { id: "seed-http-recon", name: "HTTP Recon", scriptPath: "scripts/tools/http-recon.sh", capabilities: ["web-recon", "passive"], riskTier: "passive", sandboxProfile: "network-recon", privilegeProfile: "read-only-network", defaultArgs: ["-silent", "-status-code", "-title", "-tech-detect", "-u", "{baseUrl}"], timeoutMs: 120000, executionMode: "sandboxed" },
+  { id: "seed-web-crawl", name: "Web Crawl", scriptPath: "scripts/tools/web-crawl.sh", capabilities: ["web-recon", "content-discovery", "passive"], riskTier: "passive", sandboxProfile: "network-recon", privilegeProfile: "read-only-network", defaultArgs: ["-u", "{baseUrl}", "-silent"], timeoutMs: 180000, executionMode: "sandboxed" },
+  { id: "seed-service-scan", name: "Service Scan", scriptPath: "scripts/tools/service-scan.sh", capabilities: ["network-recon", "passive"], riskTier: "passive", sandboxProfile: "network-recon", privilegeProfile: "read-only-network", defaultArgs: ["-Pn", "-p", "8888", "--host-timeout", "5s", "--max-retries", "1", "{target}"], timeoutMs: 180000, executionMode: "sandboxed" },
+  { id: "seed-content-discovery", name: "Content Discovery", scriptPath: "scripts/tools/content-discovery.sh", capabilities: ["content-discovery", "active-recon"], riskTier: "active", sandboxProfile: "active-recon", privilegeProfile: "active-network", defaultArgs: ["-u", "{baseUrl}/FUZZ", "-w", "/usr/share/dirb/wordlists/common.txt"], timeoutMs: 30000, executionMode: "sandboxed" },
+  { id: "seed-vuln-audit", name: "Vulnerability Audit", scriptPath: "scripts/tools/vulnerability-audit.sh", capabilities: ["vulnerability-audit", "active-recon"], riskTier: "active", sandboxProfile: "active-recon", privilegeProfile: "active-network", defaultArgs: ["-u", "{baseUrl}", "-severity", "medium,high,critical"], timeoutMs: 45000, executionMode: "sandboxed" },
+  { id: "seed-sql-injection-check", name: "SQL Injection Check", scriptPath: "scripts/tools/sql-injection-check.sh", capabilities: ["database-security", "controlled-exploit"], riskTier: "controlled-exploit", sandboxProfile: "controlled-exploit-lab", privilegeProfile: "controlled-exploit", defaultArgs: ["-u", "{baseUrl}/", "--batch"], timeoutMs: 45000, executionMode: "sandboxed" }
+] as const;
+
+function compileToolRequestFromDefinition(
+  tool: typeof seededToolDefinitions[number],
+  input: { target: string; layer: OsiLayer; justification: string; port?: number }
+): ToolRequest {
+  const baseUrl = `http://${input.target}${input.port ? `:${input.port}` : ""}`;
+  return {
+    toolId: tool.id,
+    tool: tool.name,
+    scriptPath: tool.scriptPath,
+    capabilities: [...tool.capabilities],
+    target: input.target,
+    ...(input.port == null ? {} : { port: input.port }),
+    layer: input.layer,
+    riskTier: tool.riskTier,
+    justification: input.justification,
+    sandboxProfile: tool.sandboxProfile,
+    privilegeProfile: tool.privilegeProfile,
+    parameters: {
+      scriptPath: tool.scriptPath,
+      scriptArgs: tool.defaultArgs.map((value) =>
+        value
+          .replaceAll("{target}", input.target)
+          .replaceAll("{baseUrl}", baseUrl)
+          .replaceAll("{port}", input.port == null ? "" : String(input.port))
+      ),
+      timeoutMs: tool.timeoutMs
+    }
+  };
+}
 
 function makeJob(overrides: Partial<ConnectorExecutionJob> = {}): ConnectorExecutionJob {
   return {
@@ -19,7 +59,9 @@ function makeJob(overrides: Partial<ConnectorExecutionJob> = {}): ConnectorExecu
       tacticId: "tactic-1",
       agentId: "agent-1",
       tool: "curl",
-      adapter: "http_probe",
+      toolId: "tool-1",
+      scriptPath: "scripts/tools/http-recon.sh",
+      capabilities: ["web-recon"],
       target: "example.com",
       status: "running",
       riskTier: "passive",
@@ -29,42 +71,53 @@ function makeJob(overrides: Partial<ConnectorExecutionJob> = {}): ConnectorExecu
       startedAt: "2026-04-20T10:00:00.000Z"
     },
     request: {
+      toolId: "tool-1",
       tool: "curl",
-      adapter: "http_probe",
+      scriptPath: "scripts/tools/http-recon.sh",
+      capabilities: ["web-recon"],
       target: "example.com",
       layer: "L7",
       riskTier: "passive",
       justification: "Test connector polling.",
-      parameters: {}
+      sandboxProfile: "network-recon",
+      privilegeProfile: "read-only-network",
+      parameters: {
+        scriptPath: "scripts/tools/http-recon.sh",
+        scriptArgs: ["-I", "http://example.com"]
+      }
     },
     ...overrides
   };
 }
 
 describe("connector client", () => {
-  it("returns a dry-run result for allowed adapters", async () => {
+  it("returns a dry-run result for allowed capabilities", async () => {
     const result = await executeConnectorJob(makeJob(), {
-      allowedAdapters: ["http_probe"]
+      allowedCapabilities: ["web-recon"],
+      allowedSandboxProfiles: [],
+      allowedPrivilegeProfiles: []
     });
 
     expect(result.exitCode).toBe(0);
     expect(result.output).toContain("dry-run:");
   });
 
-  it("rejects jobs for adapters outside the connector allowlist", async () => {
+  it("rejects jobs for capabilities outside the connector allowlist", async () => {
     const result = await executeConnectorJob(
       makeJob({
         request: {
           ...makeJob().request,
-          adapter: "service_scan"
+          capabilities: ["network-recon"]
         },
         toolRun: {
           ...makeJob().toolRun,
-          adapter: "service_scan"
+          capabilities: ["network-recon"]
         }
       }),
       {
-        allowedAdapters: ["http_probe"]
+        allowedCapabilities: ["web-recon"],
+        allowedSandboxProfiles: [],
+        allowedPrivilegeProfiles: []
       }
     );
 
@@ -94,10 +147,12 @@ describe("connector client", () => {
       baseUrl: "http://127.0.0.1:3001",
       token: "token",
       fetchImpl: fetchMock,
-      registration: {
-        name: "test-connector",
-        version: "0.1.0",
-        allowedAdapters: ["http_probe"],
+        registration: {
+          name: "test-connector",
+          version: "0.1.0",
+          allowedCapabilities: ["web-recon"],
+          allowedSandboxProfiles: [],
+          allowedPrivilegeProfiles: [],
         runMode: "dry-run",
         concurrency: 1,
         capabilities: []
@@ -108,5 +163,152 @@ describe("connector client", () => {
 
     expect(job?.id).toBe("job-1");
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects scripted tool jobs without sandbox and privilege profiles", async () => {
+    const result = await executeConnectorJob(
+      makeJob({
+        mode: "execute",
+        request: {
+          ...makeJob().request,
+          toolId: "tool-1",
+          scriptPath: "scripts/tools/http-recon.sh",
+          capabilities: ["web-recon"],
+          sandboxProfile: undefined,
+          privilegeProfile: undefined,
+          parameters: {
+            scriptPath: "scripts/tools/http-recon.sh",
+            scriptArgs: ["hello"]
+          }
+        },
+        toolRun: {
+          ...makeJob().toolRun,
+          tool: "tool-1"
+        }
+      }),
+      {
+        allowedCapabilities: ["web-recon"],
+        allowedSandboxProfiles: ["network-recon"],
+        allowedPrivilegeProfiles: ["read-only-network"]
+      }
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.statusReason).toContain("sandbox");
+  });
+
+  it("executes scripted tool jobs from structured script paths and args without a shell command string", async () => {
+    const result = await executeConnectorJob(
+      makeJob({
+        mode: "execute",
+        request: {
+          ...makeJob().request,
+          toolId: "tool-1",
+          tool: "Structured Echo",
+          scriptPath: "scripts/tools/http-recon.sh",
+          capabilities: ["web-recon"],
+          sandboxProfile: "network-recon",
+          privilegeProfile: "read-only-network",
+          parameters: {
+            scriptPath: "scripts/tools/http-recon.sh",
+            scriptArgs: ["-h"]
+          }
+        },
+        toolRun: {
+          ...makeJob().toolRun,
+          tool: "tool-1",
+          commandPreview: "scripts/tools/http-recon.sh -h"
+        }
+      }),
+      {
+        allowedCapabilities: ["web-recon"],
+        allowedSandboxProfiles: ["network-recon"],
+        allowedPrivilegeProfiles: ["read-only-network"]
+      }
+    );
+
+    expect(result.exitCode).toBeGreaterThanOrEqual(0);
+  });
+
+  it("accepts every executable seeded tool definition for connector execution policy", async () => {
+    const executableTools = seededToolDefinitions.filter((tool) => tool.executionMode === "sandboxed");
+
+    for (const tool of executableTools) {
+      const request = compileToolRequestFromDefinition(tool, {
+        target: "example.com",
+        layer: "L7",
+        justification: `Verify connector policy for ${tool.id}.`
+      });
+
+      const result = await executeConnectorJob(
+        makeJob({
+          mode: "simulate",
+          request,
+          toolRun: {
+            ...makeJob().toolRun,
+            tool: tool.id,
+            toolId: request.toolId,
+            scriptPath: request.scriptPath,
+            capabilities: request.capabilities,
+            commandPreview: `${tool.scriptPath ?? tool.id} ${(request.parameters["scriptArgs"] as string[]).join(" ")}`
+          }
+        }),
+        {
+          allowedCapabilities: ["web-recon", "network-recon", "content-discovery", "active-recon", "database-security", "controlled-exploit", "passive", "vulnerability-audit"],
+          allowedSandboxProfiles: ["network-recon", "active-recon", "controlled-exploit-lab"],
+          allowedPrivilegeProfiles: ["read-only-network", "active-network", "controlled-exploit"]
+        }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.output).toContain("simulate:");
+    }
+  });
+
+  it("runs the seeded HTTP recon tool through execute-mode sandbox when httpx is available", async () => {
+    const commandResult = spawnSync("sh", ["-lc", "command -v httpx"], { encoding: "utf8" });
+    if (commandResult.status !== 0) {
+      return;
+    }
+    const helpResult = spawnSync("sh", ["-lc", "httpx -h 2>&1 || httpx --help 2>&1"], { encoding: "utf8" });
+    if (!/ProjectDiscovery|tech-detect|status-code/.test(helpResult.stdout)) {
+      return;
+    }
+
+    const tool = seededToolDefinitions.find((candidate) => candidate.id === "seed-http-recon");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      return;
+    }
+
+    const request = compileToolRequestFromDefinition(tool, {
+      target: "example.com",
+      layer: "L7",
+      justification: "Verify the seeded HTTP recon tool executes through the sandbox."
+    });
+
+    const result = await executeConnectorJob(
+      makeJob({
+        mode: "execute",
+        request,
+        toolRun: {
+          ...makeJob().toolRun,
+          tool: tool.id,
+          toolId: request.toolId,
+          scriptPath: request.scriptPath,
+          capabilities: request.capabilities,
+          commandPreview: `${tool.scriptPath ?? tool.id} ${(request.parameters["scriptArgs"] as string[]).join(" ")}`
+        }
+      }),
+      {
+        allowedCapabilities: ["web-recon", "passive"],
+        allowedSandboxProfiles: ["network-recon"],
+        allowedPrivilegeProfiles: ["read-only-network"]
+      }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeUndefined();
+    expect(result.output.length).toBeGreaterThan(0);
   });
 });

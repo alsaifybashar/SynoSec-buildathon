@@ -4,6 +4,8 @@ import type {
   UpdateWorkflowBody,
   Workflow,
   WorkflowRun,
+  WorkflowTraceEntry,
+  WorkflowTraceEvent,
   WorkflowsListQuery
 } from "@synosec/contracts";
 import { paginateItems, type PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
@@ -11,7 +13,7 @@ import { RequestError } from "../../../platform/core/http/request-error.js";
 import type { ApplicationsRepository } from "../applications/applications.repository.js";
 import type { RuntimesRepository } from "../runtimes/runtimes.repository.js";
 import type { AiAgentsRepository } from "../ai-agents/ai-agents.repository.js";
-import type { WorkflowsRepository } from "./workflows.repository.js";
+import type { WorkflowRunStatePatch, WorkflowsRepository } from "./workflows.repository.js";
 
 export class MemoryWorkflowsRepository implements WorkflowsRepository {
   private readonly workflows = new Map<string, Workflow>();
@@ -137,7 +139,8 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       currentStepIndex: 0,
       startedAt: new Date().toISOString(),
       completedAt: null,
-      trace: []
+      trace: [],
+      events: []
     };
 
     this.runs.set(run.id, run);
@@ -146,6 +149,62 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
 
   async getRunById(runId: string): Promise<WorkflowRun | null> {
     return this.runs.get(runId) ?? null;
+  }
+
+  async getLatestRunByWorkflowId(workflowId: string): Promise<WorkflowRun | null> {
+    const matchingRuns = [...this.runs.values()]
+      .filter((run) => run.workflowId === workflowId)
+      .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
+
+    return matchingRuns[0] ?? null;
+  }
+
+  async appendRunEvent(runId: string, event: WorkflowTraceEvent, patch: WorkflowRunStatePatch = {}): Promise<WorkflowRun> {
+    const current = this.runs.get(runId);
+    if (!current) {
+      throw new RequestError(404, "Workflow run not found.");
+    }
+
+    const updated: WorkflowRun = {
+      ...current,
+      ...patch,
+      trace: current.trace.slice(),
+      events: [...current.events, event]
+    };
+    this.runs.set(runId, updated);
+    return updated;
+  }
+
+  async appendTraceEntry(runId: string, traceEntry: WorkflowTraceEntry, patch: WorkflowRunStatePatch = {}): Promise<WorkflowRun> {
+    const current = this.runs.get(runId);
+    if (!current) {
+      throw new RequestError(404, "Workflow run not found.");
+    }
+
+    const updated: WorkflowRun = {
+      ...current,
+      ...patch,
+      trace: [...current.trace, traceEntry],
+      events: current.events.slice()
+    };
+    this.runs.set(runId, updated);
+    return updated;
+  }
+
+  async updateRunState(runId: string, patch: WorkflowRunStatePatch): Promise<WorkflowRun> {
+    const current = this.runs.get(runId);
+    if (!current) {
+      throw new RequestError(404, "Workflow run not found.");
+    }
+
+    const updated: WorkflowRun = {
+      ...current,
+      ...patch,
+      trace: current.trace.slice(),
+      events: current.events.slice()
+    };
+    this.runs.set(runId, updated);
+    return updated;
   }
 
   async updateRun(run: WorkflowRun): Promise<WorkflowRun> {

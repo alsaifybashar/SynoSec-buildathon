@@ -75,6 +75,42 @@ enum AiToolStatus {
   manual
 }
 
+enum WorkflowStatus {
+  draft
+  active
+  archived
+}
+
+enum WorkflowRunStatus {
+  pending
+  running
+  completed
+  failed
+}
+
+enum WorkflowTraceEntryStatus {
+  completed
+  failed
+}
+
+enum WorkflowTraceEventType {
+  stage_started
+  agent_input
+  model_decision
+  tool_call
+  tool_result
+  agent_summary
+  stage_completed
+  stage_failed
+}
+
+enum WorkflowTraceEventStatus {
+  pending
+  running
+  completed
+  failed
+}
+
 enum ScanRunStatus {
   pending
   running
@@ -99,6 +135,7 @@ model Application {
   createdAt     DateTime               @default(now()) @map("created_at")
   updatedAt     DateTime               @updatedAt @map("updated_at")
   runtimes      Runtime[]
+  workflows     Workflow[]
 
   @@map("applications")
 }
@@ -115,6 +152,7 @@ model Runtime {
   createdAt     DateTime               @default(now()) @map("created_at")
   updatedAt     DateTime               @updatedAt @map("updated_at")
   application   Application?           @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  workflows     Workflow[]
 
   @@index([applicationId])
   @@map("runtimes")
@@ -137,17 +175,18 @@ model AiProvider {
 }
 
 model AiAgent {
-  id            String        @id @db.Uuid
-  name          String
-  status        AiAgentStatus
-  description   String?
-  providerId    String        @map("provider_id") @db.Uuid
-  systemPrompt  String        @map("system_prompt")
-  modelOverride String?       @map("model_override")
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
-  provider      AiProvider    @relation(fields: [providerId], references: [id], onDelete: Restrict)
-  tools         AiAgentTool[]
+  id             String          @id @db.Uuid
+  name           String
+  status         AiAgentStatus
+  description    String?
+  providerId     String          @map("provider_id") @db.Uuid
+  systemPrompt   String          @map("system_prompt")
+  modelOverride  String?         @map("model_override")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  provider       AiProvider      @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  tools          AiAgentTool[]
+  workflowStages WorkflowStage[]
 
   @@index([providerId])
   @@map("ai_agents")
@@ -183,6 +222,109 @@ model AiAgentTool {
   @@id([agentId, toolId])
   @@index([toolId])
   @@map("ai_agent_tools")
+}
+
+model Workflow {
+  id            String               @id @db.Uuid
+  name          String
+  status        WorkflowStatus
+  description   String?
+  applicationId String               @map("application_id") @db.Uuid
+  runtimeId     String?              @map("runtime_id") @db.Uuid
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+  application   Application          @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  runtime       Runtime?             @relation(fields: [runtimeId], references: [id], onDelete: SetNull)
+  stages        WorkflowStage[]
+  runs          WorkflowRun[]
+  traceEntries  WorkflowTraceEntry[]
+  traceEvents   WorkflowTraceEvent[]
+
+  @@index([applicationId])
+  @@index([runtimeId])
+  @@map("workflows")
+}
+
+model WorkflowStage {
+  id           String               @id @db.Uuid
+  workflowId   String               @map("workflow_id") @db.Uuid
+  agentId      String               @map("agent_id") @db.Uuid
+  label        String
+  ord          Int
+  workflow     Workflow             @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  agent        AiAgent              @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  traceEntries WorkflowTraceEntry[]
+  traceEvents  WorkflowTraceEvent[]
+
+  @@unique([workflowId, ord])
+  @@index([agentId])
+  @@index([workflowId])
+  @@map("workflow_stages")
+}
+
+model WorkflowRun {
+  id               String               @id @db.Uuid
+  workflowId       String               @map("workflow_id") @db.Uuid
+  status           WorkflowRunStatus
+  currentStepIndex Int                  @default(0) @map("current_step_index")
+  startedAt        DateTime             @default(now()) @map("started_at")
+  completedAt      DateTime?            @map("completed_at")
+  workflow         Workflow             @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  traceEntries     WorkflowTraceEntry[]
+  traceEvents      WorkflowTraceEvent[]
+
+  @@index([workflowId])
+  @@map("workflow_runs")
+}
+
+model WorkflowTraceEntry {
+  id                  String                   @id @db.Uuid
+  workflowRunId       String                   @map("workflow_run_id") @db.Uuid
+  workflowId          String                   @map("workflow_id") @db.Uuid
+  workflowStageId     String                   @map("workflow_stage_id") @db.Uuid
+  stepIndex           Int                      @map("step_index")
+  stageLabel          String                   @map("stage_label")
+  agentId             String                   @map("agent_id") @db.Uuid
+  agentName           String                   @map("agent_name")
+  status              WorkflowTraceEntryStatus
+  selectedToolIds     Json                     @map("selected_tool_ids")
+  toolSelectionReason String                   @map("tool_selection_reason")
+  targetSummary       String                   @map("target_summary")
+  evidenceHighlights  Json                     @map("evidence_highlights")
+  outputSummary       String                   @map("output_summary")
+  createdAt           DateTime                 @default(now()) @map("created_at")
+  workflowRun         WorkflowRun              @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  workflow            Workflow                 @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowStage       WorkflowStage            @relation(fields: [workflowStageId], references: [id], onDelete: Cascade)
+
+  @@index([workflowRunId, stepIndex])
+  @@index([workflowId])
+  @@index([workflowStageId])
+  @@map("workflow_trace_entries")
+}
+
+model WorkflowTraceEvent {
+  id              String                   @id @db.Uuid
+  workflowRunId   String                   @map("workflow_run_id") @db.Uuid
+  workflowId      String                   @map("workflow_id") @db.Uuid
+  workflowStageId String?                  @map("workflow_stage_id") @db.Uuid
+  stepIndex       Int                      @map("step_index")
+  ord             Int
+  type            WorkflowTraceEventType
+  status          WorkflowTraceEventStatus
+  title           String
+  summary         String
+  detail          String?
+  payload         Json
+  createdAt       DateTime                 @default(now()) @map("created_at")
+  workflowRun     WorkflowRun              @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  workflow        Workflow                 @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowStage   WorkflowStage?           @relation(fields: [workflowStageId], references: [id], onDelete: SetNull)
+
+  @@index([workflowRunId, ord])
+  @@index([workflowId])
+  @@index([workflowStageId])
+  @@map("workflow_trace_events")
 }
 
 model ScanRun {

@@ -123,7 +123,7 @@ export async function getToolCapabilities(): Promise<ToolCapabilitiesResponse> {
         status: available ? "installed" : "missing",
         available,
         notes: entry.notes,
-        implementedAdapter: implementedAdapterFor(entry.id)
+        implementedBy: "script"
       };
     })
   );
@@ -136,35 +136,4 @@ export async function getToolCapabilities(): Promise<ToolCapabilitiesResponse> {
 export async function isToolCatalogEntryAvailable(id: string): Promise<boolean> {
   const capabilities = await getToolCapabilities();
   return capabilities.capabilities.some((capability: ToolCapability) => capability.id === id && capability.available);
-}
-
-function implementedAdapterFor(id: string): ToolCapability["implementedAdapter"] | undefined {
-  switch (id) {
-    case "amass":
-    case "subfinder":
-      return "subdomain_enum";
-    case "httpx":
-      return "httpx_probe";
-    case "katana":
-      return "web_crawl";
-    case "gau":
-    case "waybackurls":
-      return "historical_urls";
-    case "feroxbuster":
-      return "feroxbuster_scan";
-    case "nmap":
-      return "service_scan";
-    case "nikto":
-      return "nikto_scan";
-    case "nuclei":
-      return "nuclei_scan";
-    case "whatweb":
-      return "web_fingerprint";
-    case "ffuf":
-      return "content_discovery";
-    case "sqlmap":
-      return "db_injection_check";
-    default:
-      return "external_tool";
-  }
 }

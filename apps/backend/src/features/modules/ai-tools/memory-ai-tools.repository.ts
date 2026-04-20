@@ -7,6 +7,7 @@ import type {
 } from "@synosec/contracts";
 import { paginateItems, type PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
 import { type AiToolsRepository } from "../ai-tools/ai-tools.repository.js";
+import { encodeCreateToolInput, encodeUpdateToolInput, mapToolExecutionFields, stripExecutionConfig } from "./tool-execution-config.js";
 
 export class MemoryAiToolsRepository implements AiToolsRepository {
   private readonly records = new Map<string, AiTool>();
@@ -53,19 +54,21 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
 
   async create(input: CreateAiToolBody): Promise<AiTool> {
     const timestamp = new Date().toISOString();
+    const encoded = encodeCreateToolInput(input);
+    const execution = mapToolExecutionFields(encoded.inputSchema);
     const record: AiTool = {
       id: randomUUID(),
-      name: input.name,
-      status: input.status,
+      name: encoded.name,
+      status: encoded.status,
       source: "custom",
-      description: input.description,
-      adapter: input.adapter,
-      binary: input.binary ?? null,
-      category: input.category,
-      riskTier: input.riskTier,
-      notes: input.notes,
-      inputSchema: input.inputSchema,
-      outputSchema: input.outputSchema,
+      description: encoded.description,
+      binary: encoded.binary ?? null,
+      category: encoded.category,
+      riskTier: encoded.riskTier,
+      notes: encoded.notes,
+      ...execution,
+      inputSchema: stripExecutionConfig(encoded.inputSchema),
+      outputSchema: encoded.outputSchema,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -80,18 +83,21 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
       return null;
     }
 
+    const encoded = encodeUpdateToolInput(input, current);
+    const nextInputSchema = encoded.inputSchema ?? current.inputSchema;
+    const execution = mapToolExecutionFields(nextInputSchema);
     const updated: AiTool = {
       ...current,
-      name: input.name ?? current.name,
-      status: input.status ?? current.status,
-      description: input.description === undefined ? current.description : input.description,
-      adapter: input.adapter ?? current.adapter,
-      binary: input.binary === undefined ? current.binary : input.binary ?? null,
-      category: input.category ?? current.category,
-      riskTier: input.riskTier ?? current.riskTier,
-      notes: input.notes === undefined ? current.notes : input.notes,
-      inputSchema: input.inputSchema ?? current.inputSchema,
-      outputSchema: input.outputSchema ?? current.outputSchema,
+      name: encoded.name ?? current.name,
+      status: encoded.status ?? current.status,
+      description: encoded.description === undefined ? current.description : encoded.description,
+      binary: encoded.binary === undefined ? current.binary : encoded.binary ?? null,
+      category: encoded.category ?? current.category,
+      riskTier: encoded.riskTier ?? current.riskTier,
+      notes: encoded.notes === undefined ? current.notes : encoded.notes,
+      ...execution,
+      inputSchema: stripExecutionConfig(nextInputSchema),
+      outputSchema: encoded.outputSchema ?? current.outputSchema,
       updatedAt: new Date().toISOString()
     };
 

@@ -1,9 +1,10 @@
-import type { Workflow, WorkflowRun, WorkflowStage, WorkflowTraceEntry } from "@synosec/contracts";
+import type { Workflow, WorkflowRun, WorkflowStage, WorkflowTraceEntry, WorkflowTraceEvent } from "@synosec/contracts";
 import type {
   Workflow as WorkflowRow,
   WorkflowRun as WorkflowRunRow,
   WorkflowStage as WorkflowStageRow,
-  WorkflowTraceEntry as WorkflowTraceEntryRow
+  WorkflowTraceEntry as WorkflowTraceEntryRow,
+  WorkflowTraceEvent as WorkflowTraceEventRow
 } from "../../../platform/generated/prisma/index.js";
 
 export function mapWorkflowStageRow(row: WorkflowStageRow): WorkflowStage {
@@ -53,9 +54,28 @@ export function mapWorkflowTraceEntryRow(row: WorkflowTraceEntryRow): WorkflowTr
   };
 }
 
+export function mapWorkflowTraceEventRow(row: WorkflowTraceEventRow): WorkflowTraceEvent {
+  return {
+    id: row.id,
+    workflowRunId: row.workflowRunId,
+    workflowId: row.workflowId,
+    workflowStageId: row.workflowStageId,
+    stepIndex: row.stepIndex,
+    ord: row.ord,
+    type: row.type,
+    status: row.status,
+    title: row.title,
+    summary: row.summary,
+    detail: row.detail,
+    payload: (row.payload ?? {}) as Record<string, unknown>,
+    createdAt: row.createdAt.toISOString()
+  };
+}
+
 export function mapWorkflowRunRow(
   row: WorkflowRunRow & {
     traceEntries: WorkflowTraceEntryRow[];
+    traceEvents: WorkflowTraceEventRow[];
   }
 ): WorkflowRun {
   return {
@@ -65,6 +85,7 @@ export function mapWorkflowRunRow(
     currentStepIndex: row.currentStepIndex,
     startedAt: row.startedAt.toISOString(),
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
-    trace: row.traceEntries.sort((left, right) => left.stepIndex - right.stepIndex).map(mapWorkflowTraceEntryRow)
+    trace: row.traceEntries.sort((left, right) => left.stepIndex - right.stepIndex).map(mapWorkflowTraceEntryRow),
+    events: row.traceEvents.sort((left, right) => left.ord - right.ord).map(mapWorkflowTraceEventRow)
   };
 }

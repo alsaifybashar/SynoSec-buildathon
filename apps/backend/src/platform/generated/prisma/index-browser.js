@@ -193,6 +193,68 @@ exports.Prisma.AiAgentToolScalarFieldEnum = {
   ord: 'ord'
 };
 
+exports.Prisma.WorkflowScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  status: 'status',
+  description: 'description',
+  applicationId: 'applicationId',
+  runtimeId: 'runtimeId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.WorkflowStageScalarFieldEnum = {
+  id: 'id',
+  workflowId: 'workflowId',
+  agentId: 'agentId',
+  label: 'label',
+  ord: 'ord'
+};
+
+exports.Prisma.WorkflowRunScalarFieldEnum = {
+  id: 'id',
+  workflowId: 'workflowId',
+  status: 'status',
+  currentStepIndex: 'currentStepIndex',
+  startedAt: 'startedAt',
+  completedAt: 'completedAt'
+};
+
+exports.Prisma.WorkflowTraceEntryScalarFieldEnum = {
+  id: 'id',
+  workflowRunId: 'workflowRunId',
+  workflowId: 'workflowId',
+  workflowStageId: 'workflowStageId',
+  stepIndex: 'stepIndex',
+  stageLabel: 'stageLabel',
+  agentId: 'agentId',
+  agentName: 'agentName',
+  status: 'status',
+  selectedToolIds: 'selectedToolIds',
+  toolSelectionReason: 'toolSelectionReason',
+  targetSummary: 'targetSummary',
+  evidenceHighlights: 'evidenceHighlights',
+  outputSummary: 'outputSummary',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.WorkflowTraceEventScalarFieldEnum = {
+  id: 'id',
+  workflowRunId: 'workflowRunId',
+  workflowId: 'workflowId',
+  workflowStageId: 'workflowStageId',
+  stepIndex: 'stepIndex',
+  ord: 'ord',
+  type: 'type',
+  status: 'status',
+  title: 'title',
+  summary: 'summary',
+  detail: 'detail',
+  payload: 'payload',
+  createdAt: 'createdAt'
+};
+
 exports.Prisma.ScanRunScalarFieldEnum = {
   id: 'id',
   scope: 'scope',
@@ -366,6 +428,42 @@ exports.AiToolSource = exports.$Enums.AiToolSource = {
   custom: 'custom'
 };
 
+exports.WorkflowStatus = exports.$Enums.WorkflowStatus = {
+  draft: 'draft',
+  active: 'active',
+  archived: 'archived'
+};
+
+exports.WorkflowRunStatus = exports.$Enums.WorkflowRunStatus = {
+  pending: 'pending',
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed'
+};
+
+exports.WorkflowTraceEntryStatus = exports.$Enums.WorkflowTraceEntryStatus = {
+  completed: 'completed',
+  failed: 'failed'
+};
+
+exports.WorkflowTraceEventType = exports.$Enums.WorkflowTraceEventType = {
+  stage_started: 'stage_started',
+  agent_input: 'agent_input',
+  model_decision: 'model_decision',
+  tool_call: 'tool_call',
+  tool_result: 'tool_result',
+  agent_summary: 'agent_summary',
+  stage_completed: 'stage_completed',
+  stage_failed: 'stage_failed'
+};
+
+exports.WorkflowTraceEventStatus = exports.$Enums.WorkflowTraceEventStatus = {
+  pending: 'pending',
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed'
+};
+
 exports.ScanRunStatus = exports.$Enums.ScanRunStatus = {
   pending: 'pending',
   running: 'running',
@@ -387,6 +485,11 @@ exports.Prisma.ModelName = {
   AiAgent: 'AiAgent',
   AiTool: 'AiTool',
   AiAgentTool: 'AiAgentTool',
+  Workflow: 'Workflow',
+  WorkflowStage: 'WorkflowStage',
+  WorkflowRun: 'WorkflowRun',
+  WorkflowTraceEntry: 'WorkflowTraceEntry',
+  WorkflowTraceEvent: 'WorkflowTraceEvent',
   ScanRun: 'ScanRun',
   ScanTactic: 'ScanTactic',
   ScanFinding: 'ScanFinding',

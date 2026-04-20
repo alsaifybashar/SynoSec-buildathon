@@ -11,7 +11,7 @@ import { fetchJson } from "@/lib/api";
 import { useResourceDetail } from "@/hooks/useResourceDetail";
 import { useResourceList } from "@/hooks/useResourceList";
 import { applicationsResource } from "@/lib/resources";
-import { DetailField, DetailFieldGroup, DetailPage, DetailSidebarItem } from "@/components/detail-page";
+import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/components/list-page";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -159,14 +159,16 @@ function definedString(value: string | undefined) {
 
 export function ApplicationsPage({
   applicationId,
+  applicationNameHint,
   onNavigateToList,
   onNavigateToCreate,
   onNavigateToDetail
 }: {
   applicationId?: string;
+  applicationNameHint?: string;
   onNavigateToList: () => void;
   onNavigateToCreate: () => void;
-  onNavigateToDetail: (id: string) => void;
+  onNavigateToDetail: (id: string, label?: string) => void;
 }) {
   const [application, setApplication] = useState<Application | null>(null);
   const [formValues, setFormValues] = useState<ApplicationFormValues>(createEmptyFormValues);
@@ -200,6 +202,11 @@ export function ApplicationsPage({
     }
 
     if (applicationDetail.state !== "loaded") {
+      const empty = createEmptyFormValues();
+      setApplication(null);
+      setFormValues(empty);
+      setInitialValues(empty);
+      setErrors({});
       return;
     }
 
@@ -248,7 +255,7 @@ export function ApplicationsPage({
           body
         });
         toast.success("Application created");
-        onNavigateToDetail(created.id);
+        onNavigateToDetail(created.id, created.name);
         return;
       }
 
@@ -299,7 +306,18 @@ export function ApplicationsPage({
         onPageSizeChange={applicationList.setPageSize}
         onRetry={applicationList.refetch}
         onAddRecord={onNavigateToCreate}
-        onRowClick={(selected) => onNavigateToDetail(selected.id)}
+        onRowClick={(selected) => onNavigateToDetail(selected.id, selected.name)}
+      />
+    );
+  }
+
+  if (!isCreateMode && applicationDetail.state !== "loaded") {
+    return (
+      <DetailLoadingState
+        title={applicationNameHint ?? "Application detail"}
+        breadcrumbs={["Start", "Applications", applicationNameHint ?? "Loading"]}
+        onBack={onNavigateToList}
+        message="Loading application..."
       />
     );
   }

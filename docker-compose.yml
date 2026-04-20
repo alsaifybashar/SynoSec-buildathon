@@ -7,6 +7,11 @@ services:
       POSTGRES_DB: synosec
       POSTGRES_USER: synosec
       POSTGRES_PASSWORD: synosec
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synosec -d synosec"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -97,6 +102,8 @@ services:
       CONNECTOR_NAME: ${CONNECTOR_NAME:-local-dev-connector}
       CONNECTOR_RUN_MODE: ${CONNECTOR_RUN_MODE:-dry-run}
       CONNECTOR_ALLOWED_ADAPTERS: ${CONNECTOR_ALLOWED_ADAPTERS:-network_scan,service_scan,http_probe,tls_audit}
+      CONNECTOR_ALLOWED_SANDBOX_PROFILES: ${CONNECTOR_ALLOWED_SANDBOX_PROFILES:-network-recon,read-only-parser,active-recon}
+      CONNECTOR_ALLOWED_PRIVILEGE_PROFILES: ${CONNECTOR_ALLOWED_PRIVILEGE_PROFILES:-read-only-network,active-network}
     volumes:
       - .:/workspace
       - connector_node_modules:/workspace/apps/connector/node_modules

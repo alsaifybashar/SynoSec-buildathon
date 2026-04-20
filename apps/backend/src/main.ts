@@ -1,11 +1,12 @@
 import http from "node:http";
-import "@/core/env/load-env.js";
+import "@/platform/core/env/load-env.js";
 import { createApp } from "@/platform/app/create-app.js";
 import { createApplicationsRepositoryFromEnvironment } from "@/features/modules/applications/create-applications-repository.js";
 import { createRuntimesRepositoryFromEnvironment } from "@/features/modules/runtimes/create-runtimes-repository.js";
 import { createAiProvidersRepositoryFromEnvironment } from "@/features/modules/ai-providers/create-ai-providers-repository.js";
 import { createAiAgentsRepositoryFromEnvironment } from "@/features/modules/ai-agents/create-ai-agents-repository.js";
 import { createAiToolsRepositoryFromEnvironment } from "@/features/modules/ai-tools/create-ai-tools-repository.js";
+import { createWorkflowsRepositoryFromEnvironment } from "@/features/modules/workflows/create-workflows-repository.js";
 
 const port = Number(process.env["BACKEND_PORT"] ?? "3001");
 
@@ -14,7 +15,8 @@ const app = createApp({
   runtimesRepository: createRuntimesRepositoryFromEnvironment(),
   aiProvidersRepository: createAiProvidersRepositoryFromEnvironment(),
   aiAgentsRepository: createAiAgentsRepositoryFromEnvironment(),
-  aiToolsRepository: createAiToolsRepositoryFromEnvironment()
+  aiToolsRepository: createAiToolsRepositoryFromEnvironment(),
+  workflowsRepository: createWorkflowsRepositoryFromEnvironment()
 });
 const server = http.createServer(app);
 

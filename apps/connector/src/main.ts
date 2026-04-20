@@ -1,13 +1,31 @@
-import { toolAdapterSchema } from "@synosec/contracts";
+import { toolCapabilityTagSchema, toolPrivilegeProfileSchema, toolSandboxProfileSchema } from "@synosec/contracts";
 import { SynoSecConnectorClient } from "./index.js";
 
-function readAllowedAdapters(): Array<ReturnType<typeof toolAdapterSchema.parse>> {
-  const rawValue = process.env["CONNECTOR_ALLOWED_ADAPTERS"] ?? "network_scan,service_scan,http_probe,tls_audit";
+function readAllowedCapabilities(): Array<ReturnType<typeof toolCapabilityTagSchema.parse>> {
+  const rawValue = process.env["CONNECTOR_ALLOWED_CAPABILITIES"] ?? "passive,web-recon,network-recon,content-discovery,active-recon";
   return rawValue
     .split(",")
     .map((value) => value.trim())
     .filter((value) => value.length > 0)
-    .map((value) => toolAdapterSchema.parse(value));
+    .map((value) => toolCapabilityTagSchema.parse(value));
+}
+
+function readAllowedSandboxProfiles(): Array<ReturnType<typeof toolSandboxProfileSchema.parse>> {
+  const rawValue = process.env["CONNECTOR_ALLOWED_SANDBOX_PROFILES"] ?? "network-recon,read-only-parser,active-recon";
+  return rawValue
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .map((value) => toolSandboxProfileSchema.parse(value));
+}
+
+function readAllowedPrivilegeProfiles(): Array<ReturnType<typeof toolPrivilegeProfileSchema.parse>> {
+  const rawValue = process.env["CONNECTOR_ALLOWED_PRIVILEGE_PROFILES"] ?? "read-only-network,active-network";
+  return rawValue
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .map((value) => toolPrivilegeProfileSchema.parse(value));
 }
 
 async function main() {
@@ -21,7 +39,9 @@ async function main() {
     registration: {
       name: process.env["CONNECTOR_NAME"] ?? "local-dev-connector",
       version: process.env["CONNECTOR_VERSION"] ?? "0.1.0",
-      allowedAdapters: readAllowedAdapters(),
+      allowedCapabilities: readAllowedCapabilities(),
+      allowedSandboxProfiles: readAllowedSandboxProfiles(),
+      allowedPrivilegeProfiles: readAllowedPrivilegeProfiles(),
       runMode: process.env["CONNECTOR_RUN_MODE"] === "execute"
         ? "execute"
         : process.env["CONNECTOR_RUN_MODE"] === "simulate"

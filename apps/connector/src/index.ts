@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import {
   connectorPollResponseSchema,
   connectorRegistrationResponseSchema,
@@ -6,6 +5,7 @@ import {
   type ConnectorExecutionResult,
   type ConnectorRegistrationRequest
 } from "@synosec/contracts";
+import { executeSandboxedConnectorJob } from "./sandbox/execute-job.js";
 
 export interface ConnectorClientOptions {
   baseUrl: string;
@@ -47,7 +47,9 @@ export class SynoSecConnectorClient {
 
     const job = payload.job;
     const result = await executeConnectorJob(job, {
-      allowedAdapters: this.options.registration.allowedAdapters,
+      allowedCapabilities: this.options.registration.allowedCapabilities,
+      allowedSandboxProfiles: this.options.registration.allowedSandboxProfiles,
+      allowedPrivilegeProfiles: this.options.registration.allowedPrivilegeProfiles,
       ...(this.options.commandTimeoutMs === undefined ? {} : { commandTimeoutMs: this.options.commandTimeoutMs })
     });
     await this.fetchImpl(this.url(`/api/connectors/${connectorId}/jobs/${job.id}/result`), {
@@ -73,16 +75,18 @@ export class SynoSecConnectorClient {
 export async function executeConnectorJob(
   job: ConnectorExecutionJob,
   options: {
-    allowedAdapters: ConnectorRegistrationRequest["allowedAdapters"];
+    allowedCapabilities: ConnectorRegistrationRequest["allowedCapabilities"];
+    allowedSandboxProfiles: ConnectorRegistrationRequest["allowedSandboxProfiles"];
+    allowedPrivilegeProfiles: ConnectorRegistrationRequest["allowedPrivilegeProfiles"];
     commandTimeoutMs?: number;
   }
 ): Promise<ConnectorExecutionResult> {
-  if (!options.allowedAdapters.includes(job.request.adapter)) {
+  if (!job.request.capabilities.some((capability) => options.allowedCapabilities.includes(capability))) {
     return {
       output: "",
       exitCode: 1,
       observations: [],
-      statusReason: `Adapter ${job.request.adapter} is not allowed by this connector.`
+      statusReason: `Capabilities ${job.request.capabilities.join(", ")} are not allowed by this connector.`
     };
   }
 
@@ -100,65 +104,6 @@ export async function executeConnectorJob(
         observations: []
       };
     case "execute":
-      return executeShellCommand(job.toolRun.commandPreview, options.commandTimeoutMs ?? 30000);
+      return executeSandboxedConnectorJob(job, options);
   }
-}
-
-async function executeShellCommand(command: string, timeoutMs: number): Promise<ConnectorExecutionResult> {
-  return new Promise<ConnectorExecutionResult>((resolve) => {
-    const child = spawn("sh", ["-lc", command], {
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      child.kill("SIGTERM");
-      resolve({
-        output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
-        exitCode: 124,
-        observations: [],
-        statusReason: `Connector command timed out after ${timeoutMs}ms.`
-      });
-    }, timeoutMs);
-
-    child.stdout.on("data", (chunk: Buffer | string) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk: Buffer | string) => {
-      stderr += chunk.toString();
-    });
-
-    child.on("close", (code) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      resolve({
-        output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
-        exitCode: code ?? 1,
-        observations: []
-      });
-    });
-
-    child.on("error", (error) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      resolve({
-        output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
-        exitCode: 1,
-        observations: [],
-        statusReason: error.message
-      });
-    });
-  });
 }

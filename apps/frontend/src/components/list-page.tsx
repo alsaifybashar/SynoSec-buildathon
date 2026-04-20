@@ -159,38 +159,41 @@ export function ListPage<T extends { id: string }>({
   const visiblePageNumbers = meta.totalPages === 0
     ? []
     : [meta.page, meta.page + 1, meta.page + 2].filter((page, index, values) => page <= meta.totalPages && values.indexOf(page) === index);
+  const sortColumn = query.sortBy ? columns.find((column) => column.id === query.sortBy) : undefined;
+  const sortLabel = sortColumn?.header ?? query.sortBy;
 
   return (
     <div className="space-y-3 pb-6">
       <PageHeader title={title} breadcrumbs={["Start", title]} />
 
-      <div className="m-3 flex flex-col gap-2.5 pt-3 md:pt-6">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={onAddRecord ?? handleDefaultAddRecord} className="h-9 text-[0.75rem]">
-            <Plus className="h-4 w-4" />
-            Add {recordLabel}
-          </Button>
-          <Button type="button" variant="outline" onClick={handleExportExcel} className="h-9 text-[0.75rem]">
-            <Download className="h-4 w-4" />
-            Export Excel
-          </Button>
-        </div>
+      <div className="mx-3 -mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-[0.625rem] uppercase tracking-[0.25em] text-muted-foreground md:justify-start">
+        <span>{meta.total.toLocaleString()} records</span>
+        <span aria-hidden className="h-px w-3 bg-border" />
+        {sortLabel ? (
+          <span>
+            Sort · {sortLabel} {query.sortDirection === "asc" ? "↑" : "↓"}
+          </span>
+        ) : (
+          <span>Unsorted</span>
+        )}
+      </div>
 
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-          <div className="relative flex-1 xl:max-w-md">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <div className="sticky top-0 z-10 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+        <div className="flex flex-col gap-2 px-3 py-2.5 md:flex-row md:items-center md:gap-2.5">
+          <div className="relative min-w-0 flex-1 md:max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query.q ?? ""}
               onChange={(event) => {
                 const value = event.target.value;
                 startTransition(() => onSearchChange(value));
               }}
-              placeholder={`Search ${recordLabel.toLowerCase()}s...`}
-              className="h-9 pl-10 text-[0.75rem]"
+              placeholder={`search ${recordLabel.toLowerCase()}s`}
+              className="h-9 pl-9 font-mono text-[0.75rem] placeholder:normal-case placeholder:text-muted-foreground/70"
             />
           </div>
 
-          <div className="flex flex-col gap-3 md:flex-row xl:ml-auto">
+          <div className="flex flex-wrap items-center gap-2 md:ml-auto md:flex-nowrap">
             {filters.map((filter) => (
               <div key={filter.id} className="md:w-[9.375rem] md:shrink-0">
                 {(() => {
@@ -221,6 +224,19 @@ export function ListPage<T extends { id: string }>({
                 })()}
               </div>
             ))}
+
+            <div aria-hidden className="hidden h-6 w-px bg-border/70 md:block" />
+
+            <div className="ml-auto flex items-center gap-2 md:ml-0">
+              <Button type="button" variant="outline" onClick={handleExportExcel} className="h-9 text-[0.75rem]">
+                <Download className="h-4 w-4" />
+                Export Excel
+              </Button>
+              <Button onClick={onAddRecord ?? handleDefaultAddRecord} className="h-9 text-[0.75rem]">
+                <Plus className="h-4 w-4" />
+                Add {recordLabel}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -242,7 +258,7 @@ export function ListPage<T extends { id: string }>({
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       {columns.map((column) => (
-                        <TableHead key={column.id} className={cn("border-b border-b-primary/10 border-t border-t-primary/10 bg-muted/60 text-[0.75rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground", column.className)}>
+                        <TableHead key={column.id} className={cn("border-b border-b-border border-t border-t-border bg-muted/40 font-mono text-[0.625rem] font-medium uppercase tracking-[0.24em] text-muted-foreground", column.className)}>
                           {column.header}
                         </TableHead>
                       ))}
@@ -307,11 +323,11 @@ export function ListPage<T extends { id: string }>({
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       {columns.map((column) => (
-                        <TableHead key={column.id} className={cn("border-b border-b-primary/10 border-t border-t-primary/10 bg-muted/60 text-[0.75rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground", column.className)}>
+                        <TableHead key={column.id} className={cn("border-b border-b-border border-t border-t-border bg-muted/40 font-mono text-[0.625rem] font-medium uppercase tracking-[0.24em] text-muted-foreground", column.className)}>
                           {column.sortable === false ? (
                             column.header
                           ) : (
-                            <button className="group/sort inline-flex items-center gap-2 text-[0.75rem] font-semibold" type="button" onClick={() => onSortChange(column.id)}>
+                            <button className="group/sort inline-flex items-center gap-1.5 font-mono text-[0.625rem] font-medium uppercase tracking-[0.24em]" type="button" onClick={() => onSortChange(column.id)}>
                               {column.header}
                               {query.sortBy === column.id ? (
                                 query.sortDirection === "asc" ? (
@@ -329,12 +345,11 @@ export function ListPage<T extends { id: string }>({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {items.map((row, rowIndex) => (
+                    {items.map((row) => (
                       <TableRow
                         key={row.id}
                         className={cn(
-                          "cursor-pointer border-l-2 border-l-transparent transition-colors duration-150 hover:border-l-primary hover:bg-accent/40",
-                          rowIndex % 2 === 1 && "bg-muted/10"
+                          "cursor-pointer border-l-2 border-l-transparent transition-colors duration-150 hover:border-l-primary hover:bg-accent/30"
                         )}
                         onClick={() => (onRowClick ? onRowClick(row) : handleDefaultRowClick())}
                       >

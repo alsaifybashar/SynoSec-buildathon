@@ -9,7 +9,9 @@ import {
   type ListAiToolsResponse,
   type ListApplicationsResponse,
   type ListRuntimesResponse,
+  type ListWorkflowsResponse,
   type Runtime,
+  type Workflow,
 } from "@synosec/contracts";
 import { fetchJson } from "@/lib/api";
 
@@ -91,6 +93,16 @@ type AiToolsQuery = {
   source: OptionalString;
   category: OptionalString;
   status: OptionalString;
+};
+
+type WorkflowsQuery = {
+  page: number;
+  pageSize: number;
+  q: string;
+  sortBy: "name" | "status" | "createdAt" | "updatedAt";
+  sortDirection: SortDirection;
+  status: OptionalString;
+  applicationId: OptionalString;
 };
 
 function buildQueryString(query: ListQueryState, defaults: ListQueryState) {
@@ -249,5 +261,19 @@ export const aiToolsResource = createResourceClient<AiTool, AiToolsQuery, ListAi
     source: undefined,
     category: undefined,
     status: undefined
+  }
+});
+
+export const workflowsResource = createResourceClient<Workflow, WorkflowsQuery, ListWorkflowsResponse>({
+  path: apiRoutes.workflows,
+  dataKey: "workflows",
+  defaultQuery: {
+    page: 1,
+    pageSize: 25,
+    q: "",
+    sortBy: "name",
+    sortDirection: "asc",
+    status: undefined,
+    applicationId: undefined
   }
 });

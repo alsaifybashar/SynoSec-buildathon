@@ -12,7 +12,7 @@ import { fetchJson } from "@/lib/api";
 import { useResourceDetail } from "@/hooks/useResourceDetail";
 import { useResourceList } from "@/hooks/useResourceList";
 import { aiAgentsResource, aiProvidersResource, aiToolsResource } from "@/lib/resources";
-import { DetailField, DetailFieldGroup, DetailPage, DetailSidebarItem } from "@/components/detail-page";
+import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/components/list-page";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -94,14 +94,16 @@ function definedString(value: string | undefined) {
 
 export function AiAgentsPage({
   agentId,
+  agentNameHint,
   onNavigateToList,
   onNavigateToCreate,
   onNavigateToDetail
 }: {
   agentId?: string;
+  agentNameHint?: string;
   onNavigateToList: () => void;
   onNavigateToCreate: () => void;
-  onNavigateToDetail: (id: string) => void;
+  onNavigateToDetail: (id: string, label?: string) => void;
 }) {
   const [agent, setAgent] = useState<AiAgent | null>(null);
   const [providers, setProviders] = useState<AiProvider[]>([]);
@@ -165,6 +167,12 @@ export function AiAgentsPage({
     }
 
     if (agentDetail.state !== "loaded") {
+      const empty = createEmptyFormValues();
+      const defaultProviderId = providers[0]?.id ?? "";
+      setAgent(null);
+      setFormValues({ ...empty, providerId: defaultProviderId });
+      setInitialValues({ ...empty, providerId: defaultProviderId });
+      setErrors({});
       return;
     }
 
@@ -173,7 +181,7 @@ export function AiAgentsPage({
     setFormValues(values);
     setInitialValues(values);
     setErrors({});
-  }, [agentDetail, agentId, onNavigateToList]);
+  }, [agentDetail, agentId, onNavigateToList, providers]);
 
   const providerLookup = useMemo(() => Object.fromEntries(providers.map((provider) => [provider.id, provider.name])), [providers]);
 
@@ -230,7 +238,7 @@ export function AiAgentsPage({
           body
         });
         toast.success("AI agent created");
-        onNavigateToDetail(created.id);
+        onNavigateToDetail(created.id, created.name);
         return;
       }
 
@@ -273,7 +281,18 @@ export function AiAgentsPage({
         onPageSizeChange={agentList.setPageSize}
         onRetry={agentList.refetch}
         onAddRecord={onNavigateToCreate}
-        onRowClick={(row) => onNavigateToDetail(row.id)}
+        onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
+      />
+    );
+  }
+
+  if (!isCreateMode && agentDetail.state !== "loaded") {
+    return (
+      <DetailLoadingState
+        title={agentNameHint ?? "AI agent detail"}
+        breadcrumbs={["Start", "AI Agents", agentNameHint ?? "Loading"]}
+        onBack={onNavigateToList}
+        message="Loading AI agent..."
       />
     );
   }

@@ -9,7 +9,7 @@ import { Router, type Request, type Response } from "express";
 import { assertConnectorAuth } from "@/integrations/connectors/auth.js";
 import { connectorControlPlane } from "@/integrations/connectors/control-plane.js";
 import { ToolBroker } from "@/workflows/broker/tool-broker.js";
-import { createScan, getScan } from "@/platform/db/neo4j.js";
+import { createScan, getScan } from "@/platform/db/scan-store.js";
 
 function getSinglePathParam(value: string | string[] | undefined): string | null {
   if (typeof value === "string") {

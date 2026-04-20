@@ -10,6 +10,7 @@ import {
   targetRuntimeId
 } from "./seed-data/ai-builder-defaults.js";
 import "../src/platform/env.js";
+import { attachExecutionConfig } from "../src/features/modules/ai-tools/tool-execution-config.js";
 
 const prisma = new PrismaClient();
 
@@ -120,12 +121,20 @@ async function main() {
           status: "active",
           source: "custom",
           description: tool.description,
-          adapter: tool.adapter,
+          adapter: null,
           binary: tool.binary,
           category: tool.category,
           riskTier: tool.riskTier,
           notes: tool.notes,
-          inputSchema: tool.inputSchema,
+          inputSchema: attachExecutionConfig(tool.inputSchema, {
+            executionMode: tool.executionMode,
+            sandboxProfile: tool.sandboxProfile,
+            privilegeProfile: tool.privilegeProfile,
+            defaultArgs: [...tool.defaultArgs],
+            timeoutMs: tool.timeoutMs,
+            scriptPath: tool.scriptPath,
+            capabilities: [...tool.capabilities]
+          }),
           outputSchema: tool.outputSchema
         },
         create: {
@@ -134,12 +143,20 @@ async function main() {
           status: "active",
           source: "custom",
           description: tool.description,
-          adapter: tool.adapter,
+          adapter: null,
           binary: tool.binary,
           category: tool.category,
           riskTier: tool.riskTier,
           notes: tool.notes,
-          inputSchema: tool.inputSchema,
+          inputSchema: attachExecutionConfig(tool.inputSchema, {
+            executionMode: tool.executionMode,
+            sandboxProfile: tool.sandboxProfile,
+            privilegeProfile: tool.privilegeProfile,
+            defaultArgs: [...tool.defaultArgs],
+            timeoutMs: tool.timeoutMs,
+            scriptPath: tool.scriptPath,
+            capabilities: [...tool.capabilities]
+          }),
           outputSchema: tool.outputSchema
         }
       })

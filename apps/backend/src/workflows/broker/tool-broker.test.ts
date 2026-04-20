@@ -2,16 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Observation, Scan, ToolRequest } from "@synosec/contracts";
 
 const mockCreateAuditEntry = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-const mockExecuteAdapter = vi.fn<
+const mockExecuteScriptedTool = vi.fn<
   (input: unknown) => Promise<{ observations: Observation[]; output: string; exitCode: number }>
 >();
 
-vi.mock("../../platform/db/neo4j.js", () => ({
+vi.mock("../../platform/db/scan-store.js", () => ({
   createAuditEntry: mockCreateAuditEntry
 }));
 
-vi.mock("./adapters.js", () => ({
-  executeAdapter: mockExecuteAdapter
+vi.mock("../tools/script-executor.js", () => ({
+  buildScriptCommandPreview: vi.fn(() => "scripts/tools/fake.sh"),
+  executeScriptedTool: mockExecuteScriptedTool
 }));
 
 const { evidenceStore } = await import("./evidence-store.js");
@@ -45,7 +46,9 @@ function makeScan(overrides: Partial<Scan> = {}): Scan {
 function makeRequest(overrides: Partial<ToolRequest> = {}): ToolRequest {
   return {
     tool: "sqlmap",
-    adapter: "db_injection_check",
+    toolId: "seed-sql-injection-check",
+    scriptPath: "scripts/tools/sql-injection-check.sh",
+    capabilities: ["database-security", "controlled-exploit"],
     target: "staging.synosec.local",
     layer: "L7",
     riskTier: "active",
@@ -63,14 +66,16 @@ describe("ToolBroker", () => {
 
   it("produces evidence-backed findings from adapter observations", async () => {
     const registerObservationSpy = vi.spyOn(confidenceEngine, "registerObservation");
-    mockExecuteAdapter.mockResolvedValueOnce({
+    mockExecuteScriptedTool.mockResolvedValueOnce({
       observations: [
         {
           id: "obs-1",
           scanId: "scan-1",
           tacticId: "node-1",
           toolRunId: "tool-run-1",
-          adapter: "db_injection_check",
+          toolId: "seed-sql-injection-check",
+          tool: "sqlmap",
+          capabilities: ["database-security", "controlled-exploit"],
           target: "staging.synosec.local",
           key: "sqli-1",
           title: "Potential SQL injection detected",
@@ -120,7 +125,9 @@ describe("ToolBroker", () => {
       requests: [
         makeRequest({
           tool: "ffuf",
-          adapter: "content_discovery",
+          toolId: "seed-content-discovery",
+          scriptPath: "scripts/tools/content-discovery.sh",
+          capabilities: ["content-discovery", "active-recon"],
           riskTier: "controlled-exploit"
         })
       ]
@@ -134,7 +141,7 @@ describe("ToolBroker", () => {
   it("marks tool runs as failed but continues scan when a tool execution errors", async () => {
     // Tool failures are logged and skipped — they must NOT terminate the scan.
     // BrokerExecutionError is reserved for hard policy violations, not tool-level errors.
-    mockExecuteAdapter.mockRejectedValueOnce(new Error("nmap execution failed: spawn ENOENT"));
+    mockExecuteScriptedTool.mockRejectedValueOnce(new Error("nmap execution failed: spawn ENOENT"));
 
     const broker = new ToolBroker({ broadcast: vi.fn() });
     const result = await broker.executeRequests({
@@ -149,7 +156,9 @@ describe("ToolBroker", () => {
       requests: [
         makeRequest({
           tool: "nmap",
-          adapter: "service_scan",
+          toolId: "seed-service-scan",
+          scriptPath: "scripts/tools/service-scan.sh",
+          capabilities: ["network-recon", "passive"],
           layer: "L4"
         })
       ]

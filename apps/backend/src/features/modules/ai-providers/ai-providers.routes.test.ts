@@ -11,6 +11,7 @@ import type { RuntimesRepository } from "../runtimes/runtimes.repository.js";
 import { MemoryAiProvidersRepository } from "../ai-providers/memory-ai-providers.repository.js";
 import { MemoryAiToolsRepository } from "../ai-tools/memory-ai-tools.repository.js";
 import { MemoryAiAgentsRepository } from "../ai-agents/memory-ai-agents.repository.js";
+import { MemoryWorkflowsRepository } from "../workflows/memory-workflows.repository.js";
 
 const seedProviders: Array<AiProvider & { apiKey: string | null }> = [
   {
@@ -57,7 +58,8 @@ function createTestApp() {
     runtimesRepository,
     aiProvidersRepository,
     aiAgentsRepository: new MemoryAiAgentsRepository(aiProvidersRepository, aiToolsRepository),
-    aiToolsRepository
+    aiToolsRepository,
+    workflowsRepository: new MemoryWorkflowsRepository(applicationsRepository, runtimesRepository, new MemoryAiAgentsRepository(aiProvidersRepository, aiToolsRepository))
   });
 }
 

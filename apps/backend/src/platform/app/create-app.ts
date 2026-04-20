@@ -7,6 +7,7 @@ import { type RuntimesRepository } from "@/features/modules/runtimes/runtimes.re
 import { type AiProvidersRepository } from "@/features/modules/ai-providers/ai-providers.repository.js";
 import { type AiAgentsRepository } from "@/features/modules/ai-agents/ai-agents.repository.js";
 import { type AiToolsRepository } from "@/features/modules/ai-tools/ai-tools.repository.js";
+import { type WorkflowsRepository } from "@/features/modules/workflows/workflows.repository.js";
 
 export function createApp(options: {
   applicationsRepository: ApplicationsRepository;
@@ -14,6 +15,7 @@ export function createApp(options: {
   aiProvidersRepository: AiProvidersRepository;
   aiAgentsRepository: AiAgentsRepository;
   aiToolsRepository: AiToolsRepository;
+  workflowsRepository: WorkflowsRepository;
 }): Express {
   const app = express();
 

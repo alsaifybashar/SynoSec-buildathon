@@ -5,7 +5,7 @@ import type { ScanScope } from "@synosec/contracts";
 
 const mockCreateAuditEntry = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
-vi.mock("../../platform/db/neo4j.js", () => ({
+vi.mock("../../platform/db/scan-store.js", () => ({
   createAuditEntry: mockCreateAuditEntry
 }));
 

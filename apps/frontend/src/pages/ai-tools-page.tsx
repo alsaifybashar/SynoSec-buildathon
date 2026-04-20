@@ -5,7 +5,9 @@ import {
   type AiTool,
   type AiToolStatus,
   type CreateAiToolBody,
-  type ToolAdapter,
+  type ToolExecutionMode,
+  type ToolPrivilegeProfile,
+  type ToolSandboxProfile,
   type ToolCategory,
   type ToolRiskTier
 } from "@synosec/contracts";
@@ -13,7 +15,7 @@ import { fetchJson } from "@/lib/api";
 import { useResourceDetail } from "@/hooks/useResourceDetail";
 import { useResourceList } from "@/hooks/useResourceList";
 import { aiToolsResource } from "@/lib/resources";
-import { DetailField, DetailFieldGroup, DetailPage, DetailSidebarItem } from "@/components/detail-page";
+import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/components/list-page";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,11 +26,17 @@ type ToolFormValues = {
   status: AiToolStatus;
   source: "custom" | "system";
   description: string;
-  adapter: ToolAdapter;
   binary: string;
+  scriptPath: string;
+  capabilitiesText: string;
   category: ToolCategory;
   riskTier: ToolRiskTier;
   notes: string;
+  executionMode: ToolExecutionMode;
+  sandboxProfile: ToolSandboxProfile | "";
+  privilegeProfile: ToolPrivilegeProfile | "";
+  defaultArgsText: string;
+  timeoutMsText: string;
   inputSchemaText: string;
   outputSchemaText: string;
 };
@@ -42,7 +50,9 @@ const statusLabels: Record<AiToolStatus, string> = {
 
 const categoryOptions: ToolCategory[] = ["web", "network", "content", "dns", "subdomain", "cloud", "utility", "password", "windows", "kubernetes", "forensics", "reversing", "exploitation"];
 const riskTierOptions: ToolRiskTier[] = ["passive", "active", "controlled-exploit"];
-const adapterOptions: ToolAdapter[] = ["external_tool", "http_probe", "httpx_probe", "web_crawl", "historical_urls", "feroxbuster_scan", "service_scan", "subdomain_enum", "nikto_scan", "nuclei_scan", "web_fingerprint", "content_discovery", "db_injection_check"];
+const executionModeOptions: ToolExecutionMode[] = ["catalog", "sandboxed"];
+const sandboxProfileOptions: ToolSandboxProfile[] = ["network-recon", "read-only-parser", "active-recon", "controlled-exploit-lab"];
+const privilegeProfileOptions: ToolPrivilegeProfile[] = ["read-only-network", "active-network", "controlled-exploit"];
 
 function createEmptyFormValues(): ToolFormValues {
   return {
@@ -50,11 +60,17 @@ function createEmptyFormValues(): ToolFormValues {
     status: "active",
     source: "custom",
     description: "",
-    adapter: "external_tool",
     binary: "",
+    scriptPath: "",
+    capabilitiesText: "",
     category: "utility",
     riskTier: "passive",
     notes: "",
+    executionMode: "catalog",
+    sandboxProfile: "",
+    privilegeProfile: "",
+    defaultArgsText: "",
+    timeoutMsText: "",
     inputSchemaText: JSON.stringify({ type: "object", properties: {} }, null, 2),
     outputSchemaText: JSON.stringify({ type: "object", properties: {} }, null, 2)
   };
@@ -66,11 +82,17 @@ function toFormValues(tool: AiTool): ToolFormValues {
     status: tool.status,
     source: tool.source,
     description: tool.description ?? "",
-    adapter: tool.adapter ?? "external_tool",
     binary: tool.binary ?? "",
+    scriptPath: tool.scriptPath ?? "",
+    capabilitiesText: tool.capabilities.join("\n"),
     category: tool.category,
     riskTier: tool.riskTier,
     notes: tool.notes ?? "",
+    executionMode: tool.executionMode,
+    sandboxProfile: tool.sandboxProfile ?? "",
+    privilegeProfile: tool.privilegeProfile ?? "",
+    defaultArgsText: tool.defaultArgs.join("\n"),
+    timeoutMsText: tool.timeoutMs == null ? "" : String(tool.timeoutMs),
     inputSchemaText: JSON.stringify(tool.inputSchema, null, 2),
     outputSchemaText: JSON.stringify(tool.outputSchema, null, 2)
   };
@@ -80,6 +102,7 @@ function parseRequestBody(values: ToolFormValues): { body?: CreateAiToolBody; er
   const errors: Partial<Record<keyof ToolFormValues, string>> = {};
   let inputSchema: unknown;
   let outputSchema: unknown;
+  let timeoutMs: number | null = null;
 
   if (!values.name.trim()) {
     errors.name = "Name is required.";
@@ -97,6 +120,15 @@ function parseRequestBody(values: ToolFormValues): { body?: CreateAiToolBody; er
     errors.outputSchemaText = "Output schema must be valid JSON.";
   }
 
+  if (values.timeoutMsText.trim()) {
+    const parsed = Number(values.timeoutMsText);
+    if (!Number.isInteger(parsed) || parsed < 1000) {
+      errors.timeoutMsText = "Timeout must be an integer of at least 1000ms.";
+    } else {
+      timeoutMs = parsed;
+    }
+  }
+
   if (Object.keys(errors).length > 0) {
     return { errors };
   }
@@ -107,11 +139,23 @@ function parseRequestBody(values: ToolFormValues): { body?: CreateAiToolBody; er
       status: values.status,
       source: "custom",
       description: values.description.trim() || null,
-      adapter: values.adapter,
       binary: values.binary.trim() || null,
+      scriptPath: values.scriptPath.trim() || null,
+      capabilities: values.capabilitiesText
+        .split("\n")
+        .map((value) => value.trim())
+        .filter(Boolean),
       category: values.category,
       riskTier: values.riskTier,
       notes: values.notes.trim() || null,
+      executionMode: values.executionMode,
+      sandboxProfile: values.sandboxProfile || null,
+      privilegeProfile: values.privilegeProfile || null,
+      defaultArgs: values.defaultArgsText
+        .split("\n")
+        .map((value) => value.trim())
+        .filter(Boolean),
+      timeoutMs,
       inputSchema: inputSchema as Record<string, unknown>,
       outputSchema: outputSchema as Record<string, unknown>
     },
@@ -129,14 +173,16 @@ function definedString(value: string | undefined) {
 
 export function AiToolsPage({
   toolId,
+  toolNameHint,
   onNavigateToList,
   onNavigateToCreate,
   onNavigateToDetail
 }: {
   toolId?: string;
+  toolNameHint?: string;
   onNavigateToList: () => void;
   onNavigateToCreate: () => void;
-  onNavigateToDetail: (id: string) => void;
+  onNavigateToDetail: (id: string, label?: string) => void;
 }) {
   const [tool, setTool] = useState<AiTool | null>(null);
   const [formValues, setFormValues] = useState<ToolFormValues>(createEmptyFormValues);
@@ -168,6 +214,11 @@ export function AiToolsPage({
     }
 
     if (toolDetail.state !== "loaded") {
+      const empty = createEmptyFormValues();
+      setTool(null);
+      setFormValues(empty);
+      setInitialValues(empty);
+      setErrors({});
       return;
     }
 
@@ -236,7 +287,7 @@ export function AiToolsPage({
           body: JSON.stringify(body)
         });
         toast.success("AI tool created");
-        onNavigateToDetail(created.id);
+        onNavigateToDetail(created.id, created.name);
         return;
       }
 
@@ -279,7 +330,18 @@ export function AiToolsPage({
         onPageSizeChange={toolList.setPageSize}
         onRetry={toolList.refetch}
         onAddRecord={onNavigateToCreate}
-        onRowClick={(row) => onNavigateToDetail(row.id)}
+        onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
+      />
+    );
+  }
+
+  if (!isCreateMode && toolDetail.state !== "loaded") {
+    return (
+      <DetailLoadingState
+        title={toolNameHint ?? "AI tool detail"}
+        breadcrumbs={["Start", "AI Tools", toolNameHint ?? "Loading"]}
+        onBack={onNavigateToList}
+        message="Loading AI tool..."
       />
     );
   }
@@ -300,6 +362,9 @@ export function AiToolsPage({
       sidebar={tool ? (
         <div className="space-y-4 rounded-xl border border-border bg-card/70 p-4">
           <DetailSidebarItem label="Source">{tool.source}</DetailSidebarItem>
+          <DetailSidebarItem label="Execution">{tool.executionMode}</DetailSidebarItem>
+          <DetailSidebarItem label="Sandbox">{tool.sandboxProfile ?? "Not set"}</DetailSidebarItem>
+          <DetailSidebarItem label="Privilege">{tool.privilegeProfile ?? "Not set"}</DetailSidebarItem>
           <DetailSidebarItem label="Category">{tool.category}</DetailSidebarItem>
           <DetailSidebarItem label="Risk tier">{tool.riskTier}</DetailSidebarItem>
           <DetailSidebarItem label="Updated">{formatTimestamp(tool.updatedAt)}</DetailSidebarItem>
@@ -322,20 +387,14 @@ export function AiToolsPage({
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Adapter">
-          <Select value={formValues.adapter} onValueChange={(value) => handleFieldChange("adapter", value as ToolAdapter)} disabled={Boolean(isSystemTool)}>
-            <SelectTrigger aria-label="Adapter">
-              <SelectValue placeholder="Select adapter" />
-            </SelectTrigger>
-            <SelectContent>
-              {adapterOptions.map((adapter) => (
-                <SelectItem key={adapter} value={adapter}>{adapter}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </DetailField>
         <DetailField label="Binary">
           <Input value={formValues.binary} onChange={(event) => handleFieldChange("binary", event.target.value)} aria-label="Binary" disabled={Boolean(isSystemTool)} />
+        </DetailField>
+        <DetailField label="Script path">
+          <Input value={formValues.scriptPath} onChange={(event) => handleFieldChange("scriptPath", event.target.value)} aria-label="Script path" disabled={Boolean(isSystemTool)} />
+        </DetailField>
+        <DetailField label="Capabilities" className="md:col-span-2">
+          <Textarea value={formValues.capabilitiesText} onChange={(event) => handleFieldChange("capabilitiesText", event.target.value)} aria-label="Capabilities" rows={4} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
         </DetailField>
         <DetailField label="Category">
           <Select value={formValues.category} onValueChange={(value) => handleFieldChange("category", value as ToolCategory)} disabled={Boolean(isSystemTool)}>
@@ -366,6 +425,50 @@ export function AiToolsPage({
         </DetailField>
         <DetailField label="Notes" className="md:col-span-2">
           <Input value={formValues.notes} onChange={(event) => handleFieldChange("notes", event.target.value)} aria-label="Notes" disabled={Boolean(isSystemTool)} />
+        </DetailField>
+        <DetailField label="Execution mode">
+          <Select value={formValues.executionMode} onValueChange={(value) => handleFieldChange("executionMode", value as ToolExecutionMode)} disabled={Boolean(isSystemTool)}>
+            <SelectTrigger aria-label="Execution mode">
+              <SelectValue placeholder="Select execution mode" />
+            </SelectTrigger>
+            <SelectContent>
+              {executionModeOptions.map((mode) => (
+                <SelectItem key={mode} value={mode}>{mode}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
+        <DetailField label="Sandbox profile">
+          <Select value={formValues.sandboxProfile || "__empty__"} onValueChange={(value) => handleFieldChange("sandboxProfile", value === "__empty__" ? "" : value as ToolSandboxProfile)} disabled={Boolean(isSystemTool)}>
+            <SelectTrigger aria-label="Sandbox profile">
+              <SelectValue placeholder="Select sandbox profile" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__empty__">Not set</SelectItem>
+              {sandboxProfileOptions.map((profile) => (
+                <SelectItem key={profile} value={profile}>{profile}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
+        <DetailField label="Privilege profile">
+          <Select value={formValues.privilegeProfile || "__empty__"} onValueChange={(value) => handleFieldChange("privilegeProfile", value === "__empty__" ? "" : value as ToolPrivilegeProfile)} disabled={Boolean(isSystemTool)}>
+            <SelectTrigger aria-label="Privilege profile">
+              <SelectValue placeholder="Select privilege profile" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__empty__">Not set</SelectItem>
+              {privilegeProfileOptions.map((profile) => (
+                <SelectItem key={profile} value={profile}>{profile}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
+        <DetailField label="Default args" className="md:col-span-2">
+          <Textarea value={formValues.defaultArgsText} onChange={(event) => handleFieldChange("defaultArgsText", event.target.value)} aria-label="Default args" rows={5} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
+        </DetailField>
+        <DetailField label="Timeout (ms)" {...definedString(errors.timeoutMsText)}>
+          <Input value={formValues.timeoutMsText} onChange={(event) => handleFieldChange("timeoutMsText", event.target.value)} aria-label="Timeout milliseconds" disabled={Boolean(isSystemTool)} />
         </DetailField>
       </DetailFieldGroup>
 

@@ -197,19 +197,15 @@ function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
 }
 
-export function getNeo4jDriver(): never {
-  throw new Error("Neo4j has been removed. Scan persistence is Postgres-backed.");
-}
-
-export async function ensureNeo4jAvailable(): Promise<void> {
+export async function ensureScanStoreAvailable(): Promise<void> {
   await prisma.$queryRaw`SELECT 1`;
 }
 
-export async function closeNeo4jDriver(): Promise<void> {
+export async function closeScanStore(): Promise<void> {
   await prisma.$disconnect();
 }
 
-export async function initNeo4jSchema(): Promise<void> {
+export async function initScanStoreSchema(): Promise<void> {
   await prisma.$queryRaw`SELECT 1`;
 }
 
@@ -272,7 +268,7 @@ export async function createDfsNode(node: ScanTactic): Promise<void> {
 export async function linkDiscoveredNodes(parentTacticId: string, childId: string): Promise<void> {
   await prisma.scanTactic.update({
     where: { id: childId },
-    data: { parentTacticId: parentTacticId }
+    data: { parentTacticId }
   });
 }
 

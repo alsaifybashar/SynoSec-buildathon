@@ -12,6 +12,10 @@ import { registerAiAgentsRoutes } from "@/features/modules/ai-agents/ai-agents.r
 import { type AiAgentsRepository } from "@/features/modules/ai-agents/ai-agents.repository.js";
 import { registerAiToolsRoutes } from "@/features/modules/ai-tools/ai-tools.routes.js";
 import { type AiToolsRepository } from "@/features/modules/ai-tools/ai-tools.repository.js";
+import { registerWorkflowsRoutes } from "@/features/modules/workflows/workflows.routes.js";
+import { WorkflowExecutionService } from "@/features/modules/workflows/workflow-execution.service.js";
+import { type WorkflowsRepository } from "@/features/modules/workflows/workflows.repository.js";
+import { WorkflowRunStream } from "@/features/modules/workflows/workflow-run-stream.js";
 import { createToolsRouter } from "@/platform/routes/tools.js";
 import { createConnectorsRouter } from "@/integrations/connectors/routes.js";
 
@@ -21,7 +25,19 @@ export function registerRoutes(app: Express, dependencies: {
   aiProvidersRepository: AiProvidersRepository;
   aiAgentsRepository: AiAgentsRepository;
   aiToolsRepository: AiToolsRepository;
+  workflowsRepository: WorkflowsRepository;
 }) {
+  const workflowRunStream = new WorkflowRunStream();
+  const workflowExecutionService = new WorkflowExecutionService(
+    dependencies.workflowsRepository,
+    dependencies.applicationsRepository,
+    dependencies.runtimesRepository,
+    dependencies.aiAgentsRepository,
+    dependencies.aiProvidersRepository,
+    dependencies.aiToolsRepository,
+    workflowRunStream
+  );
+
   registerHealthRoutes(app);
   registerDemoRoutes(app);
   registerBriefRoutes(app);
@@ -30,6 +46,7 @@ export function registerRoutes(app: Express, dependencies: {
   registerAiProvidersRoutes(app, dependencies.aiProvidersRepository);
   registerAiAgentsRoutes(app, dependencies.aiAgentsRepository);
   registerAiToolsRoutes(app, dependencies.aiToolsRepository);
+  registerWorkflowsRoutes(app, dependencies.workflowsRepository, workflowExecutionService, workflowRunStream);
   app.use(createToolsRouter());
   app.use(createConnectorsRouter());
 }

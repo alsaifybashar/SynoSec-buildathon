@@ -1,0 +1,157 @@
+import { z } from "zod";
+
+export const osiLayerSchema = z.enum(["L2", "L3", "L4", "L5", "L6", "L7"]);
+export type OsiLayer = z.infer<typeof osiLayerSchema>;
+
+export const osiLayerLabels: Record<OsiLayer, string> = {
+  L2: "Data Link",
+  L3: "Network",
+  L4: "Transport",
+  L5: "Session",
+  L6: "Presentation",
+  L7: "Application"
+};
+
+export const scanScopeSchema = z.object({
+  targets: z.array(z.string().min(1)).min(1).max(20),
+  exclusions: z.array(z.string()).default([]),
+  layers: z.array(osiLayerSchema).min(1).default(["L4", "L6", "L7"]),
+  maxDepth: z.number().int().min(1).max(8).default(3),
+  maxDurationMinutes: z.number().int().min(1).max(60).default(10),
+  rateLimitRps: z.number().int().min(1).max(50).default(5),
+  allowActiveExploits: z.boolean().default(false),
+  graceEnabled: z.boolean().default(true),
+  graceRoundInterval: z.number().int().min(1).max(10).default(3),
+  cyberRangeMode: z.enum(["simulation", "live"]).default("simulation")
+});
+export type ScanScope = z.infer<typeof scanScopeSchema>;
+
+export const llmProviderSchema = z.enum(["anthropic", "local"]);
+export type LlmProvider = z.infer<typeof llmProviderSchema>;
+
+export const scanLlmConfigSchema = z.object({
+  provider: llmProviderSchema.default("anthropic"),
+  model: z.string().trim().min(1).optional(),
+  baseUrl: z.string().trim().url().optional(),
+  apiPath: z.string().trim().min(1).optional()
+});
+export type ScanLlmConfig = z.infer<typeof scanLlmConfigSchema>;
+
+export const tacticStatusSchema = z.enum(["pending", "in-progress", "complete", "skipped"]);
+export type TacticStatus = z.infer<typeof tacticStatusSchema>;
+
+export const scanTacticSchema = z.object({
+  id: z.string(),
+  scanId: z.string(),
+  target: z.string(),
+  layer: osiLayerSchema,
+  service: z.string().optional(),
+  port: z.number().int().optional(),
+  riskScore: z.number().min(0).max(1),
+  status: tacticStatusSchema,
+  parentTacticId: z.string().nullable(),
+  depth: z.number().int().min(0),
+  createdAt: z.string().datetime()
+});
+export type ScanTactic = z.infer<typeof scanTacticSchema>;
+
+export const severitySchema = z.enum(["info", "low", "medium", "high", "critical"]);
+export type Severity = z.infer<typeof severitySchema>;
+
+export const severityOrder: Record<Severity, number> = {
+  info: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+  critical: 4
+};
+
+export const validationStatusSchema = z.enum([
+  "unverified",
+  "single_source",
+  "cross_validated",
+  "reproduced",
+  "rejected"
+]);
+export type ValidationStatus = z.infer<typeof validationStatusSchema>;
+
+export const findingSchema = z.object({
+  id: z.string(),
+  tacticId: z.string(),
+  scanId: z.string(),
+  agentId: z.string(),
+  severity: severitySchema,
+  confidence: z.number().min(0).max(1),
+  title: z.string(),
+  description: z.string(),
+  evidence: z.string(),
+  technique: z.string(),
+  reproduceCommand: z.string().optional(),
+  validated: z.boolean().default(false),
+  validationStatus: validationStatusSchema.optional(),
+  evidenceRefs: z.array(z.string()).optional(),
+  sourceToolRuns: z.array(z.string()).optional(),
+  confidenceReason: z.string().optional(),
+  createdAt: z.string().datetime()
+});
+export type Finding = z.infer<typeof findingSchema>;
+
+export const techniqueNodeSchema = z.object({
+  id: z.string(),
+  mitreId: z.string(),
+  name: z.string(),
+  tactic: z.string()
+});
+export type TechniqueNode = z.infer<typeof techniqueNodeSchema>;
+
+export const escalationRouteLinkSchema = z.object({
+  fromFindingId: z.string(),
+  toFindingId: z.string(),
+  probability: z.number().min(0).max(1),
+  order: z.number().int().min(0)
+});
+export type EscalationRouteLink = z.infer<typeof escalationRouteLinkSchema>;
+
+export const escalationRouteSchema = z.object({
+  id: z.string(),
+  scanId: z.string(),
+  title: z.string(),
+  compositeRisk: z.number().min(0).max(1),
+  technique: z.string(),
+  findingIds: z.array(z.string()),
+  links: z.array(escalationRouteLinkSchema),
+  startTarget: z.string(),
+  endTarget: z.string(),
+  chainLength: z.number().int().min(1),
+  confidence: z.number().min(0).max(1),
+  narrative: z.string().optional(),
+  createdAt: z.string().datetime()
+});
+export type EscalationRoute = z.infer<typeof escalationRouteSchema>;
+
+export const strategyAnalysisContextSchema = z.object({
+  detectedRoutes: z.array(escalationRouteSchema),
+  prioritizedTargets: z.array(z.string()),
+  knownOpenPorts: z.record(z.array(z.number().int())),
+  confirmedServices: z.record(z.array(z.string()))
+});
+export type StrategyAnalysisContext = z.infer<typeof strategyAnalysisContextSchema>;
+
+export const escalationRouteDetectionSchema = z.object({
+  startTarget: z.string(),
+  trigger: z.string(),
+  endTarget: z.string(),
+  impact: z.string(),
+  routeConfidence: z.number().min(0).max(1)
+});
+export type EscalationRouteDetection = z.infer<typeof escalationRouteDetectionSchema>;
+
+export const strategyAnalysisSchema = z.object({
+  scanId: z.string(),
+  detectedRoutes: z.array(escalationRouteSchema),
+  routeDetections: z.array(escalationRouteDetectionSchema),
+  prioritizedTargets: z.array(z.string()),
+  orphanedHighRiskFindingIds: z.array(z.string()),
+  generatedAt: z.string().datetime()
+});
+export type StrategyAnalysis = z.infer<typeof strategyAnalysisSchema>;

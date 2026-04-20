@@ -29,7 +29,8 @@ function makeScan(overrides: Partial<Scan> = {}): Scan {
 function makeRequest(overrides: Partial<ToolRequest> = {}): ToolRequest {
   return {
     tool: "nmap",
-    adapter: "network_scan",
+    scriptPath: "scripts/tools/service-scan.sh",
+    capabilities: ["network-recon", "passive"],
     target: "staging.synosec.local",
     layer: "L3",
     riskTier: "passive",
@@ -60,7 +61,7 @@ describe("authorizeToolRequest", () => {
     const decision = authorizeToolRequest(
       makeScan(),
       makeRequest({
-        adapter: "content_discovery",
+        capabilities: ["content-discovery", "active-recon"],
         riskTier: "controlled-exploit",
         tool: "ffuf",
         layer: "L7"
@@ -71,13 +72,11 @@ describe("authorizeToolRequest", () => {
     expect(decision.reason).toContain("disabled");
   });
 
-  it("allows active recon adapters even without allowActiveExploits", () => {
-    // session_audit (and nikto, nuclei, vuln_check) are recon tools, not exploits —
-    // they are permitted regardless of the allowActiveExploits flag
+  it("allows active recon capabilities even without allowActiveExploits", () => {
     const decision = authorizeToolRequest(
       makeScan(),
       makeRequest({
-        adapter: "session_audit",
+        capabilities: ["vulnerability-audit", "active-recon"],
         riskTier: "active",
         tool: "ssh-audit",
         layer: "L5"
@@ -87,11 +86,11 @@ describe("authorizeToolRequest", () => {
     expect(decision.allowed).toBe(true);
   });
 
-  it("denies db_injection_check when allowActiveExploits is false", () => {
+  it("denies exploit capabilities when allowActiveExploits is false", () => {
     const decision = authorizeToolRequest(
       makeScan(),
       makeRequest({
-        adapter: "db_injection_check",
+        capabilities: ["database-security", "controlled-exploit"],
         riskTier: "active",
         tool: "sqlmap",
         layer: "L7"
@@ -99,6 +98,6 @@ describe("authorizeToolRequest", () => {
     );
 
     expect(decision.allowed).toBe(false);
-    expect(decision.reason).toContain("requires allowActiveExploits");
+    expect(decision.reason).toContain("allowActiveExploits");
   });
 });

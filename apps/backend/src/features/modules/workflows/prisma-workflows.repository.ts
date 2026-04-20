@@ -4,13 +4,15 @@ import type {
   UpdateWorkflowBody,
   Workflow,
   WorkflowRun,
+  WorkflowTraceEntry,
+  WorkflowTraceEvent,
   WorkflowsListQuery
 } from "@synosec/contracts";
-import { PrismaClient } from "../../../platform/generated/prisma/index.js";
+import { Prisma, PrismaClient } from "../../../platform/generated/prisma/index.js";
 import type { PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
 import { RequestError } from "../../../platform/core/http/request-error.js";
 import { mapWorkflowRow, mapWorkflowRunRow } from "./workflows.mapper.js";
-import type { WorkflowsRepository } from "./workflows.repository.js";
+import type { WorkflowRunStatePatch, WorkflowsRepository } from "./workflows.repository.js";
 
 export class PrismaWorkflowsRepository implements WorkflowsRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -156,23 +158,112 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
         workflowId,
         status: "running"
       },
-      include: { traceEntries: true }
+      include: { traceEntries: true, traceEvents: true }
     });
 
-    return mapWorkflowRunRow(run);
+    return mapWorkflowRunRow(run as Parameters<typeof mapWorkflowRunRow>[0]);
   }
 
   async getRunById(runId: string): Promise<WorkflowRun | null> {
     const run = await this.prisma.workflowRun.findUnique({
       where: { id: runId },
-      include: { traceEntries: true }
+      include: { traceEntries: true, traceEvents: true }
     });
     return run ? mapWorkflowRunRow(run) : null;
+  }
+
+  async getLatestRunByWorkflowId(workflowId: string): Promise<WorkflowRun | null> {
+    const run = await this.prisma.workflowRun.findFirst({
+      where: { workflowId },
+      include: { traceEntries: true, traceEvents: true },
+      orderBy: { startedAt: "desc" }
+    });
+
+    return run ? mapWorkflowRunRow(run) : null;
+  }
+
+  async appendRunEvent(runId: string, event: WorkflowTraceEvent, patch: WorkflowRunStatePatch = {}): Promise<WorkflowRun> {
+    const updated = await this.prisma.workflowRun.update({
+      where: { id: runId },
+      data: {
+        ...(patch.status === undefined ? {} : { status: patch.status }),
+        ...(patch.currentStepIndex === undefined ? {} : { currentStepIndex: patch.currentStepIndex }),
+        ...(patch.completedAt === undefined ? {} : { completedAt: patch.completedAt ? new Date(patch.completedAt) : null }),
+        traceEvents: {
+          create: {
+            id: event.id,
+            workflowId: event.workflowId,
+            workflowStageId: event.workflowStageId,
+            stepIndex: event.stepIndex,
+            ord: event.ord,
+            type: event.type,
+            status: event.status,
+            title: event.title,
+            summary: event.summary,
+            detail: event.detail,
+            payload: event.payload as Prisma.InputJsonValue,
+            createdAt: new Date(event.createdAt)
+          }
+        }
+      },
+      include: { traceEntries: true, traceEvents: true }
+    });
+
+    return mapWorkflowRunRow(updated as Parameters<typeof mapWorkflowRunRow>[0]);
+  }
+
+  async appendTraceEntry(runId: string, traceEntry: WorkflowTraceEntry, patch: WorkflowRunStatePatch = {}): Promise<WorkflowRun> {
+    const updated = await this.prisma.workflowRun.update({
+      where: { id: runId },
+      data: {
+        ...(patch.status === undefined ? {} : { status: patch.status }),
+        ...(patch.currentStepIndex === undefined ? {} : { currentStepIndex: patch.currentStepIndex }),
+        ...(patch.completedAt === undefined ? {} : { completedAt: patch.completedAt ? new Date(patch.completedAt) : null }),
+        traceEntries: {
+          create: {
+            id: traceEntry.id,
+            workflowId: traceEntry.workflowId,
+            workflowStageId: traceEntry.workflowStageId,
+            stepIndex: traceEntry.stepIndex,
+            stageLabel: traceEntry.stageLabel,
+            agentId: traceEntry.agentId,
+            agentName: traceEntry.agentName,
+            status: traceEntry.status,
+            selectedToolIds: traceEntry.selectedToolIds,
+            toolSelectionReason: traceEntry.toolSelectionReason,
+            targetSummary: traceEntry.targetSummary,
+            evidenceHighlights: traceEntry.evidenceHighlights,
+            outputSummary: traceEntry.outputSummary,
+            createdAt: new Date(traceEntry.createdAt)
+          }
+        }
+      },
+      include: { traceEntries: true, traceEvents: true }
+    });
+
+    return mapWorkflowRunRow(updated as Parameters<typeof mapWorkflowRunRow>[0]);
+  }
+
+  async updateRunState(runId: string, patch: WorkflowRunStatePatch): Promise<WorkflowRun> {
+    const updated = await this.prisma.workflowRun.update({
+      where: { id: runId },
+      data: {
+        ...(patch.status === undefined ? {} : { status: patch.status }),
+        ...(patch.currentStepIndex === undefined ? {} : { currentStepIndex: patch.currentStepIndex }),
+        ...(patch.completedAt === undefined ? {} : { completedAt: patch.completedAt ? new Date(patch.completedAt) : null })
+      },
+      include: { traceEntries: true, traceEvents: true }
+    });
+
+    return mapWorkflowRunRow(updated as Parameters<typeof mapWorkflowRunRow>[0]);
   }
 
   async updateRun(run: WorkflowRun): Promise<WorkflowRun> {
     const updated = await this.prisma.$transaction(async (transaction) => {
       await transaction.workflowTraceEntry.deleteMany({
+        where: { workflowRunId: run.id }
+      });
+      await transaction.workflowTraceEvent.deleteMany({
         where: { workflowRunId: run.id }
       });
 
@@ -199,13 +290,29 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
               outputSummary: entry.outputSummary,
               createdAt: new Date(entry.createdAt)
             }))
+          },
+          traceEvents: {
+            create: run.events.map((event) => ({
+              id: event.id,
+              workflowId: event.workflowId,
+              workflowStageId: event.workflowStageId,
+              stepIndex: event.stepIndex,
+              ord: event.ord,
+              type: event.type,
+              status: event.status,
+              title: event.title,
+              summary: event.summary,
+              detail: event.detail,
+              payload: event.payload,
+              createdAt: new Date(event.createdAt)
+            })) as never
           }
         },
-        include: { traceEntries: true }
+        include: { traceEntries: true, traceEvents: true }
       });
     });
 
-    return mapWorkflowRunRow(updated);
+    return mapWorkflowRunRow(updated as Parameters<typeof mapWorkflowRunRow>[0]);
   }
 
   private async assertReferences(applicationId: string, runtimeId: string | null, agentIds: string[]) {

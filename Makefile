@@ -1,4 +1,4 @@
-.PHONY: help dev build test database dev-services docker-up docker-down docker-logs seed smoke-e2e free-dev-ports
+.PHONY: help dev build test database dev-services docker-up docker-down docker-logs seed smoke-e2e smoke-seeded-sandbox free-dev-ports wait-for-postgres
 
 ifneq (,$(wildcard .env))
 include .env
@@ -18,11 +18,12 @@ help:
 	@printf "\033[33m  make docker-logs\033[0m Follow all container logs\n"
 	@printf "\033[35m  make database\033[0m    Start Postgres, reset persisted app data, then generate Prisma client, push schema, and seed app data\n"
 	@printf "\033[35m  make dev-services\033[0m Start Docker-backed dev dependencies (Postgres, target, optional Ollama)\n"
-	@printf "\033[36m  make test\033[0m        Run tests for all workspace services\n"
+	@printf "\033[36m  make test\033[0m        Run workspace tests plus seeded sandbox smoke validation\n"
 	@printf "\033[33m  make dev\033[0m         Start local dev against Docker-backed infra\n"
 	@printf "\033[33m  make build\033[0m       Build all workspace packages\n"
 	@printf "\033[33m  make seed\033[0m        Seed demo data into running backend\n"
 	@printf "\033[33m  make smoke-e2e\033[0m  Run the Docker E2E smoke scan and print workflow evidence\n"
+	@printf "\033[33m  make smoke-seeded-sandbox\033[0m  Run seeded DB-backed tools through connector execute-mode sandbox\n"
 
 docker-up:
 	docker compose up --build -d --remove-orphans
@@ -82,18 +83,37 @@ dev-services:
 
 database:
 	docker compose up -d postgres
+	$(MAKE) wait-for-postgres
 	DATABASE_URL=postgres://synosec:synosec@localhost:$${POSTGRES_PORT:-55432}/synosec pnpm --filter @synosec/backend prisma:generate
 	DATABASE_URL=postgres://synosec:synosec@localhost:$${POSTGRES_PORT:-55432}/synosec pnpm --filter @synosec/backend exec prisma db push --accept-data-loss
 	DATABASE_URL=postgres://synosec:synosec@localhost:$${POSTGRES_PORT:-55432}/synosec pnpm --filter @synosec/backend prisma:seed
+
+wait-for-postgres:
+	@set -e; \
+	container_id=$$(docker compose ps -q postgres); \
+	if [ -z "$$container_id" ]; then \
+		printf "Postgres container not found\n" >&2; \
+		exit 1; \
+	fi; \
+	printf "Waiting for Postgres to become healthy"; \
+	until [ "$$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}starting{{end}}' "$$container_id")" = "healthy" ]; do \
+		printf "."; \
+		sleep 1; \
+	done; \
+	printf " ready\n"
 
 build:
 	pnpm --filter @synosec/contracts build && pnpm build
 
 test:
 	pnpm test
+	$(MAKE) smoke-seeded-sandbox
 
 seed:
 	curl -s -X POST http://localhost:$${BACKEND_PORT:-3001}/api/scan/seed | python3 -m json.tool
 
 smoke-e2e:
 	bash scripts/e2e-smoke.sh
+
+smoke-seeded-sandbox:
+	bash scripts/seeded-sandbox-smoke.sh
