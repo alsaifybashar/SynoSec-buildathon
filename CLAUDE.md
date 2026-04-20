@@ -87,8 +87,8 @@ hackathon/
 ├── .claude/
 │   ├── agents/            ← specialized sub-agents
 │   └── skills/            ← custom slash commands
-├── frontend/              ← UI
-├── backend/               ← API + business logic
+├── apps/frontend/         ← UI
+├── apps/backend/          ← API + business logic
 ├── data/                  ← seed data, schemas
 └── docs/                  ← pitch deck outline, demo script
 ```

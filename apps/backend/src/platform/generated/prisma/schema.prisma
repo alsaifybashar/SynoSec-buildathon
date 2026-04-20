@@ -1,0 +1,301 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/platform/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ApplicationEnvironment {
+  production
+  staging
+  development
+}
+
+enum ApplicationStatus {
+  active
+  investigating
+  archived
+}
+
+enum RuntimeServiceType {
+  gateway
+  api
+  worker
+  database
+  queue
+  storage
+  other
+}
+
+enum RuntimeProvider {
+  aws
+  gcp
+  azure
+  on_prem
+  docker
+  vercel
+  other
+}
+
+enum RuntimeStatus {
+  healthy
+  degraded
+  retired
+}
+
+enum AiProviderKind {
+  local
+  anthropic
+}
+
+enum AiProviderStatus {
+  active
+  inactive
+  error
+}
+
+enum AiAgentStatus {
+  draft
+  active
+  archived
+}
+
+enum AiToolSource {
+  system
+  custom
+}
+
+enum AiToolStatus {
+  active
+  inactive
+  missing
+  manual
+}
+
+enum ScanRunStatus {
+  pending
+  running
+  complete
+  aborted
+}
+
+enum ScanTacticStatus {
+  pending
+  in_progress
+  complete
+  skipped
+}
+
+model Application {
+  id            String                 @id @db.Uuid
+  name          String
+  baseUrl       String?                @map("base_url")
+  environment   ApplicationEnvironment
+  status        ApplicationStatus
+  lastScannedAt DateTime?              @map("last_scanned_at")
+  createdAt     DateTime               @default(now()) @map("created_at")
+  updatedAt     DateTime               @updatedAt @map("updated_at")
+  runtimes      Runtime[]
+
+  @@map("applications")
+}
+
+model Runtime {
+  id            String                 @id @db.Uuid
+  name          String
+  serviceType   RuntimeServiceType     @map("service_type")
+  provider      RuntimeProvider
+  environment   ApplicationEnvironment
+  region        String
+  status        RuntimeStatus
+  applicationId String?                @map("application_id") @db.Uuid
+  createdAt     DateTime               @default(now()) @map("created_at")
+  updatedAt     DateTime               @updatedAt @map("updated_at")
+  application   Application?           @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([applicationId])
+  @@map("runtimes")
+}
+
+model AiProvider {
+  id          String           @id @db.Uuid
+  name        String
+  kind        AiProviderKind
+  status      AiProviderStatus
+  description String?
+  baseUrl     String?          @map("base_url")
+  model       String
+  apiKey      String?          @map("api_key")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  agents      AiAgent[]
+
+  @@map("ai_providers")
+}
+
+model AiAgent {
+  id            String        @id @db.Uuid
+  name          String
+  status        AiAgentStatus
+  description   String?
+  providerId    String        @map("provider_id") @db.Uuid
+  systemPrompt  String        @map("system_prompt")
+  modelOverride String?       @map("model_override")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  provider      AiProvider    @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  tools         AiAgentTool[]
+
+  @@index([providerId])
+  @@map("ai_agents")
+}
+
+model AiTool {
+  id           String        @id
+  name         String
+  status       AiToolStatus
+  source       AiToolSource
+  description  String?
+  adapter      String?
+  binary       String?
+  category     String
+  riskTier     String        @map("risk_tier")
+  notes        String?
+  inputSchema  Json          @map("input_schema")
+  outputSchema Json          @map("output_schema")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  agents       AiAgentTool[]
+
+  @@map("ai_tools")
+}
+
+model AiAgentTool {
+  agentId String  @map("agent_id") @db.Uuid
+  toolId  String  @map("tool_id")
+  ord     Int
+  agent   AiAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  tool    AiTool  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, toolId])
+  @@index([toolId])
+  @@map("ai_agent_tools")
+}
+
+model ScanRun {
+  id               String            @id @db.Uuid
+  scope            Json
+  status           ScanRunStatus
+  currentRound     Int               @default(0) @map("current_round")
+  tacticsTotal     Int               @default(0) @map("tactics_total")
+  tacticsComplete  Int               @default(0) @map("tactics_complete")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  completedAt      DateTime?         @map("completed_at")
+  scanTactics      ScanTactic[]
+  scanFindings     ScanFinding[]
+  scanAuditEntries ScanAuditEntry[]
+  escalationRoutes EscalationRoute[]
+
+  @@map("scan_runs")
+}
+
+model ScanTactic {
+  id             String           @id @db.Uuid
+  scanRunId      String           @map("scan_run_id") @db.Uuid
+  target         String
+  layer          String
+  service        String?
+  port           Int?
+  riskScore      Float            @map("risk_score")
+  status         ScanTacticStatus
+  parentTacticId String?          @map("parent_tactic_id") @db.Uuid
+  depth          Int
+  createdAt      DateTime         @default(now()) @map("created_at")
+  scanRun        ScanRun          @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+  parentTactic   ScanTactic?      @relation("ScanTacticChildren", fields: [parentTacticId], references: [id], onDelete: SetNull)
+  childTactics   ScanTactic[]     @relation("ScanTacticChildren")
+  scanFindings   ScanFinding[]
+
+  @@index([scanRunId])
+  @@index([scanRunId, status, depth, riskScore(sort: Desc)])
+  @@index([parentTacticId])
+  @@map("scan_tactics")
+}
+
+model ScanFinding {
+  id               String                   @id @db.Uuid
+  scanRunId        String                   @map("scan_run_id") @db.Uuid
+  scanTacticId     String                   @map("scan_tactic_id") @db.Uuid
+  agentId          String                   @map("agent_id")
+  severity         String
+  confidence       Float
+  title            String
+  description      String
+  evidence         String
+  technique        String
+  reproduceCommand String?                  @map("reproduce_command")
+  validated        Boolean                  @default(false)
+  validationStatus String?                  @map("validation_status")
+  evidenceRefs     Json?                    @map("evidence_refs")
+  sourceToolRuns   Json?                    @map("source_tool_runs")
+  confidenceReason String?                  @map("confidence_reason")
+  createdAt        DateTime                 @default(now()) @map("created_at")
+  scanRun          ScanRun                  @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+  scanTactic       ScanTactic               @relation(fields: [scanTacticId], references: [id], onDelete: Cascade)
+  routeFindings    EscalationRouteFinding[]
+
+  @@index([scanRunId])
+  @@index([scanTacticId])
+  @@index([scanRunId, severity])
+  @@map("scan_findings")
+}
+
+model ScanAuditEntry {
+  id             String   @id @db.Uuid
+  scanRunId      String   @map("scan_run_id") @db.Uuid
+  timestamp      DateTime
+  actor          String
+  action         String
+  targetTacticId String?  @map("target_tactic_id") @db.Uuid
+  scopeValid     Boolean  @map("scope_valid")
+  details        Json
+  scanRun        ScanRun  @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+
+  @@index([scanRunId, timestamp])
+  @@map("scan_audit_entries")
+}
+
+model EscalationRoute {
+  id            String                   @id @db.Uuid
+  scanRunId     String                   @map("scan_run_id") @db.Uuid
+  title         String
+  compositeRisk Float                    @map("composite_risk")
+  technique     String
+  startTarget   String                   @map("start_target")
+  endTarget     String                   @map("end_target")
+  routeLength   Int                      @map("route_length")
+  confidence    Float
+  narrative     String?
+  createdAt     DateTime                 @default(now()) @map("created_at")
+  scanRun       ScanRun                  @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+  routeFindings EscalationRouteFinding[]
+
+  @@index([scanRunId, compositeRisk(sort: Desc)])
+  @@map("escalation_routes")
+}
+
+model EscalationRouteFinding {
+  escalationRouteId String          @map("escalation_route_id") @db.Uuid
+  scanFindingId     String          @map("scan_finding_id") @db.Uuid
+  ord               Int
+  linkProbability   Float?          @map("link_probability")
+  escalationRoute   EscalationRoute @relation(fields: [escalationRouteId], references: [id], onDelete: Cascade)
+  scanFinding       ScanFinding     @relation(fields: [scanFindingId], references: [id], onDelete: Cascade)
+
+  @@id([escalationRouteId, scanFindingId, ord])
+  @@index([scanFindingId])
+  @@map("escalation_route_findings")
+}

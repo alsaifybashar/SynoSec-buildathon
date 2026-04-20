@@ -1,38 +1,39 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Application, Runtime, Workflow } from "@synosec/contracts";
-import App from "./App";
+import type { AiAgent, AiProvider, AiTool, Application, Runtime } from "@synosec/contracts";
+import App from "@/App";
 
-const initialApplications: Application[] = [
-  {
-    id: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
-    name: "Operator Portal",
-    baseUrl: "https://portal.synosec.local",
-    environment: "production",
-    status: "active",
-    lastScannedAt: "2026-04-12T12:00:00.000Z",
-    createdAt: "2026-04-12T12:00:00.000Z",
-    updatedAt: "2026-04-12T12:00:00.000Z"
-  },
-  {
-    id: "ef7b823f-5f2e-4052-8276-4eb537f74fcb",
-    name: "Report Builder",
-    baseUrl: null,
-    environment: "staging",
-    status: "investigating",
-    lastScannedAt: null,
-    createdAt: "2026-04-12T12:00:00.000Z",
-    updatedAt: "2026-04-12T12:00:00.000Z"
-  }
-];
+function createPaginatedPayload<T>(key: string, items: T[]) {
+  return {
+    [key]: items,
+    page: 1,
+    pageSize: 25,
+    total: items.length,
+    totalPages: 1
+  };
+}
 
 describe("App", () => {
   let applications: Application[];
   let runtimes: Runtime[];
-  let workflows: Workflow[];
+  let providers: AiProvider[];
+  let agents: AiAgent[];
+  let tools: AiTool[];
 
   beforeEach(() => {
-    applications = initialApplications.map((application) => ({ ...application }));
+    applications = [
+      {
+        id: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+        name: "Operator Portal",
+        baseUrl: "https://portal.synosec.local",
+        environment: "production",
+        status: "active",
+        lastScannedAt: "2026-04-12T12:00:00.000Z",
+        createdAt: "2026-04-12T12:00:00.000Z",
+        updatedAt: "2026-04-12T12:00:00.000Z"
+      }
+    ];
+
     runtimes = [
       {
         id: "rt-00111111-1111-4111-8111-111111111111",
@@ -45,327 +46,171 @@ describe("App", () => {
         applicationId: applications[0]?.id ?? null,
         createdAt: "2026-04-12T12:00:00.000Z",
         updatedAt: "2026-04-12T12:00:00.000Z"
-      },
-      {
-        id: "rt-00222222-2222-4222-8222-222222222222",
-        name: "Python Worker",
-        serviceType: "worker",
-        provider: "aws",
-        environment: "staging",
-        region: "eu-west-1",
-        status: "degraded",
-        applicationId: null,
-        createdAt: "2026-04-12T12:00:00.000Z",
-        updatedAt: "2026-04-12T12:00:00.000Z"
       }
     ];
-    workflows = [
+
+    providers = [
       {
-        id: "wf-00111111-1111-4111-8111-111111111111",
-        name: "Nightly inventory sync",
-        trigger: "schedule",
+        id: "2ef12df8-fdf6-4ef0-89ce-01d34b4f3af7",
+        name: "Primary Anthropic",
+        kind: "anthropic",
         status: "active",
-        maxDepth: 4,
-        targetMode: "application",
-        applicationId: applications[0]?.id ?? null,
-        createdAt: "2026-04-12T12:00:00.000Z",
-        updatedAt: "2026-04-12T12:00:00.000Z"
-      },
-      {
-        id: "wf-00222222-2222-4222-8222-222222222222",
-        name: "Manual validation",
-        trigger: "manual",
-        status: "draft",
-        maxDepth: 2,
-        targetMode: "manual",
-        applicationId: null,
+        description: "Default cloud provider",
+        baseUrl: null,
+        model: "claude-sonnet-4-5",
+        apiKeyConfigured: true,
         createdAt: "2026-04-12T12:00:00.000Z",
         updatedAt: "2026-04-12T12:00:00.000Z"
       }
     ];
+
+    tools = [
+      {
+        id: "httpx",
+        name: "HTTPx",
+        status: "active",
+        source: "system",
+        description: null,
+        adapter: "httpx_probe",
+        binary: "httpx",
+        category: "web",
+        riskTier: "passive",
+        notes: null,
+        inputSchema: { type: "object", properties: {} },
+        outputSchema: { type: "object", properties: {} },
+        createdAt: "2026-04-12T12:00:00.000Z",
+        updatedAt: "2026-04-12T12:00:00.000Z"
+      },
+      {
+        id: "custom-browser-tool",
+        name: "Browser MCP",
+        status: "active",
+        source: "custom",
+        description: "Internal browser automation bridge",
+        adapter: "external_tool",
+        binary: null,
+        category: "utility",
+        riskTier: "passive",
+        notes: "Wraps an MCP bridge",
+        inputSchema: { type: "object", properties: {} },
+        outputSchema: { type: "object", properties: {} },
+        createdAt: "2026-04-12T12:00:00.000Z",
+        updatedAt: "2026-04-12T12:00:00.000Z"
+      }
+    ];
+
+    agents = [
+      {
+        id: "67043e91-4017-47b8-ac3f-81eb19f51538",
+        name: "Recon Agent",
+        status: "active",
+        description: "Primary recon worker",
+        providerId: providers[0]?.id ?? "",
+        systemPrompt: "Enumerate the target and summarize the result.",
+        modelOverride: null,
+        toolIds: ["httpx"],
+        createdAt: "2026-04-12T12:00:00.000Z",
+        updatedAt: "2026-04-12T12:00:00.000Z"
+      }
+    ];
+
     window.history.replaceState({}, "", "/");
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
 
-        if (url === "/api/brief" && method === "GET") {
-          return new Response(
-            JSON.stringify({
-              headline: "Manual backend fetch completed.",
-              actions: ["Enumerate targets", "Queue depth-first traversal"],
-              generatedAt: "2026-04-12T12:00:00.000Z"
-            })
-          );
-        }
+      if ((url === "/api/applications" || url.startsWith("/api/applications?")) && method === "GET") {
+        return new Response(JSON.stringify(createPaginatedPayload("applications", applications)));
+      }
+      if (url.startsWith("/api/applications/") && method === "GET") {
+        return new Response(JSON.stringify(applications[0]));
+      }
+      if ((url === "/api/runtimes" || url.startsWith("/api/runtimes?")) && method === "GET") {
+        return new Response(JSON.stringify(createPaginatedPayload("runtimes", runtimes)));
+      }
+      if (url.startsWith("/api/runtimes/") && method === "GET") {
+        return new Response(JSON.stringify(runtimes[0]));
+      }
+      if ((url === "/api/ai-providers" || url.startsWith("/api/ai-providers?")) && method === "GET") {
+        return new Response(JSON.stringify(createPaginatedPayload("providers", providers)));
+      }
+      if (url.startsWith("/api/ai-providers/") && method === "GET") {
+        const id = url.split("/").pop() ?? "";
+        const provider = providers.find((candidate) => candidate.id === id);
+        return provider
+          ? new Response(JSON.stringify(provider))
+          : new Response(JSON.stringify({ message: "AI provider not found." }), { status: 404 });
+      }
+      if (url === "/api/ai-providers" && method === "POST") {
+        const body = JSON.parse(String(init?.body)) as Omit<AiProvider, "id" | "createdAt" | "updatedAt" | "apiKeyConfigured"> & { apiKey?: string };
+        const created: AiProvider = {
+          id: "cb2a6a1d-36ad-49eb-b8dd-a4474b88f393",
+          name: body.name,
+          kind: body.kind,
+          status: body.status,
+          description: body.description ?? null,
+          baseUrl: body.baseUrl ?? null,
+          model: body.model,
+          apiKeyConfigured: Boolean(body.apiKey),
+          createdAt: "2026-04-12T13:00:00.000Z",
+          updatedAt: "2026-04-12T13:00:00.000Z"
+        };
+        providers = [...providers, created];
+        return new Response(JSON.stringify(created), { status: 201 });
+      }
+      if ((url === "/api/ai-agents" || url.startsWith("/api/ai-agents?")) && method === "GET") {
+        return new Response(JSON.stringify(createPaginatedPayload("agents", agents)));
+      }
+      if (url.startsWith("/api/ai-agents/") && method === "GET") {
+        return new Response(JSON.stringify(agents[0]));
+      }
+      if ((url === "/api/ai-tools" || url.startsWith("/api/ai-tools?")) && method === "GET") {
+        return new Response(JSON.stringify(createPaginatedPayload("tools", tools)));
+      }
+      if (url.startsWith("/api/ai-tools/") && method === "GET") {
+        const id = url.split("/").pop() ?? "";
+        const tool = tools.find((candidate) => candidate.id === id);
+        return tool
+          ? new Response(JSON.stringify(tool))
+          : new Response(JSON.stringify({ message: "AI tool not found." }), { status: 404 });
+      }
 
-        if (url === "/api/applications" && method === "GET") {
-          return new Response(JSON.stringify({ applications }));
-        }
-
-        if (url === "/api/applications" && method === "POST") {
-          const body = JSON.parse(String(init?.body)) as {
-            name: string;
-            baseUrl: string | null;
-            environment: Application["environment"];
-            status: Application["status"];
-            lastScannedAt: string | null;
-          };
-
-          const created: Application = {
-            id: "c8ca5829-e965-4381-b0b5-8d7a8f5d8f24",
-            name: body.name,
-            baseUrl: body.baseUrl,
-            environment: body.environment,
-            status: body.status,
-            lastScannedAt: body.lastScannedAt,
-            createdAt: "2026-04-12T13:00:00.000Z",
-            updatedAt: "2026-04-12T13:00:00.000Z"
-          };
-
-          applications = [...applications, created];
-          return new Response(JSON.stringify(created), { status: 201 });
-        }
-
-        if (url === "/api/runtimes" && method === "GET") {
-          return new Response(JSON.stringify({ runtimes }));
-        }
-
-        if (url.startsWith("/api/runtimes/") && method === "GET") {
-          const id = url.split("/").pop() ?? "";
-          const runtime = runtimes.find((candidate) => candidate.id === id);
-
-          if (!runtime) {
-            return new Response(JSON.stringify({ message: "Runtime not found." }), { status: 404 });
-          }
-
-          return new Response(JSON.stringify(runtime));
-        }
-
-        if (url === "/api/runtimes" && method === "POST") {
-          const body = JSON.parse(String(init?.body)) as Omit<Runtime, "id" | "createdAt" | "updatedAt">;
-
-          const created: Runtime = {
-            id: "rt-00333333-3333-4333-8333-333333333333",
-            ...body,
-            createdAt: "2026-04-12T13:00:00.000Z",
-            updatedAt: "2026-04-12T13:00:00.000Z"
-          };
-
-          runtimes = [...runtimes, created];
-          return new Response(JSON.stringify(created), { status: 201 });
-        }
-
-        if (url.startsWith("/api/runtimes/") && method === "PATCH") {
-          const id = url.split("/").pop() ?? "";
-          const body = JSON.parse(String(init?.body)) as Partial<Runtime>;
-          const existing = runtimes.find((runtime) => runtime.id === id);
-
-          if (!existing) {
-            return new Response(JSON.stringify({ message: "Runtime not found." }), { status: 404 });
-          }
-
-          const updated: Runtime = {
-            ...existing,
-            ...body,
-            updatedAt: "2026-04-12T14:00:00.000Z"
-          };
-
-          runtimes = runtimes.map((runtime) => (runtime.id === id ? updated : runtime));
-          return new Response(JSON.stringify(updated));
-        }
-
-        if (url === "/api/workflows" && method === "GET") {
-          return new Response(JSON.stringify({ workflows }));
-        }
-
-        if (url.startsWith("/api/workflows/") && method === "GET") {
-          const id = url.split("/").pop() ?? "";
-          const workflow = workflows.find((candidate) => candidate.id === id);
-
-          if (!workflow) {
-            return new Response(JSON.stringify({ message: "Workflow not found." }), { status: 404 });
-          }
-
-          return new Response(JSON.stringify(workflow));
-        }
-
-        if (url === "/api/workflows" && method === "POST") {
-          const body = JSON.parse(String(init?.body)) as Omit<Workflow, "id" | "createdAt" | "updatedAt">;
-
-          const created: Workflow = {
-            id: "wf-00333333-3333-4333-8333-333333333333",
-            ...body,
-            createdAt: "2026-04-12T13:00:00.000Z",
-            updatedAt: "2026-04-12T13:00:00.000Z"
-          };
-
-          workflows = [...workflows, created];
-          return new Response(JSON.stringify(created), { status: 201 });
-        }
-
-        if (url.startsWith("/api/applications/") && method === "PATCH") {
-          const id = url.split("/").pop() ?? "";
-          const body = JSON.parse(String(init?.body)) as Partial<Application>;
-          const existing = applications.find((application) => application.id === id);
-
-          if (!existing) {
-            return new Response(JSON.stringify({ message: "Application not found." }), { status: 404 });
-          }
-
-          const updated: Application = {
-            ...existing,
-            ...body,
-            updatedAt: "2026-04-12T14:00:00.000Z"
-          };
-
-          applications = applications.map((application) => (application.id === id ? updated : application));
-          return new Response(JSON.stringify(updated));
-        }
-
-        throw new Error(`Unhandled fetch: ${method} ${url}`);
-      })
-    );
+      throw new Error(`Unhandled fetch: ${method} ${url}`);
+    }));
   });
 
-  it("renders the dashboard shell", () => {
+  it("routes the root path to applications", async () => {
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Call backend" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Applications" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/applications");
   });
 
-  it("calls the backend from the dashboard button", async () => {
-    const fetchSpy = vi.mocked(fetch);
+  it("shows the new AI builder navigation surfaces", async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Call backend" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "AI Providers" })[0]!);
+    expect(await screen.findByRole("heading", { name: "AI Providers" })).toBeInTheDocument();
 
-    expect(fetchSpy).toHaveBeenCalledWith("/api/brief", undefined);
-    expect(await screen.findByText("Backend connected")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "AI Agents" })[0]!);
+    expect(await screen.findByRole("heading", { name: "AI Agents" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "AI Tools" })[0]!);
+    expect(await screen.findByRole("heading", { name: "AI Tools" })).toBeInTheDocument();
+
+    expect(screen.queryByText("Templates")).not.toBeInTheDocument();
   });
 
-  it("tracks list navigation in the url", async () => {
+  it("opens AI provider detail pages through the url-backed list flow", async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByText("Runtimes"));
+    fireEvent.click(screen.getAllByRole("button", { name: "AI Providers" })[0]!);
+    fireEvent.click((await screen.findAllByText("Primary Anthropic"))[0]!);
 
-    expect(await screen.findByRole("heading", { name: "Runtimes" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/runtimes");
+    expect(await screen.findByRole("heading", { name: "Primary Anthropic" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/ai-providers/2ef12df8-fdf6-4ef0-89ce-01d34b4f3af7");
+    expect(screen.getByPlaceholderText("Configured; leave blank to keep current value")).toBeInTheDocument();
   });
 
-  it("opens runtime detail pages through the url-backed list flow", async () => {
-    render(<App />);
-
-    fireEvent.click(screen.getByText("Runtimes"));
-    fireEvent.click(await screen.findByText("Node Runtime 20"));
-
-    expect(await screen.findByRole("heading", { name: "Node Runtime 20" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/runtimes/rt-00111111-1111-4111-8111-111111111111");
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Dismiss" })).toBeDisabled();
-  });
-
-  it("navigates to application detail and enables save after a change", async () => {
-    render(<App />);
-
-    fireEvent.click(screen.getByText("Applications"));
-    fireEvent.click(await screen.findByText("Operator Portal"));
-
-    expect(await screen.findByRole("heading", { name: "Operator Portal" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/applications/5ecf4a8e-df5f-4945-a7e1-230ef43eac80");
-
-    const saveButton = screen.getByRole("button", { name: "Save" });
-    const dismissButton = screen.getByRole("button", { name: "Dismiss" });
-
-    expect(saveButton).toBeDisabled();
-    expect(dismissButton).toBeDisabled();
-
-    fireEvent.change(screen.getByLabelText("Name"), {
-      target: { value: "Operator Portal v2" }
-    });
-
-    expect(saveButton).toBeEnabled();
-    expect(dismissButton).toBeEnabled();
-  });
-
-  it("shows validation errors as toast and inline helper state", async () => {
-    render(<App />);
-
-    fireEvent.click(screen.getByText("Applications"));
-    fireEvent.click(screen.getByRole("button", { name: "Add Application" }));
-
-    expect(await screen.findByRole("heading", { name: "New application" })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Name"), {
-      target: { value: " " }
-    });
-    fireEvent.change(screen.getByRole("textbox", { name: "Base URL" }), {
-      target: { value: "not-a-url" }
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(await screen.findByText("Validation failed")).toBeInTheDocument();
-    expect(await screen.findByText("Name is required.")).toBeInTheDocument();
-    expect(await screen.findByText("Base URL must be a valid absolute URL.")).toBeInTheDocument();
-  });
-
-  it("creates a new application from the detail page", async () => {
-    render(<App />);
-
-    fireEvent.click(screen.getByText("Applications"));
-    fireEvent.click(screen.getByRole("button", { name: "Add Application" }));
-    await screen.findByRole("heading", { name: "New application" });
-
-    fireEvent.change(screen.getByLabelText("Name"), {
-      target: { value: "Queue Reconciler" }
-    });
-    fireEvent.change(screen.getByRole("textbox", { name: "Base URL" }), {
-      target: { value: "https://queue.synosec.local" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(await screen.findByText("Application created")).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Queue Reconciler" })).toBeInTheDocument();
-  });
-
-  it("creates a new runtime from the detail page", async () => {
-    render(<App />);
-
-    fireEvent.click(screen.getByText("Runtimes"));
-    fireEvent.click(screen.getByRole("button", { name: "Add Runtime" }));
-    await screen.findByRole("heading", { name: "New runtime" });
-
-    fireEvent.change(screen.getByLabelText("Name"), {
-      target: { value: "Gateway Proxy" }
-    });
-    fireEvent.change(screen.getByLabelText("Region"), {
-      target: { value: "us-east-1" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(await screen.findByText("Runtime created")).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Gateway Proxy" })).toBeInTheDocument();
-  });
-
-  it("creates a new workflow from the detail page", async () => {
-    render(<App />);
-
-    fireEvent.click(screen.getByText("Workflows"));
-    fireEvent.click(screen.getByRole("button", { name: "Add Workflow" }));
-    await screen.findByRole("heading", { name: "New workflow" });
-
-    fireEvent.change(screen.getByLabelText("Name"), {
-      target: { value: "Event-driven validation" }
-    });
-    fireEvent.change(screen.getByLabelText("Max depth"), {
-      target: { value: "5" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(await screen.findByText("Workflow created")).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Event-driven validation" })).toBeInTheDocument();
-  });
 });

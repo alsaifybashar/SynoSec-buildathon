@@ -1,27 +1,20 @@
-import { PrismaClient } from "@prisma/client";
 import { localDemoTargetDefaults } from "@synosec/contracts";
-import "../src/env.js";
+import { PrismaClient } from "../src/platform/generated/prisma/index.js";
+import {
+  getSeededProviderDefinitions,
+  getSeededWorkflowDefinitions,
+  localApplicationId,
+  seededAgentId,
+  seededRoleDefinitions as roleDefinitions,
+  seededToolDefinitions as toolDefinitions,
+  targetRuntimeId
+} from "./seed-data/ai-builder-defaults.js";
+import "../src/platform/env.js";
 
 const prisma = new PrismaClient();
 
-const localApplicationId = "5ecf4a8e-df5f-4945-a7e1-230ef43eac80";
-const targetRuntimeId = "6fd90dd7-6f27-47d0-ab24-6328bb2f3624";
-const localWorkflowId = "0adf35d4-ec20-429b-9a2d-08b3807ab7a1";
-
 async function main() {
-  await prisma.workflow.deleteMany({
-    where: {
-      id: { not: localWorkflowId },
-      name: {
-        in: [
-          "Nightly perimeter sweep",
-          "Ad-hoc runtime validation",
-          "Runtime reachability validation"
-        ]
-      }
-    }
-  });
-
+  const providerDefinitions = getSeededProviderDefinitions();
   await prisma.runtime.deleteMany({
     where: {
       id: { not: targetRuntimeId },
@@ -91,26 +84,155 @@ async function main() {
     }
   });
 
-  await prisma.workflow.upsert({
-    where: { id: localWorkflowId },
-    update: {
-      name: "Local vulnerable target scan",
-      trigger: "manual",
-      status: "active",
-      maxDepth: 3,
-      targetMode: "application",
-      applicationId: localApplicationId
-    },
-    create: {
-      id: localWorkflowId,
-      name: "Local vulnerable target scan",
-      trigger: "manual",
-      status: "active",
-      maxDepth: 3,
-      targetMode: "application",
-      applicationId: localApplicationId
+  await Promise.all(
+    providerDefinitions.map((provider) =>
+      prisma.aiProvider.upsert({
+        where: { id: provider.id },
+        update: {
+          name: provider.name,
+          kind: provider.kind,
+          status: "active",
+          description: provider.description,
+          baseUrl: provider.baseUrl,
+          model: provider.model,
+          apiKey: provider.apiKey
+        },
+        create: {
+          id: provider.id,
+          name: provider.name,
+          kind: provider.kind,
+          status: "active",
+          description: provider.description,
+          baseUrl: provider.baseUrl,
+          model: provider.model,
+          apiKey: provider.apiKey
+        }
+      })
+    )
+  );
+
+  await Promise.all(
+    toolDefinitions.map((tool) =>
+      prisma.aiTool.upsert({
+        where: { id: tool.id },
+        update: {
+          name: tool.name,
+          status: "active",
+          source: "custom",
+          description: tool.description,
+          adapter: tool.adapter,
+          binary: tool.binary,
+          category: tool.category,
+          riskTier: tool.riskTier,
+          notes: tool.notes,
+          inputSchema: tool.inputSchema,
+          outputSchema: tool.outputSchema
+        },
+        create: {
+          id: tool.id,
+          name: tool.name,
+          status: "active",
+          source: "custom",
+          description: tool.description,
+          adapter: tool.adapter,
+          binary: tool.binary,
+          category: tool.category,
+          riskTier: tool.riskTier,
+          notes: tool.notes,
+          inputSchema: tool.inputSchema,
+          outputSchema: tool.outputSchema
+        }
+      })
+    )
+  );
+
+  await Promise.all(
+    providerDefinitions.flatMap((provider) =>
+      roleDefinitions.map((role) =>
+        prisma.aiAgent.upsert({
+          where: { id: seededAgentId(provider.key, role.key) },
+          update: {
+            name: `${provider.name} ${role.name}`,
+            status: "active",
+            description: role.description,
+            providerId: provider.id,
+            systemPrompt: role.systemPrompt,
+            modelOverride: null
+          },
+          create: {
+            id: seededAgentId(provider.key, role.key),
+            name: `${provider.name} ${role.name}`,
+            status: "active",
+            description: role.description,
+            providerId: provider.id,
+            systemPrompt: role.systemPrompt,
+            modelOverride: null
+          }
+        })
+      )
+    )
+  );
+
+  const seededAgentIdList = providerDefinitions.flatMap((provider) =>
+    roleDefinitions.map((role) => seededAgentId(provider.key, role.key))
+  );
+
+  await prisma.aiAgentTool.deleteMany({
+    where: {
+      agentId: { in: seededAgentIdList }
     }
   });
+
+  await prisma.aiAgentTool.createMany({
+    data: providerDefinitions.flatMap((provider) =>
+      roleDefinitions.flatMap((role) =>
+        role.toolIds.map((toolId, index) => ({
+          agentId: seededAgentId(provider.key, role.key),
+          toolId,
+          ord: index
+        }))
+      )
+    )
+  });
+
+  const workflowDefinitions = getSeededWorkflowDefinitions();
+
+  await Promise.all(
+    workflowDefinitions.map(async (workflow) => {
+      await prisma.workflow.upsert({
+        where: { id: workflow.id },
+        update: {
+          name: workflow.name,
+          status: workflow.status,
+          description: workflow.description,
+          applicationId: workflow.applicationId,
+          runtimeId: workflow.runtimeId
+        },
+        create: {
+          id: workflow.id,
+          name: workflow.name,
+          status: workflow.status,
+          description: workflow.description,
+          applicationId: workflow.applicationId,
+          runtimeId: workflow.runtimeId
+        }
+      });
+
+      await prisma.workflowStage.deleteMany({
+        where: { workflowId: workflow.id }
+      });
+
+      await prisma.workflowStage.createMany({
+        data: workflow.stages.map((stage, index) => ({
+          id: stage.id,
+          workflowId: workflow.id,
+          label: stage.label,
+          agentId: stage.agentId,
+          ord: index
+        }))
+      });
+    })
+  );
 }
 
 main()

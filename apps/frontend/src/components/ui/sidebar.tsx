@@ -1,6 +1,6 @@
 import type { HTMLAttributes } from "react";
 import type { ReactNode } from "react";
-import { cn } from "../../lib/utils";
+import { cn } from "@/lib/utils";
 
 export function SidebarProvider({ children }: { children: ReactNode }) {
   return <>{children}</>;
@@ -10,7 +10,7 @@ export function Sidebar({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return (
     <aside
       className={cn(
-        "sticky top-0 hidden h-screen w-[280px] shrink-0 border-r border-border/70 bg-card/80 backdrop-blur xl:block",
+        "sticky top-0 hidden h-screen w-[196px] shrink-0 border-r border-border/70 bg-card/80 backdrop-blur xl:block",
         className
       )}
       {...props}

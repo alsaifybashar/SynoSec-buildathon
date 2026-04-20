@@ -30,13 +30,6 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
     --radius: 1rem;
-    --body-background:
-      radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 28%),
-      radial-gradient(circle at top right, rgba(148, 163, 184, 0.12), transparent 22%),
-      linear-gradient(180deg, rgba(255, 255, 255, 1) 0%, rgba(248, 250, 252, 1) 100%);
-    --app-shell-background:
-      radial-gradient(circle at top, rgba(59, 130, 246, 0.08), transparent 30%),
-      linear-gradient(180deg, #ffffff 0%, #f8fafc 52%, #ffffff 100%);
   }
 
   :root[data-theme="dark"] {
@@ -64,13 +57,6 @@
     --input: 217 19% 20%;
     --ring: 196 84% 58%;
     --radius: 1rem;
-    --body-background:
-      radial-gradient(circle at top left, rgba(14, 165, 233, 0.14), transparent 26%),
-      radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.12), transparent 24%),
-      linear-gradient(180deg, rgba(9, 14, 26, 1) 0%, rgba(12, 18, 31, 1) 100%);
-    --app-shell-background:
-      radial-gradient(circle at top, rgba(14, 165, 233, 0.12), transparent 30%),
-      linear-gradient(180deg, #0b1120 0%, #111827 52%, #0f172a 100%);
   }
 
   :root[data-theme="synosec"] {
@@ -98,13 +84,6 @@
     --input: 40 20% 88%;
     --ring: 188 79% 32%;
     --radius: 1rem;
-    --body-background:
-      radial-gradient(circle at top left, rgba(20, 184, 166, 0.16), transparent 28%),
-      radial-gradient(circle at top right, rgba(245, 158, 11, 0.15), transparent 22%),
-      linear-gradient(180deg, rgba(255, 253, 245, 1) 0%, rgba(250, 247, 238, 1) 100%);
-    --app-shell-background:
-      radial-gradient(circle at top, rgba(56, 189, 248, 0.12), transparent 30%),
-      linear-gradient(180deg, #f8fafc 0%, #eef2ff 48%, #f8fafc 100%);
   }
 
   :root[data-theme="amber"] {
@@ -132,13 +111,6 @@
     --input: 35 30% 84%;
     --ring: 24 92% 42%;
     --radius: 1rem;
-    --body-background:
-      radial-gradient(circle at top left, rgba(249, 115, 22, 0.16), transparent 28%),
-      radial-gradient(circle at top right, rgba(234, 179, 8, 0.18), transparent 24%),
-      linear-gradient(180deg, rgba(255, 251, 235, 1) 0%, rgba(254, 243, 199, 0.7) 100%);
-    --app-shell-background:
-      radial-gradient(circle at top, rgba(251, 146, 60, 0.16), transparent 32%),
-      linear-gradient(180deg, #fffbeb 0%, #fef3c7 48%, #fff7ed 100%);
   }
 
   * {
@@ -152,7 +124,6 @@
   body {
     @apply min-h-screen bg-background font-sans text-foreground antialiased;
     font-family: "Space Grotesk", system-ui, sans-serif;
-    background-image: var(--body-background);
   }
 
   #root {
@@ -162,72 +133,4 @@
   code, pre, .font-mono {
     font-family: "IBM Plex Mono", "Fira Code", ui-monospace, monospace;
   }
-}
-
-.scan-console {
-  --background: 222 47% 4%;
-  --foreground: 220 20% 90%;
-  --card: 222 47% 6%;
-  --card-foreground: 220 20% 90%;
-  --popover: 222 47% 6%;
-  --popover-foreground: 220 20% 90%;
-  --primary: 142 72% 50%;
-  --primary-foreground: 0 0% 0%;
-  --secondary: 222 30% 12%;
-  --secondary-foreground: 220 20% 80%;
-  --muted: 222 30% 10%;
-  --muted-foreground: 220 15% 50%;
-  --accent: 142 72% 15%;
-  --accent-foreground: 142 72% 60%;
-  --destructive: 0 72% 52%;
-  --destructive-foreground: 0 0% 100%;
-  --success: 142 72% 45%;
-  --success-foreground: 0 0% 0%;
-  --warning: 30 95% 45%;
-  --warning-foreground: 0 0% 0%;
-  --border: 222 30% 14%;
-  --input: 222 30% 12%;
-  --ring: 142 72% 50%;
-  --radius: 0.5rem;
-  background-image:
-    radial-gradient(circle at top, rgba(34, 197, 94, 0.12), transparent 30%),
-    linear-gradient(180deg, rgba(2, 6, 23, 0.98) 0%, rgba(3, 7, 18, 1) 100%);
-}
-
-/* React Flow dark theme overrides */
-.scan-console .react-flow__renderer {
-  background-color: #030712 !important;
-}
-
-.scan-console .react-flow__controls button {
-  background-color: #111827 !important;
-  border-color: #374151 !important;
-  color: #9ca3af !important;
-}
-
-.scan-console .react-flow__controls button:hover {
-  background-color: #1f2937 !important;
-}
-
-.scan-console .react-flow__minimap {
-  background-color: #111827 !important;
-}
-
-/* Scrollbar */
-.scan-console ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.scan-console ::-webkit-scrollbar-track {
-  background: #111827;
-}
-
-.scan-console ::-webkit-scrollbar-thumb {
-  background: #374151;
-  border-radius: 3px;
-}
-
-.scan-console ::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
 }

@@ -1,62 +1,28 @@
 import http from "node:http";
-import { WebSocket, WebSocketServer } from "ws";
-import type { WsEvent } from "@synosec/contracts";
-import "./core/env/load-env.js";
-import { createApp } from "./app/create-app.js";
-import { createApplicationsRepositoryFromEnvironment } from "./modules/applications/create-applications-repository.js";
-import { createRuntimesRepositoryFromEnvironment } from "./modules/runtimes/create-runtimes-repository.js";
-import { createWorkflowsRepositoryFromEnvironment } from "./modules/workflows/create-workflows-repository.js";
-import { closeNeo4jDriver, ensureNeo4jAvailable, initNeo4jSchema } from "./db/neo4j.js";
+import "@/core/env/load-env.js";
+import { createApp } from "@/platform/app/create-app.js";
+import { createApplicationsRepositoryFromEnvironment } from "@/features/modules/applications/create-applications-repository.js";
+import { createRuntimesRepositoryFromEnvironment } from "@/features/modules/runtimes/create-runtimes-repository.js";
+import { createAiProvidersRepositoryFromEnvironment } from "@/features/modules/ai-providers/create-ai-providers-repository.js";
+import { createAiAgentsRepositoryFromEnvironment } from "@/features/modules/ai-agents/create-ai-agents-repository.js";
+import { createAiToolsRepositoryFromEnvironment } from "@/features/modules/ai-tools/create-ai-tools-repository.js";
 
 const port = Number(process.env["BACKEND_PORT"] ?? "3001");
-const clients = new Set<WebSocket>();
-
-function broadcast(event: WsEvent): void {
-  const message = JSON.stringify(event);
-
-  for (const client of clients) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
-  }
-}
 
 const app = createApp({
   applicationsRepository: createApplicationsRepositoryFromEnvironment(),
   runtimesRepository: createRuntimesRepositoryFromEnvironment(),
-  workflowsRepository: createWorkflowsRepositoryFromEnvironment(),
-  broadcast
+  aiProvidersRepository: createAiProvidersRepositoryFromEnvironment(),
+  aiAgentsRepository: createAiAgentsRepositoryFromEnvironment(),
+  aiToolsRepository: createAiToolsRepositoryFromEnvironment()
 });
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: "/ws" });
-
-wss.on("connection", (socket) => {
-  clients.add(socket);
-
-  socket.on("close", () => {
-    clients.delete(socket);
-  });
-
-  socket.on("error", () => {
-    clients.delete(socket);
-  });
-});
-
-try {
-  await ensureNeo4jAvailable();
-  await initNeo4jSchema();
-} catch (error) {
-  console.warn("Neo4j unavailable. Scan features will return 503 until the graph database is reachable.");
-  console.warn(error instanceof Error ? error.message : error);
-}
 
 server.listen(port, () => {
   console.log(`Backend listening on http://localhost:${port}`);
-  console.log(`WebSocket server on ws://localhost:${port}/ws`);
 });
 
 async function shutdown() {
-  await closeNeo4jDriver();
   server.close(() => {
     process.exit(0);
   });

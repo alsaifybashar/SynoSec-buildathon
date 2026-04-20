@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   applicationSchema,
+  applicationsListQuerySchema,
   briefResponseSchema,
+  connectorPollResponseSchema,
+  connectorRegistrationRequestSchema,
+  connectorTestDispatchRequestSchema,
   createScanRequestSchema,
   createApplicationBodySchema,
+  createAiProviderBodySchema,
   defensiveIterationRecordSchema,
   defensiveLoopContract,
   defensiveLoopStages,
@@ -11,6 +16,11 @@ import {
   prioritizeDefensiveAction,
   demoResponseSchema,
   healthResponseSchema,
+  listApplicationsResponseSchema,
+  listScansResponseSchema,
+  scansListQuerySchema,
+  toolRunSchema,
+  updateAiProviderBodySchema,
   updateApplicationBodySchema
 } from "./index.js";
 
@@ -67,6 +77,47 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
+  it("applies defaults for application list queries", () => {
+    const result = applicationsListQuerySchema.safeParse({});
+
+    expect(result.success).toBe(true);
+
+    if (result.success) {
+      expect(result.data.page).toBe(1);
+      expect(result.data.pageSize).toBe(25);
+      expect(result.data.sortDirection).toBe("asc");
+    }
+  });
+
+  it("rejects invalid page sizes for list queries", () => {
+    const result = applicationsListQuerySchema.safeParse({ pageSize: 15 });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts paginated application responses", () => {
+    const result = listApplicationsResponseSchema.safeParse({
+      applications: [
+        {
+          id: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+          name: "Operator Portal",
+          baseUrl: "https://portal.synosec.local",
+          environment: "production",
+          status: "active",
+          lastScannedAt: "2026-04-12T12:00:00.000Z",
+          createdAt: "2026-04-12T12:00:00.000Z",
+          updatedAt: "2026-04-12T12:00:00.000Z"
+        }
+      ],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+      totalPages: 1
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("normalizes empty create payload values", () => {
     const result = createApplicationBodySchema.safeParse({
       name: "Report Builder",
@@ -89,6 +140,27 @@ describe("contracts", () => {
     expect(result.success).toBe(false);
   });
 
+  it("requires a base URL when creating a local AI provider", () => {
+    const result = createAiProviderBodySchema.safeParse({
+      name: "Local Ollama",
+      kind: "local",
+      status: "active",
+      description: "",
+      baseUrl: "",
+      model: "qwen3:4b"
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts partial AI provider updates", () => {
+    const result = updateAiProviderBodySchema.safeParse({
+      model: "claude-sonnet-4"
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("accepts a scan request with local llm overrides", () => {
     const result = createScanRequestSchema.safeParse({
       scope: {
@@ -109,6 +181,162 @@ describe("contracts", () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it("applies defaults for scan list queries", () => {
+    const result = scansListQuerySchema.safeParse({});
+
+    expect(result.success).toBe(true);
+
+    if (result.success) {
+      expect(result.data.sortBy).toBe("createdAt");
+      expect(result.data.sortDirection).toBe("desc");
+    }
+  });
+
+  it("accepts paginated scan responses", () => {
+    const result = listScansResponseSchema.safeParse({
+      scans: [
+        {
+          id: "scan-1",
+          scope: {
+            targets: ["localhost:8888"],
+            exclusions: [],
+            layers: ["L4", "L7"],
+            maxDepth: 2,
+            maxDurationMinutes: 5,
+            rateLimitRps: 5,
+            allowActiveExploits: false,
+            graceEnabled: true,
+            graceRoundInterval: 3,
+            cyberRangeMode: "simulation"
+          },
+          status: "running",
+          currentRound: 1,
+          tacticsTotal: 3,
+          tacticsComplete: 1,
+          createdAt: "2026-04-12T12:00:00.000Z"
+        }
+      ],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+      totalPages: 1
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts connector registration payloads", () => {
+    const result = connectorRegistrationRequestSchema.safeParse({
+      name: "local-connector",
+      version: "0.1.0",
+      allowedAdapters: ["http_probe", "service_scan"],
+      runMode: "dry-run",
+      concurrency: 1,
+      capabilities: [{ key: "hostname", value: "vps-01" }]
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts connector poll responses with leased tool runs", () => {
+    const result = connectorPollResponseSchema.safeParse({
+      connectorId: "connector-1",
+      job: {
+        id: "job-1",
+        connectorId: "connector-1",
+        scanId: "scan-1",
+        tacticId: "tactic-1",
+        agentId: "agent-1",
+        mode: "dry-run",
+        createdAt: "2026-04-20T12:00:00.000Z",
+        leasedAt: "2026-04-20T12:00:00.000Z",
+        leaseExpiresAt: "2026-04-20T12:00:15.000Z",
+        toolRun: {
+          id: "tool-run-1",
+          scanId: "scan-1",
+          tacticId: "tactic-1",
+          agentId: "agent-1",
+          tool: "curl",
+          adapter: "http_probe",
+          target: "example.com",
+          status: "running",
+          riskTier: "passive",
+          justification: "Check HTTP headers.",
+          commandPreview: "curl -I http://example.com",
+          dispatchMode: "connector",
+          connectorId: "connector-1",
+          startedAt: "2026-04-20T12:00:00.000Z",
+          leasedAt: "2026-04-20T12:00:00.000Z",
+          leaseExpiresAt: "2026-04-20T12:00:15.000Z"
+        },
+        request: {
+          tool: "curl",
+          adapter: "http_probe",
+          target: "example.com",
+          layer: "L7",
+          riskTier: "passive",
+          justification: "Check HTTP headers.",
+          parameters: {}
+        }
+      }
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("requires UUID scan and tactic ids for connector test dispatch", () => {
+    const result = connectorTestDispatchRequestSchema.safeParse({
+      scope: {
+        targets: ["example.com"],
+        exclusions: [],
+        layers: ["L7"],
+        maxDepth: 1,
+        maxDurationMinutes: 1,
+        rateLimitRps: 1,
+        allowActiveExploits: false,
+        graceEnabled: true,
+        graceRoundInterval: 3,
+        cyberRangeMode: "simulation"
+      },
+      request: {
+        tool: "curl",
+        adapter: "http_probe",
+        target: "example.com",
+        layer: "L7",
+        riskTier: "passive",
+        justification: "Connector smoke test.",
+        parameters: {}
+      },
+      scanId: "scan-smoke",
+      tacticId: "tactic-smoke"
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("applies local dispatch defaults for tool runs", () => {
+    const result = toolRunSchema.safeParse({
+      id: "tool-run-1",
+      scanId: "scan-1",
+      tacticId: "tactic-1",
+      agentId: "agent-1",
+      tool: "curl",
+      adapter: "http_probe",
+      target: "example.com",
+      status: "running",
+      riskTier: "passive",
+      justification: "Check HTTP headers.",
+      commandPreview: "curl -I http://example.com",
+      startedAt: "2026-04-20T12:00:00.000Z"
+    });
+
+    expect(result.success).toBe(true);
+
+    if (result.success) {
+      expect(result.data.dispatchMode).toBe("local");
+    }
   });
 
   it("defines the defensive loop stages in order", () => {

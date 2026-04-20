@@ -6,7 +6,15 @@ const reactRefresh = require("eslint-plugin-react-refresh");
 
 module.exports = tseslint.config(
   {
-    ignores: ["**/dist/**", "**/coverage/**", "**/node_modules/**", "eslint.config.js"]
+    ignores: [
+      "**/dist/**",
+      "**/coverage/**",
+      "**/node_modules/**",
+      "**/generated/**",
+      "**/*.js",
+      "**/*.mjs",
+      "eslint.config.js"
+    ]
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -14,7 +22,12 @@ module.exports = tseslint.config(
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parserOptions: {
-        project: ["./apps/*/tsconfig.json", "./apps/*/tsconfig.app.json", "./packages/*/tsconfig.json"],
+        project: [
+          "./apps/backend/tsconfig.json",
+          "./apps/frontend/tsconfig.app.json",
+          "./apps/connector/tsconfig.json",
+          "./packages/*/tsconfig.json"
+        ],
         tsconfigRootDir: __dirname
       },
       globals: {

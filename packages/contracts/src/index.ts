@@ -6,20 +6,18 @@ export const apiRoutes = {
   brief: "/api/brief",
   applications: "/api/applications",
   runtimes: "/api/runtimes",
+  aiProviders: "/api/ai-providers",
+  aiAgents: "/api/ai-agents",
+  aiTools: "/api/ai-tools",
   workflows: "/api/workflows",
-  scanCreate: "/api/scan",
-  scanList: "/api/scans",
-  scanGet: "/api/scan/:id",
-  scanFindings: "/api/scan/:id/findings",
-  scanGraph: "/api/scan/:id/graph",
-  scanChains: "/api/scan/:id/chains",
-  scanReport: "/api/scan/:id/report",
-  scanAbort: "/api/scan/:id/abort",
-  scanAudit: "/api/scan/:id/audit",
-  scanToolRuns: "/api/scan/:id/tool-runs",
-  scanEvidence: "/api/scan/:id/evidence",
-  scanSeed: "/api/scan/seed",
-  toolCapabilities: "/api/tools/capabilities"
+  workflowRuns: "/api/workflow-runs",
+  toolCapabilities: "/api/tools/capabilities",
+  connectorRegister: "/api/connectors/register",
+  connectorPoll: "/api/connectors/:connectorId/poll",
+  connectorHeartbeat: "/api/connectors/:connectorId/jobs/:jobId/heartbeat",
+  connectorResult: "/api/connectors/:connectorId/jobs/:jobId/result",
+  connectorTestDispatch: "/api/connectors/test-dispatch",
+  connectorStatus: "/api/connectors/status"
 } as const;
 
 export const localDemoTargetDefaults = {
@@ -59,6 +57,39 @@ export const briefResponseSchema = z.object({
 });
 export type BriefResponse = z.infer<typeof briefResponseSchema>;
 
+export const sortDirectionSchema = z.enum(["asc", "desc"]);
+export type SortDirection = z.infer<typeof sortDirectionSchema>;
+
+export const pageSchema = z.coerce.number().int().min(1).default(1);
+export const pageSizeSchema = z.coerce.number().int().refine((value) => [10, 25, 50, 100].includes(value), {
+  message: "Page size must be one of 10, 25, 50, or 100."
+}).default(25);
+export const paginatedMetaSchema = z.object({
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1),
+  total: z.number().int().min(0),
+  totalPages: z.number().int().min(0)
+});
+export type PaginatedMeta = z.infer<typeof paginatedMetaSchema>;
+
+export const resourceListQuerySchema = z.object({
+  page: pageSchema,
+  pageSize: pageSizeSchema,
+  q: z.string().trim().optional(),
+  sortBy: z.string().trim().min(1).optional(),
+  sortDirection: sortDirectionSchema.default("asc")
+});
+export type ResourceListQuery = z.infer<typeof resourceListQuerySchema>;
+
+export function createPaginatedResponseSchema<ItemSchema extends z.ZodTypeAny>(
+  key: string,
+  itemSchema: ItemSchema
+) {
+  return paginatedMetaSchema.extend({
+    [key]: z.array(itemSchema)
+  });
+}
+
 export const applicationEnvironmentSchema = z.enum(["production", "staging", "development"]);
 export type ApplicationEnvironment = z.infer<typeof applicationEnvironmentSchema>;
 
@@ -77,7 +108,14 @@ export const applicationSchema = z.object({
 });
 export type Application = z.infer<typeof applicationSchema>;
 
-export const listApplicationsResponseSchema = z.object({
+export const applicationsListQuerySchema = resourceListQuerySchema.extend({
+  status: applicationStatusSchema.optional(),
+  environment: applicationEnvironmentSchema.optional(),
+  sortBy: z.enum(["name", "status", "environment", "lastScannedAt", "createdAt", "updatedAt"]).optional()
+});
+export type ApplicationsListQuery = z.infer<typeof applicationsListQuerySchema>;
+
+export const listApplicationsResponseSchema = paginatedMetaSchema.extend({
   applications: z.array(applicationSchema)
 });
 export type ListApplicationsResponse = z.infer<typeof listApplicationsResponseSchema>;
@@ -121,7 +159,16 @@ export const runtimeSchema = z.object({
 });
 export type Runtime = z.infer<typeof runtimeSchema>;
 
-export const listRuntimesResponseSchema = z.object({
+export const runtimesListQuerySchema = resourceListQuerySchema.extend({
+  status: runtimeStatusSchema.optional(),
+  provider: runtimeProviderSchema.optional(),
+  environment: applicationEnvironmentSchema.optional(),
+  applicationId: z.string().uuid().optional(),
+  sortBy: z.enum(["name", "status", "provider", "environment", "region", "createdAt", "updatedAt"]).optional()
+});
+export type RuntimesListQuery = z.infer<typeof runtimesListQuerySchema>;
+
+export const listRuntimesResponseSchema = paginatedMetaSchema.extend({
   runtimes: z.array(runtimeSchema)
 });
 export type ListRuntimesResponse = z.infer<typeof listRuntimesResponseSchema>;
@@ -144,40 +191,233 @@ export const updateRuntimeBodySchema = runtimeBodyBaseSchema.partial().refine((v
 });
 export type UpdateRuntimeBody = z.infer<typeof updateRuntimeBodySchema>;
 
-export const workflowTriggerSchema = z.enum(["manual", "schedule", "event"]);
-export type WorkflowTrigger = z.infer<typeof workflowTriggerSchema>;
+export const aiProviderKindSchema = z.enum(["local", "anthropic"]);
+export type AiProviderKind = z.infer<typeof aiProviderKindSchema>;
 
-export const workflowStatusSchema = z.enum(["draft", "active", "paused"]);
+export const aiProviderStatusSchema = z.enum(["active", "inactive", "error"]);
+export type AiProviderStatus = z.infer<typeof aiProviderStatusSchema>;
+
+export const aiProviderSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  kind: aiProviderKindSchema,
+  status: aiProviderStatusSchema,
+  description: z.string().nullable(),
+  baseUrl: z.string().url().nullable(),
+  model: z.string().min(1),
+  apiKeyConfigured: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type AiProvider = z.infer<typeof aiProviderSchema>;
+
+export const aiProvidersListQuerySchema = resourceListQuerySchema.extend({
+  status: aiProviderStatusSchema.optional(),
+  kind: aiProviderKindSchema.optional(),
+  sortBy: z.enum(["name", "kind", "status", "model", "createdAt", "updatedAt"]).optional()
+});
+export type AiProvidersListQuery = z.infer<typeof aiProvidersListQuerySchema>;
+
+export const listAiProvidersResponseSchema = createPaginatedResponseSchema("providers", aiProviderSchema);
+export type ListAiProvidersResponse = z.infer<typeof listAiProvidersResponseSchema>;
+
+const aiProviderBodyBaseSchema = z.object({
+  name: z.string().trim().min(1),
+  kind: aiProviderKindSchema,
+  status: aiProviderStatusSchema,
+  description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
+  baseUrl: z.union([z.string().trim().url(), z.literal(""), z.null()]).transform((value) => value || null),
+  model: z.string().trim().min(1),
+  apiKey: z.string().trim().min(1).optional()
+});
+
+const requireLocalAiProviderBaseUrl = <T extends { kind: "local" | "anthropic"; baseUrl: string | null }>(value: T, ctx: z.RefinementCtx) => {
+  if (value.kind === "local" && !value.baseUrl) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Base URL is required for local providers.",
+      path: ["baseUrl"]
+    });
+  }
+};
+
+export const createAiProviderBodySchema = aiProviderBodyBaseSchema.superRefine(requireLocalAiProviderBaseUrl);
+export type CreateAiProviderBody = z.infer<typeof createAiProviderBodySchema>;
+
+export const updateAiProviderBodySchema = aiProviderBodyBaseSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field is required."
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind === "local" && !value.baseUrl) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Base URL is required for local providers.",
+        path: ["baseUrl"]
+      });
+    }
+  });
+export type UpdateAiProviderBody = z.infer<typeof updateAiProviderBodySchema>;
+
+export const aiToolSourceSchema = z.enum(["system", "custom"]);
+export type AiToolSource = z.infer<typeof aiToolSourceSchema>;
+
+export const aiToolStatusSchema = z.enum(["active", "inactive", "missing", "manual"]);
+export type AiToolStatus = z.infer<typeof aiToolStatusSchema>;
+
+export const aiToolSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  status: aiToolStatusSchema,
+  source: aiToolSourceSchema,
+  description: z.string().nullable(),
+  adapter: z.lazy(() => toolAdapterSchema).optional(),
+  binary: z.string().nullable(),
+  category: z.lazy(() => toolCategorySchema),
+  riskTier: z.lazy(() => toolRiskTierSchema),
+  notes: z.string().nullable(),
+  inputSchema: z.lazy(() => jsonSchemaObjectSchema),
+  outputSchema: z.lazy(() => jsonSchemaObjectSchema),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type AiTool = z.infer<typeof aiToolSchema>;
+
+export const aiToolsListQuerySchema = resourceListQuerySchema.extend({
+  status: aiToolStatusSchema.optional(),
+  source: aiToolSourceSchema.optional(),
+  category: z.lazy(() => toolCategorySchema).optional(),
+  sortBy: z.enum(["name", "source", "status", "category", "riskTier", "createdAt", "updatedAt"]).optional()
+});
+export type AiToolsListQuery = z.infer<typeof aiToolsListQuerySchema>;
+
+export const listAiToolsResponseSchema = createPaginatedResponseSchema("tools", aiToolSchema);
+export type ListAiToolsResponse = z.infer<typeof listAiToolsResponseSchema>;
+
+const aiToolBodyBaseSchema = z.object({
+  name: z.string().trim().min(1),
+  status: aiToolStatusSchema,
+  source: aiToolSourceSchema,
+  description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
+  adapter: z.lazy(() => toolAdapterSchema).optional(),
+  binary: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
+  category: z.lazy(() => toolCategorySchema),
+  riskTier: z.lazy(() => toolRiskTierSchema),
+  notes: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
+  inputSchema: z.lazy(() => jsonSchemaObjectSchema),
+  outputSchema: z.lazy(() => jsonSchemaObjectSchema)
+});
+
+export const createAiToolBodySchema = aiToolBodyBaseSchema.superRefine((value, ctx) => {
+  if (value.source === "system") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "System tools are synchronized from the backend catalog and cannot be created manually.",
+      path: ["source"]
+    });
+  }
+});
+export type CreateAiToolBody = z.infer<typeof createAiToolBodySchema>;
+
+export const updateAiToolBodySchema = aiToolBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
+  message: "At least one field is required."
+});
+export type UpdateAiToolBody = z.infer<typeof updateAiToolBodySchema>;
+
+export const aiAgentStatusSchema = z.enum(["draft", "active", "archived"]);
+export type AiAgentStatus = z.infer<typeof aiAgentStatusSchema>;
+
+export const aiAgentSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  status: aiAgentStatusSchema,
+  description: z.string().nullable(),
+  providerId: z.string().uuid(),
+  systemPrompt: z.string().min(1),
+  modelOverride: z.string().nullable(),
+  toolIds: z.array(z.string().min(1)).default([]),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type AiAgent = z.infer<typeof aiAgentSchema>;
+
+export const aiAgentsListQuerySchema = resourceListQuerySchema.extend({
+  status: aiAgentStatusSchema.optional(),
+  providerId: z.string().uuid().optional(),
+  sortBy: z.enum(["name", "status", "providerId", "createdAt", "updatedAt"]).optional()
+});
+export type AiAgentsListQuery = z.infer<typeof aiAgentsListQuerySchema>;
+
+export const listAiAgentsResponseSchema = createPaginatedResponseSchema("agents", aiAgentSchema);
+export type ListAiAgentsResponse = z.infer<typeof listAiAgentsResponseSchema>;
+
+const aiAgentBodyBaseSchema = z.object({
+  name: z.string().trim().min(1),
+  status: aiAgentStatusSchema,
+  description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
+  providerId: z.string().uuid(),
+  systemPrompt: z.string().min(1),
+  modelOverride: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null),
+  toolIds: z.array(z.string().min(1)).default([])
+});
+
+export const createAiAgentBodySchema = aiAgentBodyBaseSchema;
+export type CreateAiAgentBody = z.infer<typeof createAiAgentBodySchema>;
+
+export const updateAiAgentBodySchema = aiAgentBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
+  message: "At least one field is required."
+});
+export type UpdateAiAgentBody = z.infer<typeof updateAiAgentBodySchema>;
+
+export const workflowStatusSchema = z.enum(["draft", "active", "archived"]);
 export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
 
-export const workflowTargetModeSchema = z.enum(["application", "runtime", "manual"]);
-export type WorkflowTargetMode = z.infer<typeof workflowTargetModeSchema>;
+export const workflowStageSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string().min(1),
+  agentId: z.string().uuid(),
+  ord: z.number().int().min(0)
+});
+export type WorkflowStage = z.infer<typeof workflowStageSchema>;
 
 export const workflowSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
-  trigger: workflowTriggerSchema,
   status: workflowStatusSchema,
-  maxDepth: z.number().int().min(1).max(8),
-  targetMode: workflowTargetModeSchema,
-  applicationId: z.string().uuid().nullable(),
+  description: z.string().nullable(),
+  applicationId: z.string().uuid(),
+  runtimeId: z.string().uuid().nullable(),
+  stages: z.array(workflowStageSchema).min(1),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 });
 export type Workflow = z.infer<typeof workflowSchema>;
 
-export const listWorkflowsResponseSchema = z.object({
-  workflows: z.array(workflowSchema)
+export const workflowsListQuerySchema = resourceListQuerySchema.extend({
+  status: workflowStatusSchema.optional(),
+  applicationId: z.string().uuid().optional(),
+  sortBy: z.enum(["name", "status", "createdAt", "updatedAt"]).optional()
 });
+export type WorkflowsListQuery = z.infer<typeof workflowsListQuerySchema>;
+
+export const listWorkflowsResponseSchema = createPaginatedResponseSchema("workflows", workflowSchema);
 export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
+
+const workflowStageBodySchema = z.object({
+  id: z.string().uuid().optional(),
+  label: z.string().trim().min(1),
+  agentId: z.string().uuid()
+});
+export type WorkflowStageBody = z.infer<typeof workflowStageBodySchema>;
 
 const workflowBodyBaseSchema = z.object({
   name: z.string().trim().min(1),
-  trigger: workflowTriggerSchema,
   status: workflowStatusSchema,
-  maxDepth: z.number().int().min(1).max(8),
-  targetMode: workflowTargetModeSchema,
-  applicationId: z.union([z.string().uuid(), z.literal(""), z.null()]).transform((value) => value || null)
+  description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
+  applicationId: z.string().uuid(),
+  runtimeId: z.union([z.string().uuid(), z.literal(""), z.null()]).transform((value) => value || null),
+  stages: z.array(workflowStageBodySchema).min(1)
 });
 
 export const createWorkflowBodySchema = workflowBodyBaseSchema;
@@ -187,6 +427,68 @@ export const updateWorkflowBodySchema = workflowBodyBaseSchema.partial().refine(
   message: "At least one field is required."
 });
 export type UpdateWorkflowBody = z.infer<typeof updateWorkflowBodySchema>;
+
+export const workflowRunStatusSchema = z.enum(["pending", "running", "completed", "failed"]);
+export type WorkflowRunStatus = z.infer<typeof workflowRunStatusSchema>;
+
+export const workflowTraceEntryStatusSchema = z.enum(["completed", "failed"]);
+export type WorkflowTraceEntryStatus = z.infer<typeof workflowTraceEntryStatusSchema>;
+
+export const workflowTraceEntrySchema = z.object({
+  id: z.string().uuid(),
+  workflowRunId: z.string().uuid(),
+  workflowId: z.string().uuid(),
+  workflowStageId: z.string().uuid(),
+  stepIndex: z.number().int().min(0),
+  stageLabel: z.string().min(1),
+  agentId: z.string().uuid(),
+  agentName: z.string().min(1),
+  status: workflowTraceEntryStatusSchema,
+  selectedToolIds: z.array(z.string().min(1)),
+  toolSelectionReason: z.string().min(1),
+  targetSummary: z.string().min(1),
+  evidenceHighlights: z.array(z.string().min(1)),
+  outputSummary: z.string().min(1),
+  createdAt: z.string().datetime()
+});
+export type WorkflowTraceEntry = z.infer<typeof workflowTraceEntrySchema>;
+
+export const workflowRunSchema = z.object({
+  id: z.string().uuid(),
+  workflowId: z.string().uuid(),
+  status: workflowRunStatusSchema,
+  currentStepIndex: z.number().int().min(0),
+  startedAt: z.string().datetime(),
+  completedAt: z.string().datetime().nullable(),
+  trace: z.array(workflowTraceEntrySchema)
+});
+export type WorkflowRun = z.infer<typeof workflowRunSchema>;
+
+export const templateProviderSchema = z.enum(["local", "sonnet"]);
+export type TemplateProvider = z.infer<typeof templateProviderSchema>;
+
+export const templateVariableSchema = z.object({
+  name: z.string().trim().min(1),
+  description: z.string().trim().min(1).optional(),
+  required: z.boolean().default(false)
+});
+export type TemplateVariable = z.infer<typeof templateVariableSchema>;
+
+export const jsonSchemaObjectSchema = z.record(z.unknown());
+export type JsonSchemaObject = z.infer<typeof jsonSchemaObjectSchema>;
+
+export const templateAgentBlockSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().trim().min(1),
+  description: z.string().trim().min(1).optional(),
+  systemPrompt: z.string().min(1),
+  provider: templateProviderSchema,
+  model: z.string().trim().min(1),
+  allowedTools: z.array(z.string().trim().min(1)).default([]),
+  inputSchema: jsonSchemaObjectSchema,
+  outputSchema: jsonSchemaObjectSchema
+});
+export type TemplateAgentBlock = z.infer<typeof templateAgentBlockSchema>;
 
 export const osiLayerSchema = z.enum(["L2", "L3", "L4", "L5", "L6", "L7"]);
 export type OsiLayer = z.infer<typeof osiLayerSchema>;
@@ -225,10 +527,10 @@ export const scanLlmConfigSchema = z.object({
 });
 export type ScanLlmConfig = z.infer<typeof scanLlmConfigSchema>;
 
-export const nodeStatusSchema = z.enum(["pending", "in-progress", "complete", "skipped"]);
-export type NodeStatus = z.infer<typeof nodeStatusSchema>;
+export const tacticStatusSchema = z.enum(["pending", "in-progress", "complete", "skipped"]);
+export type TacticStatus = z.infer<typeof tacticStatusSchema>;
 
-export const dfsNodeSchema = z.object({
+export const scanTacticSchema = z.object({
   id: z.string(),
   scanId: z.string(),
   target: z.string(),
@@ -236,12 +538,12 @@ export const dfsNodeSchema = z.object({
   service: z.string().optional(),
   port: z.number().int().optional(),
   riskScore: z.number().min(0).max(1),
-  status: nodeStatusSchema,
-  parentId: z.string().nullable(),
+  status: tacticStatusSchema,
+  parentTacticId: z.string().nullable(),
   depth: z.number().int().min(0),
   createdAt: z.string().datetime()
 });
-export type DfsNode = z.infer<typeof dfsNodeSchema>;
+export type ScanTactic = z.infer<typeof scanTacticSchema>;
 
 export const severitySchema = z.enum(["info", "low", "medium", "high", "critical"]);
 export type Severity = z.infer<typeof severitySchema>;
@@ -265,7 +567,7 @@ export type ValidationStatus = z.infer<typeof validationStatusSchema>;
 
 export const findingSchema = z.object({
   id: z.string(),
-  nodeId: z.string(),
+  tacticId: z.string(),
   scanId: z.string(),
   agentId: z.string(),
   severity: severitySchema,
@@ -285,7 +587,7 @@ export const findingSchema = z.object({
 export type Finding = z.infer<typeof findingSchema>;
 
 // ---------------------------------------------------------------------------
-// GRACE — Graph-Reasoning Agents + Cyber Range Evaluation
+// Strategy Analysis
 // ---------------------------------------------------------------------------
 
 export const techniqueNodeSchema = z.object({
@@ -296,22 +598,22 @@ export const techniqueNodeSchema = z.object({
 });
 export type TechniqueNode = z.infer<typeof techniqueNodeSchema>;
 
-export const chainLinkSchema = z.object({
+export const escalationRouteLinkSchema = z.object({
   fromFindingId: z.string(),
   toFindingId: z.string(),
   probability: z.number().min(0).max(1),
   order: z.number().int().min(0)
 });
-export type ChainLink = z.infer<typeof chainLinkSchema>;
+export type EscalationRouteLink = z.infer<typeof escalationRouteLinkSchema>;
 
-export const vulnerabilityChainSchema = z.object({
+export const escalationRouteSchema = z.object({
   id: z.string(),
   scanId: z.string(),
   title: z.string(),
   compositeRisk: z.number().min(0).max(1),
   technique: z.string(),
   findingIds: z.array(z.string()),
-  links: z.array(chainLinkSchema),
+  links: z.array(escalationRouteLinkSchema),
   startTarget: z.string(),
   endTarget: z.string(),
   chainLength: z.number().int().min(1),
@@ -319,34 +621,34 @@ export const vulnerabilityChainSchema = z.object({
   narrative: z.string().optional(),
   createdAt: z.string().datetime()
 });
-export type VulnerabilityChain = z.infer<typeof vulnerabilityChainSchema>;
+export type EscalationRoute = z.infer<typeof escalationRouteSchema>;
 
-export const graceAgentContextSchema = z.object({
-  detectedChains: z.array(vulnerabilityChainSchema),
+export const strategyAnalysisContextSchema = z.object({
+  detectedRoutes: z.array(escalationRouteSchema),
   prioritizedTargets: z.array(z.string()),
   knownOpenPorts: z.record(z.array(z.number().int())),
   confirmedServices: z.record(z.array(z.string()))
 });
-export type GraceAgentContext = z.infer<typeof graceAgentContextSchema>;
+export type StrategyAnalysisContext = z.infer<typeof strategyAnalysisContextSchema>;
 
-export const graceChainDetectionSchema = z.object({
+export const escalationRouteDetectionSchema = z.object({
   startTarget: z.string(),
   trigger: z.string(),
   endTarget: z.string(),
   impact: z.string(),
-  chainConfidence: z.number().min(0).max(1)
+  routeConfidence: z.number().min(0).max(1)
 });
-export type GraceChainDetection = z.infer<typeof graceChainDetectionSchema>;
+export type EscalationRouteDetection = z.infer<typeof escalationRouteDetectionSchema>;
 
-export const graceReportSchema = z.object({
+export const strategyAnalysisSchema = z.object({
   scanId: z.string(),
-  detectedChains: z.array(vulnerabilityChainSchema),
-  chainDetections: z.array(graceChainDetectionSchema),
+  detectedRoutes: z.array(escalationRouteSchema),
+  routeDetections: z.array(escalationRouteDetectionSchema),
   prioritizedTargets: z.array(z.string()),
   orphanedHighRiskFindingIds: z.array(z.string()),
   generatedAt: z.string().datetime()
 });
-export type GraceReport = z.infer<typeof graceReportSchema>;
+export type StrategyAnalysis = z.infer<typeof strategyAnalysisSchema>;
 
 // ---------------------------------------------------------------------------
 // Tool execution + evidence
@@ -432,7 +734,7 @@ export type ToolRequest = z.infer<typeof toolRequestSchema>;
 export const toolRunSchema = z.object({
   id: z.string(),
   scanId: z.string(),
-  nodeId: z.string(),
+  tacticId: z.string(),
   agentId: z.string(),
   adapter: toolAdapterSchema,
   tool: z.string(),
@@ -442,7 +744,11 @@ export const toolRunSchema = z.object({
   riskTier: toolRiskTierSchema,
   justification: z.string(),
   commandPreview: z.string(),
+  dispatchMode: z.enum(["local", "connector"]).default("local"),
+  connectorId: z.string().optional(),
   startedAt: z.string().datetime(),
+  leasedAt: z.string().datetime().optional(),
+  leaseExpiresAt: z.string().datetime().optional(),
   completedAt: z.string().datetime().optional(),
   statusReason: z.string().optional(),
   output: z.string().optional(),
@@ -450,10 +756,113 @@ export const toolRunSchema = z.object({
 });
 export type ToolRun = z.infer<typeof toolRunSchema>;
 
+export const connectorRunModeSchema = z.enum(["execute", "dry-run", "simulate"]);
+export type ConnectorRunMode = z.infer<typeof connectorRunModeSchema>;
+
+export const connectorCapabilitySchema = z.object({
+  key: z.string().min(1),
+  value: z.string().min(1)
+});
+export type ConnectorCapability = z.infer<typeof connectorCapabilitySchema>;
+
+export const connectorRegistrationRequestSchema = z.object({
+  name: z.string().trim().min(1),
+  version: z.string().trim().min(1),
+  allowedAdapters: z.array(toolAdapterSchema).min(1),
+  runMode: connectorRunModeSchema.default("dry-run"),
+  concurrency: z.number().int().min(1).max(10).default(1),
+  capabilities: z.array(connectorCapabilitySchema).default([])
+});
+export type ConnectorRegistrationRequest = z.infer<typeof connectorRegistrationRequestSchema>;
+
+export const connectorRegistrationResponseSchema = z.object({
+  connectorId: z.string().min(1),
+  pollIntervalMs: z.number().int().min(250),
+  leaseDurationMs: z.number().int().min(1000),
+  acceptedAt: z.string().datetime()
+});
+export type ConnectorRegistrationResponse = z.infer<typeof connectorRegistrationResponseSchema>;
+
+export const connectorDescriptorSchema = z.object({
+  connectorId: z.string().min(1),
+  name: z.string().min(1),
+  version: z.string().min(1),
+  allowedAdapters: z.array(toolAdapterSchema).min(1),
+  runMode: connectorRunModeSchema,
+  concurrency: z.number().int().min(1).max(10),
+  capabilities: z.array(connectorCapabilitySchema).default([]),
+  lastSeenAt: z.string().datetime(),
+  registeredAt: z.string().datetime(),
+  activeJobId: z.string().optional()
+});
+export type ConnectorDescriptor = z.infer<typeof connectorDescriptorSchema>;
+
+export const connectorExecutionJobSchema = z.object({
+  id: z.string().min(1),
+  connectorId: z.string().min(1),
+  scanId: z.string().min(1),
+  tacticId: z.string().min(1),
+  agentId: z.string().min(1),
+  toolRun: toolRunSchema,
+  request: toolRequestSchema,
+  mode: connectorRunModeSchema,
+  createdAt: z.string().datetime(),
+  leasedAt: z.string().datetime(),
+  leaseExpiresAt: z.string().datetime()
+});
+export type ConnectorExecutionJob = z.infer<typeof connectorExecutionJobSchema>;
+
+export const connectorPollResponseSchema = z.object({
+  connectorId: z.string().min(1),
+  job: connectorExecutionJobSchema.optional()
+});
+export type ConnectorPollResponse = z.infer<typeof connectorPollResponseSchema>;
+
+export const connectorHeartbeatResponseSchema = z.object({
+  ok: z.literal(true),
+  connectorId: z.string().min(1),
+  jobId: z.string().min(1),
+  leaseExpiresAt: z.string().datetime()
+});
+export type ConnectorHeartbeatResponse = z.infer<typeof connectorHeartbeatResponseSchema>;
+
+export const connectorExecutionResultSchema = z.object({
+  output: z.string(),
+  exitCode: z.number().int(),
+  observations: z.array(z.lazy(() => observationSchema)).default([]),
+  statusReason: z.string().optional(),
+  connectorId: z.string().optional()
+});
+export type ConnectorExecutionResult = z.infer<typeof connectorExecutionResultSchema>;
+
+export const connectorStatusResponseSchema = z.object({
+  connectors: z.array(connectorDescriptorSchema),
+  queuedJobs: z.number().int().min(0),
+  activeJobs: z.number().int().min(0)
+});
+export type ConnectorStatusResponse = z.infer<typeof connectorStatusResponseSchema>;
+
+export const connectorTestDispatchRequestSchema = z.object({
+  scope: scanScopeSchema,
+  request: toolRequestSchema,
+  agentId: z.string().min(1).default("connector-test-agent"),
+  tacticId: z.string().uuid().default("22222222-2222-4222-8222-222222222222"),
+  scanId: z.string().uuid().default("11111111-1111-4111-8111-111111111111")
+});
+export type ConnectorTestDispatchRequest = z.infer<typeof connectorTestDispatchRequestSchema>;
+
+export const connectorTestDispatchResponseSchema = z.object({
+  toolRuns: z.array(toolRunSchema),
+  observations: z.array(z.lazy(() => observationSchema)),
+  findings: z.array(findingSchema.omit({ id: true, createdAt: true })),
+  dispatchMode: z.enum(["local", "connector"])
+});
+export type ConnectorTestDispatchResponse = z.infer<typeof connectorTestDispatchResponseSchema>;
+
 export const observationSchema = z.object({
   id: z.string(),
   scanId: z.string(),
-  nodeId: z.string(),
+  tacticId: z.string(),
   toolRunId: z.string(),
   adapter: toolAdapterSchema,
   target: z.string(),
@@ -477,7 +886,7 @@ export const agentNoteSchema = z.object({
   id: z.string(),
   scanId: z.string(),
   agentId: z.string(),
-  nodeId: z.string().optional(),
+  tacticId: z.string().optional(),
   toolRunId: z.string().optional(),
   findingId: z.string().optional(),
   stage: agentNoteStageSchema,
@@ -1774,17 +2183,29 @@ export const defensiveLoopContract = defensiveLoopContractSchema.parse({
 export const scanStatusSchema = z.enum(["pending", "running", "complete", "aborted", "failed"]);
 export type ScanStatus = z.infer<typeof scanStatusSchema>;
 
+export const scansListQuerySchema = resourceListQuerySchema.extend({
+  status: scanStatusSchema.optional(),
+  sortBy: z.enum(["createdAt", "status", "currentRound"]).optional().default("createdAt"),
+  sortDirection: sortDirectionSchema.default("desc")
+});
+export type ScansListQuery = z.infer<typeof scansListQuerySchema>;
+
 export const scanSchema = z.object({
   id: z.string(),
   scope: scanScopeSchema,
   status: scanStatusSchema,
   currentRound: z.number().int().min(0),
-  nodesTotal: z.number().int().min(0),
-  nodesComplete: z.number().int().min(0),
+  tacticsTotal: z.number().int().min(0),
+  tacticsComplete: z.number().int().min(0),
   createdAt: z.string().datetime(),
   completedAt: z.string().datetime().optional()
 });
 export type Scan = z.infer<typeof scanSchema>;
+
+export const listScansResponseSchema = paginatedMetaSchema.extend({
+  scans: z.array(scanSchema)
+});
+export type ListScansResponse = z.infer<typeof listScansResponseSchema>;
 
 export const auditEntrySchema = z.object({
   id: z.string(),
@@ -1792,14 +2213,14 @@ export const auditEntrySchema = z.object({
   timestamp: z.string().datetime(),
   actor: z.string(),
   action: z.string(),
-  targetNodeId: z.string().optional(),
+  targetTacticId: z.string().optional(),
   scopeValid: z.boolean(),
   details: z.record(z.unknown())
 });
 export type AuditEntry = z.infer<typeof auditEntrySchema>;
 
 export const attackPathSchema = z.object({
-  nodeIds: z.array(z.string()),
+  tacticIds: z.array(z.string()),
   risk: z.number().min(0).max(1),
   description: z.string()
 });
@@ -1820,12 +2241,12 @@ export const reportSchema = z.object({
     z.object({
       title: z.string(),
       severity: severitySchema,
-      nodeTarget: z.string(),
+      tacticTarget: z.string(),
       recommendation: z.string()
     })
   ),
   attackPaths: z.array(attackPathSchema),
-  attackChains: z.array(vulnerabilityChainSchema).default([]),
+  escalationRoutes: z.array(escalationRouteSchema).default([]),
   generatedAt: z.string().datetime()
 });
 export type Report = z.infer<typeof reportSchema>;
@@ -1836,19 +2257,19 @@ export const createScanRequestSchema = z.object({
 });
 export type CreateScanRequest = z.infer<typeof createScanRequestSchema>;
 
-export const graphResponseSchema = z.object({
-  nodes: z.array(dfsNodeSchema),
-  edges: z.array(
+export const strategyMapResponseSchema = z.object({
+  tactics: z.array(scanTacticSchema),
+  relationships: z.array(
     z.object({
       source: z.string(),
       target: z.string()
     })
   )
 });
-export type GraphResponse = z.infer<typeof graphResponseSchema>;
+export type StrategyMapResponse = z.infer<typeof strategyMapResponseSchema>;
 
 export const wsEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("node_updated"), node: dfsNodeSchema }),
+  z.object({ type: z.literal("tactic_updated"), tactic: scanTacticSchema }),
   z.object({ type: z.literal("finding_added"), finding: findingSchema }),
   z.object({ type: z.literal("tool_run_started"), toolRun: toolRunSchema }),
   z.object({ type: z.literal("tool_run_completed"), toolRun: toolRunSchema }),
@@ -1867,11 +2288,11 @@ export const wsEventSchema = z.discriminatedUnion("type", [
     summary: z.string()
   }),
   z.object({ type: z.literal("report_ready"), report: reportSchema }),
-  z.object({ type: z.literal("chain_detected"), chain: vulnerabilityChainSchema }),
+  z.object({ type: z.literal("escalation_route_detected"), route: escalationRouteSchema }),
   z.object({
-    type: z.literal("grace_analysis_complete"),
+    type: z.literal("strategy_analysis_complete"),
     round: z.number(),
-    chainsFound: z.number().int(),
+    routesFound: z.number().int(),
     prioritizedTargets: z.array(z.string())
   })
 ]);

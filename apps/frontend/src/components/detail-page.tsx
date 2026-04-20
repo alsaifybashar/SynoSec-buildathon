@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { ArrowLeft, CircleHelp } from "lucide-react";
-import { Button } from "./ui/button";
-import { PageHeader } from "./page-header";
+import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/page-header";
 
 export function DetailPage({
   title,
@@ -14,6 +14,7 @@ export function DetailPage({
   saveLabel = "Save",
   actions,
   sidebar,
+  relatedContent,
   children
 }: {
   title: string;
@@ -26,16 +27,17 @@ export function DetailPage({
   saveLabel?: string;
   actions?: ReactNode;
   sidebar?: ReactNode;
+  relatedContent?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-6 pb-6">
+    <div className="space-y-4 pb-6 md:space-y-6">
       <PageHeader title={title} breadcrumbs={breadcrumbs} />
 
       {actions ? (
-        <div className="m-3 flex flex-wrap items-center gap-2 pt-6">{actions}</div>
+        <div className="m-3 flex flex-wrap items-center gap-2 pt-3 md:pt-6">{actions}</div>
       ) : (
-        <div className="m-3 flex flex-wrap items-center gap-2 pt-6">
+        <div className="m-3 flex flex-wrap items-center gap-2 pt-3 md:pt-6">
           <Button type="button" variant="outline" onClick={onBack}>
             <ArrowLeft className="h-4 w-4" />
             Back
@@ -50,13 +52,19 @@ export function DetailPage({
       )}
 
       {sidebar ? (
-        <div className="m-3 grid gap-4 lg:grid-cols-[2fr_1fr]">
+        <div className="m-3 grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
           <div className="space-y-2 px-1">{children}</div>
           <div className="self-start px-1">{sidebar}</div>
         </div>
       ) : (
         <div className="m-3 px-1">{children}</div>
       )}
+
+      {relatedContent ? (
+        <div className="m-3 px-1">
+          {relatedContent}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -72,12 +80,12 @@ export function DetailFieldGroup({
 }) {
   return (
     <div
-      className={["grid gap-5 md:grid-cols-2 rounded-lg p-4 -mx-1", className]
+      className={["grid gap-5 rounded-lg p-4 -mx-1 lg:grid-cols-2", className]
         .filter(Boolean)
         .join(" ")}
     >
       {title ? (
-        <p className="col-span-full text-xs uppercase tracking-widest text-muted-foreground mb-1">
+        <p className="col-span-full mb-1 text-[0.625rem] font-medium uppercase tracking-[0.18em] text-muted-foreground">
           {title}
         </p>
       ) : null}
@@ -95,7 +103,7 @@ export function DetailSidebarItem({
 }) {
   return (
     <div className="space-y-1">
-      <p className="text-xs uppercase tracking-widest text-muted-foreground">
+      <p className="text-[0.625rem] font-medium uppercase tracking-[0.18em] text-muted-foreground">
         {label}
       </p>
       <div className="text-sm text-foreground">{children}</div>
@@ -120,7 +128,7 @@ export function DetailField({
 }) {
   return (
     <div className={className ? `block space-y-1.5 ${className}` : "block space-y-1.5"}>
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-[0.625rem] font-medium uppercase tracking-[0.18em] text-muted-foreground">
         <span>
           {label}
           {required ? <span className="ml-1 text-destructive">*</span> : null}
@@ -137,7 +145,7 @@ export function DetailField({
             </button>
             <span
               role="tooltip"
-              className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden w-56 -translate-x-1/2 rounded-md bg-foreground px-3 py-2 text-left text-xs leading-relaxed text-background shadow-md peer-hover:block peer-focus-visible:block"
+              className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden w-56 -translate-x-1/2 rounded-md bg-foreground px-3 py-2 text-left text-xs font-normal normal-case tracking-normal leading-relaxed text-background shadow-md peer-hover:block peer-focus-visible:block"
             >
               {hint}
             </span>

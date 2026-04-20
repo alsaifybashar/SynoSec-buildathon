@@ -10,33 +10,42 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  neo4j:
-    image: neo4j:5.18-community
-    container_name: synosec-neo4j
-    ports:
-      - "7474:7474"   # Neo4j Browser UI
-      - "7687:7687"   # Bolt protocol
-    environment:
-      NEO4J_AUTH: neo4j/synosec-dev
-    volumes:
-      - neo4j_data:/data
-      - neo4j_logs:/logs
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 15
-
   # ── Intentionally vulnerable target (safe demo only) ─────────────────
   vulnerable-target:
     build:
-      context: ./targets/vulnerable-app
+      context: ./demos/vulnerable-app
     container_name: synosec-target
     hostname: synosec-target
     ports:
       - "8888:8888"
     environment:
       PORT: 8888
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${LLM_LOCAL_MODEL:-qwen3:1.7b}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - ollama pull "$${OLLAMA_MODEL}"
+    restart: "no"
 
   backend:
     build:
@@ -53,25 +62,47 @@ services:
     depends_on:
       postgres:
         condition: service_started
-      neo4j:
-        condition: service_healthy
       vulnerable-target:
         condition: service_started
+      ollama:
+        condition: service_healthy
     environment:
       BACKEND_PORT: ${BACKEND_PORT:-3001}
       DATABASE_URL: postgres://synosec:synosec@postgres:5432/synosec
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: synosec-dev
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-6}
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      LLM_LOCAL_BASE_URL: http://ollama:11434
+      LLM_LOCAL_API_PATH: ${LLM_LOCAL_API_PATH:-/api/generate}
+      LLM_LOCAL_MODEL: ${LLM_LOCAL_MODEL:-qwen3:1.7b}
       SCAN_MAX_DEPTH: ${SCAN_MAX_DEPTH:-4}
       SCAN_MAX_DURATION_MINUTES: ${SCAN_MAX_DURATION_MINUTES:-20}
       SCAN_RATE_LIMIT_RPS: ${SCAN_RATE_LIMIT_RPS:-5}
       AGENT_MAX_ITERATIONS: ${AGENT_MAX_ITERATIONS:-5}
+      TOOL_EXECUTION_MODE: ${TOOL_EXECUTION_MODE:-connector}
+      CONNECTOR_SHARED_TOKEN: ${CONNECTOR_SHARED_TOKEN:-synosec-connector-dev}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/backend prisma:generate && pnpm --filter @synosec/backend prisma:push && pnpm --filter @synosec/backend dev"
+
+  connector:
+    build:
+      context: .
+      dockerfile: apps/connector/Dockerfile
+    depends_on:
+      - backend
+    environment:
+      CONNECTOR_CONTROL_PLANE_URL: http://backend:${BACKEND_PORT:-3001}
+      CONNECTOR_SHARED_TOKEN: ${CONNECTOR_SHARED_TOKEN:-synosec-connector-dev}
+      CONNECTOR_NAME: ${CONNECTOR_NAME:-local-dev-connector}
+      CONNECTOR_RUN_MODE: ${CONNECTOR_RUN_MODE:-dry-run}
+      CONNECTOR_ALLOWED_ADAPTERS: ${CONNECTOR_ALLOWED_ADAPTERS:-network_scan,service_scan,http_probe,tls_audit}
+    volumes:
+      - .:/workspace
+      - connector_node_modules:/workspace/apps/connector/node_modules
+      - contracts_node_modules:/workspace/packages/contracts/node_modules
+      - root_node_modules:/workspace/node_modules
+    working_dir: /workspace
 
   frontend:
     build:
@@ -94,9 +125,9 @@ services:
 
 volumes:
   postgres_data:
+  ollama_data:
   backend_node_modules:
   contracts_node_modules:
   frontend_node_modules:
+  connector_node_modules:
   root_node_modules:
-  neo4j_data:
-  neo4j_logs:

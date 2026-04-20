@@ -2,11 +2,20 @@
 
 SynoSec is an AI-assisted security scanning demo built for a buildathon. It runs a frontend, a backend orchestrator, supporting data stores, and an intentionally vulnerable target so the workflow can be demonstrated end to end in a controlled environment.
 
+## Agent SDK Status
+
+- `apps/backend` now includes AI SDK and Workflow Dev Kit scaffolding.
+- Anthropic model calls in `apps/backend` now go through AI SDK.
+- The migration note lives in `docs/ai-sdk-workflow-devkit.md`.
+- The active builder UI now exposes `AI Providers`, `AI Agents`, and `AI Tools`.
+- Default AI builder records are seeded through `apps/backend/prisma/seed.ts`, not generated at runtime.
+
 ## What's in the repo
 
-- `apps/frontend` - UI for configuring scans and viewing findings, graphs, and reports
-- `apps/backend` - API, orchestration, agents, and persistence
-- `targets/vulnerable-app` - intentionally unsafe demo target used for local scanning exercises
+- `apps/frontend` - UI for configuring AI providers, AI agents, AI tools, applications, and runtimes
+- `apps/backend` - API, broker, scan persistence, and connector control plane
+- `apps/connector` - Docker-installable connector worker that polls for approved tool jobs
+- `demos/vulnerable-app` - intentionally unsafe demo target used for local scanning exercises
 
 ## How scanning works
 
@@ -34,24 +43,53 @@ The agent system is structured as a controlled analysis loop rather than an open
 
 1. Copy `.env.example` to `.env`.
 2. Set `ANTHROPIC_API_KEY` in `.env` if you want to use Anthropic models.
-3. Start the full stack:
+3. `LOCAL_ENABHLED=TRUE` is the default. Set `LOCAL_ENABHLED=FALSE` in `.env` if you want `make dev` to skip Ollama entirely.
+4. With local enabled, the Docker-backed dev path starts Ollama and pulls `qwen3:1.7b` for the local provider automatically.
+5. `make dev` starts Postgres, the vulnerable target, and optionally Ollama before launching backend and frontend on the host.
+6. Backend tests now include live local-model evaluation of the seeded tool defaults, so `pnpm --filter @synosec/backend test` expects Ollama with `qwen3:1.7b` to be available when local mode is enabled.
+7. Start the full stack:
 
 ```bash
 make docker-up
 ```
 
-4. Run the smoke demo:
+8. Run the smoke demo:
 
 ```bash
 make smoke-e2e
+```
+
+For host-mode development against the same local model stack:
+
+```bash
+make dev
 ```
 
 ## Endpoints
 
 - Frontend: `http://localhost:5173`
 - Backend API: `http://localhost:3001`
-- Neo4j Browser: `http://localhost:7474`
+- Ollama API: `http://localhost:11434`
 - Vulnerable target: `http://localhost:8888`
+
+## Connector testing
+
+The Docker stack now runs the same connector shape you can later deploy on a VPS.
+
+- `TOOL_EXECUTION_MODE=connector` routes broker-approved tool runs through the connector control plane.
+- `CONNECTOR_RUN_MODE` supports `dry-run`, `simulate`, and `execute`.
+- `POST /api/connectors/test-dispatch` lets you test the broker/connector path without reviving the retired scan API.
+
+## Feature documentation
+
+Contributor-facing feature documentation lives in [docs/features.md](/home/nilwi971/projects/SynoSec-buildathon/docs/features.md).
+
+Use it to check:
+
+- which features are active
+- what each feature is for
+- how each feature is tested
+- whether the feature is mature enough to extend safely
 
 ## Key commands
 
@@ -63,3 +101,15 @@ make dev
 make test
 pnpm build
 ```
+
+## Contributing
+
+Contribute to an existing feature when it is already documented in [docs/features.md](/home/nilwi971/projects/SynoSec-buildathon/docs/features.md) and has a clear purpose, a defined test path, and enough developer-facing notes to preserve the intended behavior.
+
+The cutoff is strict:
+
+- If a feature does not yet have purpose, tests, and developer documentation, do not expand it as normal product work.
+- Document the feature first, define how it will be tested, and only then extend it.
+- Do not contribute new behavior to retired or frozen areas unless the reactivation effort is explicitly documented as a new active feature.
+
+For connector-related work, preserve local/VPS parity and keep execution broker-mediated. Do not introduce direct model-to-tool or model-to-shell access as a shortcut.

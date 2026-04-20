@@ -1,20 +1,19 @@
 import { useEffect, useState } from "react";
 import {
-  AlertTriangle,
+  Bot,
   AppWindow,
-  LayoutDashboard,
+  Menu,
+  PlugZap,
   Network,
-  Shield,
-  Workflow
+  Wrench,
+  X
 } from "lucide-react";
-import { toast } from "sonner";
-import { apiRoutes, type BriefResponse } from "@synosec/contracts";
-import { ApplicationsPage } from "./components/applications-page";
-import { RuntimesPage } from "./components/runtimes-page";
-import { ScansPage } from "./components/scans-page";
-import { WorkflowsPage } from "./components/workflows-page";
-import { Button } from "./components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
+import { ApplicationsPage } from "@/pages/applications-page";
+import { RuntimesPage } from "@/pages/runtimes-page";
+import { AiProvidersPage } from "@/pages/ai-providers-page";
+import { AiAgentsPage } from "@/pages/ai-agents-page";
+import { AiToolsPage } from "@/pages/ai-tools-page";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Sidebar,
   SidebarContent,
@@ -24,18 +23,16 @@ import {
   SidebarMenuItem,
   SidebarMenuText,
   SidebarProvider
-} from "./components/ui/sidebar";
-import { Toaster } from "./components/ui/toaster";
-import { Display, Lead } from "./components/ui/typography";
-import { fetchJson } from "./lib/api";
-import { cn } from "./lib/utils";
+} from "@/components/ui/sidebar";
+import { Toaster } from "@/components/ui/toaster";
+import { cn } from "@/lib/utils";
 
-type NavigationId = "dashboard" | "runtimes" | "applications" | "workflows" | "scans";
+type NavigationId = "runtimes" | "applications" | "ai-providers" | "ai-agents" | "ai-tools";
 
 type NavigationItem = {
   id: NavigationId;
   label: string;
-  icon: typeof LayoutDashboard;
+  icon: typeof Network;
 };
 
 type AppRoute = {
@@ -46,19 +43,19 @@ type AppRoute = {
 type ThemeId = "light" | "dark" | "synosec" | "amber";
 
 const navigationItems: NavigationItem[] = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "runtimes", label: "Runtimes", icon: Network },
   { id: "applications", label: "Applications", icon: AppWindow },
-  { id: "workflows", label: "Workflows", icon: Workflow },
-  { id: "scans", label: "Scans", icon: Shield }
+  { id: "ai-providers", label: "AI Providers", icon: PlugZap },
+  { id: "ai-agents", label: "AI Agents", icon: Bot },
+  { id: "ai-tools", label: "AI Tools", icon: Wrench }
 ];
 
 const navigationPaths: Record<NavigationId, string> = {
-  dashboard: "/",
   runtimes: "/runtimes",
   applications: "/applications",
-  workflows: "/workflows",
-  scans: "/scans"
+  "ai-providers": "/ai-providers",
+  "ai-agents": "/ai-agents",
+  "ai-tools": "/ai-tools"
 };
 
 const themeStorageKey = "synosec-theme";
@@ -69,6 +66,8 @@ const themes: Array<{ id: ThemeId; label: string }> = [
   { id: "synosec", label: "SynoSec" },
   { id: "amber", label: "Amber Grid" }
 ];
+
+const defaultSection: NavigationId = "applications";
 
 function isThemeId(value: string): value is ThemeId {
   return themes.some((theme) => theme.id === value);
@@ -83,12 +82,12 @@ function getRouteFromPath(pathname: string): AppRoute {
   const segments = pathname.split("/").filter(Boolean);
 
   if (segments.length === 0) {
-    return { section: "dashboard", detailId: undefined };
+    return { section: defaultSection, detailId: undefined };
   }
 
   const section = segments[0] as NavigationId;
   if (!(section in navigationPaths)) {
-    return { section: "dashboard", detailId: undefined };
+    return { section: defaultSection, detailId: undefined };
   }
 
   return {
@@ -119,11 +118,15 @@ function ThemeSwitcher({ value, onValueChange }: { value: ThemeId; onValueChange
 
 export default function App() {
   const [route, setRoute] = useState<AppRoute>(() => getRouteFromPath(window.location.pathname));
-  const [loadingBrief, setLoadingBrief] = useState(false);
   const [theme, setTheme] = useState<ThemeId>(() => getInitialTheme());
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   useEffect(() => {
     const syncFromLocation = () => {
+      if (window.location.pathname === "/") {
+        window.history.replaceState({}, "", navigationPaths[defaultSection]);
+      }
+
       setRoute(getRouteFromPath(window.location.pathname));
     };
 
@@ -140,22 +143,9 @@ export default function App() {
     window.localStorage.setItem(themeStorageKey, theme);
   }, [theme]);
 
-  async function handleBackendButtonClick() {
-    setLoadingBrief(true);
-
-    try {
-      const payload = await fetchJson<BriefResponse>(apiRoutes.brief);
-      toast.success("Backend connected", {
-        description: payload.headline
-      });
-    } catch (error) {
-      toast.error("Backend request failed", {
-        description: error instanceof Error ? error.message : "Unknown error"
-      });
-    } finally {
-      setLoadingBrief(false);
-    }
-  }
+  useEffect(() => {
+    setIsMobileNavOpen(false);
+  }, [route.section, route.detailId]);
 
   function navigateToPath(path: string) {
     if (window.location.pathname !== path) {
@@ -165,24 +155,39 @@ export default function App() {
     setRoute(getRouteFromPath(path));
   }
 
-  function renderPage() {
-    if (route.section === "dashboard") {
-      return (
-        <div className="w-full max-w-2xl text-center">
-          <Display className="max-w-none">Dashboard</Display>
-          <Lead className="mx-auto mt-4">
-            Minimal SPA shell with shared list and detail pages for records, filters, sorting, searching, loading states, recovery, and a dedicated scanning workspace.
-          </Lead>
+  function renderNavigation() {
+    return (
+      <>
+        <SidebarContent className="mt-6 flex-1">
+          <SidebarGroup>
+            <SidebarMenu>
+              {navigationItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = item.id === route.section;
 
-          <div className="mt-10 flex justify-center">
-            <Button onClick={() => void handleBackendButtonClick()} disabled={loadingBrief} size="lg">
-              {loadingBrief ? "Connecting..." : "Call backend"}
-            </Button>
-          </div>
+                return (
+                  <SidebarMenuItem
+                    key={item.id}
+                    className={cn("rounded-xl border border-transparent", isActive && "border-border bg-accent text-accent-foreground")}
+                    onClick={() => navigateToPath(navigationPaths[item.id])}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <SidebarMenuText>{item.label}</SidebarMenuText>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroup>
+        </SidebarContent>
+
+        <div className="mt-6 space-y-4 pt-4">
+          <ThemeSwitcher value={theme} onValueChange={setTheme} />
         </div>
-      );
-    }
+      </>
+    );
+  }
 
+  function renderPage() {
     if (route.section === "runtimes") {
       return (
         <RuntimesPage
@@ -205,65 +210,85 @@ export default function App() {
       );
     }
 
-    if (route.section === "scans") {
+    if (route.section === "ai-providers") {
       return (
-        <ScansPage
-          {...(route.detailId ? { scanId: route.detailId } : {})}
-          onNavigateToList={() => navigateToPath(navigationPaths.scans)}
-          onNavigateToCreate={() => navigateToPath("/scans/new")}
-          onNavigateToDetail={(id) => navigateToPath(`/scans/${id}`)}
+        <AiProvidersPage
+          {...(route.detailId ? { providerId: route.detailId } : {})}
+          onNavigateToList={() => navigateToPath(navigationPaths["ai-providers"])}
+          onNavigateToCreate={() => navigateToPath("/ai-providers/new")}
+          onNavigateToDetail={(id) => navigateToPath(`/ai-providers/${id}`)}
         />
       );
     }
 
-    return (
-      <WorkflowsPage
-        {...(route.detailId ? { workflowId: route.detailId } : {})}
-        onNavigateToList={() => navigateToPath(navigationPaths.workflows)}
-        onNavigateToCreate={() => navigateToPath("/workflows/new")}
-        onNavigateToDetail={(id) => navigateToPath(`/workflows/${id}`)}
-      />
-    );
+    if (route.section === "ai-agents") {
+      return (
+        <AiAgentsPage
+          {...(route.detailId ? { agentId: route.detailId } : {})}
+          onNavigateToList={() => navigateToPath(navigationPaths["ai-agents"])}
+          onNavigateToCreate={() => navigateToPath("/ai-agents/new")}
+          onNavigateToDetail={(id) => navigateToPath(`/ai-agents/${id}`)}
+        />
+      );
+    }
+
+    if (route.section === "ai-tools") {
+      return (
+        <AiToolsPage
+          {...(route.detailId ? { toolId: route.detailId } : {})}
+          onNavigateToList={() => navigateToPath(navigationPaths["ai-tools"])}
+          onNavigateToCreate={() => navigateToPath("/ai-tools/new")}
+          onNavigateToDetail={(id) => navigateToPath(`/ai-tools/${id}`)}
+        />
+      );
+    }
+
+    return null;
   }
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen text-foreground" style={{ backgroundImage: "var(--app-shell-background)" }}>
+      <div className="flex min-h-screen bg-background text-foreground">
+        <div className={cn("fixed inset-0 z-40 bg-background/80 backdrop-blur-sm xl:hidden", !isMobileNavOpen && "pointer-events-none opacity-0")} onClick={() => setIsMobileNavOpen(false)} />
+
         <Sidebar className="border-r border-border/80 bg-card/70">
           <div className="flex h-full flex-col px-4 py-6">
             <div className="px-2 py-2 text-center">
               <p className="font-['Space_Grotesk'] text-[1.75rem] font-bold tracking-[-0.04em] text-foreground">SynoSec</p>
             </div>
 
-            <SidebarContent className="mt-6 flex-1">
-              <SidebarGroup>
-                <SidebarMenu>
-                  {navigationItems.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = item.id === route.section;
-
-                    return (
-                      <SidebarMenuItem
-                        key={item.id}
-                        className={cn("rounded-xl border border-transparent", isActive && "border-border bg-accent text-accent-foreground")}
-                        onClick={() => navigateToPath(navigationPaths[item.id])}
-                      >
-                        <Icon className="h-4 w-4" />
-                        <SidebarMenuText>{item.label}</SidebarMenuText>
-                      </SidebarMenuItem>
-                    );
-                  })}
-                </SidebarMenu>
-              </SidebarGroup>
-            </SidebarContent>
-
-            <div className="mt-6 space-y-4 pt-4">
-              <ThemeSwitcher value={theme} onValueChange={setTheme} />
-            </div>
+            {renderNavigation()}
           </div>
         </Sidebar>
 
-        <main className={cn("flex-1", route.section === "dashboard" ? "flex items-center justify-center p-6 md:p-10" : "p-0")}>
+        <div className={cn("fixed inset-y-0 left-0 z-50 w-[18rem] max-w-[85vw] border-r border-border/80 bg-card px-4 py-6 shadow-2xl transition-transform duration-200 xl:hidden", isMobileNavOpen ? "translate-x-0" : "-translate-x-full")}>
+          <div className="flex h-full flex-col">
+            <div className="flex items-center justify-between px-2 py-2">
+              <p className="font-['Space_Grotesk'] text-[1.5rem] font-bold tracking-[-0.04em] text-foreground">SynoSec</p>
+              <button
+                type="button"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border/70 bg-background/80 text-foreground"
+                onClick={() => setIsMobileNavOpen(false)}
+                aria-label="Close navigation menu"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {renderNavigation()}
+          </div>
+        </div>
+
+        <main className="relative flex-1 p-0">
+          <button
+            type="button"
+            className="fixed right-4 top-4 z-30 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border/70 bg-card/90 text-foreground shadow-lg backdrop-blur xl:hidden"
+            onClick={() => setIsMobileNavOpen(true)}
+            aria-label="Open navigation menu"
+          >
+            <Menu className="h-4 w-4" />
+          </button>
+
           {renderPage()}
         </main>
 

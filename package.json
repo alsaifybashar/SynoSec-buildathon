@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "packageManager": "pnpm@10.23.0",
   "scripts": {
-    "dev": "pnpm --filter @synosec/contracts build && concurrently -n contracts,backend,frontend -c blue,green,magenta \"pnpm --filter @synosec/contracts dev\" \"pnpm --filter @synosec/backend dev\" \"pnpm --filter @synosec/frontend dev\"",
+    "dev": "pnpm --filter @synosec/contracts build && concurrently -n backend,frontend -c green,magenta \"pnpm --filter @synosec/backend dev\" \"pnpm --filter @synosec/frontend dev\"",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
@@ -29,4 +29,3 @@
     ]
   }
 }
-

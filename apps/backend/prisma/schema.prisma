@@ -1,6 +1,6 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
+  output   = "../src/platform/generated/prisma"
 }
 
 datasource db {
@@ -46,22 +46,65 @@ enum RuntimeStatus {
   retired
 }
 
-enum WorkflowTrigger {
+enum AiProviderKind {
+  local
+  anthropic
+}
+
+enum AiProviderStatus {
+  active
+  inactive
+  error
+}
+
+enum AiAgentStatus {
+  draft
+  active
+  archived
+}
+
+enum AiToolSource {
+  system
+  custom
+}
+
+enum AiToolStatus {
+  active
+  inactive
+  missing
   manual
-  schedule
-  event
 }
 
 enum WorkflowStatus {
   draft
   active
-  paused
+  archived
 }
 
-enum WorkflowTargetMode {
-  application
-  runtime
-  manual
+enum WorkflowRunStatus {
+  pending
+  running
+  completed
+  failed
+}
+
+enum WorkflowTraceEntryStatus {
+  completed
+  failed
+}
+
+enum ScanRunStatus {
+  pending
+  running
+  complete
+  aborted
+}
+
+enum ScanTacticStatus {
+  pending
+  in_progress
+  complete
+  skipped
 }
 
 model Application {
@@ -91,23 +134,264 @@ model Runtime {
   createdAt     DateTime           @default(now()) @map("created_at")
   updatedAt     DateTime           @updatedAt @map("updated_at")
   application   Application?       @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  workflows     Workflow[]
 
   @@index([applicationId])
   @@map("runtimes")
 }
 
+model AiProvider {
+  id              String           @id @db.Uuid
+  name            String
+  kind            AiProviderKind
+  status          AiProviderStatus
+  description     String?
+  baseUrl         String?          @map("base_url")
+  model           String
+  apiKey          String?          @map("api_key")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  agents          AiAgent[]
+
+  @@map("ai_providers")
+}
+
+model AiAgent {
+  id              String          @id @db.Uuid
+  name            String
+  status          AiAgentStatus
+  description     String?
+  providerId      String          @db.Uuid @map("provider_id")
+  systemPrompt    String          @map("system_prompt")
+  modelOverride   String?         @map("model_override")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  provider        AiProvider      @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  tools           AiAgentTool[]
+  workflowStages  WorkflowStage[]
+
+  @@index([providerId])
+  @@map("ai_agents")
+}
+
+model AiTool {
+  id              String          @id
+  name            String
+  status          AiToolStatus
+  source          AiToolSource
+  description     String?
+  adapter         String?
+  binary          String?
+  category        String
+  riskTier        String          @map("risk_tier")
+  notes           String?
+  inputSchema     Json            @map("input_schema")
+  outputSchema    Json            @map("output_schema")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  agents          AiAgentTool[]
+
+  @@map("ai_tools")
+}
+
+model AiAgentTool {
+  agentId         String          @db.Uuid @map("agent_id")
+  toolId          String          @map("tool_id")
+  ord             Int
+  agent           AiAgent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  tool            AiTool          @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, toolId])
+  @@index([toolId])
+  @@map("ai_agent_tools")
+}
+
 model Workflow {
-  id            String             @id @db.Uuid
+  id            String         @id @db.Uuid
   name          String
-  trigger       WorkflowTrigger
   status        WorkflowStatus
-  maxDepth      Int                @map("max_depth")
-  targetMode    WorkflowTargetMode @map("target_mode")
-  applicationId String?            @db.Uuid @map("application_id")
-  createdAt     DateTime           @default(now()) @map("created_at")
-  updatedAt     DateTime           @updatedAt @map("updated_at")
-  application   Application?       @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  description   String?
+  applicationId String         @db.Uuid @map("application_id")
+  runtimeId     String?        @db.Uuid @map("runtime_id")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  application   Application    @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  runtime       Runtime?       @relation(fields: [runtimeId], references: [id], onDelete: SetNull)
+  stages        WorkflowStage[]
+  runs          WorkflowRun[]
 
   @@index([applicationId])
+  @@index([runtimeId])
   @@map("workflows")
+}
+
+model WorkflowStage {
+  id          String    @id @db.Uuid
+  workflowId  String    @db.Uuid @map("workflow_id")
+  agentId     String    @db.Uuid @map("agent_id")
+  label       String
+  ord         Int
+  workflow    Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  agent       AiAgent   @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  traceEntries WorkflowTraceEntry[]
+
+  @@index([agentId])
+  @@index([workflowId])
+  @@unique([workflowId, ord])
+  @@map("workflow_stages")
+}
+
+model WorkflowRun {
+  id               String             @id @db.Uuid
+  workflowId       String             @db.Uuid @map("workflow_id")
+  status           WorkflowRunStatus
+  currentStepIndex Int                @default(0) @map("current_step_index")
+  startedAt        DateTime           @default(now()) @map("started_at")
+  completedAt      DateTime?          @map("completed_at")
+  workflow         Workflow           @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  traceEntries     WorkflowTraceEntry[]
+
+  @@index([workflowId])
+  @@map("workflow_runs")
+}
+
+model WorkflowTraceEntry {
+  id                  String                    @id @db.Uuid
+  workflowRunId       String                    @db.Uuid @map("workflow_run_id")
+  workflowId          String                    @db.Uuid @map("workflow_id")
+  workflowStageId     String                    @db.Uuid @map("workflow_stage_id")
+  stepIndex           Int                       @map("step_index")
+  stageLabel          String                    @map("stage_label")
+  agentId             String                    @db.Uuid @map("agent_id")
+  agentName           String                    @map("agent_name")
+  status              WorkflowTraceEntryStatus
+  selectedToolIds     Json                      @map("selected_tool_ids")
+  toolSelectionReason String                    @map("tool_selection_reason")
+  targetSummary       String                    @map("target_summary")
+  evidenceHighlights  Json                      @map("evidence_highlights")
+  outputSummary       String                    @map("output_summary")
+  createdAt           DateTime                  @default(now()) @map("created_at")
+  workflowRun         WorkflowRun               @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  workflow            Workflow                  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowStage       WorkflowStage             @relation(fields: [workflowStageId], references: [id], onDelete: Cascade)
+
+  @@index([workflowRunId, stepIndex])
+  @@index([workflowId])
+  @@index([workflowStageId])
+  @@map("workflow_trace_entries")
+}
+
+model ScanRun {
+  id                 String            @id @db.Uuid
+  scope              Json
+  status             ScanRunStatus
+  currentRound       Int               @default(0) @map("current_round")
+  tacticsTotal       Int               @default(0) @map("tactics_total")
+  tacticsComplete    Int               @default(0) @map("tactics_complete")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  completedAt        DateTime?         @map("completed_at")
+  scanTactics        ScanTactic[]
+  scanFindings       ScanFinding[]
+  scanAuditEntries   ScanAuditEntry[]
+  escalationRoutes   EscalationRoute[]
+
+  @@map("scan_runs")
+}
+
+model ScanTactic {
+  id             String            @id @db.Uuid
+  scanRunId      String            @db.Uuid @map("scan_run_id")
+  target         String
+  layer          String
+  service        String?
+  port           Int?
+  riskScore      Float             @map("risk_score")
+  status         ScanTacticStatus
+  parentTacticId String?           @db.Uuid @map("parent_tactic_id")
+  depth          Int
+  createdAt      DateTime          @default(now()) @map("created_at")
+  scanRun        ScanRun           @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+  parentTactic   ScanTactic?       @relation("ScanTacticChildren", fields: [parentTacticId], references: [id], onDelete: SetNull)
+  childTactics   ScanTactic[]      @relation("ScanTacticChildren")
+  scanFindings   ScanFinding[]
+
+  @@index([scanRunId])
+  @@index([scanRunId, status, depth, riskScore(sort: Desc)])
+  @@index([parentTacticId])
+  @@map("scan_tactics")
+}
+
+model ScanFinding {
+  id               String                 @id @db.Uuid
+  scanRunId        String                 @db.Uuid @map("scan_run_id")
+  scanTacticId     String                 @db.Uuid @map("scan_tactic_id")
+  agentId          String                 @map("agent_id")
+  severity         String
+  confidence       Float
+  title            String
+  description      String
+  evidence         String
+  technique        String
+  reproduceCommand String?                @map("reproduce_command")
+  validated        Boolean                @default(false)
+  validationStatus String?                @map("validation_status")
+  evidenceRefs     Json?                  @map("evidence_refs")
+  sourceToolRuns   Json?                  @map("source_tool_runs")
+  confidenceReason String?                @map("confidence_reason")
+  createdAt        DateTime               @default(now()) @map("created_at")
+  scanRun          ScanRun                @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+  scanTactic       ScanTactic             @relation(fields: [scanTacticId], references: [id], onDelete: Cascade)
+  routeFindings    EscalationRouteFinding[]
+
+  @@index([scanRunId])
+  @@index([scanTacticId])
+  @@index([scanRunId, severity])
+  @@map("scan_findings")
+}
+
+model ScanAuditEntry {
+  id            String   @id @db.Uuid
+  scanRunId     String   @db.Uuid @map("scan_run_id")
+  timestamp     DateTime
+  actor         String
+  action        String
+  targetTacticId String? @db.Uuid @map("target_tactic_id")
+  scopeValid    Boolean  @map("scope_valid")
+  details       Json
+  scanRun       ScanRun  @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+
+  @@index([scanRunId, timestamp])
+  @@map("scan_audit_entries")
+}
+
+model EscalationRoute {
+  id              String                  @id @db.Uuid
+  scanRunId       String                  @db.Uuid @map("scan_run_id")
+  title           String
+  compositeRisk   Float                   @map("composite_risk")
+  technique       String
+  startTarget     String                  @map("start_target")
+  endTarget       String                  @map("end_target")
+  routeLength     Int                     @map("route_length")
+  confidence      Float
+  narrative       String?
+  createdAt       DateTime                @default(now()) @map("created_at")
+  scanRun         ScanRun                 @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+  routeFindings   EscalationRouteFinding[]
+
+  @@index([scanRunId, compositeRisk(sort: Desc)])
+  @@map("escalation_routes")
+}
+
+model EscalationRouteFinding {
+  escalationRouteId String           @db.Uuid @map("escalation_route_id")
+  scanFindingId     String           @db.Uuid @map("scan_finding_id")
+  ord               Int
+  linkProbability   Float?           @map("link_probability")
+  escalationRoute   EscalationRoute  @relation(fields: [escalationRouteId], references: [id], onDelete: Cascade)
+  scanFinding       ScanFinding      @relation(fields: [scanFindingId], references: [id], onDelete: Cascade)
+
+  @@id([escalationRouteId, scanFindingId, ord])
+  @@index([scanFindingId])
+  @@map("escalation_route_findings")
 }
