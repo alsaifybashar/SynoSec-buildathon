@@ -5,6 +5,48 @@ Started: Mon Apr 13 00:40:18 CEST 2026
 - (add reusable patterns here)
 
 ---
+## [2026-04-21 01:53:07 CEST] - S1: Define the authoritative workflow state model
+Thread: 
+Run: 20260421-014550-336751 (iteration 1)
+Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260421-014550-336751-iter-1.log
+Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260421-014550-336751-iter-1.md
+- Guardrails reviewed: yes
+- No-commit run: false
+- Commit: 346916a7 Define authoritative workflow state model
+- Post-commit status: `clean`
+- Verification:
+  - Command: `pnpm --filter @synosec/contracts test` -> PASS
+  - Command: `pnpm --filter @synosec/contracts typecheck` -> PASS
+  - Command: `pnpm --filter @synosec/backend test` -> PASS
+  - Command: `pnpm --filter @synosec/backend typecheck` -> PASS
+  - Command: `pnpm --filter @synosec/backend build` -> PASS
+  - Command: `pnpm --filter @synosec/frontend typecheck` -> PASS
+  - Command: `pnpm --filter @synosec/frontend build` -> PASS
+  - Command: `pnpm test` -> PASS
+  - Command: `pnpm typecheck` -> FAIL (existing `apps/connector/src/index.test.ts(261,56)` never-type error)
+  - Command: `pnpm build` -> FAIL (existing `apps/connector/src/index.test.ts(261,56)` never-type error)
+- Files changed:
+  - .ralph/activity.log
+  - .ralph/progress.md
+  - apps/backend/src/features/modules/workflows/memory-workflows.repository.ts
+  - apps/backend/src/features/modules/workflows/prisma-workflows.repository.ts
+  - apps/frontend/src/pages/workflows-page.tsx
+  - packages/contracts/src/index.ts
+  - packages/contracts/src/workflow-lifecycle.test.ts
+  - packages/contracts/src/workflow-lifecycle.ts
+- What was implemented
+- Added a shared workflow lifecycle model in `@synosec/contracts` that names the authoritative source files for run status, latest-run selection, derived per-stage state, final completion, and the relationship to Ralph PRD/progress state.
+- Added transition rules and shared helpers for deterministic latest-run selection, per-stage lifecycle derivation, terminal completion checks, interruption handling, and stale in-progress recovery normalization.
+- Wired the memory and Prisma workflow repositories to the documented latest-run ordering and updated the workflow UI to consume the shared lifecycle derivation instead of ad hoc stage/completion inference.
+- Added lifecycle-focused tests covering deterministic latest-run choice, successful completion, interrupted-stage failure, stale-running recovery, and incomplete terminal-state rejection.
+- **Learnings for future iterations:**
+  - Patterns discovered
+  - Shared contracts are the right source for trust-critical workflow state rules when backend persistence and frontend presentation both need to agree.
+  - Gotchas encountered
+  - Root workspace `pnpm typecheck` and `pnpm build` are currently blocked by an existing connector test typing issue, so scoped package checks are required to validate workflow changes cleanly.
+  - Useful context
+  - The documented `ralph log` helper path is still missing in this workspace, so required activity entries were appended directly to `.ralph/activity.log`.
+---
 ## [2026-04-13 01:12:45 CEST] - S5: Close the loop with next-step guidance
 Thread: 019d83f2-2181-7a21-8f3d-85eebcb3b089
 Run: 20260413-004709-513536 (iteration 4)
