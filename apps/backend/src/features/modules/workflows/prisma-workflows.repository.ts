@@ -176,7 +176,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
     const run = await this.prisma.workflowRun.findFirst({
       where: { workflowId },
       include: { traceEntries: true, traceEvents: true },
-      orderBy: { startedAt: "desc" }
+      orderBy: [{ startedAt: "desc" }, { completedAt: "desc" }, { id: "desc" }]
     });
 
     return run ? mapWorkflowRunRow(run) : null;

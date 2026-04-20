@@ -8,6 +8,7 @@ import type {
   WorkflowTraceEvent,
   WorkflowsListQuery
 } from "@synosec/contracts";
+import { selectLatestWorkflowRun } from "@synosec/contracts";
 import { paginateItems, type PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
 import { RequestError } from "../../../platform/core/http/request-error.js";
 import type { ApplicationsRepository } from "../applications/applications.repository.js";
@@ -152,11 +153,9 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
   }
 
   async getLatestRunByWorkflowId(workflowId: string): Promise<WorkflowRun | null> {
-    const matchingRuns = [...this.runs.values()]
-      .filter((run) => run.workflowId === workflowId)
-      .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
-
-    return matchingRuns[0] ?? null;
+    return selectLatestWorkflowRun(
+      [...this.runs.values()].filter((run) => run.workflowId === workflowId)
+    );
   }
 
   async appendRunEvent(runId: string, event: WorkflowTraceEvent, patch: WorkflowRunStatePatch = {}): Promise<WorkflowRun> {

@@ -35,3 +35,5 @@
 [2026-04-13 01:09:19] S5 targeted verification rerun after updating contract metadata expectation
 [2026-04-13 01:10:42] Completed S5 verification: contracts tests/typecheck passed, workspace build/tests passed, and root lint is being checked for regressions
 [2026-04-13 01:11:17] Updated S5 progress log with commit e79281a8, verification results, and closure-summary notes for future iterations
+[2026-04-21 01:45:51] ITERATION 1 start (mode=build story=S1)
+[2026-04-21 01:52:16] Implemented S1 lifecycle model: added shared workflow lifecycle authority/transition helpers, tightened latest-run selection, and aligned workflow stage/completion UI state with the shared model

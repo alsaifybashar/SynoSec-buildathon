@@ -3,6 +3,9 @@ import { Activity, AlertCircle, ArrowDown, ArrowUp, Bot, CheckCircle2, ChevronDo
 import { toast } from "sonner";
 import {
   apiRoutes,
+  deriveWorkflowCompletionState,
+  deriveWorkflowStageLifecycleState,
+  isWorkflowRunFinalized,
   type AiAgent,
   type AiTool,
   type Application,
@@ -395,6 +398,7 @@ function TraceSection({
     return grouped;
   }, [orderedEvents]);
   const activeStageIndex = run?.status === "running" ? run.currentStepIndex : null;
+  const completionState = deriveWorkflowCompletionState(run, orderedStages.length);
   const activeActionLabel = runAction === "starting"
     ? "Starting workflow run..."
     : runAction === "stepping"
@@ -469,7 +473,11 @@ function TraceSection({
             <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Run Status</p>
             <p className="flex items-center gap-2 text-sm text-foreground">
               {running ? <Spinner className="h-4 w-4" /> : null}
-              <span>{run ? `${run.status} · step ${run.currentStepIndex}/${orderedStages.length}` : "Idle"}</span>
+              <span>
+                {run
+                  ? `${run.status} · ${completionState}${isWorkflowRunFinalized(run, orderedStages.length) ? " finalized" : ""} · step ${run.currentStepIndex}/${orderedStages.length}`
+                  : "Idle"}
+              </span>
             </p>
           </div>
           <div>
@@ -485,14 +493,7 @@ function TraceSection({
       <div className="grid gap-3 lg:grid-cols-2">
         {orderedStages.map((stage, index) => {
           const agent = agentLookup[stage.agentId];
-          const stageTrace = run?.trace.find((entry) => entry.workflowStageId === stage.id);
-          const stageState = stageTrace
-            ? "completed"
-            : run && run.status === "running" && run.currentStepIndex === index
-              ? "current"
-              : run && run.currentStepIndex > index
-                ? "completed"
-                : "pending";
+          const stageState = deriveWorkflowStageLifecycleState(run, stage);
           const isActiveStage = activeStageIndex === index;
           const stageStatusLabel = isActiveStage && running ? "running" : stageState;
 
@@ -559,14 +560,9 @@ function TraceSection({
               const agent = agentLookup[stage.agentId];
               const latestStageEvent = stageEvents[stageEvents.length - 1];
               const nextStage = orderedStages[index + 1];
-              const stageState =
-                latestStageEvent?.type === "stage_failed"
-                  ? "failed"
-                  : latestStageEvent?.type === "stage_completed"
-                    ? "completed"
-                    : run?.status === "running" && run.currentStepIndex === index
-                      ? "running"
-                      : "current";
+              const stageState = latestStageEvent?.type === "stage_started" && run?.status === "running"
+                ? "running"
+                : deriveWorkflowStageLifecycleState(run, stage);
 
               return (
                 <div key={stage.id} className="rounded-2xl border border-border bg-background/60 p-4 shadow-sm">
