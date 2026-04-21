@@ -46,7 +46,7 @@ type WorkflowFormValues = {
 };
 
 type RunAction = "starting" | "stepping" | null;
-type StepVisualState = "completed" | "current" | "pending" | "running";
+type StepVisualState = "completed" | "current" | "failed" | "pending" | "running";
 type RunStreamState = "idle" | "connecting" | "connected" | "disconnected";
 
 const statusLabels: Record<WorkflowStatus, string> = {
@@ -172,6 +172,15 @@ function getStepVisualState(state: StepVisualState) {
       rail: "border-primary/40",
       card: "border-primary/25 bg-primary/[0.06]",
       badge: "border-primary/30 bg-primary/10 text-primary"
+    };
+  }
+
+  if (state === "failed") {
+    return {
+      dot: "bg-rose-500",
+      rail: "border-rose-500/35",
+      card: "border-rose-500/20 bg-rose-500/[0.05]",
+      badge: "border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300"
     };
   }
 
@@ -329,22 +338,94 @@ function getEventPreview(event: WorkflowTraceEvent) {
   return null;
 }
 
-function getEventDetailText(event: WorkflowTraceEvent) {
-  const payload = event.payload ?? {};
+function getToolNameList(toolIds: string[], toolLookup: Record<string, string>) {
+  return toolIds.map((toolId) => toolLookup[toolId] ?? toolId).filter((value, index, list) => list.indexOf(value) === index);
+}
 
-  if (typeof payload["fullOutput"] === "string" && payload["fullOutput"].length > 0) {
-    return payload["fullOutput"];
+function getPayloadString(payload: Record<string, unknown>, key: string) {
+  const value = payload[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function getPayloadNumber(payload: Record<string, unknown>, key: string) {
+  const value = payload[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getPayloadStringList(payload: Record<string, unknown>, key: string) {
+  const value = payload[key];
+  if (!Array.isArray(value)) {
+    return [];
   }
 
-  if (typeof payload["rawModelOutput"] === "string" && payload["rawModelOutput"].length > 0) {
-    return payload["rawModelOutput"];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => item.length > 0);
+}
+
+function formatDuration(durationMs: number | null) {
+  if (durationMs === null) {
+    return null;
+  }
+  if (durationMs < 1000) {
+    return `${durationMs} ms`;
   }
 
-  if (typeof event.detail === "string" && event.detail.length > 0) {
-    return event.detail;
+  return `${(durationMs / 1000).toFixed(durationMs >= 10000 ? 0 : 1)} s`;
+}
+
+function getStageIntentSummary(inputEvent: WorkflowTraceEvent | undefined, traceEntry: WorkflowRun["trace"][number] | undefined) {
+  if (inputEvent?.summary) {
+    return inputEvent.summary;
+  }
+  if (traceEntry?.targetSummary) {
+    return `Work against ${traceEntry.targetSummary}.`;
   }
 
-  return JSON.stringify(payload, null, 2);
+  return "No recorded intent summary.";
+}
+
+function getStageActionSummary(
+  decisionEvent: WorkflowTraceEvent | undefined,
+  toolCallEvent: WorkflowTraceEvent | undefined,
+  traceEntry: WorkflowRun["trace"][number] | undefined,
+  toolLookup: Record<string, string>
+) {
+  if (decisionEvent) {
+    const selectedToolNames = getPayloadStringList(decisionEvent.payload ?? {}, "selectedToolNames");
+    if (selectedToolNames.length > 0) {
+      return `Selected ${selectedToolNames.join(", ")} for the stage.`;
+    }
+
+    if (decisionEvent.summary) {
+      return decisionEvent.summary;
+    }
+  }
+
+  if (toolCallEvent?.summary) {
+    return toolCallEvent.summary;
+  }
+
+  if (traceEntry?.selectedToolIds.length) {
+    return `Executed ${getToolNameList(traceEntry.selectedToolIds, toolLookup).join(", ")}.`;
+  }
+
+  return "No recorded action.";
+}
+
+function getStageOutcomeSummary(
+  terminalEvent: WorkflowTraceEvent | undefined,
+  summaryEvent: WorkflowTraceEvent | undefined,
+  stageLabel: string
+) {
+  if (terminalEvent?.summary) {
+    return terminalEvent.summary;
+  }
+  if (summaryEvent?.summary) {
+    return summaryEvent.summary;
+  }
+
+  return `${stageLabel} has no terminal summary yet.`;
 }
 
 function TraceSection({
@@ -378,7 +459,7 @@ function TraceSection({
   const runtimeLookup = useMemo(() => Object.fromEntries(runtimes.map((item) => [item.id, item.name])), [runtimes]);
   const agentLookup = useMemo(() => Object.fromEntries(agents.map((item) => [item.id, item])), [agents]);
   const toolLookup = useMemo(() => Object.fromEntries(tools.map((item) => [item.id, item.name])), [tools]);
-  const [expandedEventIds, setExpandedEventIds] = useState<Record<string, boolean>>({});
+  const [expandedStageIds, setExpandedStageIds] = useState<Record<string, boolean>>({});
 
   const orderedStages = workflow?.stages.slice().sort((left, right) => left.ord - right.ord) ?? [];
   const orderedEvents = run?.events.slice().sort((left, right) => left.ord - right.ord) ?? [];
@@ -397,6 +478,9 @@ function TraceSection({
 
     return grouped;
   }, [orderedEvents]);
+  const traceByStage = useMemo(() => {
+    return new Map((run?.trace ?? []).map((entry) => [entry.workflowStageId, entry]));
+  }, [run?.trace]);
   const activeStageIndex = run?.status === "running" ? run.currentStepIndex : null;
   const completionState = deriveWorkflowCompletionState(run, orderedStages.length);
   const activeActionLabel = runAction === "starting"
@@ -419,10 +503,10 @@ function TraceSection({
         ? "bg-amber-500"
         : "bg-border";
 
-  function toggleEvent(eventId: string) {
-    setExpandedEventIds((current) => ({
+  function toggleStage(stageId: string) {
+    setExpandedStageIds((current) => ({
       ...current,
-      [eventId]: !current[eventId]
+      [stageId]: !current[stageId]
     }));
   }
 
@@ -545,136 +629,243 @@ function TraceSection({
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[0.625rem] font-medium uppercase tracking-[0.18em] text-muted-foreground">Run Timeline</p>
-              <p className="text-sm text-muted-foreground">Chronological event stream grouped by stage, with hover detail and expandable raw output.</p>
+              <p className="text-sm text-muted-foreground">Stage-by-stage narrative showing who acted, why, what ran, what evidence came back, and what happened next.</p>
             </div>
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{orderedEvents.length} event{orderedEvents.length === 1 ? "" : "s"}</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{orderedStages.length} stage{orderedStages.length === 1 ? "" : "s"}</p>
           </div>
 
           <div className="space-y-4">
             {orderedStages.map((stage, index) => {
               const stageEvents = eventsByStage.get(stage.id) ?? [];
-              if (stageEvents.length === 0) {
-                return null;
-              }
-
               const agent = agentLookup[stage.agentId];
-              const latestStageEvent = stageEvents[stageEvents.length - 1];
+              const traceEntry = traceByStage.get(stage.id);
               const nextStage = orderedStages[index + 1];
-              const stageState = latestStageEvent?.type === "stage_started" && run?.status === "running"
-                ? "running"
-                : deriveWorkflowStageLifecycleState(run, stage);
+              const stageState = deriveWorkflowStageLifecycleState(run, stage);
+              const startedEvent = stageEvents.find((event) => event.type === "stage_started");
+              const inputEvent = stageEvents.find((event) => event.type === "agent_input");
+              const decisionEvent = stageEvents.find((event) => event.type === "model_decision");
+              const toolCallEvent = stageEvents.find((event) => event.type === "tool_call");
+              const summaryEvent = stageEvents.find((event) => event.type === "agent_summary");
+              const terminalEvent = [...stageEvents].reverse().find((event) => event.type === "stage_completed" || event.type === "stage_failed");
+              const toolResultEvents = stageEvents.filter((event) => event.type === "tool_result");
+              const stageTools = traceEntry?.selectedToolIds.length
+                ? getToolNameList(traceEntry.selectedToolIds, toolLookup)
+                : stageEvents.flatMap((event) => getEventToolLabels(event, toolLookup)).filter((value, currentIndex, values) => values.indexOf(value) === currentIndex);
+              const visualState: StepVisualState =
+                stageState === "failed"
+                  ? "failed"
+                  : stageState === "completed"
+                    ? "completed"
+                    : activeStageIndex === index
+                      ? running
+                        ? "running"
+                        : "current"
+                      : stageState === "running"
+                        ? "running"
+                        : "pending";
+              const visual = getStepVisualState(visualState);
+              const stageIntent = getStageIntentSummary(inputEvent, traceEntry);
+              const stageAction = getStageActionSummary(decisionEvent, toolCallEvent, traceEntry, toolLookup);
+              const stageOutcome = getStageOutcomeSummary(terminalEvent, summaryEvent, stage.label);
+              const handoffSummary = terminalEvent?.type === "stage_failed"
+                ? "The workflow stopped here because this stage failed."
+                : nextStage
+                  ? `Ready for ${nextStage.label}.`
+                  : stageState === "completed"
+                    ? "Workflow complete after this stage."
+                    : "No handoff recorded yet.";
+              const isExpanded = expandedStageIds[stage.id] ?? false;
 
               return (
-                <div key={stage.id} className="rounded-2xl border border-border bg-background/60 p-4 shadow-sm">
+                <div key={stage.id} className={`rounded-2xl border bg-background/60 p-4 shadow-sm ${visual.card}`}>
                   <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/70 pb-4">
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[0.625rem] uppercase tracking-[0.16em] text-muted-foreground">
+                        <span className={`rounded-full border bg-background px-2.5 py-1 text-[0.625rem] uppercase tracking-[0.16em] ${visual.badge}`}>
                           Step {index + 1}
                         </span>
-                        <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[0.625rem] uppercase tracking-[0.16em] text-muted-foreground">
-                          {stageState}
+                        <span className={`rounded-full border px-2.5 py-1 text-[0.625rem] uppercase tracking-[0.16em] ${visual.badge}`}>
+                          {visualState}
                         </span>
                       </div>
                       <p className="text-base font-semibold text-foreground">{stage.label}</p>
-                      <p className="text-sm text-muted-foreground">{agent?.name ?? "Unknown agent"}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {agent?.name ?? "Unknown agent"}
+                        {startedEvent ? ` · ${formatTimestamp(startedEvent.createdAt)}` : ""}
+                      </p>
                     </div>
 
-                    <div className="text-right">
-                      <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Next handoff</p>
-                      <p className="text-sm text-foreground">{nextStage?.label ?? "Workflow complete after this stage"}</p>
+                    <Button type="button" variant="outline" size="sm" onClick={() => toggleStage(stage.id)}>
+                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      {isExpanded ? "Hide Activity" : "Show Activity"}
+                    </Button>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-xl border border-border/80 bg-background/75 p-3">
+                      <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Who Acted</p>
+                      <p className="mt-1 text-sm font-medium text-foreground">{agent?.name ?? "Unknown agent"}</p>
+                      <p className="mt-1 text-xs leading-6 text-muted-foreground">
+                        {stageTools.length ? `Available focus tools: ${stageTools.join(", ")}.` : "No stage tools were recorded for this step."}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-border/80 bg-background/75 p-3">
+                      <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Intent</p>
+                      <p className="mt-1 text-sm leading-6 text-foreground">{stageIntent}</p>
+                      {traceEntry?.targetSummary ? <p className="mt-2 text-xs leading-6 text-muted-foreground">Target: {traceEntry.targetSummary}</p> : null}
+                    </div>
+
+                    <div className="rounded-xl border border-border/80 bg-background/75 p-3">
+                      <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Main Action</p>
+                      <p className="mt-1 text-sm leading-6 text-foreground">{stageAction}</p>
+                      {decisionEvent?.detail ? <p className="mt-2 text-xs leading-6 text-muted-foreground">{summarizeReason(decisionEvent.detail)}</p> : null}
+                      {stageTools.length ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {stageTools.map((label) => (
+                            <ToolChip key={`${stage.id}-${label}`} label={label} />
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="rounded-xl border border-border/80 bg-background/75 p-3">
+                      <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">What Happened Next</p>
+                      <p className="mt-1 text-sm leading-6 text-foreground">{stageOutcome}</p>
+                      <p className="mt-2 text-xs leading-6 text-muted-foreground">{handoffSummary}</p>
                     </div>
                   </div>
 
-                  <div className="mt-4 space-y-4">
-                    {stageEvents.map((event, eventIndex) => {
-                      const tone = getEventTone(event);
-                      const Icon = getEventIcon(event.type);
-                      const preview = getEventPreview(event);
-                      const toolLabels = getEventToolLabels(event, toolLookup);
-                      const isExpanded = expandedEventIds[event.id] ?? false;
-                      const detailText = getEventDetailText(event);
+                  <div className="mt-4 rounded-xl border border-border/80 bg-background/70 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Evidence</p>
+                        <p className="text-xs text-muted-foreground">Tool results and recorded highlights are surfaced before raw metadata.</p>
+                      </div>
+                      <span className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">
+                        {toolResultEvents.length} tool result{toolResultEvents.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
 
-                      return (
-                        <div key={event.id} className="relative pl-10">
-                          {eventIndex < stageEvents.length - 1 ? (
-                            <div className={`absolute left-[0.95rem] top-7 h-[calc(100%-0.25rem)] border-l border-dashed ${tone.rail}`} />
-                          ) : null}
+                    <div className="mt-3 space-y-3">
+                      {toolResultEvents.length ? toolResultEvents.map((event) => {
+                        const payload = event.payload ?? {};
+                        const tone = getEventTone(event);
+                        const evidenceNotes = [
+                          ...getPayloadStringList(payload, "observationSummaries"),
+                          ...getPayloadStringList(payload, "findingSummaries")
+                        ];
+                        const outputPreview = getPayloadString(payload, "outputPreview") ?? getEventPreview(event);
+                        const duration = formatDuration(getPayloadNumber(payload, "durationMs"));
+                        const timedOut = payload["timedOut"] === true;
 
-                          <div className={`absolute left-0 top-1 flex h-8 w-8 items-center justify-center rounded-full border border-background shadow-sm ${tone.dot}`}>
-                            <Icon className="h-4 w-4" />
-                          </div>
-
-                          <div className={`group relative rounded-xl border p-3 ${tone.card}`}>
+                        return (
+                          <div key={event.id} className={`rounded-xl border p-3 ${tone.card}`}>
                             <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div className="min-w-0 flex-1 space-y-2">
+                              <div>
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className={`rounded-full border px-2 py-1 text-[0.625rem] uppercase tracking-[0.16em] ${tone.badge}`}>
-                                    {formatEventType(event.type)}
+                                    {getPayloadString(payload, "toolName") ?? event.title}
                                   </span>
                                   <span className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">{event.status}</span>
-                                  <span className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">{formatTimestamp(event.createdAt)}</span>
+                                  {duration ? <span className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">{duration}</span> : null}
+                                  {timedOut ? <span className="text-[0.625rem] uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">timed out</span> : null}
                                 </div>
-
-                                <div className="space-y-1">
-                                  <p className="text-sm font-medium text-foreground">{event.title}</p>
-                                  <p className="text-sm text-muted-foreground">{event.summary}</p>
-                                </div>
-
-                                {toolLabels.length ? (
-                                  <div className="flex flex-wrap gap-2">
-                                    {toolLabels.map((label) => (
-                                      <ToolChip key={`${event.id}-${label}`} label={label} />
-                                    ))}
-                                  </div>
-                                ) : null}
-
-                                {preview ? (
-                                  <div className="rounded-lg border border-border/80 bg-background/70 px-3 py-2">
-                                    <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Preview</p>
-                                    <p className="mt-1 text-xs leading-6 text-foreground">{preview}</p>
-                                  </div>
-                                ) : null}
+                                <p className="mt-2 text-sm font-medium text-foreground">{event.summary}</p>
                               </div>
-
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="shrink-0"
-                                onClick={() => toggleEvent(event.id)}
-                              >
-                                {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                {isExpanded ? "Hide" : "Details"}
-                              </Button>
                             </div>
 
-                            <div className="pointer-events-none absolute right-4 top-12 z-10 hidden w-[26rem] rounded-xl border border-border bg-background p-3 shadow-xl lg:group-hover:block">
-                              <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Hover Detail</p>
-                              <p className="mt-2 text-xs leading-6 text-foreground">{truncateText(detailText, 420)}</p>
-                            </div>
+                            {outputPreview ? (
+                              <div className="mt-3 rounded-lg border border-border/80 bg-background/80 px-3 py-2">
+                                <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Returned Evidence</p>
+                                <p className="mt-1 text-xs leading-6 text-foreground">{outputPreview}</p>
+                              </div>
+                            ) : null}
 
-                            {isExpanded ? (
-                              <div className="mt-3 grid gap-3 border-t border-border/70 pt-3 lg:grid-cols-[1.2fr_1fr]">
-                                <div>
-                                  <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Detail</p>
-                                  <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-background p-3 text-xs leading-6 text-foreground">
-                                    {detailText}
-                                  </pre>
-                                </div>
-                                <div>
-                                  <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Payload</p>
-                                  <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-background p-3 text-xs leading-6 text-foreground">
-                                    {JSON.stringify(event.payload, null, 2)}
-                                  </pre>
-                                </div>
+                            {evidenceNotes.length ? (
+                              <div className="mt-3 space-y-2">
+                                <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Highlights</p>
+                                <ul className="space-y-1 text-xs leading-6 text-foreground">
+                                  {evidenceNotes.map((note, noteIndex) => (
+                                    <li key={`${event.id}-note-${noteIndex}`}>{note}</li>
+                                  ))}
+                                </ul>
                               </div>
                             ) : null}
                           </div>
+                        );
+                      }) : (
+                        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                          No tool evidence has been recorded for this stage yet.
                         </div>
-                      );
-                    })}
+                      )}
+
+                      {traceEntry?.evidenceHighlights.length ? (
+                        <div className="rounded-lg border border-border/80 bg-background/80 px-3 py-3">
+                          <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Stage Highlights</p>
+                          <ul className="mt-2 space-y-1 text-xs leading-6 text-foreground">
+                            {traceEntry.evidenceHighlights.map((highlight, highlightIndex) => (
+                              <li key={`${stage.id}-highlight-${highlightIndex}`}>{highlight}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
+
+                  {isExpanded ? (
+                    <div className="mt-4 grid gap-3 border-t border-border/70 pt-4 lg:grid-cols-[1.1fr_1.2fr]">
+                      <div className="rounded-xl border border-border/80 bg-background/75 p-3">
+                        <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Supporting Activity</p>
+                        <div className="mt-3 space-y-3">
+                          {stageEvents.length ? stageEvents.map((event) => {
+                            const Icon = getEventIcon(event.type);
+                            const preview = getEventPreview(event);
+                            const toolLabels = getEventToolLabels(event, toolLookup);
+
+                            return (
+                              <div key={event.id} className="rounded-lg border border-border/70 bg-background/70 p-3">
+                                <div className="flex items-start gap-3">
+                                  <div className="mt-0.5 rounded-full border border-border bg-background p-1.5 text-muted-foreground">
+                                    <Icon className="h-3.5 w-3.5" />
+                                  </div>
+                                  <div className="min-w-0 flex-1 space-y-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">{formatEventType(event.type)}</span>
+                                      <span className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">{event.status}</span>
+                                      <span className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">{formatTimestamp(event.createdAt)}</span>
+                                    </div>
+                                    <p className="text-sm font-medium text-foreground">{event.title}</p>
+                                    <p className="text-xs leading-6 text-muted-foreground">{event.summary}</p>
+                                    {toolLabels.length ? (
+                                      <div className="flex flex-wrap gap-2 pt-1">
+                                        {toolLabels.map((label) => (
+                                          <ToolChip key={`${event.id}-${label}`} label={label} />
+                                        ))}
+                                      </div>
+                                    ) : null}
+                                    {preview ? <p className="text-xs leading-6 text-foreground">{preview}</p> : null}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }) : (
+                            <p className="text-sm text-muted-foreground">No stage activity recorded yet.</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-border/80 bg-background/75 p-3">
+                        <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Raw Trace</p>
+                        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-background p-3 text-xs leading-6 text-foreground">
+                          {JSON.stringify({
+                            traceEntry: traceEntry ?? null,
+                            events: stageEvents
+                          }, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
