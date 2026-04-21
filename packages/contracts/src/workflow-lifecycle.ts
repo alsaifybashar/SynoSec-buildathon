@@ -1,11 +1,32 @@
 import { z } from "zod";
-import type { WorkflowRun, WorkflowRunStatus, WorkflowStage } from "./resources.js";
+import type { WorkflowRun, WorkflowRunStatus, WorkflowStage, WorkflowTraceEntry, WorkflowTraceEvent } from "./resources.js";
 
 export const workflowStageLifecycleStateSchema = z.enum(["pending", "running", "completed", "failed"]);
 export type WorkflowStageLifecycleState = z.infer<typeof workflowStageLifecycleStateSchema>;
 
 export const workflowCompletionStateSchema = z.enum(["not_started", "running", "completed", "failed"]);
 export type WorkflowCompletionState = z.infer<typeof workflowCompletionStateSchema>;
+
+export const workflowStageBoundaryEventTypeSchema = z.enum(["stage_started", "stage_completed", "stage_failed"]);
+export type WorkflowStageBoundaryEventType = z.infer<typeof workflowStageBoundaryEventTypeSchema>;
+
+export type WorkflowStageExecutionContract = {
+  stageId: string;
+  stageOrd: number;
+  state: WorkflowStageLifecycleState;
+  hasStarted: boolean;
+  startedAt: string | null;
+  terminalAt: string | null;
+  terminalEventType: Exclude<WorkflowStageBoundaryEventType, "stage_started"> | null;
+  traceStatus: WorkflowTraceEntry["status"] | null;
+  source: "none" | "boundary_event" | "trace_entry" | "run_record";
+};
+
+export type WorkflowRunExecutionContract = {
+  completionState: WorkflowCompletionState;
+  isFinalized: boolean;
+  stages: WorkflowStageExecutionContract[];
+};
 
 export const workflowRunTransitionTriggerSchema = z.enum([
   "start_run",
@@ -64,14 +85,14 @@ export const workflowLifecycleModel = {
       notes: "Latest run selection is deterministic: startedAt desc, then completedAt desc, then id desc."
     },
     stageState: {
-      field: "deriveWorkflowStageLifecycleState(run, stage)",
-      owner: "Shared lifecycle derivation helper",
+      field: "deriveWorkflowStageExecutionContract(run, stage) and deriveWorkflowRunExecutionContract(run, stages)",
+      owner: "Shared lifecycle execution contract",
       sourceFiles: [
         "packages/contracts/src/workflow-lifecycle.ts",
         "packages/contracts/src/resources.ts",
         "apps/frontend/src/pages/workflows-page.tsx"
       ],
-      notes: "Per-stage state is derived from the run's authoritative events and trace, with currentStepIndex used only as an ordered fallback."
+      notes: "Per-stage state is derived from a single execution contract that prioritizes boundary events, then persisted trace, with currentStepIndex used only as a persisted fallback."
     },
     completionState: {
       field: "deriveWorkflowCompletionState(run, stageCount) and isWorkflowRunFinalized(run, stageCount)",
@@ -200,47 +221,192 @@ export function selectLatestWorkflowRun(runs: readonly WorkflowRun[]) {
   return runs.slice().sort(compareWorkflowRunRecency)[0] ?? null;
 }
 
-export function deriveWorkflowStageLifecycleState(run: WorkflowRun | null, stage: Pick<WorkflowStage, "id" | "ord">): WorkflowStageLifecycleState {
-  if (!run) {
-    return "pending";
+function compareWorkflowStepPosition(left: Pick<WorkflowTraceEntry, "stepIndex" | "createdAt">, right: Pick<WorkflowTraceEntry, "stepIndex" | "createdAt">) {
+  const stepDifference = right.stepIndex - left.stepIndex;
+  if (stepDifference !== 0) {
+    return stepDifference;
   }
 
+  return toTimestamp(right.createdAt) - toTimestamp(left.createdAt);
+}
+
+function isWorkflowStageBoundaryEvent(event: WorkflowTraceEvent): event is WorkflowTraceEvent & {
+  type: WorkflowStageBoundaryEventType;
+} {
+  return event.type === "stage_started" || event.type === "stage_completed" || event.type === "stage_failed";
+}
+
+export function deriveWorkflowStageExecutionContract(
+  run: WorkflowRun | null,
+  stage: Pick<WorkflowStage, "id" | "ord">
+): WorkflowStageExecutionContract {
+  if (!run) {
+    return {
+      stageId: stage.id,
+      stageOrd: stage.ord,
+      state: "pending",
+      hasStarted: false,
+      startedAt: null,
+      terminalAt: null,
+      terminalEventType: null,
+      traceStatus: null,
+      source: "none"
+    };
+  }
+
+  const stageBoundaryEvents = run.events
+    .filter((event) => event.workflowStageId === stage.id)
+    .filter(isWorkflowStageBoundaryEvent)
+    .sort((left, right) => right.ord - left.ord);
+  const latestBoundaryEvent = stageBoundaryEvents[0] ?? null;
+  const startedEvent = stageBoundaryEvents.find((event) => event.type === "stage_started") ?? null;
   const latestTrace = run.trace
     .filter((entry) => entry.workflowStageId === stage.id)
-    .sort((left, right) => right.stepIndex - left.stepIndex)[0];
-  if (latestTrace?.status === "failed") {
-    return "failed";
-  }
-  if (latestTrace?.status === "completed") {
-    return "completed";
-  }
-
-  const latestBoundaryEvent = run.events
-    .filter((event) => event.workflowStageId === stage.id)
-    .sort((left, right) => right.ord - left.ord)
-    .find((event) => event.type === "stage_failed" || event.type === "stage_completed" || event.type === "stage_started");
+    .sort(compareWorkflowStepPosition)[0] ?? null;
 
   if (latestBoundaryEvent?.type === "stage_failed") {
-    return "failed";
+    return {
+      stageId: stage.id,
+      stageOrd: stage.ord,
+      state: "failed",
+      hasStarted: true,
+      startedAt: startedEvent?.createdAt ?? latestBoundaryEvent.createdAt,
+      terminalAt: latestBoundaryEvent.createdAt,
+      terminalEventType: "stage_failed",
+      traceStatus: latestTrace?.status ?? null,
+      source: "boundary_event"
+    };
   }
   if (latestBoundaryEvent?.type === "stage_completed") {
-    return "completed";
+    return {
+      stageId: stage.id,
+      stageOrd: stage.ord,
+      state: "completed",
+      hasStarted: true,
+      startedAt: startedEvent?.createdAt ?? latestBoundaryEvent.createdAt,
+      terminalAt: latestBoundaryEvent.createdAt,
+      terminalEventType: "stage_completed",
+      traceStatus: latestTrace?.status ?? null,
+      source: "boundary_event"
+    };
   }
-  if (latestBoundaryEvent?.type === "stage_started") {
-    return run.status === "failed" ? "failed" : "running";
+  if (latestTrace?.status === "failed") {
+    return {
+      stageId: stage.id,
+      stageOrd: stage.ord,
+      state: "failed",
+      hasStarted: true,
+      startedAt: startedEvent?.createdAt ?? latestTrace.createdAt,
+      terminalAt: latestTrace.createdAt,
+      terminalEventType: null,
+      traceStatus: "failed",
+      source: "trace_entry"
+    };
+  }
+  if (latestTrace?.status === "completed") {
+    return {
+      stageId: stage.id,
+      stageOrd: stage.ord,
+      state: "completed",
+      hasStarted: true,
+      startedAt: startedEvent?.createdAt ?? latestTrace.createdAt,
+      terminalAt: latestTrace.createdAt,
+      terminalEventType: null,
+      traceStatus: "completed",
+      source: "trace_entry"
+    };
+  }
+  if (startedEvent) {
+    return {
+      stageId: stage.id,
+      stageOrd: stage.ord,
+      state: run.status === "failed" && run.currentStepIndex === stage.ord ? "failed" : "running",
+      hasStarted: true,
+      startedAt: startedEvent.createdAt,
+      terminalAt: null,
+      terminalEventType: null,
+      traceStatus: null,
+      source: "boundary_event"
+    };
   }
 
   if (run.status === "failed" && run.currentStepIndex === stage.ord) {
-    return "failed";
+    return {
+      stageId: stage.id,
+      stageOrd: stage.ord,
+      state: "failed",
+      hasStarted: true,
+      startedAt: null,
+      terminalAt: run.completedAt,
+      terminalEventType: null,
+      traceStatus: null,
+      source: "run_record"
+    };
   }
-  if (run.currentStepIndex > stage.ord || run.status === "completed") {
-    return "completed";
-  }
-  if (run.status === "running" && run.currentStepIndex === stage.ord) {
-    return "pending";
+  if (run.currentStepIndex > stage.ord || (run.status === "completed" && run.currentStepIndex >= stage.ord + 1)) {
+    return {
+      stageId: stage.id,
+      stageOrd: stage.ord,
+      state: "completed",
+      hasStarted: true,
+      startedAt: null,
+      terminalAt: run.completedAt,
+      terminalEventType: null,
+      traceStatus: null,
+      source: "run_record"
+    };
   }
 
-  return "pending";
+  return {
+    stageId: stage.id,
+    stageOrd: stage.ord,
+    state: "pending",
+    hasStarted: false,
+    startedAt: null,
+    terminalAt: null,
+    terminalEventType: null,
+    traceStatus: null,
+    source: "none"
+  };
+}
+
+export function deriveWorkflowStageLifecycleState(run: WorkflowRun | null, stage: Pick<WorkflowStage, "id" | "ord">): WorkflowStageLifecycleState {
+  return deriveWorkflowStageExecutionContract(run, stage).state;
+}
+
+export function deriveWorkflowRunExecutionContract(
+  run: WorkflowRun | null,
+  stages: readonly Pick<WorkflowStage, "id" | "ord">[]
+): WorkflowRunExecutionContract {
+  const stageContracts = stages.map((stage) => deriveWorkflowStageExecutionContract(run, stage));
+  if (!run) {
+    return {
+      completionState: "not_started",
+      isFinalized: false,
+      stages: stageContracts
+    };
+  }
+
+  const allStagesCompleted =
+    stageContracts.length === stages.length && stageContracts.every((stage) => stage.state === "completed");
+  const anyStageFailed = stageContracts.some((stage) => stage.state === "failed");
+  const completionState: WorkflowCompletionState =
+    run.status === "failed" || anyStageFailed
+      ? "failed"
+      : run.status === "completed" && run.completedAt !== null && allStagesCompleted && run.currentStepIndex >= stages.length
+        ? "completed"
+        : "running";
+
+  return {
+    completionState,
+    isFinalized:
+      completionState === "completed"
+        ? run.completedAt !== null && allStagesCompleted && run.currentStepIndex >= stages.length
+        : completionState === "failed"
+          ? run.completedAt !== null
+          : false,
+    stages: stageContracts
+  };
 }
 
 export function deriveWorkflowCompletionState(run: WorkflowRun | null, stageCount: number): WorkflowCompletionState {
@@ -258,8 +424,25 @@ export function deriveWorkflowCompletionState(run: WorkflowRun | null, stageCoun
 }
 
 export function isWorkflowRunFinalized(run: WorkflowRun, stageCount: number) {
+  const stageIds = new Set<string>();
+  for (const event of run.events) {
+    if (event.workflowStageId) {
+      stageIds.add(event.workflowStageId);
+    }
+  }
+  for (const entry of run.trace) {
+    stageIds.add(entry.workflowStageId);
+  }
+  const stageContracts = [...stageIds].map((stageId, index) =>
+    deriveWorkflowStageExecutionContract(run, { id: stageId, ord: index })
+  );
+
   if (run.status === "completed") {
-    return run.completedAt !== null && run.currentStepIndex >= stageCount;
+    return (
+      run.completedAt !== null &&
+      run.currentStepIndex >= stageCount &&
+      stageContracts.every((stage) => stage.state !== "failed")
+    );
   }
 
   if (run.status === "failed") {

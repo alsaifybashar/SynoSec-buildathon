@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { WorkflowRun } from "./resources.js";
 import {
   deriveWorkflowCompletionState,
+  deriveWorkflowRunExecutionContract,
+  deriveWorkflowStageExecutionContract,
   deriveWorkflowStageLifecycleState,
   isWorkflowRunFinalized,
   isWorkflowRunTransitionAllowed,
@@ -108,8 +110,20 @@ describe("workflow lifecycle model", () => {
         }
       ]
     });
+    const stages = [
+      { id: "30000000-0000-0000-0000-000000000001", ord: 0 },
+      { id: "30000000-0000-0000-0000-000000000002", ord: 1 }
+    ] as const;
+    const stageContract = deriveWorkflowStageExecutionContract(run, stages[0]);
+    const runContract = deriveWorkflowRunExecutionContract(run, stages);
 
-    expect(deriveWorkflowStageLifecycleState(run, { id: "30000000-0000-0000-0000-000000000001", ord: 0 })).toBe("completed");
+    expect(stageContract.state).toBe("completed");
+    expect(stageContract.terminalEventType).toBe("stage_completed");
+    expect(stageContract.source).toBe("boundary_event");
+    expect(runContract.stages.map((stage) => stage.state)).toEqual(["completed", "completed"]);
+    expect(runContract.completionState).toBe("completed");
+    expect(runContract.isFinalized).toBe(true);
+    expect(deriveWorkflowStageLifecycleState(run, stages[0])).toBe("completed");
     expect(deriveWorkflowCompletionState(run, 2)).toBe("completed");
     expect(isWorkflowRunFinalized(run, 2)).toBe(true);
   });
@@ -137,8 +151,17 @@ describe("workflow lifecycle model", () => {
         }
       ]
     });
+    const stages = [
+      { id: "30000000-0000-0000-0000-000000000001", ord: 0 },
+      { id: "30000000-0000-0000-0000-000000000002", ord: 1 }
+    ] as const;
+    const stageContract = deriveWorkflowStageExecutionContract(run, stages[1]);
+    const runContract = deriveWorkflowRunExecutionContract(run, stages);
 
-    expect(deriveWorkflowStageLifecycleState(run, { id: "30000000-0000-0000-0000-000000000002", ord: 1 })).toBe("failed");
+    expect(stageContract.state).toBe("failed");
+    expect(stageContract.source).toBe("boundary_event");
+    expect(runContract.stages.map((stage) => stage.state)).toEqual(["completed", "failed"]);
+    expect(runContract.completionState).toBe("failed");
     expect(deriveWorkflowCompletionState(run, 2)).toBe("failed");
     expect(isWorkflowRunTransitionAllowed("running", "failed", "interrupt_run")).toBe(true);
   });
