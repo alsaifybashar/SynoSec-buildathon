@@ -363,6 +363,85 @@ function getPayloadStringList(payload: Record<string, unknown>, key: string) {
     .filter((item) => item.length > 0);
 }
 
+type TokenUsageSummary = {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function firstFiniteNumber(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function getTokenUsageSummary(payload: Record<string, unknown>): TokenUsageSummary | null {
+  const usage = isRecord(payload["tokenUsage"])
+    ? payload["tokenUsage"]
+    : isRecord(payload["usage"])
+      ? payload["usage"]
+      : null;
+  const inputTokens = firstFiniteNumber(
+    payload["inputTokens"],
+    payload["promptTokens"],
+    usage?.["inputTokens"],
+    usage?.["promptTokens"]
+  );
+  const outputTokens = firstFiniteNumber(
+    payload["outputTokens"],
+    payload["completionTokens"],
+    usage?.["outputTokens"],
+    usage?.["completionTokens"]
+  );
+  const totalTokens = firstFiniteNumber(
+    payload["totalTokens"],
+    usage?.["totalTokens"],
+    inputTokens !== null || outputTokens !== null ? (inputTokens ?? 0) + (outputTokens ?? 0) : null
+  );
+
+  if (inputTokens === null && outputTokens === null && totalTokens === null) {
+    return null;
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens
+  };
+}
+
+function formatTokenCount(value: number) {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function TokenUsageChips({ usage }: { usage: TokenUsageSummary }) {
+  const chips = [
+    usage.inputTokens !== null ? `Input ${formatTokenCount(usage.inputTokens)}` : null,
+    usage.outputTokens !== null ? `Output ${formatTokenCount(usage.outputTokens)}` : null,
+    usage.totalTokens !== null ? `Total ${formatTokenCount(usage.totalTokens)}` : null
+  ].filter((value): value is string => Boolean(value));
+
+  if (chips.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {chips.map((label) => (
+        <ToolChip key={label} label={`${label} tokens`} />
+      ))}
+    </div>
+  );
+}
+
 function formatDuration(durationMs: number | null) {
   if (durationMs === null) {
     return null;
@@ -426,6 +505,72 @@ function getStageOutcomeSummary(
   }
 
   return `${stageLabel} has no terminal summary yet.`;
+}
+
+function getStageReasoningSummary(
+  decisionEvent: WorkflowTraceEvent | undefined,
+  traceEntry: WorkflowRun["trace"][number] | undefined
+) {
+  if (decisionEvent?.detail) {
+    return decisionEvent.detail;
+  }
+  if (traceEntry?.toolSelectionReason) {
+    return traceEntry.toolSelectionReason;
+  }
+
+  return "No recorded tool-choice rationale.";
+}
+
+function getStageToolChoiceSummary(
+  decisionEvent: WorkflowTraceEvent | undefined,
+  toolCallEvent: WorkflowTraceEvent | undefined,
+  traceEntry: WorkflowRun["trace"][number] | undefined,
+  toolLookup: Record<string, string>
+) {
+  const decisionPayload = decisionEvent?.payload ?? {};
+  const selectedToolNames = getPayloadStringList(decisionPayload, "selectedToolNames");
+
+  if (selectedToolNames.length > 0) {
+    return selectedToolNames;
+  }
+  if (traceEntry?.selectedToolIds.length) {
+    return getToolNameList(traceEntry.selectedToolIds, toolLookup);
+  }
+  if (toolCallEvent) {
+    return getEventToolLabels(toolCallEvent, toolLookup);
+  }
+
+  return [];
+}
+
+function getStageHandoffSummary(input: {
+  stageLabel: string;
+  nextStageLabel: string | undefined;
+  terminalEvent: WorkflowTraceEvent | undefined;
+  traceEntry: WorkflowRun["trace"][number] | undefined;
+  stageTools: string[];
+}) {
+  if (input.terminalEvent?.type === "stage_failed") {
+    return {
+      receives: "No downstream stage received a hand-off because this stage failed.",
+      why: "Review the failure evidence on this stage before resuming the workflow."
+    };
+  }
+
+  if (!input.nextStageLabel) {
+    return {
+      receives: "No next stage remains; this stage closes the workflow with the evidence shown here.",
+      why: "Reviewers can treat this stage as the terminal source of truth for the completed run."
+    };
+  }
+
+  const evidenceContext = input.traceEntry?.evidenceHighlights[0] ?? "the current stage evidence";
+  const selectedTools = input.stageTools.length ? input.stageTools.join(", ") : "the recorded stage context";
+
+  return {
+    receives: `${input.nextStageLabel} receives ${selectedTools}, ${evidenceContext.toLowerCase()}, and the target context from ${input.stageLabel}.`,
+    why: `That context matters so ${input.nextStageLabel} can continue from validated evidence instead of re-deriving the previous stage state.`
+  };
 }
 
 function TraceSection({
@@ -666,14 +811,17 @@ function TraceSection({
               const visual = getStepVisualState(visualState);
               const stageIntent = getStageIntentSummary(inputEvent, traceEntry);
               const stageAction = getStageActionSummary(decisionEvent, toolCallEvent, traceEntry, toolLookup);
+              const stageReasoning = getStageReasoningSummary(decisionEvent, traceEntry);
+              const stageToolChoices = getStageToolChoiceSummary(decisionEvent, toolCallEvent, traceEntry, toolLookup);
               const stageOutcome = getStageOutcomeSummary(terminalEvent, summaryEvent, stage.label);
-              const handoffSummary = terminalEvent?.type === "stage_failed"
-                ? "The workflow stopped here because this stage failed."
-                : nextStage
-                  ? `Ready for ${nextStage.label}.`
-                  : stageState === "completed"
-                    ? "Workflow complete after this stage."
-                    : "No handoff recorded yet.";
+              const decisionTokenUsage = decisionEvent ? getTokenUsageSummary(decisionEvent.payload ?? {}) : null;
+              const handoffSummary = getStageHandoffSummary({
+                stageLabel: stage.label,
+                nextStageLabel: nextStage?.label,
+                terminalEvent,
+                traceEntry,
+                stageTools
+              });
               const isExpanded = expandedStageIds[stage.id] ?? false;
 
               return (
@@ -717,22 +865,42 @@ function TraceSection({
                     </div>
 
                     <div className="rounded-xl border border-border/80 bg-background/75 p-3">
-                      <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Main Action</p>
-                      <p className="mt-1 text-sm leading-6 text-foreground">{stageAction}</p>
-                      {decisionEvent?.detail ? <p className="mt-2 text-xs leading-6 text-muted-foreground">{summarizeReason(decisionEvent.detail)}</p> : null}
-                      {stageTools.length ? (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {stageTools.map((label) => (
-                            <ToolChip key={`${stage.id}-${label}`} label={label} />
-                          ))}
+                      <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Reasoning</p>
+                      <p className="mt-1 text-sm leading-6 text-foreground">{stageReasoning}</p>
+                      {decisionTokenUsage ? (
+                        <div>
+                          <p className="mt-3 text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Model Token Usage</p>
+                          <TokenUsageChips usage={decisionTokenUsage} />
                         </div>
                       ) : null}
                     </div>
 
                     <div className="rounded-xl border border-border/80 bg-background/75 p-3">
-                      <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">What Happened Next</p>
+                      <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Tool Choice</p>
+                      <p className="mt-1 text-sm leading-6 text-foreground">{stageAction}</p>
+                      {stageToolChoices.length ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {stageToolChoices.map((label) => (
+                            <ToolChip key={`${stage.id}-${label}`} label={label} />
+                          ))}
+                        </div>
+                      ) : <p className="mt-2 text-xs leading-6 text-muted-foreground">No tool choice was recorded for this stage.</p>}
+                      <p className="mt-3 text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Tool-Choice Rationale</p>
+                      <p className="mt-1 text-xs leading-6 text-muted-foreground">{summarizeReason(stageReasoning)}</p>
+                    </div>
+
+                    <div className="rounded-xl border border-border/80 bg-background/75 p-3">
+                      <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Outcome</p>
                       <p className="mt-1 text-sm leading-6 text-foreground">{stageOutcome}</p>
-                      <p className="mt-2 text-xs leading-6 text-muted-foreground">{handoffSummary}</p>
+                      <p className="mt-2 text-xs leading-6 text-muted-foreground">
+                        Explicit result: {terminalEvent?.type === "stage_failed" ? "failure" : stageState === "completed" ? "success" : "in progress"}.
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-border/80 bg-background/75 p-3 lg:col-span-2">
+                      <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Next Stage Handoff</p>
+                      <p className="mt-1 text-sm leading-6 text-foreground">{handoffSummary.receives}</p>
+                      <p className="mt-2 text-xs leading-6 text-muted-foreground">{handoffSummary.why}</p>
                     </div>
                   </div>
 
@@ -757,6 +925,7 @@ function TraceSection({
                         ];
                         const outputPreview = getPayloadString(payload, "outputPreview") ?? getEventPreview(event);
                         const duration = formatDuration(getPayloadNumber(payload, "durationMs"));
+                        const tokenUsage = getTokenUsageSummary(payload);
                         const timedOut = payload["timedOut"] === true;
 
                         return (
@@ -774,6 +943,13 @@ function TraceSection({
                                 <p className="mt-2 text-sm font-medium text-foreground">{event.summary}</p>
                               </div>
                             </div>
+
+                            {tokenUsage ? (
+                              <div>
+                                <p className="mt-3 text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Tool Token Usage</p>
+                                <TokenUsageChips usage={tokenUsage} />
+                              </div>
+                            ) : null}
 
                             {outputPreview ? (
                               <div className="mt-3 rounded-lg border border-border/80 bg-background/80 px-3 py-2">

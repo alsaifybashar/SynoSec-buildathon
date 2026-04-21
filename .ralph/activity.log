@@ -1,6 +1,7 @@
 # Activity Log
 
 ## Run Summary
+- 2026-04-21 02:26:43 | run=20260421-014550-336751 | iter=4 | mode=build | story=S4 | duration=868s | status=success
 - 2026-04-21 02:12:12 | run=20260421-014550-336751 | iter=3 | mode=build | story=S3 | duration=559s | status=success
 - 2026-04-21 02:02:51 | run=20260421-014550-336751 | iter=2 | mode=build | story=S2 | duration=531s | status=success
 - 2026-04-21 01:53:55 | run=20260421-014550-336751 | iter=1 | mode=build | story=S1 | duration=485s | status=success
@@ -61,3 +62,7 @@
 [2026-04-21 02:25:09] S4 verification complete: frontend typecheck/build/test, backend workflow tests, and browser validation finished
 [2026-04-21 02:26:04] S4 progress log updated with commit and verification details
 [2026-04-21 02:26:22] S4 final commit completed; working tree cleaned
+[2026-04-21 02:26:43] ITERATION 4 end (duration=868s)
+[2026-04-21 02:26:45] ITERATION 5 start (mode=build story=S5)
+[2026-04-21 02:30:13] Implemented S5 timeline refinements in workflows page: explicit reasoning, tool choice, token usage, outcome, evidence, and hand-off visibility; extended workflow page tests for success and failure trust views.
+[2026-04-21 02:31:59] Completed verification for S5: frontend tests/build passed and browser-checked workflow timeline sections on seeded workflow detail route with screenshot at /tmp/s5-workflow-timeline.png.
