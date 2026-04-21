@@ -33,8 +33,8 @@ export class MemoryAiProvidersRepository implements AiProvidersRepository {
       .sort((left, right) => {
         const sortBy = query.sortBy ?? "name";
         const direction = query.sortDirection === "desc" ? -1 : 1;
-        const leftValue = sortBy === "apiKey" ? left.apiKey : left[sortBy];
-        const rightValue = sortBy === "apiKey" ? right.apiKey : right[sortBy];
+        const leftValue = normalizeSortableValue(sortBy === "apiKey" ? left.apiKey : left[sortBy]);
+        const rightValue = normalizeSortableValue(sortBy === "apiKey" ? right.apiKey : right[sortBy]);
 
         if (leftValue === rightValue) {
           return left.name.localeCompare(right.name) * direction;
@@ -109,4 +109,18 @@ export class MemoryAiProvidersRepository implements AiProvidersRepository {
   async remove(id: string): Promise<boolean> {
     return this.records.delete(id);
   }
+}
+
+function normalizeSortableValue(value: string | null): string;
+function normalizeSortableValue(value: string | boolean): string | number;
+function normalizeSortableValue(value: string | boolean | null): string | number {
+  if (value === null) {
+    return "";
+  }
+
+  if (typeof value === "boolean") {
+    return value ? 1 : 0;
+  }
+
+  return value;
 }

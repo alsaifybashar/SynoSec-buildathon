@@ -30,7 +30,7 @@ export function DetailPage({
   onBack: () => void;
   onSave: () => void | Promise<void>;
   onDismiss: () => void;
-  onExportJson?: () => void;
+  onExportJson?: (() => void) | undefined;
   saveLabel?: string;
   actions?: ReactNode;
   sidebar?: ReactNode;

@@ -53,4 +53,44 @@ describe("MemoryAiProvidersRepository", () => {
       apiKeyConfigured: false
     });
   });
+
+  it("sorts by apiKey when some providers have no stored key", async () => {
+    const repository = new MemoryAiProvidersRepository([
+      {
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "No Key",
+        kind: "local",
+        status: "active",
+        description: null,
+        baseUrl: "http://127.0.0.1:11434",
+        model: "qwen",
+        apiKeyConfigured: false,
+        apiKey: null,
+        createdAt: "2026-04-21T00:00:00.000Z",
+        updatedAt: "2026-04-21T00:00:00.000Z"
+      },
+      {
+        id: "22222222-2222-2222-2222-222222222222",
+        name: "With Key",
+        kind: "anthropic",
+        status: "active",
+        description: null,
+        baseUrl: null,
+        model: "claude",
+        apiKeyConfigured: true,
+        apiKey: "token-1",
+        createdAt: "2026-04-21T00:00:00.000Z",
+        updatedAt: "2026-04-21T00:00:00.000Z"
+      }
+    ]);
+
+    const listed = await repository.list({
+      page: 1,
+      pageSize: 10,
+      sortBy: "apiKey",
+      sortDirection: "asc"
+    });
+
+    expect(listed.items.map((provider) => provider.name)).toEqual(["No Key", "With Key"]);
+  });
 });
