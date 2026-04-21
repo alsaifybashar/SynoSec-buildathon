@@ -5,6 +5,38 @@ Started: Mon Apr 13 00:40:18 CEST 2026
 - (add reusable patterns here)
 
 ---
+## [2026-04-21 02:25:32 +0200] - S4: Design a guided evidence-first run timeline
+Thread: 
+Run: 20260421-014550-336751 (iteration 4)
+Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260421-014550-336751-iter-4.log
+Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260421-014550-336751-iter-4.md
+- Guardrails reviewed: yes
+- No-commit run: false
+- Commit: 8e0da098 feat: design guided evidence-first workflow timeline
+- Post-commit status: `clean`
+- Verification:
+  - Command: `pnpm --filter @synosec/frontend typecheck` -> PASS
+  - Command: `pnpm --filter @synosec/frontend test -- --run apps/frontend/src/test/pages/workflows-page.test.tsx` -> PASS
+  - Command: `pnpm --filter @synosec/frontend build` -> PASS
+  - Command: `pnpm --filter @synosec/backend test -- --run src/features/modules/workflows/workflow-execution.service.test.ts src/features/modules/workflows/workflows.routes.test.ts` -> PASS
+  - Command: `agent-browser open http://127.0.0.1:5173/workflows && agent-browser snapshot && agent-browser click workflow row` -> PASS
+- Files changed:
+  - .ralph/activity.log
+  - .ralph/errors.log
+  - apps/frontend/src/pages/workflows-page.tsx
+  - apps/frontend/src/test/pages/workflows-page.test.tsx
+- What was implemented
+  - Replaced the workflow run event dump with stage narrative cards that surface the actor, intent, main action, evidence, and handoff for each workflow stage.
+  - Promoted tool output and stage evidence highlights into first-class UI sections, with raw trace data moved behind an explicit activity toggle.
+  - Added a focused workflow detail page test that verifies the guided evidence-first timeline structure.
+- **Learnings for future iterations:**
+  - Patterns discovered
+    Existing workflow `events` and `trace` records already contain enough structured data to drive a guided stage narrative without API contract changes.
+  - Gotchas encountered
+    The normal `pnpm dev` path could not be reused because ports `3001` and `5173` were already occupied; browser verification worked against the already-running stack instead.
+  - Useful context
+    Root `pnpm typecheck` still fails in `apps/connector/src/index.test.ts(261,56)` for an unrelated pre-existing `never` typing issue, so scoped frontend/backend verification is the reliable signal for this story.
+---
 ## [2026-04-21 02:11:15 CEST] - S3: Harden deterministic stage execution
 Thread: 
 Run: 20260421-014550-336751 (iteration 3)
