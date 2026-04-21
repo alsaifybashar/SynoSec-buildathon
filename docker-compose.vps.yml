@@ -14,6 +14,13 @@ services:
       timeout: 5s
       retries: 20
 
+  vulnerable-target:
+    build:
+      context: ./demos/vulnerable-app
+    restart: unless-stopped
+    environment:
+      PORT: 8888
+
   backend:
     build:
       context: .
