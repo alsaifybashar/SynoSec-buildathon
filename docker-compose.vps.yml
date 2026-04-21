@@ -46,9 +46,6 @@ services:
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
       AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-168}
       AUTH_SESSION_TOUCH_INTERVAL_SECONDS: ${AUTH_SESSION_TOUCH_INTERVAL_SECONDS:-600}
-    command: >
-      sh -c "pnpm exec prisma db push --schema apps/backend/prisma/schema.prisma &&
-      node apps/backend/dist/main.js"
     ports:
       - "127.0.0.1:${BACKEND_PUBLIC_PORT:-3001}:3001"
 

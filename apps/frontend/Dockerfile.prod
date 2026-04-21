@@ -18,19 +18,15 @@ RUN pnpm --filter @synosec/frontend build
 FROM node:22-alpine AS runtime
 
 RUN corepack enable
+RUN npm install -g serve@14.2.4
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV FRONTEND_PORT=4173
 
-COPY --from=build /workspace/package.json ./package.json
-COPY --from=build /workspace/pnpm-lock.yaml ./pnpm-lock.yaml
-COPY --from=build /workspace/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=build /workspace/node_modules ./node_modules
-COPY --from=build /workspace/apps/frontend/package.json ./apps/frontend/package.json
 COPY --from=build /workspace/apps/frontend/dist ./apps/frontend/dist
 
 EXPOSE 4173
 
-CMD ["sh", "-c", "cd apps/frontend && pnpm exec vite preview --host 0.0.0.0 --port ${FRONTEND_PORT}"]
+CMD ["sh", "-c", "serve -s apps/frontend/dist -l ${FRONTEND_PORT}"]

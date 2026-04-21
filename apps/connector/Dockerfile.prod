@@ -53,8 +53,10 @@ COPY --from=build /workspace/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=build /workspace/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY --from=build /workspace/node_modules ./node_modules
 COPY --from=build /workspace/packages/contracts/package.json ./packages/contracts/package.json
+COPY --from=build /workspace/packages/contracts/node_modules ./packages/contracts/node_modules
 COPY --from=build /workspace/packages/contracts/dist ./packages/contracts/dist
 COPY --from=build /workspace/apps/connector/package.json ./apps/connector/package.json
+COPY --from=build /workspace/apps/connector/node_modules ./apps/connector/node_modules
 COPY --from=build /workspace/apps/connector/dist ./apps/connector/dist
 
 CMD ["node", "apps/connector/dist/main.js"]
