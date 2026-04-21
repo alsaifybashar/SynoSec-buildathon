@@ -52,6 +52,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Validate deploy configuration
+        run: |
+          set -euo pipefail
+
+          require_var() {
+            local name="$1"
+            local value="$2"
+
+            if [ -z "$value" ]; then
+              echo "Missing required GitHub Actions variable: $name" >&2
+              exit 1
+            fi
+          }
+
+          require_var "VPS_HOST" "${{ vars.VPS_HOST }}"
+          require_var "VPS_USER" "${{ vars.VPS_USER }}"
+          require_var "SERVER_NAME" "${{ vars.SERVER_NAME }}"
+          require_var "NGINX_CONFIG_PATH" "${{ vars.NGINX_CONFIG_PATH }}"
+          require_var "FRONTEND_URL" "${{ vars.FRONTEND_URL }}"
+          require_var "SSL_CERT_PATH" "${{ vars.SSL_CERT_PATH }}"
+          require_var "SSL_CERT_KEY_PATH" "${{ vars.SSL_CERT_KEY_PATH }}"
+
       - name: Verify deploy files exist
         run: |
           test -f docker-compose.vps.yml
@@ -105,6 +127,8 @@ jobs:
               -e 's|__SERVER_NAME__|${{ vars.SERVER_NAME }}|g' \
               -e 's|__BACKEND_PUBLIC_PORT__|${{ env.BACKEND_PUBLIC_PORT }}|g' \
               -e 's|__FRONTEND_PUBLIC_PORT__|${{ env.FRONTEND_PUBLIC_PORT }}|g' \
+              -e 's|__SSL_CERT_PATH__|${{ vars.SSL_CERT_PATH }}|g' \
+              -e 's|__SSL_CERT_KEY_PATH__|${{ vars.SSL_CERT_KEY_PATH }}|g' \
               infra/nginx/synosec.vps.conf.template > /tmp/synosec-nginx.conf
             sudo /usr/bin/install -m 0644 /tmp/synosec-nginx.conf "${{ vars.NGINX_CONFIG_PATH }}"
             sudo /usr/sbin/nginx -t
@@ -118,18 +142,13 @@ jobs:
             -H "Content-Type: application/json" \
             --data '{"purge_everything":true}'
 
-      - name: Check backend health
-        run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "https://${{ vars.SERVER_NAME }}/api/health" || echo "000")
-          if [ "$response" != "200" ]; then
-            echo "Backend health check failed with status: $response"
-            exit 1
-          fi
-
-      - name: Check frontend health
-        run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "https://${{ vars.SERVER_NAME }}/" || echo "000")
-          if [ "$response" != "200" ]; then
-            echo "Frontend health check failed with status: $response"
-            exit 1
-          fi
+      - name: Check origin health on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ vars.VPS_HOST }}
+          username: ${{ vars.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            curl -fsS --max-time 30 "http://127.0.0.1:${{ env.BACKEND_PUBLIC_PORT }}/api/health" >/dev/null
+            curl -fsS --max-time 30 "http://127.0.0.1:${{ env.FRONTEND_PUBLIC_PORT }}/" >/dev/null

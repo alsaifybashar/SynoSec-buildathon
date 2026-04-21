@@ -4,6 +4,16 @@ server {
   listen 80;
   server_name __SERVER_NAME__ www.__SERVER_NAME__;
 
+  return 301 https://$host$request_uri;
+}
+
+server {
+  listen 443 ssl;
+  server_name __SERVER_NAME__ www.__SERVER_NAME__;
+
+  ssl_certificate __SSL_CERT_PATH__;
+  ssl_certificate_key __SSL_CERT_KEY_PATH__;
+
   add_header X-Content-Type-Options "nosniff" always;
   add_header Referrer-Policy "no-referrer" always;
   add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()" always;
