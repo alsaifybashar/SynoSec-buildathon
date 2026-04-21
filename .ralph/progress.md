@@ -5,6 +5,38 @@ Started: Mon Apr 13 00:40:18 CEST 2026
 - (add reusable patterns here)
 
 ---
+## [2026-04-21 02:32:29 +0200] - S5: Expose agent reasoning, tool activity, and hand-offs clearly
+Thread: 
+Run: 20260421-014550-336751 (iteration 5)
+Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260421-014550-336751-iter-5.log
+Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260421-014550-336751-iter-5.md
+- Guardrails reviewed: yes
+- No-commit run: false
+- Commit: efc37e0a Refine workflow timeline trust details
+- Post-commit status: `clean`
+- Verification:
+  - Command: `pnpm --filter @synosec/frontend test` -> PASS
+  - Command: `pnpm --filter @synosec/frontend build` -> PASS
+  - Command: `curl -s http://127.0.0.1:3001/api/workflows/2a3761a0-c424-4634-83ad-5145fbd2697c/runs/latest` -> PASS
+  - Command: `agent-browser open http://127.0.0.1:5173/workflows/2a3761a0-c424-4634-83ad-5145fbd2697c && agent-browser snapshot && agent-browser screenshot --full /tmp/s5-workflow-timeline.png` -> PASS
+- Files changed:
+  - .ralph/activity.log
+  - .ralph/errors.log
+  - .ralph/progress.md
+  - apps/frontend/src/pages/workflows-page.tsx
+  - apps/frontend/src/test/pages/workflows-page.test.tsx
+- What was implemented
+- Refined the workflow run timeline so each stage now surfaces a distinct reasoning summary, tool-choice section, explicit outcome state, and a reviewable next-stage hand-off explanation.
+- Added token-usage parsing and display for model decisions and tool results when payloads provide usage metadata, keeping that cost context attached to the relevant activity instead of detached metadata.
+- Strengthened the workflow page tests to cover both a successful stage with evidence/tokens/handoff context and a failed stage with an explicit blocked hand-off message.
+- **Learnings for future iterations:**
+  - Patterns discovered
+  - Existing workflow event payloads already contain enough structure for richer trust UI; the main need was careful frontend interpretation rather than new contracts.
+  - Gotchas encountered
+  - The workflow detail page keeps an SSE connection open, so browser verification should avoid `networkidle` waits and use direct snapshots instead.
+  - Useful context
+  - The seeded workflow at `/workflows/2a3761a0-c424-4634-83ad-5145fbd2697c` is a reliable browser-validation target for timeline changes because it already has a partially executed run with evidence-rich events.
+---
 ## [2026-04-21 02:25:32 +0200] - S4: Design a guided evidence-first run timeline
 Thread: 
 Run: 20260421-014550-336751 (iteration 4)
