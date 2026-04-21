@@ -145,5 +145,28 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             set -euo pipefail
-            curl -fsS --max-time 30 "http://127.0.0.1:${{ env.BACKEND_PUBLIC_PORT }}/api/health" >/dev/null
-            curl -fsS --max-time 30 "http://127.0.0.1:${{ env.FRONTEND_PUBLIC_PORT }}/" >/dev/null
+
+            wait_for_http() {
+              local name="$1"
+              local url="$2"
+              local attempts="${3:-30}"
+              local sleep_seconds="${4:-2}"
+
+              for attempt in $(seq 1 "$attempts"); do
+                if curl -fsS --max-time 5 "$url" >/dev/null; then
+                  echo "$name is healthy at $url"
+                  return 0
+                fi
+
+                echo "Waiting for $name at $url (attempt $attempt/$attempts)"
+                sleep "$sleep_seconds"
+              done
+
+              echo "$name did not become healthy at $url" >&2
+              docker compose -f "${{ env.VPS_TARGET_DIR }}/docker-compose.vps.yml" ps >&2 || true
+              docker compose -f "${{ env.VPS_TARGET_DIR }}/docker-compose.vps.yml" logs --tail=200 backend frontend >&2 || true
+              return 1
+            }
+
+            wait_for_http "backend" "http://127.0.0.1:${{ env.BACKEND_PUBLIC_PORT }}/api/health"
+            wait_for_http "frontend" "http://127.0.0.1:${{ env.FRONTEND_PUBLIC_PORT }}/"
