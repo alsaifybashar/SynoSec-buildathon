@@ -101,8 +101,6 @@ Before using the deploy workflow, define these GitHub repository variables:
 - `SERVER_NAME`
 - `NGINX_CONFIG_PATH`
 - `FRONTEND_URL`
-- `SSL_CERT_PATH`
-- `SSL_CERT_KEY_PATH`
 
 Define these GitHub repository secrets as well:
 
@@ -121,9 +119,7 @@ Set `FRONTEND_URL` to the public HTTPS origin, for example `https://synosecai.co
 
 Set `NGINX_CONFIG_PATH` to the exact nginx site config path allowed by sudoers, for example `/etc/nginx/sites-available/synosec`.
 
-Set `SSL_CERT_PATH` and `SSL_CERT_KEY_PATH` to the certificate and private key paths used by the VPS nginx TLS listener.
-
-The host nginx config template lives at `infra/nginx/synosec.vps.conf.template` and is installed by the deploy workflow. It redirects HTTP to HTTPS, terminates TLS on the VPS using the configured certificate paths, forwards the original client scheme/host to the app, and emits `Strict-Transport-Security`.
+The host nginx config template lives at `infra/nginx/synosec.vps.conf.template` and is installed by the deploy workflow. It redirects HTTP to HTTPS, terminates TLS on the VPS using the standard Certbot layout under `/etc/letsencrypt/live/<server_name>/`, forwards the original client scheme/host to the app, and emits `Strict-Transport-Security`.
 
 Post-deploy health checks now run on the VPS origin loopback endpoints instead of the public domain, so deploy validation does not depend on Cloudflare edge behavior.
 

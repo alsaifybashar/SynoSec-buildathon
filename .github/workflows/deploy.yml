@@ -71,9 +71,6 @@ jobs:
           require_var "SERVER_NAME" "${{ vars.SERVER_NAME }}"
           require_var "NGINX_CONFIG_PATH" "${{ vars.NGINX_CONFIG_PATH }}"
           require_var "FRONTEND_URL" "${{ vars.FRONTEND_URL }}"
-          require_var "SSL_CERT_PATH" "${{ vars.SSL_CERT_PATH }}"
-          require_var "SSL_CERT_KEY_PATH" "${{ vars.SSL_CERT_KEY_PATH }}"
-
       - name: Verify deploy files exist
         run: |
           test -f docker-compose.vps.yml
@@ -127,8 +124,6 @@ jobs:
               -e 's|__SERVER_NAME__|${{ vars.SERVER_NAME }}|g' \
               -e 's|__BACKEND_PUBLIC_PORT__|${{ env.BACKEND_PUBLIC_PORT }}|g' \
               -e 's|__FRONTEND_PUBLIC_PORT__|${{ env.FRONTEND_PUBLIC_PORT }}|g' \
-              -e 's|__SSL_CERT_PATH__|${{ vars.SSL_CERT_PATH }}|g' \
-              -e 's|__SSL_CERT_KEY_PATH__|${{ vars.SSL_CERT_KEY_PATH }}|g' \
               infra/nginx/synosec.vps.conf.template > /tmp/synosec-nginx.conf
             sudo /usr/bin/install -m 0644 /tmp/synosec-nginx.conf "${{ vars.NGINX_CONFIG_PATH }}"
             sudo /usr/sbin/nginx -t
