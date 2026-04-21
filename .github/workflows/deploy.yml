@@ -106,9 +106,9 @@ jobs:
               -e 's|__BACKEND_PUBLIC_PORT__|${{ env.BACKEND_PUBLIC_PORT }}|g' \
               -e 's|__FRONTEND_PUBLIC_PORT__|${{ env.FRONTEND_PUBLIC_PORT }}|g' \
               infra/nginx/synosec.vps.conf.template > /tmp/synosec-nginx.conf
-            sudo install -m 0644 /tmp/synosec-nginx.conf "${{ vars.NGINX_CONFIG_PATH }}"
-            sudo nginx -t
-            sudo systemctl reload nginx
+            sudo /usr/bin/install -m 0644 /tmp/synosec-nginx.conf "${{ vars.NGINX_CONFIG_PATH }}"
+            sudo /usr/sbin/nginx -t
+            sudo /bin/systemctl reload nginx
             docker image prune -f
 
       - name: Purge Cloudflare cache
