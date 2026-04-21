@@ -1,4 +1,4 @@
-import type { Runtime } from "../../../platform/generated/prisma/index.js";
+import type { Runtime } from "@prisma/client";
 import type { Runtime as ContractRuntime } from "@synosec/contracts";
 
 function mapProvider(provider: Runtime["provider"]): ContractRuntime["provider"] {

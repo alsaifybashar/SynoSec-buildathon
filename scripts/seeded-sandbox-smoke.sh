@@ -55,18 +55,47 @@ wait_for_connector() {
 
 dispatch_tool() {
   local tool_id="$1"
-  local tool_name="$2"
-  local adapter="$3"
-  local target="$4"
-  local layer="$5"
-  local risk_tier="$6"
-  local sandbox_profile="$7"
-  local privilege_profile="$8"
-  local binary="$9"
-  shift 9
+  local target="$2"
+  local layer="$3"
+  local base_url="$4"
+  local port="${5:-}"
 
-  local args_json
-  args_json="$(printf '%s\n' "$@" | jq -R . | jq -s .)"
+  local tool_definition
+  tool_definition="$(curl -fsS "${BACKEND_URL}/api/ai-tools/${tool_id}")"
+
+  local tool_name
+  tool_name="$(echo "$tool_definition" | jq -r '.name')"
+  local executor_type
+  executor_type="$(echo "$tool_definition" | jq -r '.executorType')"
+  local capabilities_json
+  capabilities_json="$(echo "$tool_definition" | jq '.capabilities')"
+  local risk_tier
+  risk_tier="$(echo "$tool_definition" | jq -r '.riskTier')"
+  local sandbox_profile
+  sandbox_profile="$(echo "$tool_definition" | jq -r '.sandboxProfile')"
+  local privilege_profile
+  privilege_profile="$(echo "$tool_definition" | jq -r '.privilegeProfile')"
+  local timeout_ms
+  timeout_ms="$(echo "$tool_definition" | jq -r '.timeoutMs')"
+  local bash_source
+  bash_source="$(echo "$tool_definition" | jq -r '.bashSource')"
+
+  local tool_input_json
+  if [[ -n "$port" ]]; then
+    tool_input_json="$(jq -n --arg target "$target" --arg baseUrl "$base_url" --argjson port "$port" '{
+      target: $target,
+      baseUrl: $baseUrl,
+      port: $port
+    }')"
+  else
+    tool_input_json="$(jq -n --arg target "$target" --arg baseUrl "$base_url" '{
+      target: $target,
+      baseUrl: $baseUrl
+    }')"
+  fi
+
+  local command_preview
+  command_preview="${tool_name} target=${target} baseUrl=${base_url}"
 
   local payload
   payload="$(
@@ -77,14 +106,17 @@ dispatch_tool() {
       --arg targetScope "vulnerable-target:8888" \
       --arg toolId "$tool_id" \
       --arg toolName "$tool_name" \
-      --arg adapter "$adapter" \
+      --arg executorType "$executor_type" \
       --arg target "$target" \
       --arg layer "$layer" \
       --arg riskTier "$risk_tier" \
       --arg sandboxProfile "$sandbox_profile" \
       --arg privilegeProfile "$privilege_profile" \
-      --arg binary "$binary" \
-      --argjson args "$args_json" \
+      --arg bashSource "$bash_source" \
+      --arg commandPreview "$command_preview" \
+      --argjson capabilities "$capabilities_json" \
+      --argjson timeoutMs "$timeout_ms" \
+      --argjson toolInput "$tool_input_json" \
       '{
         scanId: $scanId,
         tacticId: $tacticId,
@@ -104,7 +136,8 @@ dispatch_tool() {
         request: {
           toolId: $toolId,
           tool: $toolName,
-          adapter: $adapter,
+          executorType: $executorType,
+          capabilities: $capabilities,
           target: $target,
           layer: $layer,
           riskTier: $riskTier,
@@ -112,8 +145,10 @@ dispatch_tool() {
           sandboxProfile: $sandboxProfile,
           privilegeProfile: $privilegeProfile,
           parameters: {
-            binary: $binary,
-            args: $args
+            bashSource: $bashSource,
+            timeoutMs: $timeoutMs,
+            commandPreview: $commandPreview,
+            toolInput: $toolInput
           }
         }
       }'
@@ -130,7 +165,7 @@ dispatch_tool() {
 
   echo "$response" | jq '{
     dispatchMode,
-    toolRuns: [.toolRuns[] | {tool, adapter, status, statusReason, exitCode}],
+    toolRuns: [.toolRuns[] | {tool, dispatchMode, status, statusReason, exitCode}],
     observations: (.observations | length),
     findings: (.findings | length)
   }'
@@ -165,38 +200,45 @@ dispatch_tool() {
   fi
 }
 
+echo "Resetting any previous Docker stack state ..."
+docker compose down --remove-orphans >/dev/null 2>&1 || true
+docker rm -f synosec-target >/dev/null 2>&1 || true
+
 echo "Starting Docker stack for seeded sandbox smoke test ..."
+docker compose up --build -d vulnerable-target postgres ollama >/dev/null
+
 BACKEND_PORT="$BACKEND_PORT" \
 TOOL_EXECUTION_MODE=connector \
 CONNECTOR_RUN_MODE=execute \
-CONNECTOR_ALLOWED_ADAPTERS=httpx_probe,web_crawl,service_scan \
+CONNECTOR_DISPATCH_TIMEOUT_MS=45000 \
+CONNECTOR_ALLOWED_CAPABILITIES=passive,web-recon,network-recon,content-discovery \
 CONNECTOR_ALLOWED_SANDBOX_PROFILES=network-recon \
 CONNECTOR_ALLOWED_PRIVILEGE_PROFILES=read-only-network \
-docker compose up --build -d backend vulnerable-target postgres ollama >/dev/null
+docker compose run -d --no-deps --use-aliases --service-ports backend \
+  sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/backend prisma:generate && pnpm --filter @synosec/backend prisma:push && pnpm --filter @synosec/backend exec tsx src/main.ts" \
+  >/dev/null
 
 wait_for_backend
 
-BACKEND_PORT="$BACKEND_PORT" \
-TOOL_EXECUTION_MODE=connector \
 CONNECTOR_RUN_MODE=execute \
-CONNECTOR_ALLOWED_ADAPTERS=httpx_probe,web_crawl,service_scan \
+CONNECTOR_COMMAND_TIMEOUT_MS=15000 \
+CONNECTOR_ALLOWED_CAPABILITIES=passive,web-recon,network-recon,content-discovery \
 CONNECTOR_ALLOWED_SANDBOX_PROFILES=network-recon \
 CONNECTOR_ALLOWED_PRIVILEGE_PROFILES=read-only-network \
-docker compose up -d connector >/dev/null
+docker compose run -d --no-deps --use-aliases connector \
+  sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/connector exec tsx src/main.ts" \
+  >/dev/null
 
 wait_for_connector
 
 dispatch_tool \
-  "seed-http-recon" "HTTP Recon" "httpx_probe" "vulnerable-target:8888" "L7" "passive" "network-recon" "read-only-network" "httpx" \
-  "-silent" "-status-code" "-title" "-tech-detect" "-u" "http://vulnerable-target:8888"
+  "seed-http-recon" "vulnerable-target" "L7" "http://vulnerable-target:8888"
 
 dispatch_tool \
-  "seed-web-crawl" "Web Crawl" "web_crawl" "vulnerable-target:8888" "L7" "passive" "network-recon" "read-only-network" "katana" \
-  "-u" "http://vulnerable-target:8888" "-silent"
+  "seed-web-crawl" "vulnerable-target" "L7" "http://vulnerable-target:8888"
 
 dispatch_tool \
-  "seed-service-scan" "Service Scan" "service_scan" "vulnerable-target" "L4" "passive" "network-recon" "read-only-network" "nmap" \
-  "-Pn" "-p" "8888" "--host-timeout" "5s" "--max-retries" "1" "vulnerable-target"
+  "seed-service-scan" "vulnerable-target" "L4" "http://vulnerable-target:8888" "8888"
 
 echo
 echo "Seeded sandbox smoke test passed."

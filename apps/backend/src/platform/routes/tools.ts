@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { getToolCapabilities } from "@/workflows/tools/tool-catalog.js";
+import { getToolCapabilities } from "@/workflow-engine/tools/tool-catalog.js";
 
 export function createToolsRouter(): Router {
   const router = Router();

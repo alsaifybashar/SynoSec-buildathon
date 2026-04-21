@@ -11,10 +11,11 @@ import { fetchJson } from "@/lib/api";
 import { useResourceDetail } from "@/hooks/useResourceDetail";
 import { useResourceList } from "@/hooks/useResourceList";
 import { aiProvidersResource } from "@/lib/resources";
+import { aiProviderTransfer, exportResourceRecords, importResourceRecords } from "@/lib/resource-transfer";
 import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/components/list-page";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/shared/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
 
 type ProviderFormValues = {
   name: string;
@@ -175,7 +176,7 @@ export function AiProvidersPage({
     { id: "kind", header: "Kind", cell: (row) => <span className="text-muted-foreground">{kindLabels[row.kind]}</span> },
     { id: "status", header: "Status", cell: (row) => <span className="text-muted-foreground">{statusLabels[row.status]}</span> },
     { id: "model", header: "Model", cell: (row) => <span className="text-muted-foreground">{row.model}</span> },
-    { id: "apiKey", header: "Secret", sortable: false, cell: (row) => <span className="text-muted-foreground">{row.apiKeyConfigured ? "Configured" : "Not configured"}</span> }
+    { id: "apiKey", header: "Secret", cell: (row) => <span className="text-muted-foreground">{row.apiKeyConfigured ? "Configured" : "Not configured"}</span> }
   ], []);
 
   const filters = useMemo<ListPageFilter[]>(() => [
@@ -246,6 +247,26 @@ export function AiProvidersPage({
     }
   }
 
+  function handleExportJson() {
+    if (!provider) {
+      return;
+    }
+
+    exportResourceRecords(aiProviderTransfer, [provider], `ai-provider-${provider.name}`);
+  }
+
+  async function handleImportJson(file: File) {
+    try {
+      const created = await importResourceRecords(aiProviderTransfer, file);
+      toast.success(created.length === 1 ? "AI provider imported" : `${created.length} AI providers imported`);
+      providerList.refetch();
+    } catch (error) {
+      toast.error("AI provider import failed", {
+        description: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  }
+
   if (!providerId) {
     return (
       <ListPage
@@ -266,6 +287,7 @@ export function AiProvidersPage({
         onRetry={providerList.refetch}
         onAddRecord={onNavigateToCreate}
         onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
+        onImportJson={handleImportJson}
       />
     );
   }
@@ -293,6 +315,7 @@ export function AiProvidersPage({
         setFormValues(initialValues);
         setErrors({});
       }}
+      onExportJson={!isCreateMode ? handleExportJson : undefined}
       sidebar={provider ? (
         <div className="space-y-4 rounded-xl border border-border bg-card/70 p-4">
           <DetailSidebarItem label="Kind">{kindLabels[provider.kind]}</DetailSidebarItem>

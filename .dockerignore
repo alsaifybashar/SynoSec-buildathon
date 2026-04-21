@@ -1,0 +1,16 @@
+node_modules
+.pnpm-store
+.git
+.github
+.env
+.env.*
+dist
+coverage
+*.log
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.svg
+.DS_Store

@@ -1,5 +1,5 @@
 import type { CreateRuntimeBody, RuntimesListQuery, Runtime, UpdateRuntimeBody } from "@synosec/contracts";
-import type { PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
+import type { PaginatedResult } from "../../../core/pagination/paginated-result.js";
 
 export interface RuntimesRepository {
   list(query: RuntimesListQuery): Promise<PaginatedResult<Runtime>>;

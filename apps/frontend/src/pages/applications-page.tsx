@@ -11,10 +11,11 @@ import { fetchJson } from "@/lib/api";
 import { useResourceDetail } from "@/hooks/useResourceDetail";
 import { useResourceList } from "@/hooks/useResourceList";
 import { applicationsResource } from "@/lib/resources";
+import { applicationTransfer, exportResourceRecords, importResourceRecords } from "@/lib/resource-transfer";
 import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/components/list-page";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/shared/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
 
 type ApplicationFormValues = {
   name: string;
@@ -287,6 +288,26 @@ export function ApplicationsPage({
     setErrors({});
   }
 
+  function handleExportJson() {
+    if (!application) {
+      return;
+    }
+
+    exportResourceRecords(applicationTransfer, [application], `application-${application.name}`);
+  }
+
+  async function handleImportJson(file: File) {
+    try {
+      const created = await importResourceRecords(applicationTransfer, file);
+      toast.success(created.length === 1 ? "Application imported" : `${created.length} applications imported`);
+      applicationList.refetch();
+    } catch (error) {
+      toast.error("Application import failed", {
+        description: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  }
+
   if (!applicationId) {
     return (
       <ListPage
@@ -307,6 +328,7 @@ export function ApplicationsPage({
         onRetry={applicationList.refetch}
         onAddRecord={onNavigateToCreate}
         onRowClick={(selected) => onNavigateToDetail(selected.id, selected.name)}
+        onImportJson={handleImportJson}
       />
     );
   }
@@ -331,6 +353,7 @@ export function ApplicationsPage({
       onBack={onNavigateToList}
       onSave={handleSave}
       onDismiss={handleDismiss}
+      onExportJson={!isCreateMode ? handleExportJson : undefined}
       saveLabel={isCreateMode ? "Save" : "Save"}
       sidebar={
         !isCreateMode && application ? (

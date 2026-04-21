@@ -12,11 +12,12 @@ import { fetchJson } from "@/lib/api";
 import { useResourceDetail } from "@/hooks/useResourceDetail";
 import { useResourceList } from "@/hooks/useResourceList";
 import { aiAgentsResource, aiProvidersResource, aiToolsResource } from "@/lib/resources";
+import { aiAgentTransfer, exportResourceRecords, importResourceRecords } from "@/lib/resource-transfer";
 import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/components/list-page";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/shared/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
+import { Textarea } from "@/shared/ui/textarea";
 
 type AgentFormValues = {
   name: string;
@@ -187,9 +188,9 @@ export function AiAgentsPage({
 
   const columns = useMemo<ListPageColumn<AiAgent>[]>(() => [
     { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
-    { id: "providerId", header: "Provider", sortable: false, cell: (row) => <span className="text-muted-foreground">{providerLookup[row.providerId] ?? "Unknown"}</span> },
+    { id: "providerId", header: "Provider", cell: (row) => <span className="text-muted-foreground">{providerLookup[row.providerId] ?? "Unknown"}</span> },
     { id: "status", header: "Status", cell: (row) => <span className="text-muted-foreground">{statusLabels[row.status]}</span> },
-    { id: "toolIds", header: "Tools", sortable: false, cell: (row) => <span className="text-muted-foreground">{row.toolIds.length}</span> }
+    { id: "toolIds", header: "Tools", cell: (row) => <span className="text-muted-foreground">{row.toolIds.length}</span> }
   ], [providerLookup]);
 
   const filters = useMemo<ListPageFilter[]>(() => [
@@ -262,6 +263,26 @@ export function AiAgentsPage({
     }
   }
 
+  function handleExportJson() {
+    if (!agent) {
+      return;
+    }
+
+    exportResourceRecords(aiAgentTransfer, [agent], `ai-agent-${agent.name}`);
+  }
+
+  async function handleImportJson(file: File) {
+    try {
+      const created = await importResourceRecords(aiAgentTransfer, file);
+      toast.success(created.length === 1 ? "AI agent imported" : `${created.length} AI agents imported`);
+      agentList.refetch();
+    } catch (error) {
+      toast.error("AI agent import failed", {
+        description: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  }
+
   if (!agentId) {
     return (
       <ListPage
@@ -282,6 +303,7 @@ export function AiAgentsPage({
         onRetry={agentList.refetch}
         onAddRecord={onNavigateToCreate}
         onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
+        onImportJson={handleImportJson}
       />
     );
   }
@@ -309,6 +331,7 @@ export function AiAgentsPage({
         setFormValues(initialValues);
         setErrors({});
       }}
+      onExportJson={!isCreateMode ? handleExportJson : undefined}
       sidebar={agent ? (
         <div className="space-y-4 rounded-xl border border-border bg-card/70 p-4">
           <DetailSidebarItem label="Status">{statusLabels[agent.status]}</DetailSidebarItem>

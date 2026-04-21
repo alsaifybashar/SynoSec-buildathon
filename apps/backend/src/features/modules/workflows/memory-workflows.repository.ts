@@ -9,12 +9,13 @@ import type {
   WorkflowsListQuery
 } from "@synosec/contracts";
 import { selectLatestWorkflowRun } from "@synosec/contracts";
-import { paginateItems, type PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
-import { RequestError } from "../../../platform/core/http/request-error.js";
+import { paginateItems, type PaginatedResult } from "../../../core/pagination/paginated-result.js";
+import { RequestError } from "../../../core/http/request-error.js";
 import type { ApplicationsRepository } from "../applications/applications.repository.js";
 import type { RuntimesRepository } from "../runtimes/runtimes.repository.js";
 import type { AiAgentsRepository } from "../ai-agents/ai-agents.repository.js";
 import type { WorkflowRunStatePatch, WorkflowsRepository } from "./workflows.repository.js";
+import { normalizeWorkflowStageContract } from "./workflow-stage-contract.js";
 
 export class MemoryWorkflowsRepository implements WorkflowsRepository {
   private readonly workflows = new Map<string, Workflow>();
@@ -50,8 +51,8 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       .sort((left, right) => {
         const sortBy = query.sortBy ?? "name";
         const direction = query.sortDirection === "desc" ? -1 : 1;
-        const leftValue = left[sortBy];
-        const rightValue = right[sortBy];
+        const leftValue = sortBy === "stages" ? left.stages.length : left[sortBy];
+        const rightValue = sortBy === "stages" ? right.stages.length : right[sortBy];
 
         if (leftValue === rightValue) {
           return left.name.localeCompare(right.name) * direction;
@@ -81,7 +82,8 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
         id: stage.id ?? randomUUID(),
         label: stage.label,
         agentId: stage.agentId,
-        ord: index
+        ord: index,
+        ...normalizeWorkflowStageContract(stage)
       })),
       createdAt: timestamp,
       updatedAt: timestamp
@@ -114,7 +116,8 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
         id: stage.id ?? randomUUID(),
         label: stage.label,
         agentId: stage.agentId,
-        ord: index
+        ord: index,
+        ...normalizeWorkflowStageContract(stage)
       })),
       updatedAt: new Date().toISOString()
     };
@@ -125,6 +128,25 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
 
   async remove(id: string): Promise<boolean> {
     return this.workflows.delete(id);
+  }
+
+  async migrateWorkflowStageContracts(workflowId: string, fallbackToolIdsByAgentId: Record<string, string[]> = {}): Promise<Workflow | null> {
+    const current = this.workflows.get(workflowId);
+    if (!current) {
+      return null;
+    }
+
+    const updated: Workflow = {
+      ...current,
+      stages: current.stages.map((stage) => ({
+        ...stage,
+        ...normalizeWorkflowStageContract(stage, fallbackToolIdsByAgentId[stage.agentId] ?? stage.allowedToolIds ?? [])
+      })),
+      updatedAt: new Date().toISOString()
+    };
+
+    this.workflows.set(workflowId, updated);
+    return updated;
   }
 
   async createRun(workflowId: string): Promise<WorkflowRun | null> {

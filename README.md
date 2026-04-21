@@ -1,14 +1,6 @@
-# SynoSec Buildathon
+# SynoSec
 
-SynoSec is an AI-assisted security scanning demo built for a buildathon. It runs a frontend, a backend orchestrator, supporting data stores, and an intentionally vulnerable target so the workflow can be demonstrated end to end in a controlled environment.
-
-## Agent SDK Status
-
-- `apps/backend` now includes AI SDK and Workflow Dev Kit scaffolding.
-- Anthropic model calls in `apps/backend` now go through AI SDK.
-- The migration note lives in `docs/ai-sdk-workflow-devkit.md`.
-- The active builder UI now exposes `AI Providers`, `AI Agents`, and `AI Tools`.
-- Default AI builder records are seeded through `apps/backend/prisma/seed.ts`, not generated at runtime.
+SynoSec is an AI-assisted security scanning system with a frontend, backend orchestrator, connector worker, supporting data stores, and an intentionally vulnerable local target for end-to-end validation.
 
 ## What's in the repo
 
@@ -43,17 +35,20 @@ The agent system is structured as a controlled analysis loop rather than an open
 
 1. Copy `.env.example` to `.env`.
 2. Set `ANTHROPIC_API_KEY` in `.env` if you want to use Anthropic models.
-3. `LOCAL_ENABHLED=TRUE` is the default. Set `LOCAL_ENABHLED=FALSE` in `.env` if you want `make dev` to skip Ollama entirely.
+3. `LOCAL_ENABLED=TRUE` is the default. Set `LOCAL_ENABLED=FALSE` in `.env` if you want `make dev` to skip Ollama entirely. The legacy typo `LOCAL_ENABHLED` is still accepted temporarily for compatibility.
 4. With local enabled, the Docker-backed dev path starts Ollama and pulls `qwen3:1.7b` for the local provider automatically.
 5. `make dev` starts Postgres, the vulnerable target, and optionally Ollama before launching backend and frontend on the host.
 6. Backend tests now include live local-model evaluation of the seeded tool defaults, so `pnpm --filter @synosec/backend test` expects Ollama with `qwen3:1.7b` to be available when local mode is enabled.
-7. Start the full stack:
+7. Optional app-user authentication is gated behind `AUTH_ENABLED`. When enabled, configure `AUTH_GOOGLE_CLIENT_ID`, `AUTH_ALLOWED_EMAILS`, and `AUTH_SESSION_SECRET` in `.env`.
+8. The current Google integration uses Google Identity Services in the browser, then sends the returned Google ID token to the backend to create a SynoSec session cookie.
+9. In Google Cloud Console, set the OAuth client's `Authorized JavaScript origins` to `http://localhost:5173`. A redirect URI is not used by the current login flow.
+10. Start the full stack:
 
 ```bash
 make docker-up
 ```
 
-8. Run the smoke demo:
+11. Run the smoke demo:
 
 ```bash
 make smoke-e2e
@@ -65,12 +60,64 @@ For host-mode development against the same local model stack:
 make dev
 ```
 
+For auth-enabled local development, the relevant `.env` values are:
+
+```env
+AUTH_ENABLED=true
+AUTH_GOOGLE_ENABLED=true
+AUTH_GOOGLE_CLIENT_ID=your-google-web-client-id
+AUTH_ALLOWED_EMAILS=you@example.com
+AUTH_SESSION_SECRET=replace-with-a-random-secret-at-least-32-characters
+AUTH_COOKIE_NAME=synosec_session
+AUTH_COOKIE_SECURE=false
+AUTH_SESSION_TTL_HOURS=168
+AUTH_SESSION_TOUCH_INTERVAL_SECONDS=600
+FRONTEND_URL=http://localhost:5173
+```
+
+`AUTH_ALLOWED_EMAILS` is enforced on every authenticated request, so removing an email from the allowlist invalidates access on the next session-backed call. `AUTH_SESSION_TOUCH_INTERVAL_SECONDS` throttles `lastSeenAt` writes to avoid turning normal UI traffic into a write on every request.
+
 ## Endpoints
 
 - Frontend: `http://localhost:5173`
 - Backend API: `http://localhost:3001`
 - Ollama API: `http://localhost:11434`
 - Vulnerable target: `http://localhost:8888`
+
+## VPS deploy
+
+GitHub Actions deploys to a VPS using `.github/workflows/deploy.yml` and the production stack in `docker-compose.vps.yml`.
+
+- Host `nginx` runs directly on the VPS and proxies traffic to Dockerized frontend and backend services bound on loopback.
+- `backend` runs the compiled API and pushes the Prisma schema on startup.
+- `frontend` runs the production frontend build behind the host nginx reverse proxy.
+- `connector` stays on the private Docker network and polls the backend control plane.
+- `postgres` persists app data in a named Docker volume.
+
+Before using the deploy workflow, define these GitHub repository variables:
+
+- `VPS_HOST`
+- `VPS_USER`
+- `SERVER_NAME`
+- `NGINX_CONFIG_PATH`
+- `FRONTEND_URL`
+
+Define these GitHub repository secrets as well:
+
+- `VPS_SSH_KEY`
+- `POSTGRES_PASSWORD`
+- `ANTHROPIC_API_KEY`
+- `CONNECTOR_SHARED_TOKEN`
+- `AUTH_SESSION_SECRET`
+
+Most non-secret application defaults now live in `infra/deploy/env.vps.template`, so GitHub only needs the host-specific variables above plus the runtime secrets. If you need to change default model, scan, connector, auth, or public port settings for every deployment, edit that committed template instead of adding more Actions variables.
+The deploy workflow now hardcodes the VPS app directory to `/opt/synosec` and binds the host loopback ports to `3030` for the frontend and `3031` for the backend.
+
+Set `SERVER_NAME` to the apex domain only, for example `synosecai.com`. The nginx template will serve both `synosecai.com` and `www.synosecai.com`.
+
+Set `FRONTEND_URL` to the public HTTPS origin, for example `https://synosecai.com`.
+
+The host nginx config template lives at `infra/nginx/synosec.vps.conf.template` and is installed by the deploy workflow. It now assumes a Cloudflare-backed HTTPS public origin, forwards the original client scheme/host to the app, and emits `Strict-Transport-Security`.
 
 ## Connector testing
 
@@ -83,6 +130,8 @@ The Docker stack now runs the same connector shape you can later deploy on a VPS
 ## Feature documentation
 
 Contributor-facing feature documentation lives in [docs/features.md](/home/nilwi971/projects/SynoSec-buildathon/docs/features.md).
+
+Repository cleanup and restructure guidance lives in [docs/repo-restructure-plan.md](/home/nilwi971/projects/SynoSec-buildathon/docs/repo-restructure-plan.md).
 
 Use it to check:
 

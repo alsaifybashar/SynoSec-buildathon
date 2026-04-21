@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SYNC//TERMINAL · Ops Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Syncopate:wght@400;700&family=Archivo+Narrow:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:           #050806;
+    --bg-2:         #0a0e0c;
+    --panel:        #0d1311;
+    --panel-lift:   #111915;
+    --grid:         #151d19;
+    --rule:         #1a2520;
+    --rule-soft:    #121916;
+    --txt:          #e8efde;
+    --txt-2:        #b4c2a8;
+    --txt-3:        #7b8a75;
+    --txt-4:        #4a5548;
+    --phos:         #9ef01a;
+    --phos-dim:     #628f15;
+    --amber:        #ffb000;
+    --amber-dim:    #a87000;
+    --coral:        #ff5260;
+    --coral-dim:    #a32733;
+    --cyan:         #6fd3ff;
+    --cyan-dim:     #3a7897;
+    --violet:       #c792ff;
+    --lime:         #cdf564;
+    --ink:          #03120a;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--txt);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 13px;
+    line-height: 1.45;
+    font-feature-settings: "ss01" on, "zero" on, "cv11" on;
+    overflow-x: hidden;
+    background-image:
+      linear-gradient(transparent 0%, rgba(255,255,255,0.008) 100%),
+      repeating-linear-gradient(0deg, transparent 0 2px, rgba(158, 240, 26, 0.015) 2px 3px),
+      radial-gradient(ellipse 80% 60% at 50% 0%, rgba(158, 240, 26, 0.05), transparent 70%);
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 100;
+    background:
+      repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0 1px, transparent 1px 3px);
+    mix-blend-mode: multiply;
+    opacity: 0.35;
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    inset: -50px;
+    pointer-events: none;
+    z-index: 99;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%);
+  }
+
+  /* ───── top command bar ───── */
+  .topbar {
+    display: grid;
+    grid-template-columns: 260px 1fr auto;
+    border-bottom: 1px solid var(--rule);
+    background: linear-gradient(180deg, rgba(158, 240, 26, 0.025), transparent 80%);
+    height: 52px;
+    align-items: stretch;
+    position: sticky; top: 0; z-index: 10;
+  }
+  .topbar .brand {
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 18px;
+    border-right: 1px solid var(--rule);
+    background: var(--bg-2);
+  }
+  .brand-mark {
+    width: 22px; height: 22px;
+    background: var(--phos);
+    color: var(--ink);
+    font-family: "Syncopate", sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    letter-spacing: -0.05em;
+    box-shadow:
+      0 0 18px rgba(158, 240, 26, 0.5),
+      inset 0 0 0 1px rgba(0,0,0,0.4);
+  }
+  .brand-txt {
+    font-family: "Syncopate", sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+  }
+  .brand-txt span { color: var(--phos); }
+  .brand-sub {
+    font-size: 9px;
+    color: var(--txt-4);
+    letter-spacing: 0.3em;
+    margin-top: 2px;
+    text-transform: uppercase;
+  }
+
+  .topbar .status {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  .status .chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 18px;
+    height: 100%;
+    border-right: 1px solid var(--rule);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--txt-3);
+    white-space: nowrap;
+  }
+  .status .chip b {
+    color: var(--txt);
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    font-size: 11.5px;
+    margin-left: 2px;
+  }
+  .chip .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--phos);
+    box-shadow: 0 0 10px var(--phos), 0 0 16px rgba(158, 240, 26, 0.45);
+    animation: ping 1.6s ease-in-out infinite;
+  }
+  .chip .dot.amber { background: var(--amber); box-shadow: 0 0 10px var(--amber), 0 0 16px rgba(255, 176, 0, 0.4); }
+  .chip .dot.cyan { background: var(--cyan); box-shadow: 0 0 10px var(--cyan), 0 0 14px rgba(111, 211, 255, 0.35); }
+  .chip .dot.coral { background: var(--coral); box-shadow: 0 0 10px var(--coral), 0 0 16px rgba(255, 82, 96, 0.4); }
+  @keyframes ping { 0%, 100% { opacity: 0.6; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1); } }
+
+  .topbar .actions {
+    display: flex;
+    align-items: center;
+    padding-right: 14px;
+    gap: 8px;
+  }
+  .btn {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    padding: 7px 14px 6px;
+    background: transparent;
+    color: var(--txt-2);
+    border: 1px solid var(--rule);
+    cursor: pointer;
+    transition: 120ms;
+  }
+  .btn:hover { color: var(--phos); border-color: var(--phos-dim); background: rgba(158, 240, 26, 0.05); }
+  .btn.primary { color: var(--ink); background: var(--phos); border-color: var(--phos); }
+  .btn.primary:hover { background: #b4ff33; }
+
+  /* ───── main grid ───── */
+  .console {
+    display: grid;
+    grid-template-columns: 280px 1fr 360px;
+    min-height: calc(100vh - 52px);
+  }
+
+  /* ───── left rail: runs ───── */
+  .rail-left {
+    border-right: 1px solid var(--rule);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .rail-head {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .rail-head h3 {
+    margin: 0;
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--txt-3);
+    font-weight: 500;
+  }
+  .rail-head .c {
+    font-size: 10px;
+    color: var(--phos);
+    letter-spacing: 0.2em;
+  }
+  .runs { flex: 1; overflow-y: auto; padding: 6px; }
+  .run {
+    padding: 11px 12px 13px;
+    margin-bottom: 4px;
+    border: 1px solid var(--rule-soft);
+    background: var(--panel);
+    cursor: pointer;
+    position: relative;
+    transition: 150ms;
+  }
+  .run:hover { border-color: var(--rule); background: var(--panel-lift); }
+  .run.active {
+    border: 1px solid var(--phos-dim);
+    background: linear-gradient(180deg, rgba(158, 240, 26, 0.07), rgba(158, 240, 26, 0.02));
+    box-shadow: inset 2px 0 0 var(--phos);
+  }
+  .run-id {
+    font-size: 11px;
+    color: var(--txt-2);
+    letter-spacing: 0.08em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .run.active .run-id { color: var(--phos); }
+  .run-state {
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    color: var(--txt-3);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .run-state .dot { width: 5px; height: 5px; border-radius: 50%; }
+  .run-state.running .dot { background: var(--phos); box-shadow: 0 0 8px var(--phos); animation: ping 1.6s infinite; }
+  .run-state.done .dot { background: var(--txt-4); }
+  .run-state.failed .dot { background: var(--coral); box-shadow: 0 0 8px var(--coral); }
+  .run-state.pending .dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .run-state.done { color: var(--txt-3); }
+  .run-state.failed { color: var(--coral); }
+  .run-state.pending { color: var(--amber); }
+  .run-state.running { color: var(--phos); }
+
+  .run-target {
+    font-size: 12px;
+    color: var(--txt);
+    margin-top: 6px;
+    letter-spacing: 0.01em;
+    font-weight: 500;
+  }
+  .run-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-size: 9.5px;
+    color: var(--txt-4);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  .run-pipeline {
+    display: flex;
+    gap: 3px;
+    margin-top: 10px;
+  }
+  .pipe {
+    flex: 1;
+    height: 3px;
+    background: var(--rule);
+    position: relative;
+  }
+  .pipe.done { background: var(--phos-dim); }
+  .pipe.run { background: linear-gradient(90deg, var(--phos) 0%, var(--phos-dim) 100%); animation: sweep 1.8s linear infinite; background-size: 200% 100%; }
+  .pipe.fail { background: var(--coral-dim); }
+  @keyframes sweep { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+
+  /* ───── center: stream ───── */
+  .center {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--bg);
+  }
+
+  .run-header {
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid var(--rule);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 16px;
+    background: linear-gradient(180deg, rgba(158, 240, 26, 0.02) 0%, transparent 100%);
+  }
+  .run-header h1 {
+    margin: 0;
+    font-family: "Archivo Narrow", sans-serif;
+    font-weight: 600;
+    font-size: 28px;
+    letter-spacing: 0.01em;
+    color: var(--txt);
+    line-height: 1;
+  }
+  .run-header h1 .pre {
+    color: var(--phos);
+    font-weight: 700;
+    font-family: "Syncopate", sans-serif;
+    font-size: 11px;
+    display: block;
+    letter-spacing: 0.4em;
+    margin-bottom: 8px;
+  }
+  .run-header h1 .sub {
+    display: block;
+    margin-top: 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--txt-3);
+    letter-spacing: 0.05em;
+  }
+  .run-header h1 .sub .k { color: var(--txt-4); text-transform: uppercase; letter-spacing: 0.22em; font-size: 10px; margin-right: 4px; }
+  .run-header h1 .sub .v { color: var(--cyan); }
+
+  .header-stats {
+    display: flex;
+    gap: 18px;
+    align-items: stretch;
+  }
+  .stat {
+    min-width: 68px;
+    border-left: 1px solid var(--rule);
+    padding: 2px 0 2px 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .stat .n {
+    font-family: "Archivo Narrow", sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--txt);
+    line-height: 1;
+    letter-spacing: 0.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .n.phos { color: var(--phos); text-shadow: 0 0 16px rgba(158, 240, 26, 0.3); }
+  .stat .n.amber { color: var(--amber); }
+  .stat .n.coral { color: var(--coral); }
+  .stat .k {
+    font-size: 9px;
+    color: var(--txt-4);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    margin-top: 6px;
+  }
+
+  /* pipeline */
+  .pipeline {
+    padding: 14px 20px 16px;
+    border-bottom: 1px solid var(--rule);
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    background: var(--bg-2);
+  }
+  .stage-cell {
+    padding: 10px 12px 11px;
+    border: 1px solid var(--rule);
+    position: relative;
+    background: var(--panel);
+  }
+  .stage-cell.done {
+    border-color: var(--phos-dim);
+    background: linear-gradient(180deg, rgba(158, 240, 26, 0.04), transparent);
+  }
+  .stage-cell.running {
+    border-color: var(--phos);
+    background: linear-gradient(180deg, rgba(158, 240, 26, 0.08), rgba(158, 240, 26, 0.02));
+    box-shadow: inset 0 0 0 1px rgba(158, 240, 26, 0.25), 0 0 30px -10px rgba(158, 240, 26, 0.3);
+  }
+  .stage-cell.running::after {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; height: 2px;
+    width: 100%;
+    background: linear-gradient(90deg, transparent, var(--phos), transparent);
+    animation: sweep 2.2s linear infinite;
+    background-size: 200% 100%;
+  }
+  .stage-cell.pending {
+    border-color: var(--rule);
+    background: transparent;
+    opacity: 0.55;
+  }
+  .stage-num {
+    font-family: "Syncopate", sans-serif;
+    font-size: 9px;
+    letter-spacing: 0.35em;
+    color: var(--txt-4);
+    font-weight: 700;
+  }
+  .stage-cell.done .stage-num { color: var(--phos-dim); }
+  .stage-cell.running .stage-num { color: var(--phos); }
+  .stage-title {
+    font-family: "Archivo Narrow", sans-serif;
+    font-size: 16px;
+    color: var(--txt);
+    font-weight: 600;
+    margin: 3px 0 6px;
+    letter-spacing: 0.005em;
+  }
+  .stage-agent {
+    font-size: 10.5px;
+    color: var(--txt-3);
+    letter-spacing: 0.08em;
+  }
+  .stage-agent b { color: var(--cyan); font-weight: 500; }
+  .stage-footer {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+    font-size: 9.5px;
+    color: var(--txt-4);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    align-items: center;
+  }
+  .stage-footer .tag { color: var(--phos); }
+  .stage-cell.running .stage-footer .tag { color: var(--phos); animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0.35; } }
+
+  /* event stream */
+  .stream-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .stream-head {
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg);
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--txt-3);
+  }
+  .stream-head .filters { display: flex; gap: 3px; }
+  .stream-head .filters span {
+    padding: 3px 9px 2px;
+    border: 1px solid var(--rule);
+    color: var(--txt-3);
+    cursor: pointer;
+    font-size: 9.5px;
+    letter-spacing: 0.25em;
+  }
+  .stream-head .filters span.on { color: var(--phos); border-color: var(--phos-dim); background: rgba(158, 240, 26, 0.04); }
+
+  .stream {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2px 0 40px;
+    scrollbar-color: var(--rule) var(--bg);
+    scrollbar-width: thin;
+  }
+  .stream::-webkit-scrollbar { width: 8px; }
+  .stream::-webkit-scrollbar-track { background: var(--bg); }
+  .stream::-webkit-scrollbar-thumb { background: var(--rule); }
+
+  .ev {
+    display: grid;
+    grid-template-columns: 92px 16px 108px 78px 1fr;
+    gap: 0;
+    padding: 7px 20px 6px 20px;
+    border-bottom: 1px solid var(--rule-soft);
+    position: relative;
+    animation: drop 300ms cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
+    transition: background 160ms;
+  }
+  .ev:hover { background: rgba(158, 240, 26, 0.025); }
+  @keyframes drop {
+    0% { opacity: 0; transform: translateY(-4px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .ev .t {
+    font-size: 11.5px;
+    color: var(--txt-4);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+  .ev .t b {
+    color: var(--txt-2);
+    font-weight: 500;
+  }
+  .ev .glyph {
+    font-size: 14px;
+    color: var(--txt-4);
+    text-align: center;
+    line-height: 1.4;
+  }
+  .ev.type-stage_started     .glyph { color: var(--cyan); }
+  .ev.type-agent_input       .glyph { color: var(--violet); }
+  .ev.type-model_decision    .glyph { color: var(--phos); }
+  .ev.type-tool_call         .glyph { color: var(--amber); }
+  .ev.type-tool_result       .glyph { color: var(--txt-2); }
+  .ev.type-tool_result.fail  .glyph { color: var(--coral); }
+  .ev.type-finding_reported  .glyph { color: var(--lime); }
+  .ev.type-stage_completed   .glyph { color: var(--phos); }
+  .ev.type-stage_failed      .glyph { color: var(--coral); }
+  .ev.type-system_message    .glyph { color: var(--txt-3); }
+  .ev.type-stage_result_submitted .glyph { color: var(--phos); }
+
+  .ev .tag {
+    font-size: 9.5px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--txt-3);
+    padding-top: 2px;
+  }
+  .ev.type-stage_started    .tag { color: var(--cyan); }
+  .ev.type-model_decision   .tag { color: var(--phos); }
+  .ev.type-tool_call        .tag { color: var(--amber); }
+  .ev.type-finding_reported .tag { color: var(--lime); }
+  .ev.type-stage_completed  .tag { color: var(--phos); }
+  .ev.type-stage_failed     .tag, .ev.type-tool_result.fail .tag { color: var(--coral); }
+  .ev.type-stage_result_submitted .tag { color: var(--phos); }
+
+  .ev .agent {
+    font-size: 10.5px;
+    color: var(--cyan-dim);
+    letter-spacing: 0.05em;
+  }
+  .ev .agent b { color: var(--cyan); font-weight: 500; }
+  .ev .body {
+    color: var(--txt-2);
+    font-size: 12.5px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ev .body .q { color: var(--phos); }
+  .ev .body .bad { color: var(--coral); }
+  .ev .body .key { color: var(--txt-4); }
+  .ev .body .val { color: var(--txt); }
+
+  .ev.new {
+    background: linear-gradient(90deg, rgba(158, 240, 26, 0.08), transparent 80%);
+    animation: flash 1.4s ease-out, drop 300ms cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
+  }
+  @keyframes flash {
+    0% { background: rgba(158, 240, 26, 0.2); }
+    100% { background: transparent; }
+  }
+
+  .ev.finding {
+    background: linear-gradient(90deg, rgba(205, 245, 100, 0.06), transparent 70%);
+    border-bottom: 1px solid rgba(205, 245, 100, 0.15);
+  }
+  .ev.finding .body b { color: var(--lime); font-weight: 600; }
+
+  .sev-pill {
+    display: inline-block;
+    padding: 0 6px;
+    margin-right: 6px;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    font-weight: 700;
+    vertical-align: 1px;
+  }
+  .sev-pill.high     { background: var(--coral); color: var(--ink); }
+  .sev-pill.critical { background: #ff2944; color: var(--ink); }
+  .sev-pill.medium   { background: var(--amber); color: var(--ink); }
+  .sev-pill.low      { background: var(--cyan); color: var(--ink); }
+  .sev-pill.info     { background: var(--txt-4); color: var(--txt); }
+
+  /* cursor line at bottom of stream */
+  .cursor-line {
+    padding: 8px 20px;
+    color: var(--phos);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .cursor-line::before { content: '›'; color: var(--phos); }
+  .cursor-line .blink {
+    display: inline-block;
+    width: 8px; height: 13px;
+    background: var(--phos);
+    box-shadow: 0 0 10px var(--phos);
+    animation: caret 1s step-end infinite;
+    margin-left: 2px;
+  }
+  @keyframes caret { 50% { opacity: 0; } }
+
+  /* ───── right rail: live output ───── */
+  .rail-right {
+    border-left: 1px solid var(--rule);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .panel-head {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--txt-3);
+  }
+  .panel-head .pid {
+    color: var(--amber);
+    letter-spacing: 0.1em;
+    font-size: 10.5px;
+  }
+
+  .tool-card {
+    padding: 14px 14px 12px;
+    border-bottom: 1px solid var(--rule);
+    background: linear-gradient(180deg, rgba(255, 176, 0, 0.03), transparent);
+  }
+  .tool-name {
+    font-family: "Archivo Narrow", sans-serif;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--amber);
+    letter-spacing: 0.01em;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .tool-target {
+    font-size: 11px;
+    color: var(--txt-3);
+    letter-spacing: 0.05em;
+  }
+  .tool-target b { color: var(--cyan); font-weight: 500; }
+  .tool-meta {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    margin-top: 12px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+  .tool-meta > div {
+    background: var(--panel);
+    padding: 9px 10px 8px;
+  }
+  .tool-meta .k {
+    font-size: 9px;
+    color: var(--txt-4);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+  .tool-meta .v {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12.5px;
+    color: var(--txt);
+    font-variant-numeric: tabular-nums;
+  }
+  .tool-meta .v.phos { color: var(--phos); }
+
+  .tool-stream {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 14px 20px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--txt-2);
+    scrollbar-color: var(--rule) var(--bg);
+  }
+  .tool-stream .line { padding: 1px 0; display: flex; gap: 10px; }
+  .tool-stream .n {
+    width: 28px;
+    color: var(--txt-4);
+    text-align: right;
+    flex-shrink: 0;
+    font-size: 10px;
+    padding-top: 2px;
+  }
+  .tool-stream .c { color: var(--txt-3); }
+  .tool-stream .hl { color: var(--phos); }
+  .tool-stream .bad { color: var(--coral); background: rgba(255, 82, 96, 0.08); padding: 0 3px; }
+  .tool-stream .ok { color: var(--phos); }
+  .tool-stream .warn { color: var(--amber); }
+  .tool-stream .caret {
+    display: inline-block;
+    width: 7px; height: 12px;
+    background: var(--phos);
+    vertical-align: -1px;
+    margin-left: 3px;
+    animation: caret 1s step-end infinite;
+  }
+
+  /* findings mini */
+  .findings-mini {
+    border-top: 1px solid var(--rule);
+    padding: 12px 14px 16px;
+    background: var(--bg-2);
+  }
+  .findings-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--txt-3);
+  }
+  .findings-head .n {
+    font-family: "Archivo Narrow", sans-serif;
+    font-size: 22px;
+    color: var(--lime);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    line-height: 1;
+  }
+  .findings-row {
+    display: grid;
+    grid-template-columns: 52px 1fr auto;
+    gap: 10px;
+    padding: 7px 0;
+    border-top: 1px dotted var(--rule);
+    font-size: 11.5px;
+    align-items: center;
+  }
+  .findings-row .sev-pill { margin: 0; }
+  .findings-row .t { color: var(--txt); font-weight: 500; }
+  .findings-row .t small { display: block; color: var(--txt-4); font-size: 10px; letter-spacing: 0.1em; margin-top: 2px; }
+  .findings-row .c { color: var(--txt-3); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+  /* ───── bottom ticker ───── */
+  .ticker {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 30px;
+    border-top: 1px solid var(--rule);
+    background: var(--bg-2);
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    z-index: 20;
+    font-size: 11px;
+    color: var(--txt-3);
+    letter-spacing: 0.03em;
+  }
+  .ticker-label {
+    background: var(--phos);
+    color: var(--ink);
+    padding: 0 14px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    flex-shrink: 0;
+  }
+  .ticker-scroll {
+    display: flex;
+    animation: marquee 60s linear infinite;
+    gap: 44px;
+    padding-left: 24px;
+    white-space: nowrap;
+  }
+  @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+  .ticker-scroll span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ticker-scroll b { color: var(--txt); font-weight: 500; letter-spacing: 0.05em; }
+  .ticker-scroll .sev-pill { margin: 0; transform: translateY(-1px); }
+
+  /* Responsiveness */
+  @media (max-width: 1200px) {
+    .console { grid-template-columns: 240px 1fr 300px; }
+    .ev { grid-template-columns: 72px 14px 92px 64px 1fr; padding: 6px 14px; }
+    .ev .t, .ev .tag, .ev .agent, .ev .body { font-size: 11px; }
+  }
+  @media (max-width: 900px) {
+    .console { grid-template-columns: 1fr; }
+    .rail-left, .rail-right { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ───── TOP COMMAND BAR ───── -->
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">S</div>
+    <div>
+      <div class="brand-txt">SYNC<span>//</span>TERMINAL</div>
+      <div class="brand-sub">Ops Console · v0.9.2</div>
+    </div>
+  </div>
+  <div class="status">
+    <div class="chip"><span class="dot"></span> SSE <b>LIVE</b> · 14ms</div>
+    <div class="chip">RUNS <b>3 active</b> / 87 total</div>
+    <div class="chip">EVENTS <b>1,412</b> / min</div>
+    <div class="chip">AGENTS <b>5 online</b></div>
+    <div class="chip">RUNTIMES <b>tofu‑west‑02</b></div>
+    <div class="chip"><span class="dot amber"></span> WATCHLIST <b>2 open</b></div>
+    <div class="chip" style="margin-left:auto">OPSTIME <b>14:11:47.310 UTC</b></div>
+  </div>
+  <div class="actions">
+    <button class="btn">LOGS</button>
+    <button class="btn">HEARTBEAT</button>
+    <button class="btn primary">NEW RUN ⏎</button>
+  </div>
+</header>
+
+<main class="console">
+
+  <!-- ───── LEFT RAIL: RUNS ───── -->
+  <section class="rail-left">
+    <div class="rail-head">
+      <h3>Active Runs</h3>
+      <span class="c">03 / 12</span>
+    </div>
+    <div class="runs">
+
+      <div class="run active">
+        <div class="run-id">SYN‑2026‑0421‑<b style="color:var(--phos)">B3</b>
+          <span class="run-state running"><span class="dot"></span>RUNNING</span>
+        </div>
+        <div class="run-target">vault.sparrow.io:8443</div>
+        <div class="run-meta">
+          <span>stage 2 / 3</span>
+          <span>T+02:14.003</span>
+        </div>
+        <div class="run-pipeline">
+          <span class="pipe done"></span>
+          <span class="pipe run"></span>
+          <span class="pipe"></span>
+        </div>
+      </div>
+
+      <div class="run">
+        <div class="run-id">SYN‑2026‑0421‑B4
+          <span class="run-state pending"><span class="dot"></span>QUEUED</span>
+        </div>
+        <div class="run-target">api.stormgate.dev:443</div>
+        <div class="run-meta">
+          <span>stage 0 / 4</span>
+          <span>waiting · slot</span>
+        </div>
+        <div class="run-pipeline">
+          <span class="pipe"></span><span class="pipe"></span><span class="pipe"></span><span class="pipe"></span>
+        </div>
+      </div>
+
+      <div class="run">
+        <div class="run-id">SYN‑2026‑0421‑B5
+          <span class="run-state running"><span class="dot"></span>RUNNING</span>
+        </div>
+        <div class="run-target">shop.helianthe.io</div>
+        <div class="run-meta">
+          <span>stage 1 / 2</span>
+          <span>T+00:41.001</span>
+        </div>
+        <div class="run-pipeline">
+          <span class="pipe run"></span><span class="pipe"></span>
+        </div>
+      </div>
+
+      <div class="rail-head" style="margin-top:8px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);">
+        <h3>Recent · last 30m</h3>
+        <span class="c" style="color:var(--txt-3)">9</span>
+      </div>
+
+      <div class="run">
+        <div class="run-id">SYN‑2026‑0421‑B2
+          <span class="run-state done"><span class="dot"></span>COMPLETED</span>
+        </div>
+        <div class="run-target">portal.aurum-finance.com</div>
+        <div class="run-meta"><span>3 stages</span><span>closed 14:02</span></div>
+        <div class="run-pipeline">
+          <span class="pipe done"></span><span class="pipe done"></span><span class="pipe done"></span>
+        </div>
+      </div>
+
+      <div class="run">
+        <div class="run-id">SYN‑2026‑0421‑B1
+          <span class="run-state failed"><span class="dot"></span>FAILED</span>
+        </div>
+        <div class="run-target">dev.nimbuscraft.cloud</div>
+        <div class="run-meta"><span>stage 2 / 3</span><span>contract err</span></div>
+        <div class="run-pipeline">
+          <span class="pipe done"></span><span class="pipe fail"></span><span class="pipe"></span>
+        </div>
+      </div>
+
+      <div class="run">
+        <div class="run-id">SYN‑2026‑0421‑A9
+          <span class="run-state done"><span class="dot"></span>COMPLETED</span>
+        </div>
+        <div class="run-target">checkout.blackreef.io</div>
+        <div class="run-meta"><span>4 stages</span><span>closed 13:51</span></div>
+        <div class="run-pipeline">
+          <span class="pipe done"></span><span class="pipe done"></span><span class="pipe done"></span><span class="pipe done"></span>
+        </div>
+      </div>
+
+      <div class="run">
+        <div class="run-id">SYN‑2026‑0421‑A8
+          <span class="run-state done"><span class="dot"></span>COMPLETED</span>
+        </div>
+        <div class="run-target">auth.quietleaf.app</div>
+        <div class="run-meta"><span>2 stages</span><span>closed 13:47</span></div>
+        <div class="run-pipeline">
+          <span class="pipe done"></span><span class="pipe done"></span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ───── CENTER: RUN DETAIL ───── -->
+  <section class="center">
+
+    <!-- RUN HEADER -->
+    <div class="run-header">
+      <h1>
+        <span class="pre">ACTIVE RUN · SYN-2026-0421-B3</span>
+        vault.sparrow.io:8443
+        <span class="sub"><span class="k">workflow</span><span class="v">web-recon-v4</span>&nbsp;&nbsp; <span class="k">runtime</span><span class="v">tofu-west-02</span>&nbsp;&nbsp; <span class="k">started</span><span class="v">14:09:33 UTC</span>&nbsp;&nbsp; <span class="k">elapsed</span><span class="v">T+02:14.003</span></span>
+      </h1>
+      <div class="header-stats">
+        <div class="stat"><span class="n phos">27</span><span class="k">events</span></div>
+        <div class="stat"><span class="n phos">2</span><span class="k">stages done</span></div>
+        <div class="stat"><span class="n">7</span><span class="k">tool calls</span></div>
+        <div class="stat"><span class="n amber">1</span><span class="k">running</span></div>
+        <div class="stat"><span class="n coral">0</span><span class="k">failures</span></div>
+        <div class="stat"><span class="n" style="color:var(--lime)">5</span><span class="k">findings</span></div>
+      </div>
+    </div>
+
+    <!-- PIPELINE -->
+    <div class="pipeline">
+      <div class="stage-cell done">
+        <div class="stage-num">STAGE · 01</div>
+        <div class="stage-title">Reconnaissance</div>
+        <div class="stage-agent">agent <b>Halberd-R1</b></div>
+        <div class="stage-footer"><span>00:10.480 elapsed</span><span class="tag">✓ 3 findings</span></div>
+      </div>
+      <div class="stage-cell running">
+        <div class="stage-num">STAGE · 02 — ACTIVE</div>
+        <div class="stage-title">Content Discovery</div>
+        <div class="stage-agent">agent <b>Crane-C2</b> · running ffuf</div>
+        <div class="stage-footer"><span>T+02:14.003</span><span class="tag">⌁ LIVE</span></div>
+      </div>
+      <div class="stage-cell pending">
+        <div class="stage-num">STAGE · 03</div>
+        <div class="stage-title">Header &amp; TLS Audit</div>
+        <div class="stage-agent">agent <b>Ward-H3</b> — pending</div>
+        <div class="stage-footer"><span>—</span><span>awaiting handoff</span></div>
+      </div>
+    </div>
+
+    <!-- EVENT STREAM -->
+    <div class="stream-wrap">
+      <div class="stream-head">
+        <span>EVENT STREAM · live</span>
+        <div class="filters">
+          <span class="on">ALL</span>
+          <span>TOOL</span>
+          <span>MODEL</span>
+          <span>FINDINGS</span>
+          <span>ERRORS</span>
+        </div>
+        <span>AUTO-SCROLL · ON</span>
+      </div>
+      <div class="stream" id="stream">
+
+        <div class="ev type-stage_started" style="animation-delay: 0ms">
+          <span class="t">14:09<b>:33.112</b></span>
+          <span class="glyph">◉</span>
+          <span class="tag">stage_started</span>
+          <span class="agent"><b>halberd-r1</b></span>
+          <span class="body"><span class="val">Stage 1 of 3 — Reconnaissance</span> opened. <span class="key">runtime=</span><span class="val">tofu-west-02</span> <span class="key">scope=</span><span class="val">vault.sparrow.io:8443</span></span>
+        </div>
+
+        <div class="ev type-agent_input" style="animation-delay: 30ms">
+          <span class="t">14:09<b>:33.524</b></span>
+          <span class="glyph">◇</span>
+          <span class="tag">agent_input</span>
+          <span class="agent"><b>halberd-r1</b></span>
+          <span class="body">Stage context received. <span class="key">allowed_tools=</span><span class="val">9</span> <span class="key">min_findings=</span><span class="val">1</span> <span class="key">require_tool_call=</span><span class="val">true</span></span>
+        </div>
+
+        <div class="ev type-system_message" style="animation-delay: 60ms">
+          <span class="t">14:09<b>:33.900</b></span>
+          <span class="glyph">#</span>
+          <span class="tag">system_message</span>
+          <span class="agent"><b>orchestrator</b></span>
+          <span class="body">System prompt injected (lane=system, 3,412 bytes). Model may invoke tool_call, finding_report, stage_result.</span>
+        </div>
+
+        <div class="ev type-model_decision" style="animation-delay: 100ms">
+          <span class="t">14:09<b>:35.233</b></span>
+          <span class="glyph">✦</span>
+          <span class="tag">model_decision</span>
+          <span class="agent"><b>halberd-r1</b></span>
+          <span class="body"><span class="q">"I will start with nmap for versioned detection, follow with whatweb, capture root headers with curl."</span> <span class="key">· 1.71s · 412 tok · 3 tools</span></span>
+        </div>
+
+        <div class="ev type-tool_call" style="animation-delay: 140ms">
+          <span class="t">14:09<b>:35.450</b></span>
+          <span class="glyph">⚡</span>
+          <span class="tag">tool_call</span>
+          <span class="agent"><b>halberd-r1</b></span>
+          <span class="body"><span class="val">nmap</span> <span class="key">→</span> vault.sparrow.io:8443 <span class="key">·</span> -sV --script ssl-enum-ciphers <span class="key">·</span> timeout 30 000 ms</span>
+        </div>
+
+        <div class="ev type-tool_result" style="animation-delay: 180ms">
+          <span class="t">14:09<b>:38.984</b></span>
+          <span class="glyph">✓</span>
+          <span class="tag">tool_result</span>
+          <span class="agent"><b>halberd-r1</b></span>
+          <span class="body"><span class="val">nmap</span> exit <span class="val">0</span> in 3 534 ms → nginx/1.24.0, TLSv1.2 only, CBC ciphers C‑grade</span>
+        </div>
+
+        <div class="ev type-finding_reported finding" style="animation-delay: 220ms">
+          <span class="t">14:09<b>:39.201</b></span>
+          <span class="glyph">❂</span>
+          <span class="tag">finding</span>
+          <span class="agent"><b>halberd-r1</b></span>
+          <span class="body"><span class="sev-pill medium">MED</span><b>Weak TLS cipher suite accepted on 8443</b> <span class="key">· conf 0.82 · cwe-326</span></span>
+        </div>
+
+        <div class="ev type-tool_call" style="animation-delay: 260ms">
+          <span class="t">14:09<b>:39.390</b></span>
+          <span class="glyph">⚡</span>
+          <span class="tag">tool_call</span>
+          <span class="agent"><b>halberd-r1</b></span>
+          <span class="body"><span class="val">whatweb</span> <span class="key">→</span> https://vault.sparrow.io:8443/ <span class="key">·</span> --aggression 3</span>
+        </div>
+
+        <div class="ev type-tool_result" style="animation-delay: 300ms">
+          <span class="t">14:09<b>:42.044</b></span>
+          <span class="glyph">✓</span>
+          <span class="tag">tool_result</span>
+          <span class="agent"><b>halberd-r1</b></span>
+          <span class="body"><span class="val">whatweb</span> exit <span class="val">0</span> in 2 654 ms → Django[4.2.3], nginx[1.24.0], X‑Powered‑By exposed</span>
+        </div>
+
+        <div class="ev type-finding_reported finding" style="animation-delay: 340ms">
+          <span class="t">14:09<b>:42.322</b></span>
+          <span class="glyph">❂</span>
+          <span class="tag">finding</span>
+          <span class="agent"><b>halberd-r1</b></span>
+          <span class="body"><span class="sev-pill medium">MED</span><b>Framework &amp; version disclosed in response headers</b> <span class="key">· conf 0.88 · cwe-200</span></span>
+        </div>
+
+        <div class="ev type-stage_result_submitted" style="animation-delay: 380ms">
+          <span class="t">14:09<b>:43.112</b></span>
+          <span class="glyph">⬢</span>
+          <span class="tag">stage_result</span>
+          <span class="agent"><b>halberd-r1</b></span>
+          <span class="body">Structured result <span class="val">completed</span> — 3 findings, handoff: host confirmed · Django 4.2 · TLS degraded</span>
+        </div>
+
+        <div class="ev type-stage_completed" style="animation-delay: 420ms">
+          <span class="t">14:09<b>:43.480</b></span>
+          <span class="glyph">◉</span>
+          <span class="tag">stage_completed</span>
+          <span class="agent"><b>halberd-r1</b></span>
+          <span class="body">Stage 1 closed in <span class="val">10.480s</span> · 11 observations · 3 findings · trace_appended</span>
+        </div>
+
+        <!-- Stage 2 begins -->
+        <div class="ev type-stage_started" style="animation-delay: 460ms">
+          <span class="t">14:09<b>:43.901</b></span>
+          <span class="glyph">◉</span>
+          <span class="tag">stage_started</span>
+          <span class="agent"><b>crane-c2</b></span>
+          <span class="body"><span class="val">Stage 2 of 3 — Content Discovery</span> opened with handoff from Halberd‑R1</span>
+        </div>
+
+        <div class="ev type-model_decision" style="animation-delay: 500ms">
+          <span class="t">14:09<b>:45.890</b></span>
+          <span class="glyph">✦</span>
+          <span class="tag">model_decision</span>
+          <span class="agent"><b>crane-c2</b></span>
+          <span class="body"><span class="q">"Django default admin surface; fuzz low‑thread, cross‑check with gobuster for VCS."</span> <span class="key">· 1.98s · 298 tok · 2 tools</span></span>
+        </div>
+
+        <div class="ev type-tool_call" style="animation-delay: 540ms">
+          <span class="t">14:09<b>:46.020</b></span>
+          <span class="glyph">⚡</span>
+          <span class="tag">tool_call</span>
+          <span class="agent"><b>crane-c2</b></span>
+          <span class="body"><span class="val">ffuf</span> <span class="key">→</span> vault.sparrow.io:8443 <span class="key">·</span> -w raft-medium.txt -mc 200,301,302,401,403 -t 20</span>
+        </div>
+
+        <div class="ev type-tool_result" style="animation-delay: 580ms">
+          <span class="t">14:12<b>:00.003</b></span>
+          <span class="glyph">✓</span>
+          <span class="tag">tool_result</span>
+          <span class="agent"><b>crane-c2</b></span>
+          <span class="body"><span class="val">ffuf</span> exit <span class="val">0</span> in 133 983 ms → <span class="val">5 hits</span>, 2 escalated (/.git/HEAD, /backup.zip)</span>
+        </div>
+
+        <div class="ev type-finding_reported finding" style="animation-delay: 620ms">
+          <span class="t">14:12<b>:02.224</b></span>
+          <span class="glyph">❂</span>
+          <span class="tag">finding</span>
+          <span class="agent"><b>crane-c2</b></span>
+          <span class="body"><span class="sev-pill high">HIGH</span><b>Exposed .git directory at /.git/HEAD</b> <span class="key">· conf 0.97 · cwe-538</span></span>
+        </div>
+
+        <div class="ev type-tool_call new" style="animation-delay: 660ms">
+          <span class="t">14:12<b>:10.111</b></span>
+          <span class="glyph">⚡</span>
+          <span class="tag">tool_call</span>
+          <span class="agent"><b>crane-c2</b></span>
+          <span class="body"><span class="val">curl</span> <span class="key">→</span> https://vault.sparrow.io:8443/.git/config <span class="key">·</span> -s -o /dev/null -w %{http_code}</span>
+        </div>
+
+        <div class="ev type-tool_result new" style="animation-delay: 700ms">
+          <span class="t">14:12<b>:10.903</b></span>
+          <span class="glyph">✓</span>
+          <span class="tag">tool_result</span>
+          <span class="agent"><b>crane-c2</b></span>
+          <span class="body"><span class="val">curl</span> exit <span class="val">0</span> in 792 ms → 200 · Content-Length 124 · valid repo descriptor</span>
+        </div>
+
+        <div class="ev type-tool_call new" style="animation-delay: 740ms">
+          <span class="t">14:12<b>:14.000</b></span>
+          <span class="glyph">⚡</span>
+          <span class="tag">tool_call</span>
+          <span class="agent"><b>crane-c2</b></span>
+          <span class="body"><span class="val">gobuster</span> <span class="key">→</span> vault.sparrow.io:8443/api/ <span class="key">·</span> dir -w api-wordlist.txt -k <span class="key">· running</span></span>
+        </div>
+
+        <div class="cursor-line">awaiting next frame<span class="blink"></span></div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ───── RIGHT RAIL: LIVE TOOL OUTPUT ───── -->
+  <aside class="rail-right">
+    <div class="panel-head">
+      <span>TOOL · LIVE OUTPUT</span>
+      <span class="pid">pid 14887</span>
+    </div>
+
+    <div class="tool-card">
+      <div class="tool-name">gobuster</div>
+      <div class="tool-target">on <b>vault.sparrow.io:8443/api/</b> · -w api-wordlist.txt -k</div>
+      <div class="tool-meta">
+        <div><div class="k">exit</div><div class="v">—</div></div>
+        <div><div class="k">elapsed</div><div class="v phos">00:14.1</div></div>
+        <div><div class="k">stream</div><div class="v">stdout</div></div>
+      </div>
+    </div>
+
+    <div class="tool-stream">
+<div class="line"><span class="n">001</span><span><span class="c">===============================================================</span></span></div>
+<div class="line"><span class="n">002</span><span>Gobuster v3.6</span></div>
+<div class="line"><span class="n">003</span><span>by OJ Reeves &amp; Christian Mehlmauer</span></div>
+<div class="line"><span class="n">004</span><span><span class="c">===============================================================</span></span></div>
+<div class="line"><span class="n">005</span><span>[+] Url:            <span class="hl">https://vault.sparrow.io:8443/api/</span></span></div>
+<div class="line"><span class="n">006</span><span>[+] Method:         GET</span></div>
+<div class="line"><span class="n">007</span><span>[+] Threads:        10</span></div>
+<div class="line"><span class="n">008</span><span>[+] Wordlist:       api-wordlist.txt</span></div>
+<div class="line"><span class="n">009</span><span>[+] Status codes:   200,204,301,302,307,401,403</span></div>
+<div class="line"><span class="n">010</span><span>[+] User Agent:     gobuster/3.6</span></div>
+<div class="line"><span class="n">011</span><span>[+] Timeout:        10s</span></div>
+<div class="line"><span class="n">012</span><span><span class="c">===============================================================</span></span></div>
+<div class="line"><span class="n">013</span><span>2026/04/21 14:12:14 Starting gobuster in directory mode</span></div>
+<div class="line"><span class="n">014</span><span><span class="c">===============================================================</span></span></div>
+<div class="line"><span class="n">015</span><span><span class="ok">/v1</span>              (Status: 200) [Size: 412]</span></div>
+<div class="line"><span class="n">016</span><span><span class="ok">/v1/auth</span>         (Status: 401) [Size: 89]</span></div>
+<div class="line"><span class="n">017</span><span><span class="warn">/v1/login</span>        (Status: 200) [Size: 1,221]</span></div>
+<div class="line"><span class="n">018</span><span><span class="ok">/v1/users</span>        (Status: 401) [Size: 89]</span></div>
+<div class="line"><span class="n">019</span><span><span class="bad">/v1/internal</span>     (Status: 200) [Size: 8,412] ← escalate</span></div>
+<div class="line"><span class="n">020</span><span><span class="bad">/v1/debug</span>        (Status: 200) [Size: 2,018] ← escalate</span></div>
+<div class="line"><span class="n">021</span><span><span class="ok">/v1/healthz</span>      (Status: 200) [Size: 17]</span></div>
+<div class="line"><span class="n">022</span><span><span class="warn">/v1/openapi.json</span> (Status: 200) [Size: 41,880]</span></div>
+<div class="line"><span class="n">023</span><span>Progress: 4128 / 12800 (32.25%)<span class="caret"></span></span></div>
+    </div>
+
+    <div class="findings-mini">
+      <div class="findings-head">
+        <span>Findings · live</span>
+        <span class="n">5</span>
+      </div>
+
+      <div class="findings-row">
+        <span class="sev-pill high">HIGH</span>
+        <span class="t">Exposed .git at /.git/HEAD<small>crane-c2 · 14:12:02 · conf 0.97</small></span>
+        <span class="c">#04</span>
+      </div>
+      <div class="findings-row">
+        <span class="sev-pill medium">MED</span>
+        <span class="t">Weak TLS cipher suite<small>halberd-r1 · 14:09:39 · conf 0.82</small></span>
+        <span class="c">#01</span>
+      </div>
+      <div class="findings-row">
+        <span class="sev-pill medium">MED</span>
+        <span class="t">Framework/version disclosure<small>halberd-r1 · 14:09:42 · conf 0.88</small></span>
+        <span class="c">#02</span>
+      </div>
+      <div class="findings-row">
+        <span class="sev-pill low">LOW</span>
+        <span class="t">Public health endpoint<small>halberd-r1 · 14:09:43 · conf 0.64</small></span>
+        <span class="c">#03</span>
+      </div>
+      <div class="findings-row">
+        <span class="sev-pill info">INFO</span>
+        <span class="t">/backup.zip · 4.1 MiB · unprobed<small>crane-c2 · 14:12:02 · triage</small></span>
+        <span class="c">#05</span>
+      </div>
+    </div>
+
+  </aside>
+</main>
+
+<!-- ───── BOTTOM TICKER ───── -->
+<div class="ticker">
+  <div class="ticker-label">▶ FINDINGS · FEED</div>
+  <div class="ticker-scroll">
+    <span><b>SYN-2026-0421-B3</b> <span class="sev-pill high">HIGH</span> Exposed .git directory · conf 0.97</span>
+    <span><b>SYN-2026-0421-B3</b> <span class="sev-pill medium">MED</span> Weak TLS ciphers · conf 0.82</span>
+    <span><b>SYN-2026-0421-B5</b> <span class="sev-pill medium">MED</span> Missing HSTS · conf 0.94</span>
+    <span><b>SYN-2026-0421-B2</b> <span class="sev-pill critical">CRIT</span> Unauth admin panel · conf 0.91 · CLOSED</span>
+    <span><b>SYN-2026-0421-A9</b> <span class="sev-pill high">HIGH</span> Open S3 bucket · conf 0.88 · CLOSED</span>
+    <span><b>SYN-2026-0421-B3</b> <span class="sev-pill low">LOW</span> Public health endpoint · conf 0.64</span>
+    <span><b>SYN-2026-0421-B1</b> <span class="sev-pill info">INFO</span> Contract validation failed · retry queued</span>
+    <!-- duplicate for seamless scroll -->
+    <span><b>SYN-2026-0421-B3</b> <span class="sev-pill high">HIGH</span> Exposed .git directory · conf 0.97</span>
+    <span><b>SYN-2026-0421-B3</b> <span class="sev-pill medium">MED</span> Weak TLS ciphers · conf 0.82</span>
+    <span><b>SYN-2026-0421-B5</b> <span class="sev-pill medium">MED</span> Missing HSTS · conf 0.94</span>
+    <span><b>SYN-2026-0421-B2</b> <span class="sev-pill critical">CRIT</span> Unauth admin panel · conf 0.91 · CLOSED</span>
+    <span><b>SYN-2026-0421-A9</b> <span class="sev-pill high">HIGH</span> Open S3 bucket · conf 0.88 · CLOSED</span>
+    <span><b>SYN-2026-0421-B3</b> <span class="sev-pill low">LOW</span> Public health endpoint · conf 0.64</span>
+    <span><b>SYN-2026-0421-B1</b> <span class="sev-pill info">INFO</span> Contract validation failed · retry queued</span>
+  </div>
+</div>
+
+<script>
+  // live clock + append a synthetic frame every ~3s to hint at streaming behavior
+  const clockEl = document.querySelector('.status .chip:last-child b');
+  function tick(){
+    const d = new Date();
+    const t = d.toISOString().substr(11, 12) + ' UTC';
+    if (clockEl) clockEl.textContent = t;
+  }
+  setInterval(tick, 120);
+  tick();
+
+  // synthetic SSE frame simulation
+  const stream = document.getElementById('stream');
+  const cursorLine = stream.querySelector('.cursor-line');
+  const templates = [
+    {
+      type:'tool_result', tag:'tool_result', glyph:'✓', agent:'crane-c2',
+      body:'<span class="val">gobuster</span> progress → 8 hits · 5,041/12,800 (39.4%)'
+    },
+    {
+      type:'tool_call', tag:'tool_call', glyph:'⚡', agent:'crane-c2',
+      body:'<span class="val">curl</span> <span class="key">→</span> /v1/debug · verifying content'
+    },
+    {
+      type:'finding_reported', tag:'finding', glyph:'❂', agent:'crane-c2',
+      body:'<span class="sev-pill high">HIGH</span><b>Debug endpoint exposes env vars</b> <span class="key">· conf 0.93 · cwe-200</span>',
+      cls:'finding'
+    }
+  ];
+  let i = 0;
+  function pad(n, l=2){ return String(n).padStart(l,'0'); }
+  function nowClock(){
+    const d = new Date();
+    return pad(d.getUTCHours())+':'+pad(d.getUTCMinutes())+'<b>:'+pad(d.getUTCSeconds())+'.'+pad(d.getUTCMilliseconds(),3)+'</b>';
+  }
+  function appendFrame(){
+    const t = templates[i % templates.length];
+    const el = document.createElement('div');
+    el.className = `ev type-${t.type} new ${t.cls||''}`;
+    el.innerHTML = `
+      <span class="t">${nowClock()}</span>
+      <span class="glyph">${t.glyph}</span>
+      <span class="tag">${t.tag}</span>
+      <span class="agent"><b>${t.agent}</b></span>
+      <span class="body">${t.body}</span>`;
+    stream.insertBefore(el, cursorLine);
+    stream.scrollTop = stream.scrollHeight;
+    i++;
+  }
+  setTimeout(()=> {
+    appendFrame();
+    setInterval(appendFrame, 4800);
+  }, 1500);
+</script>
+</body>
+</html>

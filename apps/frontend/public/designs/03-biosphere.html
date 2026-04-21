@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Biosphere · Observing run B3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --abyss:        #030912;
+    --abyss-lift:   #061320;
+    --surface:      rgba(16, 34, 49, 0.50);
+    --surface-2:    rgba(20, 42, 60, 0.38);
+    --glass-border: rgba(159, 216, 214, 0.12);
+
+    --ink:          #e8f2ef;
+    --ink-soft:     #b8cbc4;
+    --ink-fade:     #6d8380;
+    --ink-ghost:    #425453;
+
+    --lum-cyan:     #3aebc6;
+    --lum-cyan-d:   #0e8f7a;
+    --lum-lime:     #cdf564;
+    --lum-amber:    #ffac5f;
+    --lum-coral:    #ff5584;
+    --lum-rose:     #ff3368;
+    --lum-sky:      #6fb6ff;
+    --lum-violet:   #b9a0ff;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--abyss);
+    color: var(--ink);
+    font-family: "Manrope", system-ui, sans-serif;
+    font-weight: 400;
+    font-size: 15px;
+    line-height: 1.5;
+    letter-spacing: -0.005em;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* ambient light blooms */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: -20%;
+    background:
+      radial-gradient(ellipse 50% 40% at 18% 22%, rgba(58, 235, 198, 0.16), transparent 60%),
+      radial-gradient(ellipse 55% 45% at 82% 78%, rgba(255, 85, 132, 0.10), transparent 55%),
+      radial-gradient(ellipse 40% 30% at 50% 50%, rgba(111, 182, 255, 0.06), transparent 70%),
+      radial-gradient(ellipse 70% 50% at 92% 18%, rgba(205, 245, 100, 0.06), transparent 65%);
+    pointer-events: none;
+    z-index: 0;
+    animation: drift 22s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    0%   { transform: translate(0,0); }
+    100% { transform: translate(-20px, -30px); }
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    background-image:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.6  0 0 0 0 0.9  0 0 0 0 0.9  0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    opacity: 0.4;
+    mix-blend-mode: screen;
+  }
+
+  /* subtle drifting particles */
+  .particles {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .particles span {
+    position: absolute;
+    width: 2px; height: 2px;
+    background: var(--lum-cyan);
+    border-radius: 50%;
+    opacity: 0.35;
+    box-shadow: 0 0 6px var(--lum-cyan);
+    animation: rise linear infinite;
+  }
+  @keyframes rise {
+    0%   { transform: translateY(0) translateX(0); opacity: 0; }
+    10%  { opacity: 0.5; }
+    90%  { opacity: 0.4; }
+    100% { transform: translateY(-120vh) translateX(30px); opacity: 0; }
+  }
+
+  .container { position: relative; z-index: 2; max-width: 1340px; margin: 0 auto; padding: 42px 48px 120px; }
+
+  /* ───── hero ───── */
+  .hero { display: grid; grid-template-columns: 1fr auto; gap: 40px; align-items: end; padding-bottom: 40px; border-bottom: 1px solid var(--glass-border); }
+  .catalog {
+    font-family: "Space Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-fade);
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    margin-bottom: 22px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .catalog .mark {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--lum-cyan);
+    box-shadow: 0 0 14px var(--lum-cyan), 0 0 30px rgba(58, 235, 198, 0.4);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 0.55; transform: scale(0.9); }
+    50%     { opacity: 1;    transform: scale(1.15); }
+  }
+  .catalog .sep { color: var(--ink-ghost); }
+
+  h1.hero-title {
+    font-family: "Instrument Serif", serif;
+    font-weight: 400;
+    font-size: clamp(68px, 8.4vw, 120px);
+    line-height: 0.94;
+    letter-spacing: -0.025em;
+    margin: 0;
+    color: var(--ink);
+  }
+  h1.hero-title em {
+    font-style: italic;
+    color: var(--lum-cyan);
+    background: linear-gradient(180deg, var(--lum-cyan) 0%, #7dffe0 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 28px rgba(58, 235, 198, 0.32));
+  }
+  .hero-kicker {
+    font-family: "Instrument Serif", serif;
+    font-style: italic;
+    font-size: 24px;
+    color: var(--ink-soft);
+    margin: 20px 0 0;
+    max-width: 720px;
+    line-height: 1.3;
+    letter-spacing: -0.005em;
+  }
+  .hero-kicker b { color: var(--lum-cyan); font-weight: 400; font-style: normal; font-family: "Space Mono", monospace; font-size: 17px; letter-spacing: 0.03em; }
+
+  /* hero-right: live vitals */
+  .vitals {
+    background: var(--surface);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: 2px;
+    padding: 24px 26px;
+    min-width: 320px;
+    position: relative;
+  }
+  .vitals::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 2px;
+    background: radial-gradient(ellipse at top left, rgba(58, 235, 198, 0.08), transparent 60%);
+    pointer-events: none;
+  }
+  .vitals-label {
+    font-family: "Space Mono", monospace;
+    font-size: 10px;
+    color: var(--ink-fade);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+  .vitals-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 10px 0;
+    border-top: 1px solid rgba(159, 216, 214, 0.08);
+    font-family: "Space Mono", monospace;
+    font-size: 11.5px;
+  }
+  .vitals-row:first-of-type { border-top: none; }
+  .vitals-row .k { color: var(--ink-fade); letter-spacing: 0.12em; text-transform: uppercase; font-size: 10.5px; }
+  .vitals-row .v { color: var(--ink); font-size: 13px; font-family: "Instrument Serif", serif; font-style: italic; font-weight: 400; }
+  .vitals-row .v.num { font-family: "Space Mono", monospace; font-style: normal; color: var(--lum-cyan); letter-spacing: 0.03em; }
+  .vitals-row.warn .v.num { color: var(--lum-amber); }
+  .vitals-row.crit .v.num { color: var(--lum-coral); }
+
+  /* breathing indicator */
+  .breath {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: "Space Mono", monospace;
+    font-size: 10.5px;
+    color: var(--lum-cyan);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(159, 216, 214, 0.08);
+  }
+  .breath .wave {
+    width: 64px; height: 16px;
+    display: inline-block;
+    position: relative;
+  }
+  .breath .wave::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent 0%, var(--lum-cyan) 50%, transparent 100%);
+    clip-path: polygon(0% 60%, 8% 60%, 12% 20%, 16% 85%, 20% 60%, 30% 60%, 34% 35%, 40% 60%, 50% 60%, 58% 60%, 62% 20%, 66% 85%, 70% 60%, 82% 60%, 86% 40%, 92% 70%, 100% 60%);
+    animation: wave 1.8s linear infinite;
+    background-size: 200% 100%;
+  }
+  @keyframes wave { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+
+  /* ───── organism panel ───── */
+  .organism {
+    position: relative;
+    margin-top: 62px;
+    padding: 44px 32px 40px;
+    background: var(--surface);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--glass-border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .organism::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 600px 300px at 50% 0%, rgba(58, 235, 198, 0.06), transparent 60%),
+      radial-gradient(ellipse 800px 400px at 50% 100%, rgba(111, 182, 255, 0.04), transparent 65%);
+    pointer-events: none;
+  }
+  .organism-label {
+    font-family: "Space Mono", monospace;
+    font-size: 10px;
+    color: var(--ink-fade);
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    position: absolute;
+    top: 18px;
+    left: 32px;
+  }
+  .organism-label b { color: var(--lum-cyan); }
+  .organism-meta {
+    font-family: "Space Mono", monospace;
+    font-size: 10px;
+    color: var(--ink-fade);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    position: absolute;
+    top: 18px;
+    right: 32px;
+  }
+
+  .agents-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    margin-top: 12px;
+    position: relative;
+    z-index: 2;
+  }
+
+  /* agent cell */
+  .cell {
+    text-align: center;
+    padding: 22px 12px;
+    position: relative;
+  }
+  .cell:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 50%; right: -6%;
+    width: 12%;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(58, 235, 198, 0.7) 0%, rgba(58, 235, 198, 0.05) 100%);
+    box-shadow: 0 0 6px rgba(58, 235, 198, 0.3);
+  }
+  .cell.future::after { background: linear-gradient(90deg, rgba(159, 216, 214, 0.2) 0%, transparent 100%); box-shadow: none; }
+
+  .nucleus {
+    width: 124px;
+    height: 124px;
+    margin: 0 auto;
+    border-radius: 50%;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+      radial-gradient(circle at 35% 30%, rgba(58, 235, 198, 0.45) 0%, rgba(58, 235, 198, 0.15) 40%, transparent 70%),
+      radial-gradient(circle at 50% 50%, rgba(58, 235, 198, 0.1) 0%, transparent 70%);
+    border: 1px solid rgba(58, 235, 198, 0.35);
+    box-shadow:
+      inset 0 0 36px rgba(58, 235, 198, 0.12),
+      0 0 46px rgba(58, 235, 198, 0.18),
+      0 0 90px rgba(58, 235, 198, 0.08);
+  }
+
+  /* completed cell tint */
+  .cell.done .nucleus {
+    background:
+      radial-gradient(circle at 35% 30%, rgba(205, 245, 100, 0.28) 0%, rgba(205, 245, 100, 0.08) 40%, transparent 70%),
+      radial-gradient(circle at 50% 50%, rgba(205, 245, 100, 0.06) 0%, transparent 70%);
+    border-color: rgba(205, 245, 100, 0.3);
+    box-shadow:
+      inset 0 0 30px rgba(205, 245, 100, 0.1),
+      0 0 38px rgba(205, 245, 100, 0.12),
+      0 0 80px rgba(205, 245, 100, 0.05);
+  }
+  /* running cell tint — pulse */
+  .cell.running .nucleus {
+    animation: breathe 3.2s ease-in-out infinite;
+  }
+  @keyframes breathe {
+    0%, 100% {
+      box-shadow:
+        inset 0 0 36px rgba(58, 235, 198, 0.14),
+        0 0 46px rgba(58, 235, 198, 0.22),
+        0 0 90px rgba(58, 235, 198, 0.1);
+    }
+    50% {
+      box-shadow:
+        inset 0 0 40px rgba(58, 235, 198, 0.22),
+        0 0 70px rgba(58, 235, 198, 0.35),
+        0 0 130px rgba(58, 235, 198, 0.18);
+    }
+  }
+  /* halo rings for running */
+  .cell.running .nucleus::before,
+  .cell.running .nucleus::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
+    border-radius: 50%;
+    border: 1px solid rgba(58, 235, 198, 0.35);
+    animation: ring 3s ease-out infinite;
+  }
+  .cell.running .nucleus::after { animation-delay: 1.5s; inset: -18px; }
+  @keyframes ring {
+    0%   { transform: scale(0.7); opacity: 0.7; }
+    100% { transform: scale(1.3); opacity: 0; }
+  }
+
+  /* pending cell */
+  .cell.future .nucleus {
+    background: radial-gradient(circle at 50% 50%, rgba(159, 216, 214, 0.04) 0%, transparent 70%);
+    border-color: rgba(159, 216, 214, 0.12);
+    box-shadow: none;
+    opacity: 0.55;
+  }
+
+  .glyph-initial {
+    font-family: "Instrument Serif", serif;
+    font-style: italic;
+    font-size: 54px;
+    line-height: 1;
+    color: var(--ink);
+    letter-spacing: -0.03em;
+    filter: drop-shadow(0 0 16px rgba(58, 235, 198, 0.4));
+  }
+  .cell.done .glyph-initial { color: var(--lum-lime); filter: drop-shadow(0 0 12px rgba(205, 245, 100, 0.3)); }
+  .cell.future .glyph-initial { color: var(--ink-ghost); filter: none; }
+
+  .cell-id {
+    margin-top: 18px;
+    font-family: "Space Mono", monospace;
+    font-size: 10px;
+    color: var(--ink-fade);
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+  }
+  .cell-name {
+    margin-top: 4px;
+    font-family: "Instrument Serif", serif;
+    font-style: italic;
+    font-size: 26px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .cell-role {
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    letter-spacing: 0.005em;
+  }
+  .cell.running .cell-role::after {
+    content: ' · observing';
+    color: var(--lum-cyan);
+  }
+  .cell.future .cell-name,
+  .cell.future .cell-role { color: var(--ink-fade); }
+
+  .cell-stats {
+    margin-top: 14px;
+    display: inline-flex;
+    gap: 18px;
+    padding: 8px 14px;
+    border: 1px solid var(--glass-border);
+    border-radius: 2px;
+    background: rgba(255,255,255,0.02);
+    font-family: "Space Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-fade);
+    letter-spacing: 0.1em;
+  }
+  .cell-stats b { color: var(--ink); font-weight: 400; margin-right: 2px; }
+  .cell.running .cell-stats b { color: var(--lum-cyan); }
+  .cell.done .cell-stats b { color: var(--lum-lime); }
+
+  /* ───── main split ───── */
+  .split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 48px;
+    margin-top: 64px;
+  }
+
+  /* section labels */
+  .section-label {
+    font-family: "Space Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-fade);
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--glass-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .section-label .roman {
+    font-family: "Instrument Serif", serif;
+    font-style: italic;
+    font-size: 32px;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    margin-right: 16px;
+  }
+  .section-label .count { color: var(--lum-cyan); }
+
+  /* ───── timeline ───── */
+  .timeline {
+    position: relative;
+    padding-left: 38px;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 0;
+    bottom: 90px;
+    width: 1px;
+    background: linear-gradient(180deg,
+      rgba(205, 245, 100, 0.55) 0%,
+      rgba(205, 245, 100, 0.35) 18%,
+      rgba(58, 235, 198, 0.55) 40%,
+      rgba(58, 235, 198, 0.45) 65%,
+      rgba(111, 182, 255, 0.3) 85%,
+      rgba(159, 216, 214, 0.1) 100%);
+  }
+  .timeline::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 0;
+    bottom: 90px;
+    width: 9px;
+    background: linear-gradient(180deg,
+      rgba(205, 245, 100, 0.25),
+      rgba(58, 235, 198, 0.15),
+      transparent);
+    filter: blur(6px);
+    pointer-events: none;
+  }
+
+  .beat {
+    position: relative;
+    padding: 14px 0 18px 34px;
+    margin-bottom: 4px;
+  }
+  .beat::before {
+    /* node */
+    content: '';
+    position: absolute;
+    left: -34px;
+    top: 20px;
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    background: var(--lum-lime);
+    box-shadow: 0 0 12px var(--lum-lime), 0 0 24px rgba(205, 245, 100, 0.4);
+    transform: translateX(3px);
+    z-index: 2;
+  }
+  .beat::after {
+    /* connector line from node into card */
+    content: '';
+    position: absolute;
+    left: -16px;
+    top: 26px;
+    width: 16px;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(205, 245, 100, 0.6), transparent);
+  }
+
+  /* node tints by event type */
+  .beat.t-stage       ::marker { color: transparent; }
+  .beat.t-stage::before       { background: var(--lum-cyan); box-shadow: 0 0 14px var(--lum-cyan), 0 0 28px rgba(58, 235, 198, 0.45); width: 15px; height: 15px; left: -35px; }
+  .beat.t-stage::after        { background: linear-gradient(90deg, rgba(58, 235, 198, 0.65), transparent); }
+  .beat.t-input::before       { background: var(--lum-violet); box-shadow: 0 0 10px var(--lum-violet); width: 10px; height: 10px; left: -32px; top: 22px; }
+  .beat.t-model::before       { background: var(--lum-cyan); box-shadow: 0 0 18px var(--lum-cyan), 0 0 34px rgba(58, 235, 198, 0.5); }
+  .beat.t-tool-call::before   { background: var(--lum-amber); box-shadow: 0 0 12px var(--lum-amber), 0 0 26px rgba(255, 172, 95, 0.35); }
+  .beat.t-tool-result::before { background: var(--ink); box-shadow: 0 0 10px rgba(232, 242, 239, 0.5); width: 9px; height: 9px; }
+  .beat.t-finding::before     {
+    background: var(--lum-coral);
+    box-shadow: 0 0 18px var(--lum-coral), 0 0 38px rgba(255, 85, 132, 0.4);
+    width: 16px; height: 16px; left: -35px; top: 19px;
+  }
+  .beat.t-finding.sev-high::before { background: var(--lum-rose); box-shadow: 0 0 22px var(--lum-rose), 0 0 46px rgba(255, 51, 104, 0.55); }
+  .beat.t-stage-complete::before { background: var(--lum-lime); box-shadow: 0 0 18px var(--lum-lime), 0 0 40px rgba(205, 245, 100, 0.42); width: 15px; height: 15px; left: -35px; }
+
+  .beat.running::before {
+    animation: pulseNode 2s ease-in-out infinite;
+  }
+  @keyframes pulseNode {
+    0%, 100% { opacity: 0.75; transform: scale(1); }
+    50%      { opacity: 1;    transform: scale(1.28); }
+  }
+
+  .beat-head {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .beat-t {
+    font-family: "Space Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-fade);
+    letter-spacing: 0.08em;
+    font-variant-numeric: tabular-nums;
+  }
+  .beat-t b { color: var(--ink-soft); font-weight: 400; }
+  .beat-tag {
+    font-family: "Space Mono", monospace;
+    font-size: 9.5px;
+    color: var(--ink-fade);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    padding: 2px 8px 1px;
+    border: 1px solid rgba(159, 216, 214, 0.18);
+    border-radius: 2px;
+  }
+  .beat.t-model     .beat-tag { color: var(--lum-cyan);   border-color: rgba(58, 235, 198, 0.4); }
+  .beat.t-tool-call .beat-tag { color: var(--lum-amber);  border-color: rgba(255, 172, 95, 0.35); }
+  .beat.t-finding   .beat-tag { color: var(--lum-coral);  border-color: rgba(255, 85, 132, 0.4); }
+  .beat.t-stage     .beat-tag { color: var(--lum-cyan);   border-color: rgba(58, 235, 198, 0.35); }
+  .beat.t-stage-complete .beat-tag { color: var(--lum-lime); border-color: rgba(205, 245, 100, 0.4); }
+
+  .beat-agent {
+    font-family: "Instrument Serif", serif;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--ink-soft);
+    letter-spacing: 0.01em;
+  }
+
+  .beat-title {
+    font-family: "Instrument Serif", serif;
+    font-weight: 400;
+    font-style: normal;
+    font-size: 23px;
+    line-height: 1.22;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+    margin: 0 0 6px;
+  }
+  .beat-title em { font-style: italic; color: var(--lum-cyan); }
+
+  .beat-body {
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: 62ch;
+  }
+  .beat-body b { color: var(--ink); font-weight: 500; }
+  .beat-body code {
+    font-family: "Space Mono", monospace;
+    font-size: 12.5px;
+    color: var(--lum-cyan);
+    background: rgba(58, 235, 198, 0.06);
+    padding: 1px 6px;
+    border-radius: 2px;
+    letter-spacing: 0.02em;
+  }
+
+  .beat-reasoning {
+    margin-top: 14px;
+    padding: 16px 20px;
+    border-left: 2px solid var(--lum-cyan);
+    background: linear-gradient(90deg, rgba(58, 235, 198, 0.06), transparent 70%);
+    border-radius: 0 2px 2px 0;
+    font-family: "Instrument Serif", serif;
+    font-style: italic;
+    font-size: 18px;
+    line-height: 1.4;
+    letter-spacing: -0.005em;
+    color: var(--ink);
+  }
+  .beat-reasoning .src {
+    display: block;
+    margin-top: 10px;
+    font-family: "Space Mono", monospace;
+    font-style: normal;
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--ink-fade);
+  }
+
+  /* tool block */
+  .beat-tool {
+    margin-top: 14px;
+    border: 1px solid var(--glass-border);
+    border-radius: 3px;
+    background: linear-gradient(180deg, rgba(255, 172, 95, 0.05), rgba(0,0,0,0.2));
+    overflow: hidden;
+  }
+  .beat-tool .hd {
+    padding: 10px 16px 9px;
+    border-bottom: 1px solid var(--glass-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    font-family: "Space Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+    letter-spacing: 0.04em;
+  }
+  .beat-tool .hd b { color: var(--lum-amber); font-weight: 700; letter-spacing: 0.08em; }
+  .beat-tool .hd .badge {
+    font-family: "Space Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--lum-lime);
+    padding: 2px 8px;
+    border: 1px solid rgba(205, 245, 100, 0.4);
+    background: rgba(205, 245, 100, 0.06);
+    border-radius: 2px;
+  }
+  .beat-tool .bd {
+    padding: 13px 16px 14px;
+    font-family: "Space Mono", monospace;
+    font-size: 12px;
+    color: var(--ink-soft);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .beat-tool .bd .k { color: var(--ink-fade); }
+  .beat-tool .bd .v { color: var(--ink); }
+  .beat-tool .bd .hl { color: var(--lum-lime); }
+  .beat-tool .bd .bad { color: var(--lum-coral); background: rgba(255, 85, 132, 0.08); padding: 0 3px; }
+
+  /* running pulse tail */
+  .live-tail {
+    position: relative;
+    margin-top: 40px;
+    padding: 18px 0 0 34px;
+  }
+  .live-tail::before {
+    content: '';
+    position: absolute;
+    left: -34px;
+    top: 22px;
+    width: 17px; height: 17px;
+    border-radius: 50%;
+    background: var(--lum-cyan);
+    box-shadow: 0 0 24px var(--lum-cyan), 0 0 48px rgba(58, 235, 198, 0.5);
+    animation: pulseNode 1.7s ease-in-out infinite;
+  }
+  .live-tail::after {
+    content: '';
+    position: absolute;
+    left: -27px;
+    top: 30px;
+    bottom: -30px;
+    width: 1px;
+    background: linear-gradient(180deg, rgba(58, 235, 198, 0.45), transparent);
+  }
+  .live-head {
+    font-family: "Space Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.35em;
+    color: var(--lum-cyan);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .live-title {
+    font-family: "Instrument Serif", serif;
+    font-style: italic;
+    font-size: 26px;
+    line-height: 1.25;
+    color: var(--ink);
+    margin: 0 0 6px;
+  }
+  .live-body {
+    font-size: 14.5px;
+    color: var(--ink-soft);
+    max-width: 58ch;
+  }
+  .live-body .dots::after {
+    content: '';
+    display: inline-block;
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--lum-cyan);
+    box-shadow: 0 0 8px var(--lum-cyan);
+    margin-left: 6px;
+    animation: dot 1.3s steps(3) infinite;
+  }
+  @keyframes dot { 0%{opacity:0.25}100%{opacity:1} }
+
+  /* ───── right column ───── */
+  .rail { position: sticky; top: 24px; align-self: start; }
+
+  /* findings orbs */
+  .orbs {
+    display: grid;
+    gap: 18px;
+    margin-bottom: 44px;
+  }
+  .orb {
+    display: grid;
+    grid-template-columns: 62px 1fr;
+    gap: 20px;
+    padding: 18px 20px 20px;
+    background: var(--surface-2);
+    border: 1px solid var(--glass-border);
+    border-radius: 3px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    position: relative;
+    overflow: hidden;
+    transition: 200ms;
+  }
+  .orb:hover { border-color: rgba(58, 235, 198, 0.3); transform: translateY(-1px); }
+  .orb::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 140% 80% at 0% 50%, var(--_glow, transparent) 0%, transparent 50%);
+    pointer-events: none;
+    opacity: 0.35;
+  }
+  .orb.sev-crit { --_glow: rgba(255, 51, 104, 0.22); border-color: rgba(255, 51, 104, 0.22); }
+  .orb.sev-high { --_glow: rgba(255, 85, 132, 0.18); border-color: rgba(255, 85, 132, 0.22); }
+  .orb.sev-med  { --_glow: rgba(255, 172, 95, 0.15); border-color: rgba(255, 172, 95, 0.2); }
+  .orb.sev-low  { --_glow: rgba(111, 182, 255, 0.15); border-color: rgba(111, 182, 255, 0.2); }
+  .orb.sev-info { --_glow: rgba(159, 216, 214, 0.08); }
+
+  .orb-light {
+    width: 50px; height: 50px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Instrument Serif", serif;
+    font-style: italic;
+    font-size: 22px;
+    line-height: 1;
+    color: var(--abyss);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    position: relative;
+    z-index: 2;
+  }
+  .orb.sev-crit .orb-light {
+    background: radial-gradient(circle at 35% 30%, #ffcfda 0%, var(--lum-rose) 55%, #b01237 100%);
+    box-shadow: 0 0 24px var(--lum-rose), 0 0 60px rgba(255, 51, 104, 0.5), inset 0 0 12px rgba(255,255,255,0.3);
+  }
+  .orb.sev-high .orb-light {
+    background: radial-gradient(circle at 35% 30%, #ffdbe5 0%, var(--lum-coral) 55%, #8a0a2f 100%);
+    box-shadow: 0 0 22px var(--lum-coral), 0 0 48px rgba(255, 85, 132, 0.45), inset 0 0 10px rgba(255,255,255,0.3);
+  }
+  .orb.sev-med  .orb-light {
+    background: radial-gradient(circle at 35% 30%, #ffe6c7 0%, var(--lum-amber) 55%, #8a4805 100%);
+    box-shadow: 0 0 20px var(--lum-amber), 0 0 42px rgba(255, 172, 95, 0.4), inset 0 0 10px rgba(255,255,255,0.3);
+    color: #3a1b00;
+  }
+  .orb.sev-low  .orb-light {
+    background: radial-gradient(circle at 35% 30%, #d1e7ff 0%, var(--lum-sky) 55%, #1e456f 100%);
+    box-shadow: 0 0 16px var(--lum-sky), 0 0 32px rgba(111, 182, 255, 0.35);
+    color: #06182e;
+  }
+  .orb.sev-info .orb-light {
+    background: radial-gradient(circle at 35% 30%, #e8f2ef 0%, #7c9b95 55%, #2a3e3b 100%);
+    box-shadow: 0 0 12px rgba(159, 216, 214, 0.25);
+    color: #0a1416;
+  }
+
+  .orb-body { min-width: 0; position: relative; z-index: 2; }
+  .orb-kicker {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    margin-bottom: 4px;
+  }
+  .orb-sev {
+    font-family: "Space Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  .orb.sev-crit .orb-sev { color: var(--lum-rose); }
+  .orb.sev-high .orb-sev { color: var(--lum-coral); }
+  .orb.sev-med  .orb-sev { color: var(--lum-amber); }
+  .orb.sev-low  .orb-sev { color: var(--lum-sky); }
+  .orb.sev-info .orb-sev { color: var(--ink-fade); }
+  .orb-conf {
+    font-family: "Space Mono", monospace;
+    font-size: 10px;
+    color: var(--ink-fade);
+    letter-spacing: 0.14em;
+  }
+  .orb-title {
+    font-family: "Instrument Serif", serif;
+    font-style: italic;
+    font-size: 19px;
+    line-height: 1.22;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+  }
+  .orb-meta {
+    font-family: "Space Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-fade);
+    letter-spacing: 0.07em;
+  }
+  .orb-meta b { color: var(--ink-soft); font-weight: 400; }
+
+  /* discoveries mini constellation */
+  .discoveries {
+    padding: 20px 22px 22px;
+    background: var(--surface-2);
+    border: 1px solid var(--glass-border);
+    border-radius: 3px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  .discoveries h4 {
+    font-family: "Space Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-fade);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    margin: 0 0 18px;
+    font-weight: 500;
+  }
+  .const-row {
+    display: grid;
+    grid-template-columns: 26px 1fr auto;
+    gap: 14px;
+    padding: 9px 0;
+    border-top: 1px solid rgba(159, 216, 214, 0.08);
+    align-items: center;
+  }
+  .const-row:first-of-type { border-top: none; }
+  .const-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--lum-cyan);
+    box-shadow: 0 0 8px var(--lum-cyan);
+    justify-self: center;
+  }
+  .const-row.amber .const-dot { background: var(--lum-amber); box-shadow: 0 0 8px var(--lum-amber); }
+  .const-row.lime  .const-dot { background: var(--lum-lime);  box-shadow: 0 0 8px var(--lum-lime); }
+  .const-row.sky   .const-dot { background: var(--lum-sky);   box-shadow: 0 0 8px var(--lum-sky); }
+  .const-row.rose  .const-dot { background: var(--lum-rose);  box-shadow: 0 0 8px var(--lum-rose); }
+  .const-row.violet .const-dot { background: var(--lum-violet); box-shadow: 0 0 8px var(--lum-violet); }
+
+  .const-lbl {
+    font-family: "Instrument Serif", serif;
+    font-style: italic;
+    font-size: 15.5px;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  .const-n {
+    font-family: "Space Mono", monospace;
+    font-size: 13px;
+    color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* footer */
+  .footer-note {
+    margin-top: 80px;
+    padding-top: 22px;
+    border-top: 1px solid var(--glass-border);
+    font-family: "Instrument Serif", serif;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--ink-fade);
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    letter-spacing: 0.005em;
+  }
+  .footer-note span b { color: var(--ink-soft); font-weight: 400; }
+  .footer-note .mono {
+    font-family: "Space Mono", monospace;
+    font-style: normal;
+    font-size: 10.5px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-ghost);
+  }
+
+  @media (max-width: 1080px) {
+    .split { grid-template-columns: 1fr; }
+    .rail { position: static; }
+    .agents-row { grid-template-columns: 1fr; gap: 28px; }
+    .cell:not(:last-child)::after { display: none; }
+    .hero { grid-template-columns: 1fr; gap: 28px; }
+  }
+  @media (max-width: 640px) {
+    .container { padding: 28px 20px 80px; }
+    h1.hero-title { font-size: 58px; }
+    .vitals { min-width: 0; }
+    .timeline { padding-left: 28px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="particles" aria-hidden="true">
+  <span style="left:12%; bottom: -4px; animation-duration: 18s; animation-delay: 0s;"></span>
+  <span style="left:24%; bottom: -4px; animation-duration: 22s; animation-delay: 4s;"></span>
+  <span style="left:36%; bottom: -4px; animation-duration: 16s; animation-delay: 2s; background: var(--lum-lime); box-shadow: 0 0 6px var(--lum-lime);"></span>
+  <span style="left:48%; bottom: -4px; animation-duration: 25s; animation-delay: 8s;"></span>
+  <span style="left:60%; bottom: -4px; animation-duration: 19s; animation-delay: 3s;"></span>
+  <span style="left:72%; bottom: -4px; animation-duration: 21s; animation-delay: 6s; background: var(--lum-sky); box-shadow: 0 0 6px var(--lum-sky);"></span>
+  <span style="left:84%; bottom: -4px; animation-duration: 17s; animation-delay: 1s;"></span>
+  <span style="left:92%; bottom: -4px; animation-duration: 24s; animation-delay: 9s;"></span>
+  <span style="left:6%;  bottom: -4px; animation-duration: 20s; animation-delay: 5s; background: var(--lum-violet); box-shadow: 0 0 6px var(--lum-violet);"></span>
+</div>
+
+<div class="container">
+
+  <!-- ───── HERO ───── -->
+  <header class="hero">
+    <div>
+      <div class="catalog">
+        <span class="mark"></span>
+        <span>Observation Log 047</span>
+        <span class="sep">·</span>
+        <span>SYN‑2026‑0421‑B3</span>
+        <span class="sep">·</span>
+        <span>T+02:14.003</span>
+        <span class="sep">·</span>
+        <span>State · Running</span>
+      </div>
+      <h1 class="hero-title">A small <em>organism</em><br/>thinks aloud.</h1>
+      <p class="hero-kicker">
+        Three agents are working their way across <b>vault.sparrow.io:8443</b>. Below is everything they choose, invoke, and notice, as it happens.
+      </p>
+    </div>
+
+    <div class="vitals">
+      <div class="vitals-label">Run vitals</div>
+      <div class="vitals-row">
+        <span class="k">Workflow</span>
+        <span class="v">web‑recon · v4</span>
+      </div>
+      <div class="vitals-row">
+        <span class="k">Runtime</span>
+        <span class="v num">tofu‑west‑02</span>
+      </div>
+      <div class="vitals-row">
+        <span class="k">Events received</span>
+        <span class="v num">27</span>
+      </div>
+      <div class="vitals-row">
+        <span class="k">Tool invocations</span>
+        <span class="v num">7</span>
+      </div>
+      <div class="vitals-row warn">
+        <span class="k">Findings surfaced</span>
+        <span class="v num">5</span>
+      </div>
+      <div class="vitals-row">
+        <span class="k">Contracts failed</span>
+        <span class="v">none</span>
+      </div>
+      <div class="breath">
+        <span class="wave"></span>
+        <span>SSE breathing · 14ms</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ───── ORGANISM ───── -->
+  <section class="organism" aria-label="agent organism">
+    <div class="organism-label">Pipeline <b>· three cells</b></div>
+    <div class="organism-meta">Stage 02 of 03 · active</div>
+
+    <div class="agents-row">
+
+      <div class="cell done">
+        <div class="nucleus"><span class="glyph-initial">H</span></div>
+        <div class="cell-id">Stage I · Halberd‑R1</div>
+        <div class="cell-name">Reconnaissance</div>
+        <div class="cell-role">ports, services, TLS posture</div>
+        <div class="cell-stats">
+          <span><b>11</b> obs</span>
+          <span><b>3</b> findings</span>
+          <span><b>10.48s</b></span>
+        </div>
+      </div>
+
+      <div class="cell running">
+        <div class="nucleus"><span class="glyph-initial">C</span></div>
+        <div class="cell-id">Stage II · Crane‑C2</div>
+        <div class="cell-name">Content Discovery</div>
+        <div class="cell-role">path fuzzing, VCS exposure</div>
+        <div class="cell-stats">
+          <span><b>8</b> obs</span>
+          <span><b>2</b> findings</span>
+          <span><b>T+02:14</b></span>
+        </div>
+      </div>
+
+      <div class="cell future">
+        <div class="nucleus"><span class="glyph-initial">W</span></div>
+        <div class="cell-id">Stage III · Ward‑H3</div>
+        <div class="cell-name">Headers &amp; TLS Audit</div>
+        <div class="cell-role">awaiting handoff</div>
+        <div class="cell-stats">
+          <span><b>—</b> obs</span>
+          <span><b>—</b> findings</span>
+          <span><b>—</b></span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ───── MAIN SPLIT ───── -->
+  <section class="split">
+
+    <!-- ───── TIMELINE ───── -->
+    <main>
+      <div class="section-label">
+        <span><span class="roman">i.</span>A chronology of what the agents observed</span>
+        <span><span class="count">27</span> events · ord 00–26</span>
+      </div>
+
+      <div class="timeline">
+
+        <div class="beat t-stage">
+          <div class="beat-head">
+            <span class="beat-t">T+00:00<b>.000</b></span>
+            <span class="beat-tag">stage · opened</span>
+            <span class="beat-agent">Halberd‑R1 is born</span>
+          </div>
+          <h3 class="beat-title">Stage I opens. A scope is handed over.</h3>
+          <div class="beat-body">The orchestrator passes context — a single host at <code>vault.sparrow.io:8443</code>, a permitted toolset of nine capabilities, a contract requiring at least one documented tool call and one finding. Halberd‑R1 has no prior artefacts to work from.</div>
+        </div>
+
+        <div class="beat t-model">
+          <div class="beat-head">
+            <span class="beat-t">T+00:02<b>.118</b></span>
+            <span class="beat-tag">model · decision</span>
+            <span class="beat-agent">Halberd‑R1 thinks for 1.71s</span>
+          </div>
+          <h3 class="beat-title">It chooses <em>nmap</em>, then <em>whatweb</em>, then <em>curl</em>.</h3>
+          <div class="beat-body">The reasoning is unremarkable and clear, which is what you want.</div>
+          <div class="beat-reasoning">
+            “The host advertises TLS on 8443 with no observed plaintext alternative. I'll start with nmap for versioned service detection, follow with whatweb to identify the framework, and use curl to capture the root response headers. I exclude fuzzing until I know the server kind.”
+            <span class="src">— model_decision · 412 tokens · 3 tools selected</span>
+          </div>
+        </div>
+
+        <div class="beat t-tool-call">
+          <div class="beat-head">
+            <span class="beat-t">T+00:02<b>.340</b></span>
+            <span class="beat-tag">tool · call</span>
+            <span class="beat-agent">Halberd‑R1 invokes nmap</span>
+          </div>
+          <h3 class="beat-title">nmap is loosed against port 8443.</h3>
+          <div class="beat-body">Capabilities: <b>port_scan · service_version · tls_probe</b>. Timeout budget: 30 000 ms. The executor is bash in container <code>tofu‑west‑02</code>.</div>
+        </div>
+
+        <div class="beat t-tool-result">
+          <div class="beat-head">
+            <span class="beat-t">T+00:05<b>.874</b></span>
+            <span class="beat-tag">tool · result</span>
+            <span class="beat-agent">returned · 3 534 ms</span>
+          </div>
+          <h3 class="beat-title">It hears back an nginx, a CBC, and no TLS 1.3.</h3>
+          <div class="beat-tool">
+            <div class="hd">
+              <span><b>nmap</b> -sV -p 8443 --script ssl-enum-ciphers vault.sparrow.io</span>
+              <span class="badge">exit 0</span>
+            </div>
+            <div class="bd"><span class="k"># Nmap 7.94 scan — 2026-04-21 14:07:36</span>
+PORT     STATE SERVICE   VERSION
+8443/tcp <span class="hl">open</span>  ssl/https <span class="v">nginx 1.24.0</span>
+|_http-server-header: nginx/1.24.0
+| ssl-enum-ciphers:
+|   TLSv1.2:  <span class="bad">CBC present</span> · least strength <span class="bad">C</span>
+|_  TLSv1.3: <span class="bad">not offered</span></div>
+          </div>
+        </div>
+
+        <div class="beat t-finding sev-med">
+          <div class="beat-head">
+            <span class="beat-t">T+00:06<b>.201</b></span>
+            <span class="beat-tag">finding · reported</span>
+            <span class="beat-agent">Halberd‑R1 surfaces <em>Exhibit B</em></span>
+          </div>
+          <h3 class="beat-title">A <em>medium</em> finding floats to the surface.</h3>
+          <div class="beat-body">
+            Weak TLS cipher suite accepted on 8443 — CBC ciphers scored C‑grade by probe, TLSv1.3 not advertised. Confidence <b>0.82</b>, CWE‑326.
+          </div>
+        </div>
+
+        <div class="beat t-tool-call">
+          <div class="beat-head">
+            <span class="beat-t">T+00:06<b>.390</b></span>
+            <span class="beat-tag">tool · call</span>
+            <span class="beat-agent">Halberd‑R1 invokes whatweb</span>
+          </div>
+          <h3 class="beat-title">whatweb fingerprints the stack.</h3>
+          <div class="beat-body">Plugin‑aware, aggression 3. Returns Django 4.2.3 on nginx 1.24.0; version strings leak through the Server and X‑Powered‑By headers.</div>
+        </div>
+
+        <div class="beat t-stage-complete">
+          <div class="beat-head">
+            <span class="beat-t">T+00:10<b>.480</b></span>
+            <span class="beat-tag">stage · closed</span>
+            <span class="beat-agent">Halberd‑R1 hands off</span>
+          </div>
+          <h3 class="beat-title">Stage I closes cleanly — <em>3 findings, 11 observations</em>.</h3>
+          <div class="beat-body">Handoff payload: <b>host confirmed · Django 4.2 · TLS degraded</b>. Trace entry appended. The orchestrator seeds the next cell with this shape.</div>
+        </div>
+
+        <!-- Stage 2 -->
+        <div class="beat t-stage">
+          <div class="beat-head">
+            <span class="beat-t">T+00:10<b>.901</b></span>
+            <span class="beat-tag">stage · opened</span>
+            <span class="beat-agent">Crane‑C2 takes over</span>
+          </div>
+          <h3 class="beat-title">Stage II opens. The scope tightens around paths.</h3>
+          <div class="beat-body">Crane‑C2 inherits the previous cell's handoff and begins reasoning about the framework's default admin surface.</div>
+        </div>
+
+        <div class="beat t-model">
+          <div class="beat-head">
+            <span class="beat-t">T+00:11<b>.890</b></span>
+            <span class="beat-tag">model · decision</span>
+            <span class="beat-agent">Crane‑C2 thinks for 1.98s</span>
+          </div>
+          <h3 class="beat-title">It picks <em>ffuf</em>, then <em>gobuster</em>.</h3>
+          <div class="beat-reasoning">
+            “Django 4.2 has a default admin surface. I'll fuzz common admin paths at low threading to avoid rate‑limits, and cross‑check with gobuster against a repository‑oriented wordlist to catch exposed VCS directories.”
+            <span class="src">— model_decision · 298 tokens · 2 tools selected</span>
+          </div>
+        </div>
+
+        <div class="beat t-tool-result">
+          <div class="beat-head">
+            <span class="beat-t">T+02:14<b>.003</b></span>
+            <span class="beat-tag">tool · result</span>
+            <span class="beat-agent">returned · 133 983 ms</span>
+          </div>
+          <h3 class="beat-title">ffuf returns with three hits that matter.</h3>
+          <div class="beat-tool">
+            <div class="hd">
+              <span><b>ffuf</b> -w raft-medium.txt -u https://vault.sparrow.io:8443/FUZZ</span>
+              <span class="badge">exit 0</span>
+            </div>
+            <div class="bd">/admin/login          [Status: <span class="hl">200</span>, Size: 2218]
+/healthz              [Status: <span class="hl">200</span>, Size: 17]
+<span class="bad">/backup.zip</span>           [Status: 200, Size: 4.1 MiB] ← escalate
+<span class="bad">/.git/HEAD</span>            [Status: 200, Size: 23]      ← escalate
+/api/v1/auth          [Status: 401, Size: 89]</div>
+          </div>
+        </div>
+
+        <div class="beat t-finding sev-high">
+          <div class="beat-head">
+            <span class="beat-t">T+02:16<b>.224</b></span>
+            <span class="beat-tag">finding · reported</span>
+            <span class="beat-agent">Crane‑C2 surfaces <em>Exhibit A</em></span>
+          </div>
+          <h3 class="beat-title">A <em>high</em> finding blooms at the edge of the scope.</h3>
+          <div class="beat-body">Exposed <code>.git</code> directory at <code>/.git/HEAD</code>. Crane verified the repository descriptor with a follow‑up curl against <code>/.git/config</code>. A full clone is recoverable from the public surface without authentication. Confidence <b>0.97</b>, CWE‑538.</div>
+        </div>
+
+        <!-- Live tail -->
+        <div class="live-tail">
+          <div class="live-head">◀ latest frame · streaming</div>
+          <h3 class="live-title">Crane‑C2 is probing <em>/api/v1</em> now.</h3>
+          <div class="live-body"><span class="dots">gobuster at 39% of the api wordlist — two new candidate paths surfaced, both returning 200 with debug payloads in the body</span></div>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- ───── RAIL: findings ───── -->
+    <aside class="rail">
+
+      <div class="section-label">
+        <span><span class="roman">ii.</span>Lights the organism surfaced</span>
+        <span><span class="count">5</span> findings</span>
+      </div>
+
+      <div class="orbs">
+        <article class="orb sev-high">
+          <div class="orb-light">A</div>
+          <div class="orb-body">
+            <div class="orb-kicker">
+              <span class="orb-sev">High · CWE‑538</span>
+              <span class="orb-conf">conf 0.97</span>
+            </div>
+            <h4 class="orb-title">Exposed <em>.git</em> directory at /.git/HEAD</h4>
+            <div class="orb-meta"><b>Crane‑C2</b> · 14:12:02 · evidence: ffuf + curl</div>
+          </div>
+        </article>
+
+        <article class="orb sev-med">
+          <div class="orb-light">B</div>
+          <div class="orb-body">
+            <div class="orb-kicker">
+              <span class="orb-sev">Medium · CWE‑326</span>
+              <span class="orb-conf">conf 0.82</span>
+            </div>
+            <h4 class="orb-title">Weak TLS cipher suite accepted on 8443</h4>
+            <div class="orb-meta"><b>Halberd‑R1</b> · 14:09:39 · evidence: nmap ssl‑enum</div>
+          </div>
+        </article>
+
+        <article class="orb sev-med">
+          <div class="orb-light">C</div>
+          <div class="orb-body">
+            <div class="orb-kicker">
+              <span class="orb-sev">Medium · CWE‑200</span>
+              <span class="orb-conf">conf 0.88</span>
+            </div>
+            <h4 class="orb-title">Framework &amp; version disclosed in headers</h4>
+            <div class="orb-meta"><b>Halberd‑R1</b> · 14:09:42 · evidence: whatweb</div>
+          </div>
+        </article>
+
+        <article class="orb sev-low">
+          <div class="orb-light">D</div>
+          <div class="orb-body">
+            <div class="orb-kicker">
+              <span class="orb-sev">Low · A05:2021</span>
+              <span class="orb-conf">conf 0.64</span>
+            </div>
+            <h4 class="orb-title">Public health endpoint /healthz</h4>
+            <div class="orb-meta"><b>Halberd‑R1</b> · 14:09:43 · triage</div>
+          </div>
+        </article>
+
+        <article class="orb sev-info">
+          <div class="orb-light">E</div>
+          <div class="orb-body">
+            <div class="orb-kicker">
+              <span class="orb-sev">Info · unprobed</span>
+              <span class="orb-conf">4.1 MiB</span>
+            </div>
+            <h4 class="orb-title">Backup archive /backup.zip surfaced, not downloaded</h4>
+            <div class="orb-meta"><b>Crane‑C2</b> · 14:12:02 · flagged requires_triage</div>
+          </div>
+        </article>
+      </div>
+
+      <div class="discoveries">
+        <h4>Event taxonomy · this run</h4>
+        <div class="const-row">
+          <span class="const-dot"></span>
+          <span class="const-lbl">stage lifecycle</span>
+          <span class="const-n">4</span>
+        </div>
+        <div class="const-row violet">
+          <span class="const-dot"></span>
+          <span class="const-lbl">agent inputs</span>
+          <span class="const-n">2</span>
+        </div>
+        <div class="const-row">
+          <span class="const-dot"></span>
+          <span class="const-lbl">model decisions</span>
+          <span class="const-n">3</span>
+        </div>
+        <div class="const-row amber">
+          <span class="const-dot"></span>
+          <span class="const-lbl">tool calls</span>
+          <span class="const-n">7</span>
+        </div>
+        <div class="const-row lime">
+          <span class="const-dot"></span>
+          <span class="const-lbl">tool results</span>
+          <span class="const-n">6</span>
+        </div>
+        <div class="const-row rose">
+          <span class="const-dot"></span>
+          <span class="const-lbl">findings reported</span>
+          <span class="const-n">5</span>
+        </div>
+        <div class="const-row sky">
+          <span class="const-dot"></span>
+          <span class="const-lbl">stage results submitted</span>
+          <span class="const-n">1</span>
+        </div>
+      </div>
+
+    </aside>
+  </section>
+
+  <footer class="footer-note">
+    <span>Observed from a single SSE connection — <b>one snapshot</b>, <b>twenty‑seven event_appended frames</b>, and <b>one trace_appended</b> so far.</span>
+    <span class="mono">Set in Instrument Serif · Manrope · Space Mono</span>
+  </footer>
+
+</div>
+
+</body>
+</html>

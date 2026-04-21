@@ -4,7 +4,7 @@ import type {
   CreateAiToolBody,
   UpdateAiToolBody
 } from "@synosec/contracts";
-import type { PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
+import type { PaginatedResult } from "../../../core/pagination/paginated-result.js";
 
 export interface AiToolsRepository {
   list(query: AiToolsListQuery): Promise<PaginatedResult<AiTool>>;

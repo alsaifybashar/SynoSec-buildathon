@@ -1,4 +1,4 @@
-import { prisma } from "../../../platform/core/database/prisma-client.js";
+import { prisma } from "../../../core/database/prisma-client.js";
 import { PrismaWorkflowsRepository } from "./prisma-workflows.repository.js";
 
 export function createWorkflowsRepositoryFromEnvironment() {

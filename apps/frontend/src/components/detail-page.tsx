@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import { ArrowLeft, Check, CircleHelp, Undo2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ArrowLeft, Check, CircleHelp, Download, Undo2 } from "lucide-react";
+import { Button } from "@/shared/ui/button";
 import { PageHeader } from "@/components/page-header";
-import { Spinner } from "@/components/ui/spinner";
+import { Spinner } from "@/shared/ui/spinner";
 
 export function DetailPage({
   title,
@@ -14,6 +14,7 @@ export function DetailPage({
   onBack,
   onSave,
   onDismiss,
+  onExportJson,
   saveLabel = "Save",
   actions,
   sidebar,
@@ -29,6 +30,7 @@ export function DetailPage({
   onBack: () => void;
   onSave: () => void | Promise<void>;
   onDismiss: () => void;
+  onExportJson?: () => void;
   saveLabel?: string;
   actions?: ReactNode;
   sidebar?: ReactNode;
@@ -57,6 +59,12 @@ export function DetailPage({
                 <ArrowLeft className="h-4 w-4" />
                 Back
               </Button>
+              {onExportJson ? (
+                <Button type="button" variant="outline" onClick={onExportJson} className="h-9 text-[0.75rem]">
+                  <Download className="h-4 w-4" />
+                  Export JSON
+                </Button>
+              ) : null}
               <div aria-hidden className="mx-1 hidden h-6 w-px bg-border/70 md:block" />
               <Button type="button" onClick={() => void onSave()} disabled={!isDirty || isSaving} className="h-9 text-[0.75rem]">
                 <Check className="h-4 w-4" />

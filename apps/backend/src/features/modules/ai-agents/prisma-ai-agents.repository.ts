@@ -5,9 +5,9 @@ import type {
   CreateAiAgentBody,
   UpdateAiAgentBody
 } from "@synosec/contracts";
-import { PrismaClient } from "../../../platform/generated/prisma/index.js";
-import { RequestError } from "../../../platform/core/http/request-error.js";
-import type { PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
+import { PrismaClient } from "@prisma/client";
+import { RequestError } from "../../../core/http/request-error.js";
+import type { PaginatedResult } from "../../../core/pagination/paginated-result.js";
 import { mapAiAgentRow } from "../ai-agents/ai-agents.mapper.js";
 import { type AiAgentsRepository } from "../ai-agents/ai-agents.repository.js";
 
@@ -28,15 +28,22 @@ export class PrismaAiAgentsRepository implements AiAgentsRepository {
           }
         : {})
     };
-    const orderBy = { [query.sortBy ?? "name"]: query.sortDirection };
+    const orderBy = query.sortBy === "toolIds"
+      ? { tools: { _count: query.sortDirection } }
+      : query.sortBy === "providerId"
+        ? { provider: { name: query.sortDirection } }
+        : { [query.sortBy ?? "name"]: query.sortDirection };
     const skip = (query.page - 1) * query.pageSize;
-    const matching = await this.prisma.aiAgent.findMany({
-      where,
-      orderBy,
-      include: { tools: { select: { toolId: true, ord: true } } }
-    });
-    const items = matching.slice(skip, skip + query.pageSize);
-    const total = matching.length;
+    const [items, total] = await Promise.all([
+      this.prisma.aiAgent.findMany({
+        where,
+        orderBy,
+        skip,
+        take: query.pageSize,
+        include: { tools: { select: { toolId: true, ord: true } } }
+      }),
+      this.prisma.aiAgent.count({ where })
+    ]);
 
     return {
       items: items.map(mapAiAgentRow),

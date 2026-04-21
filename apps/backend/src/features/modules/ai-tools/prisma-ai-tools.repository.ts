@@ -5,8 +5,8 @@ import type {
   CreateAiToolBody,
   UpdateAiToolBody
 } from "@synosec/contracts";
-import { Prisma, PrismaClient } from "../../../platform/generated/prisma/index.js";
-import type { PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
+import { Prisma, PrismaClient } from "@prisma/client";
+import type { PaginatedResult } from "../../../core/pagination/paginated-result.js";
 import { mapAiToolRow } from "../ai-tools/ai-tools.mapper.js";
 import { type AiToolsRepository } from "../ai-tools/ai-tools.repository.js";
 import { encodeCreateToolInput, encodeUpdateToolInput } from "./tool-execution-config.js";
@@ -31,9 +31,15 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
     };
     const orderBy = { [query.sortBy ?? "name"]: query.sortDirection };
     const skip = (query.page - 1) * query.pageSize;
-    const matching = await this.prisma.aiTool.findMany({ where, orderBy });
-    const items = matching.slice(skip, skip + query.pageSize);
-    const total = matching.length;
+    const [items, total] = await Promise.all([
+      this.prisma.aiTool.findMany({
+        where,
+        orderBy,
+        skip,
+        take: query.pageSize
+      }),
+      this.prisma.aiTool.count({ where })
+    ]);
 
     return {
       items: items.map(mapAiToolRow),

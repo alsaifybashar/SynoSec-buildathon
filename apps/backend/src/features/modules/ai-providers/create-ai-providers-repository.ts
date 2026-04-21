@@ -1,4 +1,4 @@
-import { prisma } from "../../../platform/core/database/prisma-client.js";
+import { prisma } from "../../../core/database/prisma-client.js";
 import { PrismaAiProvidersRepository } from "../ai-providers/prisma-ai-providers.repository.js";
 
 export function createAiProvidersRepositoryFromEnvironment() {

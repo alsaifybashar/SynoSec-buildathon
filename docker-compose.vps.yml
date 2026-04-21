@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: synosec
+      POSTGRES_USER: synosec
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synosec -d synosec"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile.prod
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      BACKEND_ENV: production
+      BACKEND_PORT: 3001
+      DATABASE_URL: postgres://synosec:${POSTGRES_PASSWORD}@postgres:5432/synosec
+      FRONTEND_URL: ${FRONTEND_URL}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-6}
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      SCAN_MAX_DEPTH: ${SCAN_MAX_DEPTH:-4}
+      SCAN_MAX_DURATION_MINUTES: ${SCAN_MAX_DURATION_MINUTES:-20}
+      SCAN_RATE_LIMIT_RPS: ${SCAN_RATE_LIMIT_RPS:-5}
+      AGENT_MAX_ITERATIONS: ${AGENT_MAX_ITERATIONS:-5}
+      TOOL_EXECUTION_MODE: ${TOOL_EXECUTION_MODE:-connector}
+      CONNECTOR_SHARED_TOKEN: ${CONNECTOR_SHARED_TOKEN}
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH_GOOGLE_ENABLED: ${AUTH_GOOGLE_ENABLED:-true}
+      AUTH_GOOGLE_CLIENT_ID: ${AUTH_GOOGLE_CLIENT_ID:-}
+      AUTH_ALLOWED_EMAILS: ${AUTH_ALLOWED_EMAILS:-}
+      AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:-}
+      AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-synosec_session}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-168}
+      AUTH_SESSION_TOUCH_INTERVAL_SECONDS: ${AUTH_SESSION_TOUCH_INTERVAL_SECONDS:-600}
+    command: >
+      sh -c "pnpm exec prisma db push --schema apps/backend/prisma/schema.prisma &&
+      node apps/backend/dist/main.js"
+    ports:
+      - "127.0.0.1:${BACKEND_PUBLIC_PORT:-3001}:3001"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile.prod
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      FRONTEND_PORT: 4173
+    ports:
+      - "127.0.0.1:${FRONTEND_PUBLIC_PORT:-4173}:4173"
+
+  connector:
+    build:
+      context: .
+      dockerfile: apps/connector/Dockerfile.prod
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      CONNECTOR_CONTROL_PLANE_URL: http://backend:3001
+      CONNECTOR_SHARED_TOKEN: ${CONNECTOR_SHARED_TOKEN}
+      CONNECTOR_NAME: ${CONNECTOR_NAME:-vps-connector}
+      CONNECTOR_VERSION: ${CONNECTOR_VERSION:-0.1.0}
+      CONNECTOR_RUN_MODE: ${CONNECTOR_RUN_MODE:-dry-run}
+      CONNECTOR_POLL_INTERVAL_MS: ${CONNECTOR_POLL_INTERVAL_MS:-1000}
+      CONNECTOR_COMMAND_TIMEOUT_MS: ${CONNECTOR_COMMAND_TIMEOUT_MS:-30000}
+      CONNECTOR_ALLOWED_CAPABILITIES: ${CONNECTOR_ALLOWED_CAPABILITIES:-passive,web-recon,network-recon,content-discovery,active-recon}
+      CONNECTOR_ALLOWED_SANDBOX_PROFILES: ${CONNECTOR_ALLOWED_SANDBOX_PROFILES:-network-recon,read-only-parser,active-recon}
+      CONNECTOR_ALLOWED_PRIVILEGE_PROFILES: ${CONNECTOR_ALLOWED_PRIVILEGE_PROFILES:-read-only-network,active-network}
+
+volumes:
+  postgres_data:

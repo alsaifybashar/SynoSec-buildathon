@@ -5,10 +5,10 @@ import type {
   CreateAiProviderBody,
   UpdateAiProviderBody
 } from "@synosec/contracts";
-import { PrismaClient } from "../../../platform/generated/prisma/index.js";
-import type { PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
+import { PrismaClient } from "@prisma/client";
+import type { PaginatedResult } from "../../../core/pagination/paginated-result.js";
 import { mapAiProviderRow } from "../ai-providers/ai-providers.mapper.js";
-import { type AiProvidersRepository } from "../ai-providers/ai-providers.repository.js";
+import { type AiProvidersRepository, type StoredAiProvider } from "../ai-providers/ai-providers.repository.js";
 
 export class PrismaAiProvidersRepository implements AiProvidersRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -27,11 +27,19 @@ export class PrismaAiProvidersRepository implements AiProvidersRepository {
           }
         : {})
     };
-    const orderBy = { [query.sortBy ?? "name"]: query.sortDirection };
+    const orderBy = query.sortBy === "apiKey"
+      ? { apiKey: query.sortDirection }
+      : { [query.sortBy ?? "name"]: query.sortDirection };
     const skip = (query.page - 1) * query.pageSize;
-    const matching = await this.prisma.aiProvider.findMany({ where, orderBy });
-    const items = matching.slice(skip, skip + query.pageSize);
-    const total = matching.length;
+    const [items, total] = await Promise.all([
+      this.prisma.aiProvider.findMany({
+        where,
+        orderBy,
+        skip,
+        take: query.pageSize
+      }),
+      this.prisma.aiProvider.count({ where })
+    ]);
 
     return {
       items: items.map(mapAiProviderRow),
@@ -45,6 +53,18 @@ export class PrismaAiProvidersRepository implements AiProvidersRepository {
   async getById(id: string): Promise<AiProvider | null> {
     const provider = await this.prisma.aiProvider.findUnique({ where: { id } });
     return provider ? mapAiProviderRow(provider) : null;
+  }
+
+  async getStoredById(id: string): Promise<StoredAiProvider | null> {
+    const provider = await this.prisma.aiProvider.findUnique({ where: { id } });
+    if (!provider) {
+      return null;
+    }
+
+    return {
+      ...mapAiProviderRow(provider),
+      apiKey: provider.apiKey
+    };
   }
 
   async create(input: CreateAiProviderBody): Promise<AiProvider> {

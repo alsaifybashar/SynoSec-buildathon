@@ -1,4 +1,4 @@
-import type { AiProvider as PrismaAiProvider } from "../../../platform/generated/prisma/index.js";
+import type { AiProvider as PrismaAiProvider } from "@prisma/client";
 import type { AiProvider } from "@synosec/contracts";
 
 export function mapAiProviderRow(row: PrismaAiProvider): AiProvider {

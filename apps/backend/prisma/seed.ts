@@ -1,7 +1,8 @@
 import { localDemoTargetDefaults } from "@synosec/contracts";
-import { PrismaClient } from "../src/platform/generated/prisma/index.js";
+import { PrismaClient } from "@prisma/client";
 import {
   getSeededProviderDefinitions,
+  getSeededSingleAgentScanDefinition,
   getSeededWorkflowDefinitions,
   localApplicationId,
   seededAgentId,
@@ -9,7 +10,7 @@ import {
   seededToolDefinitions as toolDefinitions,
   targetRuntimeId
 } from "./seed-data/ai-builder-defaults.js";
-import "../src/platform/env.js";
+import "../src/core/env/load-env.js";
 import { attachExecutionConfig } from "../src/features/modules/ai-tools/tool-execution-config.js";
 
 const prisma = new PrismaClient();
@@ -127,14 +128,11 @@ async function main() {
           riskTier: tool.riskTier,
           notes: tool.notes,
           inputSchema: attachExecutionConfig(tool.inputSchema, {
-            executionMode: tool.executionMode,
+            executorType: tool.executorType,
+            bashSource: tool.bashSource,
             sandboxProfile: tool.sandboxProfile,
             privilegeProfile: tool.privilegeProfile,
-            defaultArgs: [...tool.defaultArgs],
             timeoutMs: tool.timeoutMs,
-            scriptPath: tool.scriptPath,
-            scriptVersion: tool.scriptVersion,
-            scriptSource: tool.scriptSource,
             capabilities: [...tool.capabilities]
           }),
           outputSchema: tool.outputSchema
@@ -151,14 +149,11 @@ async function main() {
           riskTier: tool.riskTier,
           notes: tool.notes,
           inputSchema: attachExecutionConfig(tool.inputSchema, {
-            executionMode: tool.executionMode,
+            executorType: tool.executorType,
+            bashSource: tool.bashSource,
             sandboxProfile: tool.sandboxProfile,
             privilegeProfile: tool.privilegeProfile,
-            defaultArgs: [...tool.defaultArgs],
             timeoutMs: tool.timeoutMs,
-            scriptPath: tool.scriptPath,
-            scriptVersion: tool.scriptVersion,
-            scriptSource: tool.scriptSource,
             capabilities: [...tool.capabilities]
           }),
           outputSchema: tool.outputSchema
@@ -167,29 +162,44 @@ async function main() {
     )
   );
 
+  await prisma.aiTool.deleteMany({
+    where: {
+      id: {
+        startsWith: "seed-",
+        notIn: toolDefinitions.map((tool) => tool.id)
+      }
+    }
+  });
+
   await Promise.all(
     providerDefinitions.flatMap((provider) =>
       roleDefinitions.map((role) =>
-        prisma.aiAgent.upsert({
-          where: { id: seededAgentId(provider.key, role.key) },
-          update: {
-            name: `${provider.name} ${role.name}`,
-            status: "active",
-            description: role.description,
-            providerId: provider.id,
-            systemPrompt: role.systemPrompt,
-            modelOverride: null
-          },
-          create: {
-            id: seededAgentId(provider.key, role.key),
-            name: `${provider.name} ${role.name}`,
-            status: "active",
-            description: role.description,
-            providerId: provider.id,
-            systemPrompt: role.systemPrompt,
-            modelOverride: null
-          }
-        })
+        {
+          const displayName = provider.key === "local" && role.key === "orchestrator"
+            ? "Single-Agent Security Runner"
+            : `${provider.name} ${role.name}`;
+
+          return prisma.aiAgent.upsert({
+            where: { id: seededAgentId(provider.key, role.key) },
+            update: {
+              name: displayName,
+              status: "active",
+              description: role.description,
+              providerId: provider.id,
+              systemPrompt: role.systemPrompt,
+              modelOverride: null
+            },
+            create: {
+              id: seededAgentId(provider.key, role.key),
+              name: displayName,
+              status: "active",
+              description: role.description,
+              providerId: provider.id,
+              systemPrompt: role.systemPrompt,
+              modelOverride: null
+            }
+          });
+        }
       )
     )
   );
@@ -217,6 +227,14 @@ async function main() {
   });
 
   const workflowDefinitions = getSeededWorkflowDefinitions();
+  const seededWorkflowIds = workflowDefinitions.map((workflow) => workflow.id);
+
+  await prisma.workflow.deleteMany({
+    where: {
+      name: "Local Vulnerable App Walkthrough",
+      id: { notIn: seededWorkflowIds }
+    }
+  });
 
   await Promise.all(
     workflowDefinitions.map(async (workflow) => {
@@ -249,11 +267,169 @@ async function main() {
           workflowId: workflow.id,
           label: stage.label,
           agentId: stage.agentId,
-          ord: index
+          ord: index,
+          objective: stage.objective,
+          allowedToolIds: stage.allowedToolIds,
+          requiredEvidenceTypes: stage.requiredEvidenceTypes,
+          findingPolicy: stage.findingPolicy,
+          completionRule: stage.completionRule,
+          resultSchemaVersion: stage.resultSchemaVersion,
+          handoffSchema: stage.handoffSchema
         }))
       });
     })
   );
+
+  const singleAgentScan = getSeededSingleAgentScanDefinition();
+
+  await prisma.workflowTraceEntry.deleteMany({
+    where: { workflowRunId: singleAgentScan.id }
+  });
+  await prisma.workflowTraceEvent.deleteMany({
+    where: { workflowRunId: singleAgentScan.id }
+  });
+  await prisma.workflowRun.deleteMany({
+    where: { id: singleAgentScan.id }
+  });
+
+  await prisma.scanAuditEntry.deleteMany({
+    where: { scanRunId: singleAgentScan.id }
+  });
+  await prisma.scanLayerCoverage.deleteMany({
+    where: { scanRunId: singleAgentScan.id }
+  });
+  await prisma.scanFinding.deleteMany({
+    where: { scanRunId: singleAgentScan.id }
+  });
+  await prisma.scanTactic.deleteMany({
+    where: { scanRunId: singleAgentScan.id }
+  });
+
+  await prisma.workflowRun.create({
+    data: {
+      id: singleAgentScan.id,
+      workflowId: singleAgentScan.workflowId,
+      status: "completed",
+      currentStepIndex: 1,
+      startedAt: new Date(singleAgentScan.scan.createdAt),
+      completedAt: new Date(singleAgentScan.scan.completedAt)
+    }
+  });
+
+  await prisma.scanRun.upsert({
+    where: { id: singleAgentScan.id },
+    update: {
+      mode: singleAgentScan.mode,
+      applicationId: singleAgentScan.applicationId,
+      runtimeId: singleAgentScan.runtimeId,
+      agentId: singleAgentScan.agentId,
+      scope: singleAgentScan.scan.scope,
+      llmConfig: singleAgentScan.llm,
+      status: "complete",
+      currentRound: singleAgentScan.scan.currentRound,
+      tacticsTotal: singleAgentScan.scan.tacticsTotal,
+      tacticsComplete: singleAgentScan.scan.tacticsComplete,
+      stopReason: singleAgentScan.stopReason,
+      summary: singleAgentScan.summary,
+      createdAt: new Date(singleAgentScan.scan.createdAt),
+      completedAt: new Date(singleAgentScan.scan.completedAt)
+    },
+    create: {
+      id: singleAgentScan.id,
+      mode: singleAgentScan.mode,
+      applicationId: singleAgentScan.applicationId,
+      runtimeId: singleAgentScan.runtimeId,
+      agentId: singleAgentScan.agentId,
+      scope: singleAgentScan.scan.scope,
+      llmConfig: singleAgentScan.llm,
+      status: "complete",
+      currentRound: singleAgentScan.scan.currentRound,
+      tacticsTotal: singleAgentScan.scan.tacticsTotal,
+      tacticsComplete: singleAgentScan.scan.tacticsComplete,
+      stopReason: singleAgentScan.stopReason,
+      summary: singleAgentScan.summary,
+      createdAt: new Date(singleAgentScan.scan.createdAt),
+      completedAt: new Date(singleAgentScan.scan.completedAt)
+    }
+  });
+
+  await prisma.scanTactic.create({
+    data: {
+      id: singleAgentScan.tactic.id,
+      scanRunId: singleAgentScan.tactic.scanId,
+      target: singleAgentScan.tactic.target,
+      layer: singleAgentScan.tactic.layer,
+      service: singleAgentScan.tactic.service,
+      port: singleAgentScan.tactic.port,
+      riskScore: singleAgentScan.tactic.riskScore,
+      status: "complete",
+      parentTacticId: null,
+      depth: singleAgentScan.tactic.depth,
+      createdAt: new Date(singleAgentScan.tactic.createdAt)
+    }
+  });
+
+  await prisma.scanFinding.create({
+    data: {
+      id: singleAgentScan.vulnerability.id,
+      scanRunId: singleAgentScan.vulnerability.scanId,
+      scanTacticId: singleAgentScan.tactic.id,
+      agentId: singleAgentScan.vulnerability.agentId,
+      primaryLayer: singleAgentScan.vulnerability.primaryLayer,
+      relatedLayers: [...singleAgentScan.vulnerability.relatedLayers],
+      category: singleAgentScan.vulnerability.category,
+      target: singleAgentScan.vulnerability.target,
+      severity: singleAgentScan.vulnerability.severity,
+      confidence: singleAgentScan.vulnerability.confidence,
+      title: singleAgentScan.vulnerability.title,
+      description: singleAgentScan.vulnerability.description,
+      evidence: singleAgentScan.vulnerability.evidence.map((item) => item.quote).join("\n\n"),
+      evidenceItems: singleAgentScan.vulnerability.evidence,
+      technique: singleAgentScan.vulnerability.technique,
+      impact: singleAgentScan.vulnerability.impact,
+      recommendation: singleAgentScan.vulnerability.recommendation,
+      reproduceCommand: singleAgentScan.vulnerability.reproduction.commandPreview,
+      reproduction: singleAgentScan.vulnerability.reproduction,
+      validated: false,
+      validationStatus: singleAgentScan.vulnerability.validationStatus,
+      cwe: singleAgentScan.vulnerability.cwe ?? null,
+      owasp: singleAgentScan.vulnerability.owasp ?? null,
+      tags: [...singleAgentScan.vulnerability.tags],
+      evidenceRefs: singleAgentScan.vulnerability.evidence.flatMap((item) =>
+        [item.artifactRef, item.observationRef].filter((value): value is string => Boolean(value))
+      ),
+      sourceToolRuns: singleAgentScan.vulnerability.evidence.flatMap((item) => item.toolRunRef ? [item.toolRunRef] : []),
+      confidenceReason: "Seeded single-source demo evidence.",
+      createdAt: new Date(singleAgentScan.vulnerability.createdAt)
+    }
+  });
+
+  await prisma.scanLayerCoverage.createMany({
+    data: singleAgentScan.layerCoverage.map((coverage) => ({
+      scanRunId: coverage.scanId,
+      layer: coverage.layer,
+      coverageStatus: coverage.coverageStatus,
+      confidenceSummary: coverage.confidenceSummary,
+      toolRefs: coverage.toolRefs,
+      evidenceRefs: coverage.evidenceRefs,
+      vulnerabilityIds: coverage.vulnerabilityIds,
+      gaps: coverage.gaps,
+      updatedAt: new Date(coverage.updatedAt)
+    }))
+  });
+
+  await prisma.scanAuditEntry.createMany({
+    data: singleAgentScan.auditEntries.map((entry) => ({
+      id: entry.id,
+      scanRunId: entry.scanId,
+      timestamp: new Date(entry.timestamp),
+      actor: entry.actor,
+      action: entry.action,
+      targetTacticId: entry.targetTacticId,
+      scopeValid: entry.scopeValid,
+      details: entry.details
+    }))
+  });
 }
 
 main()

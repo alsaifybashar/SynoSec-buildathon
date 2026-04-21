@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { PrismaClient } from "../../../platform/generated/prisma/index.js";
+import { PrismaClient } from "@prisma/client";
 import type { CreateRuntimeBody, RuntimesListQuery, Runtime, RuntimeProvider, UpdateRuntimeBody } from "@synosec/contracts";
-import { RequestError } from "../../../platform/core/http/request-error.js";
-import type { PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
+import { RequestError } from "../../../core/http/request-error.js";
+import type { PaginatedResult } from "../../../core/pagination/paginated-result.js";
 import { mapRuntimeRow } from "../runtimes/runtimes.mapper.js";
 import { type RuntimesRepository } from "../runtimes/runtimes.repository.js";
 
@@ -28,14 +28,19 @@ export class PrismaRuntimesRepository implements RuntimesRepository {
           }
         : {})
     };
-    const orderBy = { [query.sortBy ?? "name"]: query.sortDirection };
+    const orderBy = query.sortBy === "applicationId"
+      ? { application: { name: query.sortDirection } }
+      : { [query.sortBy ?? "name"]: query.sortDirection };
     const skip = (query.page - 1) * query.pageSize;
-    const matchingRuntimes = await this.prisma.runtime.findMany({
-      where,
-      orderBy
-    });
-    const runtimes = matchingRuntimes.slice(skip, skip + query.pageSize);
-    const total = matchingRuntimes.length;
+    const [runtimes, total] = await Promise.all([
+      this.prisma.runtime.findMany({
+        where,
+        orderBy,
+        skip,
+        take: query.pageSize
+      }),
+      this.prisma.runtime.count({ where })
+    ]);
 
     return {
       items: runtimes.map(mapRuntimeRow),

@@ -1,4 +1,4 @@
-import type { AiAgent, AiAgentTool } from "../../../platform/generated/prisma/index.js";
+import type { AiAgent, AiAgentTool } from "@prisma/client";
 import type { AiAgent as ContractAiAgent } from "@synosec/contracts";
 
 type AgentWithTools = AiAgent & {

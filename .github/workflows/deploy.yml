@@ -2,8 +2,18 @@ name: Deploy to VPS
 
 on:
   push:
-    branches: [development]
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10.23.0"
+  VPS_TARGET_DIR: "/opt/synosec"
+  BACKEND_PUBLIC_PORT: "3031"
+  FRONTEND_PUBLIC_PORT: "3030"
 
 jobs:
   test-and-build:
@@ -16,13 +26,14 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.23.0
+          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -41,6 +52,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Verify deploy files exist
+        run: |
+          test -f docker-compose.vps.yml
+          test -f infra/deploy/env.vps.template
+          test -f infra/nginx/synosec.vps.conf.template
+
       - name: Copy project to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -48,7 +65,7 @@ jobs:
           username: ${{ vars.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           source: "."
-          target: "${{ vars.VPS_TARGET_DIR }}"
+          target: "${{ env.VPS_TARGET_DIR }}"
           strip_components: 1
           rm: false
 
@@ -59,18 +76,60 @@ jobs:
           username: ${{ vars.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            set -eu
-            mkdir -p "${{ vars.VPS_TARGET_DIR }}"
-            cd "${{ vars.VPS_TARGET_DIR }}"
-            cat > .env <<EOF
-            BACKEND_PORT=${{ vars.BACKEND_PORT }}
-            VITE_DEV_PORT=${{ vars.VITE_DEV_PORT }}
-            POSTGRES_PORT=${{ vars.POSTGRES_PORT }}
-            ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
-            CLAUDE_MODEL=${{ vars.CLAUDE_MODEL }}
-            SCAN_MAX_DEPTH=${{ vars.SCAN_MAX_DEPTH }}
-            SCAN_MAX_DURATION_MINUTES=${{ vars.SCAN_MAX_DURATION_MINUTES }}
-            SCAN_RATE_LIMIT_RPS=${{ vars.SCAN_RATE_LIMIT_RPS }}
-            EOF
-            docker compose up -d --build --remove-orphans
+            set -euo pipefail
+            mkdir -p "${{ env.VPS_TARGET_DIR }}"
+            cd "${{ env.VPS_TARGET_DIR }}"
+            test -f docker-compose.vps.yml
+            test -f infra/deploy/env.vps.template
+            test -f infra/nginx/synosec.vps.conf.template
+            python3 - <<'PY'
+            from pathlib import Path
+
+            template = Path("infra/deploy/env.vps.template").read_text()
+            rendered = template.replace("__FRONTEND_URL__", """${{ vars.FRONTEND_URL }}""")
+
+            secrets = {
+                "POSTGRES_PASSWORD": """${{ secrets.POSTGRES_PASSWORD }}""",
+                "ANTHROPIC_API_KEY": """${{ secrets.ANTHROPIC_API_KEY }}""",
+                "CONNECTOR_SHARED_TOKEN": """${{ secrets.CONNECTOR_SHARED_TOKEN }}""",
+                "AUTH_SESSION_SECRET": """${{ secrets.AUTH_SESSION_SECRET }}""",
+            }
+
+            Path(".env").write_text(
+                rendered.rstrip() + "\n" + "".join(f"{key}={value}\n" for key, value in secrets.items())
+            )
+            Path(".env").chmod(0o600)
+            PY
+            docker compose -f docker-compose.vps.yml up -d --build --remove-orphans
+            sed \
+              -e 's|__SERVER_NAME__|${{ vars.SERVER_NAME }}|g' \
+              -e 's|__BACKEND_PUBLIC_PORT__|${{ env.BACKEND_PUBLIC_PORT }}|g' \
+              -e 's|__FRONTEND_PUBLIC_PORT__|${{ env.FRONTEND_PUBLIC_PORT }}|g' \
+              infra/nginx/synosec.vps.conf.template > /tmp/synosec-nginx.conf
+            sudo install -m 0644 /tmp/synosec-nginx.conf "${{ vars.NGINX_CONFIG_PATH }}"
+            sudo nginx -t
+            sudo systemctl reload nginx
             docker image prune -f
+
+      - name: Purge Cloudflare cache
+        run: |
+          curl -fsS -X POST "https://api.cloudflare.com/client/v4/zones/${{ secrets.CLOUDFLARE_ZONE_ID }}/purge_cache" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data '{"purge_everything":true}'
+
+      - name: Check backend health
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "https://${{ vars.SERVER_NAME }}/api/health" || echo "000")
+          if [ "$response" != "200" ]; then
+            echo "Backend health check failed with status: $response"
+            exit 1
+          fi
+
+      - name: Check frontend health
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "https://${{ vars.SERVER_NAME }}/" || echo "000")
+          if [ "$response" != "200" ]; then
+            echo "Frontend health check failed with status: $response"
+            exit 1
+          fi

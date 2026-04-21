@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import type { Application, ApplicationsListQuery, CreateApplicationBody, UpdateApplicationBody } from "@synosec/contracts";
-import type { PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
+import type { PaginatedResult } from "../../../core/pagination/paginated-result.js";
 import { mapApplicationRow } from "../applications/applications.mapper.js";
 import { type ApplicationsRepository } from "../applications/applications.repository.js";
 
@@ -23,12 +23,15 @@ export class PrismaApplicationsRepository implements ApplicationsRepository {
     };
     const orderBy = { [query.sortBy ?? "name"]: query.sortDirection };
     const skip = (query.page - 1) * query.pageSize;
-    const matchingApplications = await this.prisma.application.findMany({
-      where,
-      orderBy
-    });
-    const applications = matchingApplications.slice(skip, skip + query.pageSize);
-    const total = matchingApplications.length;
+    const [applications, total] = await Promise.all([
+      this.prisma.application.findMany({
+        where,
+        orderBy,
+        skip,
+        take: query.pageSize
+      }),
+      this.prisma.application.count({ where })
+    ]);
 
     return {
       items: applications.map(mapApplicationRow),

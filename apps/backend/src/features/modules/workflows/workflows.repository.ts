@@ -7,7 +7,7 @@ import type {
   WorkflowTraceEvent,
   WorkflowsListQuery
 } from "@synosec/contracts";
-import type { PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
+import type { PaginatedResult } from "../../../core/pagination/paginated-result.js";
 
 export interface WorkflowRunStatePatch {
   status?: WorkflowRun["status"];
@@ -21,6 +21,7 @@ export interface WorkflowsRepository {
   create(input: CreateWorkflowBody): Promise<Workflow>;
   update(id: string, input: UpdateWorkflowBody): Promise<Workflow | null>;
   remove(id: string): Promise<boolean>;
+  migrateWorkflowStageContracts(workflowId: string, fallbackToolIdsByAgentId?: Record<string, string[]>): Promise<Workflow | null>;
   createRun(workflowId: string): Promise<WorkflowRun | null>;
   getRunById(runId: string): Promise<WorkflowRun | null>;
   getLatestRunByWorkflowId(workflowId: string): Promise<WorkflowRun | null>;

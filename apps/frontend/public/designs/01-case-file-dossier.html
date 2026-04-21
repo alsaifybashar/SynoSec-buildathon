@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Case File · SYN-2026-0421-A7 · Reconnaissance Dossier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=JetBrains+Mono:wght@400;500;600&family=Redaction+50:ital,wght@0,300;0,400;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f2ead8;
+    --paper-deep: #ebe0c6;
+    --ink: #181412;
+    --ink-soft: #3d332b;
+    --sepia: #6b5a47;
+    --faded: #9a8b75;
+    --rule: #1a1612;
+    --oxblood: #7a1413;
+    --oxblood-deep: #5a0f0e;
+    --evidence: #3f513a;
+    --evidence-deep: #2a3828;
+    --highlight: #f1d56a;
+    --stamp: #9b1f1c;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Newsreader", Georgia, serif;
+    font-weight: 400;
+    font-size: 17px;
+    line-height: 1.55;
+    letter-spacing: 0.005em;
+  }
+  body {
+    background-image:
+      radial-gradient(ellipse 1200px 600px at 15% 5%, rgba(111, 85, 50, 0.08), transparent 60%),
+      radial-gradient(ellipse 900px 500px at 90% 95%, rgba(90, 70, 40, 0.09), transparent 60%),
+      repeating-linear-gradient(0deg, transparent 0 3px, rgba(50, 35, 15, 0.012) 3px 4px),
+      radial-gradient(circle at 50% 50%, #f2ead8 0%, #ebe0c6 100%);
+    min-height: 100vh;
+    padding: 56px 0 120px;
+  }
+
+  /* ───────── classification band ───────── */
+  .classification {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--oxblood-deep);
+    color: #f7e8d4;
+    border-top: 1px solid rgba(255,255,255,0.15);
+    border-bottom: 1px solid rgba(0,0,0,0.4);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.45em;
+    padding: 9px 0;
+    text-align: center;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.2), 0 20px 40px rgba(40,20,10,0.08);
+  }
+  .classification span { margin: 0 18px; opacity: 0.95; }
+  .classification .dot {
+    display: inline-block;
+    width: 5px; height: 5px;
+    background: #ffb3a8;
+    border-radius: 50%;
+    vertical-align: 2px;
+    margin: 0 12px;
+    animation: pulse 2.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+
+  /* ───────── sheet ───────── */
+  .sheet {
+    max-width: 1180px;
+    margin: 40px auto 0;
+    padding: 72px 88px 120px;
+    background: linear-gradient(180deg, #f6eedd 0%, #efe6d0 100%);
+    position: relative;
+    box-shadow:
+      0 1px 0 rgba(0,0,0,0.05),
+      0 2px 3px rgba(60,40,20,0.06),
+      0 24px 48px -12px rgba(60,40,20,0.15),
+      0 60px 120px -40px rgba(60,40,20,0.25);
+    border: 1px solid rgba(100, 80, 50, 0.12);
+  }
+  .sheet::before {
+    content: '';
+    position: absolute;
+    inset: 22px;
+    border: 1px solid rgba(80, 55, 30, 0.14);
+    pointer-events: none;
+  }
+  .sheet::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 10% 20%, rgba(110,80,40,0.04), transparent 40%),
+      radial-gradient(circle at 90% 80%, rgba(110,80,40,0.04), transparent 40%),
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.3  0 0 0 0 0.2  0 0 0 0 0.1  0 0 0 0.025 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    pointer-events: none;
+    mix-blend-mode: multiply;
+    opacity: 0.5;
+  }
+
+  /* ───────── masthead ───────── */
+  .masthead {
+    position: relative;
+    padding-bottom: 28px;
+    border-bottom: 3px double var(--rule);
+    margin-bottom: 28px;
+  }
+  .masthead-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--sepia);
+    margin-bottom: 22px;
+  }
+  .masthead-top span { padding: 2px 0; }
+  .masthead-top .divider {
+    flex: 1;
+    height: 1px;
+    background: var(--ink);
+    margin: 0 14px;
+    align-self: center;
+    opacity: 0.8;
+  }
+
+  .title-line {
+    display: flex;
+    align-items: baseline;
+    gap: 42px;
+  }
+  h1.title {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 144, "SOFT" 0, "WONK" 1;
+    font-weight: 900;
+    font-size: clamp(84px, 11vw, 156px);
+    line-height: 0.84;
+    letter-spacing: -0.04em;
+    margin: 0;
+    color: var(--ink);
+  }
+  h1.title em {
+    font-style: italic;
+    font-weight: 300;
+    font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
+  }
+  .title-sub {
+    font-family: "Fraunces", serif;
+    font-style: italic;
+    font-size: 22px;
+    font-weight: 400;
+    color: var(--ink-soft);
+    max-width: 260px;
+    border-left: 1px solid var(--ink);
+    padding-left: 18px;
+    line-height: 1.3;
+    margin-bottom: 20px;
+  }
+
+  .subtitle {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 72;
+    font-style: italic;
+    font-weight: 300;
+    font-size: 26px;
+    margin: 26px 0 0;
+    color: var(--ink-soft);
+    letter-spacing: -0.01em;
+  }
+  .subtitle strong {
+    font-weight: 700;
+    font-style: normal;
+    color: var(--ink);
+  }
+
+  /* ───────── metadata ledger ───────── */
+  .ledger {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0;
+    margin: 36px 0 52px;
+    border-top: 1px solid var(--ink);
+    border-bottom: 1px solid var(--ink);
+  }
+  .ledger > div {
+    padding: 18px 20px 16px;
+    border-right: 1px solid rgba(24,20,18,0.35);
+    position: relative;
+  }
+  .ledger > div:last-child { border-right: none; }
+  .ledger .k {
+    display: block;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    color: var(--sepia);
+    margin-bottom: 8px;
+  }
+  .ledger .v {
+    font-family: "Fraunces", serif;
+    font-weight: 500;
+    font-size: 18px;
+    color: var(--ink);
+    line-height: 1.15;
+  }
+  .ledger .v.mono {
+    font-family: "JetBrains Mono", monospace;
+    font-weight: 500;
+    font-size: 15px;
+  }
+  .ledger .v.sm { font-size: 15px; }
+  .ledger .v .accent { color: var(--oxblood); font-weight: 600; }
+
+  /* ───────── executive summary ───────── */
+  .exec {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 40px;
+    margin-bottom: 48px;
+    padding-bottom: 36px;
+    border-bottom: 1px solid rgba(24,20,18,0.25);
+  }
+  .exec .label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3em;
+    color: var(--sepia);
+    padding-top: 6px;
+    border-top: 2px solid var(--ink);
+    display: inline-block;
+    min-width: 120px;
+  }
+  .exec-body {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 72;
+    font-weight: 400;
+    font-size: 26px;
+    line-height: 1.35;
+    letter-spacing: -0.012em;
+    color: var(--ink);
+  }
+  .exec-body::first-letter {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 1;
+    font-weight: 900;
+    font-size: 96px;
+    float: left;
+    line-height: 0.78;
+    padding: 8px 14px 0 0;
+    margin-top: 4px;
+    color: var(--oxblood);
+  }
+  .exec-body em {
+    font-style: italic;
+    color: var(--ink-soft);
+  }
+  mark.hi {
+    background: linear-gradient(180deg, transparent 55%, rgba(241, 213, 106, 0.55) 55%, rgba(241, 213, 106, 0.55) 88%, transparent 88%);
+    padding: 0 2px;
+    color: var(--ink);
+  }
+
+  /* ───────── body grid ───────── */
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 64px;
+  }
+
+  /* ───────── chronology (narrative) ───────── */
+  .col-head {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.32em;
+    color: var(--sepia);
+    padding-bottom: 8px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--ink);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .stage-head {
+    display: flex;
+    align-items: baseline;
+    gap: 24px;
+    margin: 40px 0 22px;
+  }
+  .stage-num {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 144, "SOFT" 0, "WONK" 1;
+    font-weight: 900;
+    font-size: 78px;
+    line-height: 0.8;
+    color: var(--paper);
+    -webkit-text-stroke: 1.5px var(--ink);
+    letter-spacing: -0.04em;
+  }
+  .stage-info { flex: 1; }
+  .stage-label {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 72;
+    font-weight: 700;
+    font-size: 30px;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin: 0 0 4px;
+  }
+  .stage-agent {
+    font-family: "Newsreader", serif;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--sepia);
+  }
+  .stage-agent .stage-badge {
+    display: inline-block;
+    background: var(--evidence-deep);
+    color: #e9dbb8;
+    font-style: normal;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    padding: 3px 8px 2px;
+    margin-left: 10px;
+    vertical-align: 2px;
+  }
+  .stage-head:first-of-type { margin-top: 0; }
+
+  /* ───────── transcript entries ───────── */
+  .entry {
+    display: grid;
+    grid-template-columns: 88px 1fr;
+    gap: 22px;
+    padding: 14px 0;
+    border-bottom: 1px dotted rgba(24,20,18,0.25);
+    position: relative;
+  }
+  .entry .meta {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--sepia);
+    padding-top: 5px;
+    line-height: 1.5;
+  }
+  .entry .meta .t {
+    color: var(--ink);
+    font-weight: 600;
+    display: block;
+  }
+  .entry .meta .type {
+    display: block;
+    margin-top: 4px;
+    color: var(--sepia);
+  }
+  .entry .body {
+    font-family: "Newsreader", serif;
+    font-size: 17.5px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+  }
+  .entry .body .lead {
+    color: var(--ink);
+    font-weight: 500;
+    display: block;
+    margin-bottom: 4px;
+    font-size: 18px;
+    font-family: "Fraunces", serif;
+    letter-spacing: -0.005em;
+  }
+  .entry .body .lead .agent {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--oxblood);
+    padding: 1px 6px 0;
+    border: 1px solid var(--oxblood);
+    margin-right: 8px;
+    vertical-align: 2px;
+    letter-spacing: 0.06em;
+  }
+
+  /* model decision pull-quote */
+  .pullquote {
+    margin: 18px 0 18px 0;
+    padding: 14px 32px 14px;
+    border-left: 3px solid var(--oxblood);
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 72;
+    font-style: italic;
+    font-size: 22px;
+    line-height: 1.4;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+  .pullquote .attr {
+    display: block;
+    margin-top: 10px;
+    font-family: "JetBrains Mono", monospace;
+    font-style: normal;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    color: var(--sepia);
+  }
+
+  /* tool output */
+  .tooloutput {
+    margin: 14px 0 20px;
+    border: 1px solid var(--ink);
+    background: #f6eddc;
+    position: relative;
+  }
+  .tooloutput::before {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border: 1px solid rgba(24,20,18,0.35);
+    pointer-events: none;
+  }
+  .tooloutput-hd {
+    padding: 10px 16px 8px;
+    border-bottom: 1px solid var(--ink);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--ink);
+    background: #ede1c6;
+  }
+  .tooloutput-hd .pill {
+    padding: 1px 7px;
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    background: var(--evidence-deep);
+    color: #f6e8c4;
+  }
+  .tooloutput-hd .pill.err { background: var(--oxblood); color: #f9e1d6; }
+  .tooloutput pre {
+    margin: 0;
+    padding: 14px 18px 16px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: #2a1e15;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .tooloutput pre .c { color: var(--sepia); }
+  .tooloutput pre .hi { background: rgba(155, 31, 28, 0.1); color: var(--oxblood); font-weight: 600; padding: 0 3px; }
+  .tooloutput pre .ok { color: var(--evidence-deep); font-weight: 600; }
+
+  /* redaction */
+  .redact {
+    background: var(--ink);
+    color: var(--ink);
+    user-select: none;
+    padding: 0 2px;
+    border-radius: 1px;
+  }
+  .redact::selection { background: var(--ink); }
+
+  /* ───────── exhibits column ───────── */
+  .exhibits {
+    position: relative;
+  }
+  .exhibit {
+    border-top: 2px solid var(--ink);
+    margin-bottom: 28px;
+    padding-top: 12px;
+    position: relative;
+  }
+  .exhibit-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3em;
+    color: var(--sepia);
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .exhibit-label .sev {
+    padding: 1px 8px 0;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+  }
+  .sev.critical { background: var(--oxblood); color: #f7dfd4; }
+  .sev.high { background: #b0342f; color: #f7dfd4; }
+  .sev.medium { background: #b8841c; color: #2a1c09; }
+  .sev.low { background: var(--evidence-deep); color: #eadfbf; }
+  .sev.info { background: #373028; color: #e9dfcb; }
+
+  .exhibit-title {
+    font-family: "Fraunces", serif;
+    font-variation-settings: "opsz" 72;
+    font-weight: 600;
+    font-size: 18.5px;
+    line-height: 1.18;
+    letter-spacing: -0.01em;
+    margin: 0 0 8px;
+    color: var(--ink);
+  }
+  .exhibit-body {
+    font-family: "Newsreader", serif;
+    font-size: 14.5px;
+    line-height: 1.52;
+    color: var(--ink-soft);
+  }
+  .exhibit-kv {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    color: var(--sepia);
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 12px;
+    row-gap: 3px;
+  }
+  .exhibit-kv .k { text-transform: uppercase; letter-spacing: 0.18em; color: var(--faded); }
+  .exhibit-kv .v { color: var(--ink); }
+  .exhibit-foot {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dotted rgba(24,20,18,0.3);
+    font-family: "Newsreader", serif;
+    font-style: italic;
+    font-size: 13.5px;
+    color: var(--sepia);
+    line-height: 1.45;
+  }
+
+  /* ───────── stamp ───────── */
+  .stamp {
+    position: absolute;
+    top: 80px;
+    right: 72px;
+    transform: rotate(-8deg);
+    z-index: 5;
+    pointer-events: none;
+  }
+  .stamp-body {
+    border: 3px double var(--stamp);
+    padding: 11px 22px 9px;
+    color: var(--stamp);
+    font-family: "Fraunces", serif;
+    font-weight: 700;
+    text-align: center;
+    background: rgba(249,237,222,0.4);
+    opacity: 0.85;
+    filter: blur(0.3px);
+  }
+  .stamp-top {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.35em;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .stamp-big {
+    font-size: 32px;
+    letter-spacing: 0.08em;
+    line-height: 0.95;
+    font-variation-settings: "opsz" 144;
+  }
+  .stamp-date {
+    margin-top: 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.15em;
+  }
+
+  /* ───────── severity dial ───────── */
+  .dial {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    padding-top: 6px;
+  }
+  .dial .bar {
+    width: 16px;
+    background: linear-gradient(180deg, var(--oxblood) 0%, #402a16 100%);
+    position: relative;
+  }
+  .dial .bar::after {
+    content: attr(data-n);
+    position: absolute;
+    top: -16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--ink);
+  }
+  .dial .bar.c1 { height: 6px;  background: var(--sepia); }
+  .dial .bar.c2 { height: 14px; }
+  .dial .bar.c3 { height: 28px; }
+  .dial .bar.c4 { height: 44px; }
+  .dial .bar.c5 { height: 22px; }
+
+  /* ───────── footer / sig ───────── */
+  .footer {
+    margin-top: 80px;
+    padding-top: 32px;
+    border-top: 2px solid var(--ink);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 40px;
+    align-items: start;
+  }
+  .sig { position: relative; padding-top: 56px; border-top: 1px solid var(--ink); }
+  .sig-name { font-family: "Fraunces", serif; font-size: 18px; font-weight: 600; margin-bottom: 2px; }
+  .sig-role { font-family: "JetBrains Mono", monospace; font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--sepia); }
+  .sig-mark {
+    position: absolute;
+    top: -18px;
+    left: 0;
+    font-family: "Fraunces", serif;
+    font-style: italic;
+    font-size: 34px;
+    color: var(--oxblood);
+    transform: rotate(-4deg);
+  }
+
+  .colophon {
+    margin-top: 52px;
+    padding-top: 18px;
+    border-top: 1px dotted rgba(24,20,18,0.3);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: var(--faded);
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+
+  /* decorative corner markers */
+  .corner {
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--ink);
+  }
+  .corner.tl { top: 22px; left: 22px; border-right: none; border-bottom: none; }
+  .corner.tr { top: 22px; right: 22px; border-left: none; border-bottom: none; }
+  .corner.bl { bottom: 22px; left: 22px; border-right: none; border-top: none; }
+  .corner.br { bottom: 22px; right: 22px; border-left: none; border-top: none; }
+
+  @media (max-width: 980px) {
+    .sheet { padding: 40px 28px 80px; margin-top: 16px; }
+    .grid { grid-template-columns: 1fr; gap: 28px; }
+    .ledger { grid-template-columns: repeat(2, 1fr); }
+    .ledger > div:nth-child(2n) { border-right: none; }
+    .exec { grid-template-columns: 1fr; gap: 16px; }
+    h1.title { font-size: 72px; }
+    .stamp { top: 30px; right: 24px; transform: rotate(-5deg) scale(0.85); }
+  }
+</style>
+</head>
+<body>
+
+<div class="classification">
+  <span>// Confidential</span><span class="dot"></span><span>Security Evaluation</span><span class="dot"></span><span>Handle: Synosec/Red-Cell · Distribution Restricted</span><span class="dot"></span><span>Do Not Reproduce</span>
+</div>
+
+<main class="sheet" role="main">
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+
+  <!-- STAMP -->
+  <div class="stamp" aria-hidden="true">
+    <div class="stamp-body">
+      <div class="stamp-top">Reviewed & Closed</div>
+      <div class="stamp-big">ARCHIVED</div>
+      <div class="stamp-date">21 · APR · 2026 / 14:11:45 UTC</div>
+    </div>
+  </div>
+
+  <!-- MASTHEAD -->
+  <header class="masthead">
+    <div class="masthead-top">
+      <span>Vol. IV · No. 037</span>
+      <span class="divider"></span>
+      <span>The Synosec Review of Observed Behaviour</span>
+      <span class="divider"></span>
+      <span>Issued 2026·04·21</span>
+    </div>
+    <div class="title-line">
+      <h1 class="title">Case<em>file</em></h1>
+      <div class="title-sub">
+        A chronology of one autonomous agent's work, from first probe to final handoff.
+      </div>
+    </div>
+    <p class="subtitle">
+      Being an account of the reconnaissance performed by <strong>HALBERD‑R1</strong> against the public SSO surface at <strong>vault.sparrow.io</strong>, with consideration of tools selected, evidence gathered, and findings submitted for review.
+    </p>
+  </header>
+
+  <!-- LEDGER -->
+  <section class="ledger" aria-label="case metadata">
+    <div>
+      <span class="k">Case №</span>
+      <span class="v mono">SYN‑2026‑0421‑A7</span>
+    </div>
+    <div>
+      <span class="k">Target</span>
+      <span class="v mono">vault.sparrow.io:8443</span>
+    </div>
+    <div>
+      <span class="k">Opened</span>
+      <span class="v sm">14:07:33 UTC</span>
+    </div>
+    <div>
+      <span class="k">Duration</span>
+      <span class="v sm">00:04:12</span>
+    </div>
+    <div>
+      <span class="k">Verdict</span>
+      <span class="v sm"><span class="accent">7 findings</span> — 2 high</span>
+    </div>
+    <div>
+      <span class="k">Distribution</span>
+      <span class="v sm">Red‑Cell / Orion</span>
+    </div>
+  </section>
+
+  <!-- EXEC SUMMARY -->
+  <section class="exec">
+    <div><span class="label">Executive Summary</span></div>
+    <div class="exec-body">
+      Over the course of four minutes and twelve seconds, the orchestrator delegated reconnaissance, content discovery, and transport‑layer audit to three autonomous agents operating in sequence. The workflow concluded without contract violations. <mark class="hi">Of the seven findings submitted, two warrant immediate triage</mark>: an exposed <em>.git</em> directory and a permissive CORS policy on the authentication endpoint. The agent chain exercised <em>nine</em> tools and produced <em>thirty‑one</em> observation quotes, fully reproduced in the exhibits column at right.
+    </div>
+  </section>
+
+  <!-- MAIN GRID -->
+  <div class="grid">
+
+    <!-- ───────── CHRONOLOGY ───────── -->
+    <article class="chronology">
+      <div class="col-head">
+        <span>I. &nbsp; Chronology of Observed Events</span>
+        <span>ord 00 → 42</span>
+      </div>
+
+      <!-- STAGE 1 -->
+      <div class="stage-head">
+        <div class="stage-num">I</div>
+        <div class="stage-info">
+          <h2 class="stage-label">Reconnaissance</h2>
+          <p class="stage-agent">conducted by <em>Halberd‑R1</em>, orchestrated from Docker runtime <em>tofu‑west‑02</em> <span class="stage-badge">stage.completed</span></p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+00:00.000</span><span class="type">stage_started</span></div>
+        <div class="body">
+          <span class="lead"><span class="agent">HALBERD</span>Reconnaissance stage opened.</span>
+          The orchestrator posted stage context to Halberd‑R1. Scope of engagement included a single host at <em>vault.sparrow.io</em>, port <em>8443</em>, and a permitted toolset of nine capabilities. No prior artefacts were provided; the agent began from cold.
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+00:00.412</span><span class="type">agent_input</span></div>
+        <div class="body">
+          <span class="lead">Agent received stage context.</span>
+          The stage objective instructed Halberd‑R1 to enumerate reachable services and report transport posture. The contract required a structured result with no fewer than one finding and at least one documented tool call.
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+00:02.118</span><span class="type">model_decision</span></div>
+        <div class="body">
+          <span class="lead">Model returned tool selection after 1.71s of reasoning.</span>
+          Three tools were chosen, with articulated rationale for each.
+
+          <div class="pullquote">
+            “The host advertises TLS on 8443 with no observed plaintext alternative. I will start with <em>nmap</em> for versioned service detection, follow with <em>whatweb</em> to identify the framework, and use <em>curl</em> to capture the root response headers. I exclude fuzzing until I know the server kind.”
+            <span class="attr">— Halberd‑R1 / model_decision payload, 412 tokens</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+00:02.340</span><span class="type">tool_call</span></div>
+        <div class="body">
+          <span class="lead">nmap invoked against vault.sparrow.io:8443.</span>
+          <em>Capabilities:</em> port_scan, service_version, tls_probe. &nbsp; <em>Timeout:</em> 30 000 ms.
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+00:05.874</span><span class="type">tool_result</span></div>
+        <div class="body">
+          <span class="lead">nmap returned <em>completed</em> in 3.534 s.</span>
+
+          <div class="tooloutput">
+            <div class="tooloutput-hd">
+              <span>nmap -sV -p 8443 --script ssl-enum-ciphers vault.sparrow.io</span>
+              <span class="pill">exit 0</span>
+            </div>
+<pre><span class="c"># Nmap 7.94 scan initiated — 2026-04-21 14:07:36</span>
+PORT     STATE SERVICE   VERSION
+8443/tcp <span class="ok">open</span>  ssl/https <span class="hi">nginx 1.24.0</span>
+|_http-server-header: nginx/1.24.0
+| ssl-enum-ciphers:
+|   TLSv1.2:
+|     ciphers:
+|       TLS_ECDHE_RSA_WITH_AES_256_<span class="hi">CBC</span>_SHA384 (secp256r1) — <span class="hi">C</span>
+|       TLS_RSA_WITH_AES_256_GCM_SHA384 — <span class="hi">C</span>
+|_  least strength: <span class="hi">C</span>
+<span class="c">Service detection performed. Completed in 3.42 s.</span></pre>
+          </div>
+
+          Observations extracted: <em>service nginx/1.24.0 on TLS port 8443</em>; <em>CBC ciphers present with C‑grade scoring</em>; <em>TLSv1.3 not offered</em>.
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+00:06.201</span><span class="type">finding_reported</span></div>
+        <div class="body">
+          <span class="lead">Finding reported: Weak TLS cipher suite exposed.</span>
+          Severity <em>medium</em>, confidence <em>0.82</em>. Evidence chain: nmap cipher enumeration. See <em>Exhibit B</em> at right.
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+00:06.390</span><span class="type">tool_call</span></div>
+        <div class="body">
+          <span class="lead">whatweb invoked for fingerprinting.</span>
+          The agent passed the canonicalised URL and requested plugin‑aware identification.
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+00:09.044</span><span class="type">tool_result</span></div>
+        <div class="body">
+          <span class="lead">whatweb returned <em>completed</em> in 2.654 s.</span>
+          Server identified as nginx fronting a Django 4.2 application. <span class="redact">REDACTED&nbsp;BY&nbsp;REVIEWER — internal hostname</span> observed in <code>Server:</code> header, later reported as Exhibit D.
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+00:10.112</span><span class="type">stage_result_submitted</span></div>
+        <div class="body">
+          <span class="lead">Halberd‑R1 submitted structured stage result.</span>
+          Three findings, status <em>completed</em>. The handoff payload advertised <em>host confirmed, framework Django 4.2, TLS degraded</em> to the next stage.
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+00:10.480</span><span class="type">stage_completed</span></div>
+        <div class="body">
+          <span class="lead">Stage I closed. Observations: 11. Findings: 3.</span>
+        </div>
+      </div>
+
+      <!-- STAGE 2 -->
+      <div class="stage-head">
+        <div class="stage-num">II</div>
+        <div class="stage-info">
+          <h2 class="stage-label">Content Discovery</h2>
+          <p class="stage-agent">conducted by <em>Crane‑C2</em>, wordlist <em>raft-medium-directories</em> <span class="stage-badge">stage.completed</span></p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+00:10.901</span><span class="type">model_decision</span></div>
+        <div class="body">
+          <span class="lead">Crane‑C2 selected <em>ffuf</em> and <em>gobuster</em>.</span>
+          <div class="pullquote">
+            “Django 4.2 has a default admin surface. I will fuzz common admin paths at low threading to avoid rate‑limits, and cross‑check with gobuster against a repository‑oriented wordlist to catch exposed VCS directories.”
+            <span class="attr">— Crane‑C2 / model_decision payload, 298 tokens</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+02:14.003</span><span class="type">tool_result</span></div>
+        <div class="body">
+          <span class="lead">ffuf returned with <em>three hits of interest</em>.</span>
+          <div class="tooloutput">
+            <div class="tooloutput-hd">
+              <span>ffuf -w raft-medium.txt -u https://vault.sparrow.io:8443/FUZZ -mc 200,301,302,401,403</span>
+              <span class="pill">exit 0</span>
+            </div>
+<pre>  /admin/login          [Status: <span class="ok">200</span>, Size: 2218, Words: 433]
+  /healthz              [Status: <span class="ok">200</span>, Size: 17]
+  /backup.zip           [Status: <span class="hi">200</span>, Size: <span class="hi">4.1 MiB</span>]  ← escalated
+  <span class="hi">/.git/HEAD</span>            [Status: <span class="hi">200</span>, Size: 23]           ← escalated
+  /api/v1/auth          [Status: 401, Size: 89]</pre>
+          </div>
+          The agent elected to confirm the <em>.git/HEAD</em> path with a secondary curl before reporting.
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+02:16.224</span><span class="type">finding_reported</span></div>
+        <div class="body">
+          <span class="lead">Finding reported: Exposed <em>.git</em> directory — HIGH.</span>
+          Confidence 0.97. Corroborated by a curl of <code>/.git/config</code> returning a valid repository descriptor. See <em>Exhibit A</em>.
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+02:38.040</span><span class="type">stage_completed</span></div>
+        <div class="body">
+          <span class="lead">Stage II closed. Observations: 14. Findings: 3 new (1 high, 2 medium).</span>
+        </div>
+      </div>
+
+      <!-- STAGE 3 -->
+      <div class="stage-head">
+        <div class="stage-num">III</div>
+        <div class="stage-info">
+          <h2 class="stage-label">Header & Transport Audit</h2>
+          <p class="stage-agent">conducted by <em>Ward‑H3</em>, audited under OWASP Secure Headers baseline <span class="stage-badge">stage.completed</span></p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+03:04.500</span><span class="type">tool_result</span></div>
+        <div class="body">
+          <span class="lead">curl audit of security headers returned.</span>
+          <div class="tooloutput">
+            <div class="tooloutput-hd">
+              <span>curl -sI https://vault.sparrow.io:8443/</span>
+              <span class="pill">exit 0</span>
+            </div>
+<pre>HTTP/2 200
+server: nginx/1.24.0
+content-type: text/html; charset=utf-8
+<span class="c"># strict-transport-security  — MISSING</span>
+<span class="c"># x-frame-options            — MISSING</span>
+<span class="c"># content-security-policy    — MISSING</span>
+access-control-allow-origin: <span class="hi">*</span>
+x-powered-by: <span class="hi">Django/4.2.3</span></pre>
+          </div>
+          A permissive CORS header and a version‑exposing banner were observed in a single response.
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="meta"><span class="t">T+04:12.006</span><span class="type">stage_completed</span></div>
+        <div class="body">
+          <span class="lead">Stage III closed. Workflow run terminated with status <em>completed</em>.</span>
+          Final dossier compiled; 7 findings submitted for review. <em>End of chronology.</em>
+        </div>
+      </div>
+
+    </article>
+
+    <!-- ───────── EXHIBITS ───────── -->
+    <aside class="exhibits" aria-label="exhibits column">
+      <div class="col-head">
+        <span>II. &nbsp; Exhibits &amp; Findings</span>
+        <span>7</span>
+      </div>
+
+      <div class="exhibit">
+        <div class="exhibit-label"><span>Exhibit A</span><span class="sev high">HIGH</span></div>
+        <h3 class="exhibit-title">Exposed <em>.git</em> directory at /.git/HEAD</h3>
+        <p class="exhibit-body">
+          Crane‑C2 located a readable repository root beneath the public document tree. The <em>HEAD</em> reference dereferenced cleanly to <code>refs/heads/main</code>, confirming a live checkout.
+        </p>
+        <div class="exhibit-kv">
+          <span class="k">CWE</span><span class="v">538 / 200</span>
+          <span class="k">OWASP</span><span class="v">A05:2021</span>
+          <span class="k">Path</span><span class="v">/.git/HEAD</span>
+          <span class="k">Confidence</span><span class="v">0.97</span>
+          <span class="k">Evidence</span><span class="v">ffuf · curl</span>
+        </div>
+        <p class="exhibit-foot">“A full repository clone is recoverable from the public surface without authentication.” <em>— Crane‑C2</em></p>
+      </div>
+
+      <div class="exhibit">
+        <div class="exhibit-label"><span>Exhibit B</span><span class="sev medium">MED</span></div>
+        <h3 class="exhibit-title">Weak TLS cipher suite accepted on 8443</h3>
+        <p class="exhibit-body">
+          Nmap enumeration recorded TLSv1.2 as the highest offered protocol, with CBC‑mode ciphers scored <em>C</em> by the probe. TLSv1.3 was not advertised.
+        </p>
+        <div class="exhibit-kv">
+          <span class="k">CWE</span><span class="v">326</span>
+          <span class="k">Confidence</span><span class="v">0.82</span>
+          <span class="k">Evidence</span><span class="v">nmap --script ssl-enum-ciphers</span>
+        </div>
+      </div>
+
+      <div class="exhibit">
+        <div class="exhibit-label"><span>Exhibit C</span><span class="sev high">HIGH</span></div>
+        <h3 class="exhibit-title">Permissive <em>Access‑Control‑Allow‑Origin: *</em></h3>
+        <p class="exhibit-body">
+          Auth endpoint replies with wildcard CORS, accepting cross‑origin reads against authenticated responses — a credential‑bearing request from any origin may be observed by the caller's own script context.
+        </p>
+        <div class="exhibit-kv">
+          <span class="k">CWE</span><span class="v">942</span>
+          <span class="k">Confidence</span><span class="v">0.91</span>
+          <span class="k">Evidence</span><span class="v">curl -sI /api/v1/auth</span>
+        </div>
+      </div>
+
+      <div class="exhibit">
+        <div class="exhibit-label"><span>Exhibit D</span><span class="sev medium">MED</span></div>
+        <h3 class="exhibit-title">Framework and version exposed via headers</h3>
+        <p class="exhibit-body">
+          <code>X‑Powered‑By: Django/4.2.3</code> and <code>Server: nginx/1.24.0</code> disclose precise version strings, narrowing attacker search space to known‑CVE cohorts.
+        </p>
+        <div class="exhibit-kv">
+          <span class="k">CWE</span><span class="v">200</span>
+          <span class="k">Confidence</span><span class="v">0.88</span>
+        </div>
+      </div>
+
+      <div class="exhibit">
+        <div class="exhibit-label"><span>Exhibit E</span><span class="sev medium">MED</span></div>
+        <h3 class="exhibit-title">Missing HSTS, X‑Frame‑Options, CSP</h3>
+        <p class="exhibit-body">
+          Three expected hardening headers were absent on the root response. Clickjacking and content‑injection mitigations are not in place.
+        </p>
+        <div class="exhibit-kv">
+          <span class="k">OWASP</span><span class="v">A05:2021</span>
+          <span class="k">Confidence</span><span class="v">0.96</span>
+        </div>
+      </div>
+
+      <div class="exhibit">
+        <div class="exhibit-label"><span>Exhibit F</span><span class="sev low">LOW</span></div>
+        <h3 class="exhibit-title">Public health endpoint /healthz</h3>
+        <p class="exhibit-body">
+          Unauthenticated uptime probe. Returns <code>ok</code>. Not directly exploitable, but confirms service liveness.
+        </p>
+      </div>
+
+      <div class="exhibit">
+        <div class="exhibit-label"><span>Exhibit G</span><span class="sev info">INFO</span></div>
+        <h3 class="exhibit-title">Backup archive /backup.zip — 4.1 MiB</h3>
+        <p class="exhibit-body">
+          Unprobed by the agent. Reported as <em>requires_triage</em> and flagged in the recommended next step.
+        </p>
+      </div>
+
+      <div class="exhibit" style="border-top: none; margin-top: 24px; padding-top: 0;">
+        <div class="exhibit-label"><span>Severity Distribution</span><span>n = 7</span></div>
+        <div class="dial" aria-hidden="true">
+          <div class="bar c1" data-n="0" title="Critical · 0"></div>
+          <div class="bar c2" data-n="2" title="High · 2"></div>
+          <div class="bar c3" data-n="3" title="Medium · 3"></div>
+          <div class="bar c4" data-n="1" title="Low · 1"></div>
+          <div class="bar c5" data-n="1" title="Info · 1"></div>
+        </div>
+        <div class="exhibit-kv" style="margin-top: 22px;">
+          <span class="k">Critical</span><span class="v">0</span>
+          <span class="k">High</span><span class="v">2 &nbsp;· Exhibits A, C</span>
+          <span class="k">Medium</span><span class="v">3 &nbsp;· Exhibits B, D, E</span>
+          <span class="k">Low</span><span class="v">1 &nbsp;· Exhibit F</span>
+          <span class="k">Info</span><span class="v">1 &nbsp;· Exhibit G</span>
+        </div>
+      </div>
+
+    </aside>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="sig">
+      <span class="sig-mark">↯</span>
+      <div class="sig-name">Halberd · R1</div>
+      <div class="sig-role">Stage I — Reconnaissance</div>
+    </div>
+    <div class="sig">
+      <span class="sig-mark">¶</span>
+      <div class="sig-name">Crane · C2</div>
+      <div class="sig-role">Stage II — Content Discovery</div>
+    </div>
+    <div class="sig">
+      <span class="sig-mark">※</span>
+      <div class="sig-name">Ward · H3</div>
+      <div class="sig-role">Stage III — Header &amp; TLS Audit</div>
+    </div>
+  </footer>
+
+  <div class="colophon">
+    <span>Compiled from WorkflowTraceEvent stream</span>
+    <span>Snapshot + 42 event_appended frames + 3 trace_appended frames</span>
+    <span>No prompts, model weights, or tool binaries redacted</span>
+    <span>Set in Fraunces, Newsreader, JetBrains Mono</span>
+  </div>
+</main>
+
+</body>
+</html>

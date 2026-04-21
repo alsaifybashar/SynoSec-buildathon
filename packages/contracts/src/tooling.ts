@@ -51,8 +51,7 @@ export type ToolRunStatus = z.infer<typeof toolRunStatusSchema>;
 export const toolRequestSchema = z.object({
   toolId: z.string().min(1).optional(),
   tool: z.string().min(1),
-  scriptPath: z.string().min(1).optional(),
-  scriptVersion: z.string().min(1).optional(),
+  executorType: z.literal("bash").default("bash"),
   capabilities: z.array(toolCapabilityTagSchema).default([]),
   target: z.string().min(1),
   port: z.number().int().optional(),
@@ -60,74 +59,45 @@ export const toolRequestSchema = z.object({
   layer: osiLayerSchema,
   riskTier: toolRiskTierSchema,
   justification: z.string().min(1),
-  sandboxProfile: toolSandboxProfileSchema.optional(),
-  privilegeProfile: toolPrivilegeProfileSchema.optional(),
-  parameters: z.record(z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])).default({})
+  sandboxProfile: toolSandboxProfileSchema,
+  privilegeProfile: toolPrivilegeProfileSchema,
+  parameters: z.record(z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.array(z.string()),
+    z.record(z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]))
+  ])).default({})
 }).superRefine((value, ctx) => {
   if (!value.toolId) {
     return;
   }
-  if (!value.scriptPath) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Script path is required for scripted tool execution.",
-      path: ["scriptPath"]
-    });
-  }
-  if (!value.scriptVersion) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Script version is required for scripted tool execution.",
-      path: ["scriptVersion"]
-    });
-  }
   if (value.capabilities.length === 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "At least one capability tag is required for scripted tool execution.",
+      message: "At least one capability tag is required for bash tool execution.",
       path: ["capabilities"]
     });
   }
-  if (!value.sandboxProfile) {
+  if (typeof value.parameters["bashSource"] !== "string") {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Sandbox profile is required for scripted tool execution.",
-      path: ["sandboxProfile"]
+      message: "Bash source is required in structured parameters for bash tool execution.",
+      path: ["parameters", "bashSource"]
     });
   }
-  if (!value.privilegeProfile) {
+  if (typeof value.parameters["commandPreview"] !== "string") {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Privilege profile is required for scripted tool execution.",
-      path: ["privilegeProfile"]
+      message: "Command preview is required in structured parameters for bash tool execution.",
+      path: ["parameters", "commandPreview"]
     });
   }
-  if (typeof value.parameters["scriptPath"] !== "string") {
+  if (typeof value.parameters["toolInput"] !== "object" || Array.isArray(value.parameters["toolInput"])) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Script path is required in structured parameters for scripted tool execution.",
-      path: ["parameters", "scriptPath"]
-    });
-  }
-  if (typeof value.parameters["scriptVersion"] !== "string") {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Script version is required in structured parameters for scripted tool execution.",
-      path: ["parameters", "scriptVersion"]
-    });
-  }
-  if (typeof value.parameters["scriptSource"] !== "string") {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Script source is required in structured parameters for scripted tool execution.",
-      path: ["parameters", "scriptSource"]
-    });
-  }
-  if (!Array.isArray(value.parameters["scriptArgs"])) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Structured script args are required for scripted tool execution.",
-      path: ["parameters", "scriptArgs"]
+      message: "Structured tool input is required for bash tool execution.",
+      path: ["parameters", "toolInput"]
     });
   }
 });
@@ -140,8 +110,7 @@ export const toolRunSchema = z.object({
   agentId: z.string(),
   toolId: z.string().optional(),
   tool: z.string(),
-  scriptPath: z.string().optional(),
-  scriptVersion: z.string().optional(),
+  executorType: z.literal("bash").default("bash"),
   capabilities: z.array(toolCapabilityTagSchema).default([]),
   target: z.string(),
   port: z.number().int().optional(),

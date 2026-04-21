@@ -1,9 +1,15 @@
-import type { AiTool as PrismaAiTool } from "../../../platform/generated/prisma/index.js";
+import type { AiTool as PrismaAiTool } from "@prisma/client";
 import type { AiTool } from "@synosec/contracts";
-import { mapToolExecutionFields, stripExecutionConfig } from "./tool-execution-config.js";
+import { resolveToolExecutionFields, stripExecutionConfig } from "./tool-execution-config.js";
 
 export function mapAiToolRow(row: PrismaAiTool): AiTool {
-  const execution = mapToolExecutionFields(row.inputSchema);
+  const execution = resolveToolExecutionFields({
+    id: row.id,
+    name: row.name,
+    binary: row.binary,
+    category: row.category as AiTool["category"],
+    riskTier: row.riskTier as AiTool["riskTier"]
+  }, row.inputSchema);
   return {
     id: row.id,
     name: row.name,

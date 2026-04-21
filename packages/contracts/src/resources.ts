@@ -76,7 +76,7 @@ export const runtimesListQuerySchema = resourceListQuerySchema.extend({
   provider: runtimeProviderSchema.optional(),
   environment: applicationEnvironmentSchema.optional(),
   applicationId: z.string().uuid().optional(),
-  sortBy: z.enum(["name", "status", "provider", "environment", "region", "createdAt", "updatedAt"]).optional()
+  sortBy: z.enum(["name", "serviceType", "status", "provider", "environment", "region", "applicationId", "createdAt", "updatedAt"]).optional()
 });
 export type RuntimesListQuery = z.infer<typeof runtimesListQuerySchema>;
 
@@ -126,7 +126,7 @@ export type AiProvider = z.infer<typeof aiProviderSchema>;
 export const aiProvidersListQuerySchema = resourceListQuerySchema.extend({
   status: aiProviderStatusSchema.optional(),
   kind: aiProviderKindSchema.optional(),
-  sortBy: z.enum(["name", "kind", "status", "model", "createdAt", "updatedAt"]).optional()
+  sortBy: z.enum(["name", "kind", "status", "model", "apiKey", "createdAt", "updatedAt"]).optional()
 });
 export type AiProvidersListQuery = z.infer<typeof aiProvidersListQuerySchema>;
 
@@ -178,8 +178,8 @@ export type AiToolSource = z.infer<typeof aiToolSourceSchema>;
 export const aiToolStatusSchema = z.enum(["active", "inactive", "missing", "manual"]);
 export type AiToolStatus = z.infer<typeof aiToolStatusSchema>;
 
-export const toolExecutionModeSchema = z.enum(["catalog", "sandboxed"]);
-export type ToolExecutionMode = z.infer<typeof toolExecutionModeSchema>;
+export const toolExecutorTypeSchema = z.literal("bash");
+export type ToolExecutorType = z.infer<typeof toolExecutorTypeSchema>;
 
 export const toolSandboxProfileSchema = z.enum([
   "network-recon",
@@ -203,18 +203,15 @@ export const aiToolSchema = z.object({
   source: aiToolSourceSchema,
   description: z.string().nullable(),
   binary: z.string().nullable(),
-  scriptPath: z.string().nullable().default(null),
-  scriptVersion: z.string().nullable().default(null),
-  scriptSource: z.string().nullable().default(null),
+  executorType: toolExecutorTypeSchema.default("bash"),
+  bashSource: z.string().min(1),
   capabilities: z.array(z.lazy(() => toolCapabilityTagSchema)).default([]),
   category: z.lazy(() => toolCategorySchema),
   riskTier: z.lazy(() => toolRiskTierSchema),
   notes: z.string().nullable(),
-  executionMode: toolExecutionModeSchema.default("catalog"),
-  sandboxProfile: toolSandboxProfileSchema.nullable().default(null),
-  privilegeProfile: toolPrivilegeProfileSchema.nullable().default(null),
-  defaultArgs: z.array(z.string().min(1)).default([]),
-  timeoutMs: z.number().int().min(1000).max(300000).nullable().default(null),
+  sandboxProfile: toolSandboxProfileSchema,
+  privilegeProfile: toolPrivilegeProfileSchema,
+  timeoutMs: z.number().int().min(1000).max(300000),
   inputSchema: z.lazy(() => jsonSchemaObjectSchema),
   outputSchema: z.lazy(() => jsonSchemaObjectSchema),
   createdAt: z.string().datetime(),
@@ -233,24 +230,54 @@ export type AiToolsListQuery = z.infer<typeof aiToolsListQuerySchema>;
 export const listAiToolsResponseSchema = createPaginatedResponseSchema("tools", aiToolSchema);
 export type ListAiToolsResponse = z.infer<typeof listAiToolsResponseSchema>;
 
+export const aiToolRunObservationSchema = z.object({
+  key: z.string().min(1),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  severity: z.enum(["info", "low", "medium", "high", "critical"]),
+  confidence: z.number().min(0).max(1),
+  evidence: z.string().min(1),
+  technique: z.string().min(1),
+  port: z.number().int().optional(),
+  relatedKeys: z.array(z.string().min(1)).default([])
+});
+export type AiToolRunObservation = z.infer<typeof aiToolRunObservationSchema>;
+
+export const aiToolRunBodySchema = z.object({
+  input: jsonSchemaObjectSchema
+});
+export type AiToolRunBody = z.infer<typeof aiToolRunBodySchema>;
+
+export const aiToolRunResultSchema = z.object({
+  toolId: z.string().min(1),
+  toolName: z.string().min(1),
+  toolInput: jsonSchemaObjectSchema,
+  commandPreview: z.string().min(1),
+  target: z.string().min(1),
+  port: z.number().int().nullable(),
+  output: z.string(),
+  statusReason: z.string().nullable(),
+  exitCode: z.number().int(),
+  durationMs: z.number().int().nonnegative(),
+  observations: z.array(aiToolRunObservationSchema)
+});
+export type AiToolRunResult = z.infer<typeof aiToolRunResultSchema>;
+
 const aiToolBodyBaseSchema = z.object({
   name: z.string().trim().min(1),
   status: aiToolStatusSchema,
   source: aiToolSourceSchema,
-  description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
+  description: z.string().trim().min(1),
   binary: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  scriptPath: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  scriptVersion: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  scriptSource: z.union([z.string(), z.literal(""), z.null()]).transform((value) => value || null).optional(),
+  executorType: toolExecutorTypeSchema.default("bash"),
+  bashSource: z.string().min(1),
   capabilities: z.array(z.lazy(() => toolCapabilityTagSchema)).default([]),
   category: z.lazy(() => toolCategorySchema),
   riskTier: z.lazy(() => toolRiskTierSchema),
   notes: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
-  executionMode: toolExecutionModeSchema.default("catalog"),
-  sandboxProfile: z.union([z.lazy(() => toolSandboxProfileSchema), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  privilegeProfile: z.union([z.lazy(() => toolPrivilegeProfileSchema), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  defaultArgs: z.array(z.string().trim().min(1)).default([]),
-  timeoutMs: z.number().int().min(1000).max(300000).nullable().optional(),
+  sandboxProfile: z.lazy(() => toolSandboxProfileSchema),
+  privilegeProfile: z.lazy(() => toolPrivilegeProfileSchema),
+  timeoutMs: z.number().int().min(1000).max(300000),
   inputSchema: z.lazy(() => jsonSchemaObjectSchema),
   outputSchema: z.lazy(() => jsonSchemaObjectSchema)
 });
@@ -263,49 +290,19 @@ export const createAiToolBodySchema = aiToolBodyBaseSchema.superRefine((value, c
       path: ["source"]
     });
   }
-  if (value.executionMode === "sandboxed") {
-    if (!value.scriptPath) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Script path is required for sandboxed tools.",
-        path: ["scriptPath"]
-      });
-    }
-    if (!value.scriptVersion) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Script version is required for sandboxed tools.",
-        path: ["scriptVersion"]
-      });
-    }
-    if (!value.scriptSource) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Script source is required for sandboxed tools.",
-        path: ["scriptSource"]
-      });
-    }
-    if (value.capabilities.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "At least one capability is required for sandboxed tools.",
-        path: ["capabilities"]
-      });
-    }
-    if (!value.sandboxProfile) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Sandbox profile is required for sandboxed tools.",
-        path: ["sandboxProfile"]
-      });
-    }
-    if (!value.privilegeProfile) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Privilege profile is required for sandboxed tools.",
-        path: ["privilegeProfile"]
-      });
-    }
+  if (value.capabilities.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "At least one capability is required for bash tools.",
+      path: ["capabilities"]
+    });
+  }
+  if (!value.bashSource.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Bash source is required.",
+      path: ["bashSource"]
+    });
   }
 });
 export type CreateAiToolBody = z.infer<typeof createAiToolBodySchema>;
@@ -316,49 +313,33 @@ export const updateAiToolBodySchema = aiToolBodyBaseSchema
     message: "At least one field is required."
   })
   .superRefine((value, ctx) => {
-    if (value.executionMode === "sandboxed") {
-      if ("scriptPath" in value && !value.scriptPath) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Script path is required for sandboxed tools.",
-          path: ["scriptPath"]
-        });
-      }
-      if ("scriptVersion" in value && !value.scriptVersion) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Script version is required for sandboxed tools.",
-          path: ["scriptVersion"]
-        });
-      }
-      if ("scriptSource" in value && !value.scriptSource) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Script source is required for sandboxed tools.",
-          path: ["scriptSource"]
-        });
-      }
-      if ("capabilities" in value && value.capabilities?.length === 0) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "At least one capability is required for sandboxed tools.",
-          path: ["capabilities"]
-        });
-      }
-      if ("sandboxProfile" in value && !value.sandboxProfile) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Sandbox profile is required for sandboxed tools.",
-          path: ["sandboxProfile"]
-        });
-      }
-      if ("privilegeProfile" in value && !value.privilegeProfile) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Privilege profile is required for sandboxed tools.",
-          path: ["privilegeProfile"]
-        });
-      }
+    if ("name" in value && !value.name?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Name is required.",
+        path: ["name"]
+      });
+    }
+    if ("description" in value && !value.description?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Description is required.",
+        path: ["description"]
+      });
+    }
+    if ("bashSource" in value && !value.bashSource?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Bash source is required.",
+        path: ["bashSource"]
+      });
+    }
+    if ("capabilities" in value && value.capabilities?.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "At least one capability is required for bash tools.",
+        path: ["capabilities"]
+      });
     }
   });
 export type UpdateAiToolBody = z.infer<typeof updateAiToolBodySchema>;
@@ -383,7 +364,7 @@ export type AiAgent = z.infer<typeof aiAgentSchema>;
 export const aiAgentsListQuerySchema = resourceListQuerySchema.extend({
   status: aiAgentStatusSchema.optional(),
   providerId: z.string().uuid().optional(),
-  sortBy: z.enum(["name", "status", "providerId", "createdAt", "updatedAt"]).optional()
+  sortBy: z.enum(["name", "status", "providerId", "toolIds", "createdAt", "updatedAt"]).optional()
 });
 export type AiAgentsListQuery = z.infer<typeof aiAgentsListQuerySchema>;
 
@@ -411,11 +392,116 @@ export type UpdateAiAgentBody = z.infer<typeof updateAiAgentBodySchema>;
 export const workflowStatusSchema = z.enum(["draft", "active", "archived"]);
 export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
 
+export const workflowFindingTypeSchema = z.enum([
+  "service_exposure",
+  "content_discovery",
+  "missing_security_header",
+  "tls_weakness",
+  "injection_signal",
+  "auth_weakness",
+  "sensitive_data_exposure",
+  "misconfiguration",
+  "other"
+]);
+export type WorkflowFindingType = z.infer<typeof workflowFindingTypeSchema>;
+
+export const workflowFindingEvidenceSchema = z.object({
+  sourceTool: z.string().min(1),
+  quote: z.string().min(1),
+  artifactRef: z.string().min(1).optional()
+});
+export type WorkflowFindingEvidence = z.infer<typeof workflowFindingEvidenceSchema>;
+
+export const workflowFindingTargetSchema = z.object({
+  host: z.string().min(1),
+  port: z.number().int().optional(),
+  url: z.string().url().optional(),
+  path: z.string().min(1).optional()
+});
+export type WorkflowFindingTarget = z.infer<typeof workflowFindingTargetSchema>;
+
+export const workflowFindingSubmissionSchema = z.object({
+  type: workflowFindingTypeSchema,
+  title: z.string().min(1),
+  severity: z.enum(["info", "low", "medium", "high", "critical"]),
+  confidence: z.number().min(0).max(1),
+  target: workflowFindingTargetSchema,
+  evidence: z.array(workflowFindingEvidenceSchema).min(1),
+  impact: z.string().min(1),
+  recommendation: z.string().min(1),
+  cwe: z.string().min(1).optional(),
+  owasp: z.string().min(1).optional(),
+  reproduction: z.object({
+    commandPreview: z.string().min(1).optional(),
+    steps: z.array(z.string().min(1)).min(1)
+  }).optional(),
+  tags: z.array(z.string().min(1)).default([])
+});
+export type WorkflowFindingSubmission = z.infer<typeof workflowFindingSubmissionSchema>;
+
+export const workflowReportedFindingSchema = workflowFindingSubmissionSchema.extend({
+  id: z.string().uuid(),
+  workflowRunId: z.string().uuid(),
+  workflowStageId: z.string().uuid(),
+  createdAt: z.string().datetime()
+});
+export type WorkflowReportedFinding = z.infer<typeof workflowReportedFindingSchema>;
+
+const allWorkflowFindingTypes = workflowFindingTypeSchema.options;
+
+export const workflowStageFindingPolicySchema = z.object({
+  taxonomy: z.literal("typed-core-v1").default("typed-core-v1"),
+  allowedTypes: z.array(workflowFindingTypeSchema).min(1).default(allWorkflowFindingTypes)
+});
+export type WorkflowStageFindingPolicy = z.infer<typeof workflowStageFindingPolicySchema>;
+
+export const workflowStageCompletionRuleSchema = z.object({
+  requireStageResult: z.boolean().default(true),
+  requireToolCall: z.boolean().default(false),
+  allowEmptyResult: z.boolean().default(true),
+  minFindings: z.number().int().min(0).default(0),
+  maxFindings: z.number().int().min(0).optional()
+});
+export type WorkflowStageCompletionRule = z.infer<typeof workflowStageCompletionRuleSchema>;
+
+export const workflowStageResultStatusSchema = z.enum(["completed", "blocked", "insufficient_evidence"]);
+export type WorkflowStageResultStatus = z.infer<typeof workflowStageResultStatusSchema>;
+
+export const workflowStageResultSubmissionSchema = z.object({
+  status: workflowStageResultStatusSchema,
+  summary: z.string().min(1),
+  findingIds: z.array(z.string().uuid()).default([]),
+  recommendedNextStep: z.string().min(1),
+  residualRisk: z.string().min(1),
+  handoff: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
+});
+export type WorkflowStageResultSubmission = z.infer<typeof workflowStageResultSubmissionSchema>;
+
+export const workflowStageResultSchema = workflowStageResultSubmissionSchema.extend({
+  submittedAt: z.string().datetime()
+});
+export type WorkflowStageResult = z.infer<typeof workflowStageResultSchema>;
+
 export const workflowStageSchema = z.object({
   id: z.string().uuid(),
   label: z.string().min(1),
   agentId: z.string().uuid(),
-  ord: z.number().int().min(0)
+  ord: z.number().int().min(0),
+  objective: z.string().min(1),
+  allowedToolIds: z.array(z.string().min(1)).default([]),
+  requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
+  findingPolicy: workflowStageFindingPolicySchema.default({
+    taxonomy: "typed-core-v1",
+    allowedTypes: allWorkflowFindingTypes
+  }),
+  completionRule: workflowStageCompletionRuleSchema.default({
+    requireStageResult: true,
+    requireToolCall: false,
+    allowEmptyResult: true,
+    minFindings: 0
+  }),
+  resultSchemaVersion: z.number().int().min(1).default(1),
+  handoffSchema: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
 });
 export type WorkflowStage = z.infer<typeof workflowStageSchema>;
 
@@ -435,7 +521,7 @@ export type Workflow = z.infer<typeof workflowSchema>;
 export const workflowsListQuerySchema = resourceListQuerySchema.extend({
   status: workflowStatusSchema.optional(),
   applicationId: z.string().uuid().optional(),
-  sortBy: z.enum(["name", "status", "createdAt", "updatedAt"]).optional()
+  sortBy: z.enum(["name", "status", "applicationId", "stages", "createdAt", "updatedAt"]).optional()
 });
 export type WorkflowsListQuery = z.infer<typeof workflowsListQuerySchema>;
 
@@ -445,7 +531,22 @@ export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
 const workflowStageBodySchema = z.object({
   id: z.string().uuid().optional(),
   label: z.string().trim().min(1),
-  agentId: z.string().uuid()
+  agentId: z.string().uuid(),
+  objective: z.string().trim().min(1),
+  allowedToolIds: z.array(z.string().min(1)).default([]),
+  requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
+  findingPolicy: workflowStageFindingPolicySchema.default({
+    taxonomy: "typed-core-v1",
+    allowedTypes: allWorkflowFindingTypes
+  }),
+  completionRule: workflowStageCompletionRuleSchema.default({
+    requireStageResult: true,
+    requireToolCall: false,
+    allowEmptyResult: true,
+    minFindings: 0
+  }),
+  resultSchemaVersion: z.number().int().min(1).default(1),
+  handoffSchema: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
 });
 export type WorkflowStageBody = z.infer<typeof workflowStageBodySchema>;
 
@@ -474,10 +575,15 @@ export type WorkflowTraceEntryStatus = z.infer<typeof workflowTraceEntryStatusSc
 
 export const workflowTraceEventTypeSchema = z.enum([
   "stage_started",
+  "system_message",
   "agent_input",
   "model_decision",
   "tool_call",
   "tool_result",
+  "verification",
+  "finding_reported",
+  "stage_result_submitted",
+  "stage_contract_validation_failed",
   "agent_summary",
   "stage_completed",
   "stage_failed"

@@ -5,10 +5,8 @@ import type {
   CreateAiProviderBody,
   UpdateAiProviderBody
 } from "@synosec/contracts";
-import { paginateItems, type PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
-import { type AiProvidersRepository } from "../ai-providers/ai-providers.repository.js";
-
-type StoredAiProvider = AiProvider & { apiKey: string | null };
+import { paginateItems, type PaginatedResult } from "../../../core/pagination/paginated-result.js";
+import { type AiProvidersRepository, type StoredAiProvider } from "../ai-providers/ai-providers.repository.js";
 
 export class MemoryAiProvidersRepository implements AiProvidersRepository {
   private readonly records = new Map<string, StoredAiProvider>();
@@ -35,8 +33,8 @@ export class MemoryAiProvidersRepository implements AiProvidersRepository {
       .sort((left, right) => {
         const sortBy = query.sortBy ?? "name";
         const direction = query.sortDirection === "desc" ? -1 : 1;
-        const leftValue = left[sortBy];
-        const rightValue = right[sortBy];
+        const leftValue = sortBy === "apiKey" ? left.apiKey : left[sortBy];
+        const rightValue = sortBy === "apiKey" ? right.apiKey : right[sortBy];
 
         if (leftValue === rightValue) {
           return left.name.localeCompare(right.name) * direction;
@@ -57,6 +55,10 @@ export class MemoryAiProvidersRepository implements AiProvidersRepository {
 
     const { apiKey: _apiKey, ...record } = provider;
     return record;
+  }
+
+  async getStoredById(id: string): Promise<StoredAiProvider | null> {
+    return this.records.get(id) ?? null;
   }
 
   async create(input: CreateAiProviderBody): Promise<AiProvider> {

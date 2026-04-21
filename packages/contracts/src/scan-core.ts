@@ -1,9 +1,10 @@
 import { z } from "zod";
 
-export const osiLayerSchema = z.enum(["L2", "L3", "L4", "L5", "L6", "L7"]);
+export const osiLayerSchema = z.enum(["L1", "L2", "L3", "L4", "L5", "L6", "L7"]);
 export type OsiLayer = z.infer<typeof osiLayerSchema>;
 
 export const osiLayerLabels: Record<OsiLayer, string> = {
+  L1: "Physical",
   L2: "Data Link",
   L3: "Network",
   L4: "Transport",
@@ -65,6 +66,87 @@ export const severityOrder: Record<Severity, number> = {
   high: 3,
   critical: 4
 };
+
+export const securityValidationStatusSchema = z.enum([
+  "unverified",
+  "suspected",
+  "single_source",
+  "cross_validated",
+  "reproduced",
+  "blocked",
+  "rejected"
+]);
+export type SecurityValidationStatus = z.infer<typeof securityValidationStatusSchema>;
+
+export const coverageStatusSchema = z.enum(["covered", "partially_covered", "not_covered"]);
+export type CoverageStatus = z.infer<typeof coverageStatusSchema>;
+
+export const securityVulnerabilityEvidenceSchema = z.object({
+  sourceTool: z.string().min(1),
+  quote: z.string().min(1),
+  artifactRef: z.string().min(1).optional(),
+  observationRef: z.string().min(1).optional(),
+  toolRunRef: z.string().min(1).optional()
+});
+export type SecurityVulnerabilityEvidence = z.infer<typeof securityVulnerabilityEvidenceSchema>;
+
+export const securityVulnerabilityTargetSchema = z.object({
+  host: z.string().min(1),
+  port: z.number().int().optional(),
+  url: z.string().url().optional(),
+  path: z.string().min(1).optional(),
+  service: z.string().min(1).optional()
+});
+export type SecurityVulnerabilityTarget = z.infer<typeof securityVulnerabilityTargetSchema>;
+
+export const securityVulnerabilitySubmissionSchema = z.object({
+  primaryLayer: osiLayerSchema,
+  relatedLayers: z.array(osiLayerSchema).default([]),
+  category: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().min(1),
+  impact: z.string().min(1),
+  recommendation: z.string().min(1),
+  severity: severitySchema,
+  confidence: z.number().min(0).max(1),
+  validationStatus: securityValidationStatusSchema.default("unverified"),
+  target: securityVulnerabilityTargetSchema,
+  evidence: z.array(securityVulnerabilityEvidenceSchema).min(1),
+  technique: z.string().min(1),
+  reproduction: z.object({
+    commandPreview: z.string().min(1).optional(),
+    steps: z.array(z.string().min(1)).min(1)
+  }).optional(),
+  cwe: z.string().min(1).optional(),
+  owasp: z.string().min(1).optional(),
+  tags: z.array(z.string().min(1)).default([])
+});
+export type SecurityVulnerabilitySubmission = z.infer<typeof securityVulnerabilitySubmissionSchema>;
+
+export const securityVulnerabilitySchema = securityVulnerabilitySubmissionSchema.extend({
+  id: z.string(),
+  scanId: z.string(),
+  agentId: z.string(),
+  createdAt: z.string().datetime()
+});
+export type SecurityVulnerability = z.infer<typeof securityVulnerabilitySchema>;
+
+export const scanLayerCoverageSubmissionSchema = z.object({
+  layer: osiLayerSchema,
+  coverageStatus: coverageStatusSchema,
+  confidenceSummary: z.string().min(1),
+  toolRefs: z.array(z.string().min(1)).default([]),
+  evidenceRefs: z.array(z.string().min(1)).default([]),
+  vulnerabilityIds: z.array(z.string().min(1)).default([]),
+  gaps: z.array(z.string().min(1)).default([])
+});
+export type ScanLayerCoverageSubmission = z.infer<typeof scanLayerCoverageSubmissionSchema>;
+
+export const scanLayerCoverageSchema = scanLayerCoverageSubmissionSchema.extend({
+  scanId: z.string(),
+  updatedAt: z.string().datetime()
+});
+export type ScanLayerCoverage = z.infer<typeof scanLayerCoverageSchema>;
 
 export const validationStatusSchema = z.enum([
   "unverified",

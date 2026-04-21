@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiAgent, AiProvider, AiTool, Application, Runtime, Workflow } from "@synosec/contracts";
-import App from "@/App";
+import type { AiAgent, AiProvider, AiTool, Application, AuthSessionResponse, Runtime, SingleAgentScan, Workflow } from "@synosec/contracts";
+import App from "@/app/App";
 
 function createPaginatedPayload<T>(key: string, items: T[]) {
   return {
@@ -20,6 +20,9 @@ describe("App", () => {
   let agents: AiAgent[];
   let tools: AiTool[];
   let workflows: Workflow[];
+  let scans: SingleAgentScan[];
+  let authSession: AuthSessionResponse;
+  let authSessionFailureCount: number;
 
   beforeEach(() => {
     applications = [
@@ -73,17 +76,14 @@ describe("App", () => {
         source: "system",
         description: null,
         binary: "httpx",
-        scriptPath: "scripts/tools/http-recon.sh",
-        scriptVersion: "v1",
-        scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
+        executorType: "bash",
+        bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
         capabilities: ["web-recon", "passive"],
         category: "web",
         riskTier: "passive",
         notes: null,
-        executionMode: "sandboxed",
         sandboxProfile: "network-recon",
         privilegeProfile: "read-only-network",
-        defaultArgs: ["-silent", "-u", "{baseUrl}"],
         timeoutMs: 30000,
         inputSchema: { type: "object", properties: {} },
         outputSchema: { type: "object", properties: {} },
@@ -97,18 +97,15 @@ describe("App", () => {
         source: "custom",
         description: "Internal browser automation bridge",
         binary: null,
-        scriptPath: null,
-        scriptVersion: null,
-        scriptSource: null,
-        capabilities: [],
+        executorType: "bash",
+        bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"browser bridge\"}'",
+        capabilities: ["passive"],
         category: "utility",
         riskTier: "passive",
         notes: "Wraps an MCP bridge",
-        executionMode: "catalog",
-        sandboxProfile: null,
-        privilegeProfile: null,
-        defaultArgs: [],
-        timeoutMs: null,
+        sandboxProfile: "read-only-parser",
+        privilegeProfile: "read-only-network",
+        timeoutMs: 10000,
         inputSchema: { type: "object", properties: {} },
         outputSchema: { type: "object", properties: {} },
         createdAt: "2026-04-12T12:00:00.000Z",
@@ -144,7 +141,32 @@ describe("App", () => {
             id: "80ad5033-136b-49dd-ae1f-c19136205cec",
             label: "Initial Recon",
             agentId: agents[0]?.id ?? "",
-            ord: 0
+            ord: 0,
+            objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
+            allowedToolIds: [],
+            requiredEvidenceTypes: [],
+            findingPolicy: {
+              taxonomy: "typed-core-v1",
+              allowedTypes: [
+                "service_exposure",
+                "content_discovery",
+                "missing_security_header",
+                "tls_weakness",
+                "injection_signal",
+                "auth_weakness",
+                "sensitive_data_exposure",
+                "misconfiguration",
+                "other"
+              ]
+            },
+            completionRule: {
+              requireStageResult: true,
+              requireToolCall: false,
+              allowEmptyResult: true,
+              minFindings: 0
+            },
+            resultSchemaVersion: 1,
+            handoffSchema: null
           }
         ],
         createdAt: "2026-04-12T12:00:00.000Z",
@@ -152,11 +174,40 @@ describe("App", () => {
       }
     ];
 
+    scans = [];
+
+    authSession = {
+      authEnabled: false,
+      authenticated: false,
+      csrfToken: null,
+      googleClientId: null,
+      user: null
+    };
+    authSessionFailureCount = 0;
+
     window.history.replaceState({}, "", "/");
 
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
+
+      if (url === "/api/auth/session" && method === "GET") {
+        if (authSessionFailureCount > 0) {
+          authSessionFailureCount -= 1;
+          return new Response(null, { status: 503 });
+        }
+        return new Response(JSON.stringify(authSession));
+      }
+      if (url === "/api/auth/logout" && method === "POST") {
+        authSession = {
+          authEnabled: true,
+          authenticated: false,
+          csrfToken: null,
+          googleClientId: null,
+          user: null
+        };
+        return new Response(null, { status: 204 });
+      }
 
       if ((url === "/api/applications" || url.startsWith("/api/applications?")) && method === "GET") {
         return new Response(JSON.stringify(createPaginatedPayload("applications", applications)));
@@ -223,6 +274,38 @@ describe("App", () => {
           ? new Response(JSON.stringify(workflow))
           : new Response(JSON.stringify({ message: "Workflow not found." }), { status: 404 });
       }
+      if ((url === "/api/single-agent-scans" || url.startsWith("/api/single-agent-scans?")) && method === "GET") {
+        return new Response(JSON.stringify(createPaginatedPayload("scans", scans)));
+      }
+      if (url.startsWith("/api/single-agent-scans/") && method === "GET") {
+        const parts = url.split("/");
+        const id = parts[3] ?? "";
+        const scan = scans.find((candidate) => candidate.id === id);
+        if (parts[4] === "vulnerabilities") {
+          return new Response(JSON.stringify({ scanId: id, vulnerabilities: [] }));
+        }
+        if (parts[4] === "coverage") {
+          return new Response(JSON.stringify({ scanId: id, layers: [] }));
+        }
+        if (parts[4] === "trace") {
+          return new Response(JSON.stringify({ scanId: id, entries: [] }));
+        }
+        if (parts[4] === "report") {
+          return new Response(JSON.stringify({
+            scanId: id,
+            executiveSummary: "No report available.",
+            stopReason: null,
+            totalVulnerabilities: 0,
+            vulnerabilitiesBySeverity: { info: 0, low: 0, medium: 0, high: 0, critical: 0 },
+            coverageOverview: {},
+            topVulnerabilities: [],
+            generatedAt: "2026-04-12T12:00:00.000Z"
+          }));
+        }
+        return scan
+          ? new Response(JSON.stringify(scan))
+          : new Response(JSON.stringify({ message: "Single-agent scan not found." }), { status: 404 });
+      }
 
       throw new Error(`Unhandled fetch: ${method} ${url}`);
     }));
@@ -238,6 +321,7 @@ describe("App", () => {
   it("shows the new AI builder navigation surfaces", async () => {
     render(<App />);
 
+    await screen.findByRole("heading", { name: "Applications" });
     fireEvent.click(screen.getAllByRole("button", { name: "AI Providers" })[0]!);
     expect(await screen.findByRole("heading", { name: "AI Providers" })).toBeInTheDocument();
 
@@ -250,18 +334,83 @@ describe("App", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Workflows" })[0]!);
     expect(await screen.findByRole("heading", { name: "Workflows" })).toBeInTheDocument();
 
+    fireEvent.click(screen.getAllByRole("button", { name: "Single-Agent Scans" })[0]!);
+    expect(await screen.findByRole("heading", { name: "Single-Agent Runs" })).toBeInTheDocument();
+
     expect(screen.queryByText("Templates")).not.toBeInTheDocument();
   });
 
   it("opens AI provider detail pages through the url-backed list flow", async () => {
     render(<App />);
 
+    await screen.findByRole("heading", { name: "Applications" });
     fireEvent.click(screen.getAllByRole("button", { name: "AI Providers" })[0]!);
     fireEvent.click((await screen.findAllByText("Primary Anthropic"))[0]!);
 
     expect(await screen.findByRole("heading", { name: "Primary Anthropic" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/ai-providers/2ef12df8-fdf6-4ef0-89ce-01d34b4f3af7");
     expect(await screen.findByPlaceholderText("Configured; leave blank to keep current value")).toBeInTheDocument();
+  });
+
+  it("redirects protected routes to login when auth is enabled and no session exists", async () => {
+    authSession = {
+      authEnabled: true,
+      authenticated: false,
+      csrfToken: null,
+      googleClientId: "google-client-id",
+      user: null
+    };
+    window.history.replaceState({}, "", "/ai-providers");
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Sign in to SynoSec" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/login");
+    expect(window.location.search).toContain("redirectTo=%2Fai-providers");
+  });
+
+  it("retries session bootstrap before loading the app", async () => {
+    authSessionFailureCount = 2;
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Applications" })).toBeInTheDocument();
+  });
+
+  it("shows a recoverable bootstrap error after repeated session failures", async () => {
+    authSessionFailureCount = 99;
+
+    render(<App />);
+
+    expect(await screen.findByText("Session check failed")).toBeInTheDocument();
+
+    authSessionFailureCount = 0;
+    fireEvent.click(screen.getByRole("button", { name: "Retry session check" }));
+
+    expect(await screen.findByRole("heading", { name: "Applications" })).toBeInTheDocument();
+  });
+
+  it("shows the authenticated user and allows sign out when auth is enabled", async () => {
+    authSession = {
+      authEnabled: true,
+      authenticated: true,
+      csrfToken: "csrf-token",
+      googleClientId: "google-client-id",
+      user: {
+        id: "d7ef9a8e-4113-46b5-b73f-2991b8d14c40",
+        email: "operator@example.com",
+        displayName: "Operator",
+        avatarUrl: null
+      }
+    };
+
+    render(<App />);
+
+    expect((await screen.findAllByText("operator@example.com")).length).toBeGreaterThan(0);
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "Sign out" }))[0]!);
+
+    expect(await screen.findByRole("heading", { name: "Sign in to SynoSec" })).toBeInTheDocument();
   });
 
 });

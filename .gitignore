@@ -12,5 +12,8 @@ coverage
 .local/
 .playwright-mcp/
 *.png
+.ralph/
 .ralph/*
+.agents/
 .agents/*
+apps/backend/src/platform/generated/

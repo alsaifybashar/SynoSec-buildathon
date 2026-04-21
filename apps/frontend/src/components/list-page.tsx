@@ -1,12 +1,12 @@
-import { isValidElement, startTransition, type ReactNode } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, ChevronsLeft, ChevronsRight, Download, Plus, Search } from "lucide-react";
+import { useId, useRef, type ChangeEvent, isValidElement, startTransition, type ReactNode } from "react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, ChevronsLeft, ChevronsRight, Download, FileUp, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/shared/ui/button";
+import { Card, CardContent } from "@/shared/ui/card";
+import { Input } from "@/shared/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
+import { Spinner } from "@/shared/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/ui/table";
 import { PageHeader } from "@/components/page-header";
 import { cn } from "@/lib/utils";
 import { listPageSizes, type ListQueryState, type PaginatedResource } from "@/lib/resources";
@@ -54,12 +54,8 @@ function extractText(node: ReactNode): string {
   return "";
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("\"", "&quot;");
+function escapeCsv(value: string): string {
+  return `"${value.replaceAll("\"", "\"\"")}"`;
 }
 
 export function ListPage<T extends { id: string }>({
@@ -79,7 +75,8 @@ export function ListPage<T extends { id: string }>({
   onPageSizeChange,
   onRetry,
   onAddRecord,
-  onRowClick
+  onRowClick,
+  onImportJson
 }: {
   title: string;
   recordLabel: string;
@@ -98,7 +95,11 @@ export function ListPage<T extends { id: string }>({
   onRetry: () => void;
   onAddRecord?: () => void;
   onRowClick?: (row: T) => void;
+  onImportJson?: (file: File) => void | Promise<void>;
 }) {
+  const importInputId = useId();
+  const importInputRef = useRef<HTMLInputElement>(null);
+
   function handleDefaultAddRecord() {
     toast("Coming soon", {
       description: `Add ${recordLabel.toLowerCase()} is coming soon.`
@@ -119,38 +120,32 @@ export function ListPage<T extends { id: string }>({
       return;
     }
 
-    const rows = items.map((row) => columns.map((column) => escapeHtml(extractText(column.cell(row)))));
-    const table = `
-      <table>
-        <thead>
-          <tr>${columns.map((column) => `<th>${escapeHtml(column.header)}</th>`).join("")}</tr>
-        </thead>
-        <tbody>
-          ${rows.map((cells) => `<tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}
-        </tbody>
-      </table>
-    `;
-    const workbook = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
-        <head>
-          <meta charset="utf-8" />
-        </head>
-        <body>${table}</body>
-      </html>
-    `;
-    const blob = new Blob([workbook], {
-      type: "application/vnd.ms-excel;charset=utf-8;"
+    const csv = [
+      columns.map((column) => escapeCsv(column.header)).join(","),
+      ...items.map((row) => columns.map((column) => escapeCsv(extractText(column.cell(row)))).join(","))
+    ].join("\r\n");
+    const blob = new Blob(["\uFEFF", csv], {
+      type: "text/csv;charset=utf-8;"
     });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     const fileBaseName = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
     link.href = url;
-    link.download = `${fileBaseName || "export"}.xls`;
+    link.download = `${fileBaseName || "export"}.csv`;
     document.body.append(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+  }
+
+  function handleImportChange(event: ChangeEvent<HTMLInputElement>) {
+    const [file] = Array.from(event.target.files ?? []);
+    if (file && onImportJson) {
+      void onImportJson(file);
+    }
+
+    event.target.value = "";
   }
 
   const pageLabel = meta.total === 0
@@ -228,9 +223,32 @@ export function ListPage<T extends { id: string }>({
             <div aria-hidden className="hidden h-6 w-px bg-border/70 md:block" />
 
             <div className="ml-auto flex items-center gap-2 md:ml-0">
+              {onImportJson ? (
+                <>
+                  <input
+                    id={importInputId}
+                    ref={importInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    className="sr-only"
+                    onChange={handleImportChange}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9"
+                    title="Import JSON"
+                    aria-label="Import JSON"
+                    onClick={() => importInputRef.current?.click()}
+                  >
+                    <FileUp className="h-4 w-4" />
+                  </Button>
+                </>
+              ) : null}
               <Button type="button" variant="outline" onClick={handleExportExcel} className="h-9 text-[0.75rem]">
                 <Download className="h-4 w-4" />
-                Export Excel
+                Export CSV
               </Button>
               <Button onClick={onAddRecord ?? handleDefaultAddRecord} className="h-9 text-[0.75rem]">
                 <Plus className="h-4 w-4" />
@@ -385,7 +403,6 @@ export function ListPage<T extends { id: string }>({
                       </SelectContent>
                     </Select>
                   </div>
-                  {dataState.state === "loading" ? <Spinner className="h-3.5 w-3.5" /> : null}
                 </div>
 
                 <div className="flex flex-wrap items-center justify-start gap-2 md:justify-center">

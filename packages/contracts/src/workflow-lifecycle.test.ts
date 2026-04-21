@@ -124,8 +124,8 @@ describe("workflow lifecycle model", () => {
     expect(runContract.completionState).toBe("completed");
     expect(runContract.isFinalized).toBe(true);
     expect(deriveWorkflowStageLifecycleState(run, stages[0])).toBe("completed");
-    expect(deriveWorkflowCompletionState(run, 2)).toBe("completed");
-    expect(isWorkflowRunFinalized(run, 2)).toBe(true);
+    expect(deriveWorkflowCompletionState(run, stages)).toBe("completed");
+    expect(isWorkflowRunFinalized(run, stages)).toBe(true);
   });
 
   it("marks an interrupted active stage as failed once the run is terminal", () => {
@@ -162,7 +162,7 @@ describe("workflow lifecycle model", () => {
     expect(stageContract.source).toBe("boundary_event");
     expect(runContract.stages.map((stage) => stage.state)).toEqual(["completed", "failed"]);
     expect(runContract.completionState).toBe("failed");
-    expect(deriveWorkflowCompletionState(run, 2)).toBe("failed");
+    expect(deriveWorkflowCompletionState(run, stages)).toBe("failed");
     expect(isWorkflowRunTransitionAllowed("running", "failed", "interrupt_run")).toBe(true);
   });
 
@@ -176,8 +176,75 @@ describe("workflow lifecycle model", () => {
       currentStepIndex: 1,
       completedAt: null
     });
+    const stages = [
+      { id: "30000000-0000-0000-0000-000000000001", ord: 0 },
+      { id: "30000000-0000-0000-0000-000000000002", ord: 1 }
+    ] as const;
 
-    expect(deriveWorkflowCompletionState(run, 2)).toBe("running");
-    expect(isWorkflowRunFinalized(run, 2)).toBe(false);
+    expect(deriveWorkflowCompletionState(run, stages)).toBe("running");
+    expect(isWorkflowRunFinalized(run, stages)).toBe(false);
+  });
+
+  it("does not finalize completed runs that lack evidence for all stages", () => {
+    const run = createRun({
+      status: "completed",
+      currentStepIndex: 2,
+      completedAt: "2026-04-21T00:06:00.000Z"
+    });
+    const stages = [
+      { id: "30000000-0000-0000-0000-000000000001", ord: 0 },
+      { id: "30000000-0000-0000-0000-000000000002", ord: 1 }
+    ] as const;
+
+    expect(deriveWorkflowCompletionState(run, stages)).toBe("running");
+    expect(isWorkflowRunFinalized(run, stages)).toBe(false);
+  });
+
+  it("uses the real workflow stage order instead of reconstructed event order", () => {
+    const run = createRun({
+      status: "failed",
+      currentStepIndex: 1,
+      completedAt: "2026-04-21T00:04:00.000Z",
+      events: [
+        {
+          id: "50000000-0000-0000-0000-000000000010",
+          workflowRunId: "00000000-0000-0000-0000-000000000001",
+          workflowId: "10000000-0000-0000-0000-000000000001",
+          workflowStageId: "30000000-0000-0000-0000-000000000002",
+          stepIndex: 1,
+          ord: 0,
+          type: "stage_started",
+          status: "running",
+          title: "Validation started",
+          summary: "Started",
+          detail: null,
+          payload: {},
+          createdAt: "2026-04-21T00:03:30.000Z"
+        },
+        {
+          id: "50000000-0000-0000-0000-000000000011",
+          workflowRunId: "00000000-0000-0000-0000-000000000001",
+          workflowId: "10000000-0000-0000-0000-000000000001",
+          workflowStageId: "30000000-0000-0000-0000-000000000001",
+          stepIndex: 0,
+          ord: 1,
+          type: "stage_completed",
+          status: "completed",
+          title: "Recon completed",
+          summary: "Completed",
+          detail: null,
+          payload: {},
+          createdAt: "2026-04-21T00:03:00.000Z"
+        }
+      ]
+    });
+    const stages = [
+      { id: "30000000-0000-0000-0000-000000000001", ord: 0 },
+      { id: "30000000-0000-0000-0000-000000000002", ord: 1 }
+    ] as const;
+
+    expect(deriveWorkflowStageExecutionContract(run, stages[0]).state).toBe("completed");
+    expect(deriveWorkflowStageExecutionContract(run, stages[1]).state).toBe("failed");
+    expect(isWorkflowRunFinalized(run, stages)).toBe(true);
   });
 });

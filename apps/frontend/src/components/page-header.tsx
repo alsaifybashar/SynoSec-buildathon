@@ -1,5 +1,5 @@
 import { ChevronRight } from "lucide-react";
-import { Display } from "@/components/ui/typography";
+import { Display } from "@/shared/ui/typography";
 
 export function PageHeader({
   title,

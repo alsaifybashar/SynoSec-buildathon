@@ -1,21 +1,41 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ListQueryState, PaginatedResource, ResourceClient } from "@/lib/resources";
 import { parseListQueryState, updateUrlQuery } from "@/lib/resources";
 
 const MINIMUM_LOADING_MS = 300;
+const listCache = new WeakMap<object, Map<string, PaginatedResource<unknown>>>();
 
 type ResourceListState<T> =
   | { state: "loading"; data: PaginatedResource<T> | null }
   | { state: "loaded"; data: PaginatedResource<T> }
   | { state: "error"; data: PaginatedResource<T> | null; message: string };
 
+function getUrlCacheKey() {
+  return `${window.location.pathname}${window.location.search}`;
+}
+
+function getCachedList<TItem>(client: object, key: string) {
+  return (listCache.get(client)?.get(key) ?? null) as PaginatedResource<TItem> | null;
+}
+
+function setCachedList<TItem>(client: object, key: string, data: PaginatedResource<TItem>) {
+  const current = listCache.get(client) ?? new Map<string, PaginatedResource<unknown>>();
+  current.set(key, data as PaginatedResource<unknown>);
+  listCache.set(client, current);
+}
+
 export function useResourceList<TItem, TQuery extends ListQueryState>(client: ResourceClient<TItem, TQuery>) {
   const [query, setQuery] = useState<TQuery>(() => parseListQueryState(client.defaultQuery, window.location.search));
-  const [dataState, setDataState] = useState<ResourceListState<TItem>>({
-    state: "loading",
-    data: null
-  });
+  const initialCacheKey = getUrlCacheKey();
+  const initialCachedData = getCachedList<TItem>(client, initialCacheKey);
+  const [dataState, setDataState] = useState<ResourceListState<TItem>>(
+    initialCachedData
+      ? { state: "loaded", data: initialCachedData }
+      : { state: "loading", data: null }
+  );
   const [reloadToken, setReloadToken] = useState(0);
+  const hasLoadedRouteRef = useRef(false);
+  const lastPathnameRef = useRef(window.location.pathname);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -30,14 +50,28 @@ export function useResourceList<TItem, TQuery extends ListQueryState>(client: Re
 
   useEffect(() => {
     let active = true;
-    setDataState((current) => ({ state: "loading", data: current.data }));
+    const currentPathname = window.location.pathname;
+    const cacheKey = getUrlCacheKey();
+    const cachedData = getCachedList<TItem>(client, cacheKey);
+    const shouldDelay =
+      cachedData === null && (!hasLoadedRouteRef.current || lastPathnameRef.current !== currentPathname);
 
-    Promise.all([
-      client.list(query),
-      new Promise((resolve) => window.setTimeout(resolve, MINIMUM_LOADING_MS))
-    ])
-      .then(([data]) => {
+    lastPathnameRef.current = currentPathname;
+    setDataState((current) => ({ state: "loading", data: cachedData ?? current.data }));
+
+    const listRequest = client.list(query);
+    const loadRequest = shouldDelay
+      ? Promise.all([
+        listRequest,
+        new Promise((resolve) => window.setTimeout(resolve, MINIMUM_LOADING_MS))
+      ]).then(([data]) => data)
+      : listRequest;
+
+    loadRequest
+      .then((data) => {
         if (active) {
+          setCachedList(client, cacheKey, data);
+          hasLoadedRouteRef.current = true;
           setDataState({ state: "loaded", data });
         }
       })
@@ -56,31 +90,39 @@ export function useResourceList<TItem, TQuery extends ListQueryState>(client: Re
     };
   }, [client, query, reloadToken]);
 
-  const updateQuery = useCallback((nextQuery: TQuery) => {
-    setQuery(nextQuery);
-    updateUrlQuery(nextQuery, client.defaultQuery);
+  const updateQuery = useCallback((updater: TQuery | ((current: TQuery) => TQuery)) => {
+    setQuery((current) => {
+      const nextQuery = typeof updater === "function"
+        ? (updater as (current: TQuery) => TQuery)(current)
+        : updater;
+
+      updateUrlQuery(nextQuery, client.defaultQuery, "replace");
+      return nextQuery;
+    });
   }, [client.defaultQuery]);
 
   const setSearch = useCallback((value: string) => {
-    updateQuery({ ...query, q: value, page: 1 });
-  }, [query, updateQuery]);
+    updateQuery((current) => ({ ...current, q: value, page: 1 }));
+  }, [updateQuery]);
 
   const setFilter = useCallback((key: string, value: string | undefined) => {
-    updateQuery({ ...query, [key]: value, page: 1 });
-  }, [query, updateQuery]);
+    updateQuery((current) => ({ ...current, [key]: value, page: 1 }));
+  }, [updateQuery]);
 
   const setSort = useCallback((sortBy: string) => {
-    const nextDirection = query.sortBy === sortBy && query.sortDirection === "asc" ? "desc" : "asc";
-    updateQuery({ ...query, sortBy, sortDirection: nextDirection, page: 1 });
-  }, [query, updateQuery]);
+    updateQuery((current) => {
+      const nextDirection = current.sortBy === sortBy && current.sortDirection === "asc" ? "desc" : "asc";
+      return { ...current, sortBy, sortDirection: nextDirection, page: 1 };
+    });
+  }, [updateQuery]);
 
   const setPage = useCallback((page: number) => {
-    updateQuery({ ...query, page });
-  }, [query, updateQuery]);
+    updateQuery((current) => ({ ...current, page }));
+  }, [updateQuery]);
 
   const setPageSize = useCallback((pageSize: number) => {
-    updateQuery({ ...query, pageSize, page: 1 });
-  }, [query, updateQuery]);
+    updateQuery((current) => ({ ...current, pageSize, page: 1 }));
+  }, [updateQuery]);
 
   const refetch = useCallback(() => {
     setReloadToken((current) => current + 1);

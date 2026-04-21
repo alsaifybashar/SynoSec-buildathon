@@ -1,4 +1,4 @@
-import { prisma } from "../../../platform/core/database/prisma-client.js";
+import { prisma } from "../../../core/database/prisma-client.js";
 import { PrismaRuntimesRepository } from "../runtimes/prisma-runtimes.repository.js";
 
 export function createRuntimesRepositoryFromEnvironment() {

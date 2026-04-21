@@ -95,7 +95,7 @@ export const workflowLifecycleModel = {
       notes: "Per-stage state is derived from a single execution contract that prioritizes boundary events, then persisted trace, with currentStepIndex used only as a persisted fallback."
     },
     completionState: {
-      field: "deriveWorkflowCompletionState(run, stageCount) and isWorkflowRunFinalized(run, stageCount)",
+      field: "deriveWorkflowCompletionState(run, stages) and isWorkflowRunFinalized(run, stages)",
       owner: "Shared lifecycle derivation helper",
       sourceFiles: [
         "packages/contracts/src/workflow-lifecycle.ts",
@@ -387,13 +387,18 @@ export function deriveWorkflowRunExecutionContract(
     };
   }
 
+  const hasRecordedStageEvidence = run.events.some((event) => event.workflowStageId !== null) || run.trace.length > 0;
   const allStagesCompleted =
-    stageContracts.length === stages.length && stageContracts.every((stage) => stage.state === "completed");
+    stageContracts.length > 0 && stageContracts.length === stages.length && stageContracts.every((stage) => stage.state === "completed");
   const anyStageFailed = stageContracts.some((stage) => stage.state === "failed");
   const completionState: WorkflowCompletionState =
     run.status === "failed" || anyStageFailed
       ? "failed"
-      : run.status === "completed" && run.completedAt !== null && allStagesCompleted && run.currentStepIndex >= stages.length
+      : run.status === "completed" &&
+          run.completedAt !== null &&
+          hasRecordedStageEvidence &&
+          allStagesCompleted &&
+          run.currentStepIndex >= stages.length
         ? "completed"
         : "running";
 
@@ -401,7 +406,7 @@ export function deriveWorkflowRunExecutionContract(
     completionState,
     isFinalized:
       completionState === "completed"
-        ? run.completedAt !== null && allStagesCompleted && run.currentStepIndex >= stages.length
+        ? run.completedAt !== null && hasRecordedStageEvidence && allStagesCompleted && run.currentStepIndex >= stages.length
         : completionState === "failed"
           ? run.completedAt !== null
           : false,
@@ -409,45 +414,33 @@ export function deriveWorkflowRunExecutionContract(
   };
 }
 
-export function deriveWorkflowCompletionState(run: WorkflowRun | null, stageCount: number): WorkflowCompletionState {
+type WorkflowStageRef = Pick<WorkflowStage, "id" | "ord">;
+
+function toStageRefs(stageCountOrStages: number | readonly WorkflowStageRef[]): readonly WorkflowStageRef[] {
+  if (typeof stageCountOrStages === "number") {
+    return Array.from({ length: stageCountOrStages }, (_, index): WorkflowStageRef => ({
+      id: `__unknown_stage_${index}`,
+      ord: index
+    }));
+  }
+
+  return stageCountOrStages;
+}
+
+export function deriveWorkflowCompletionState(
+  run: WorkflowRun | null,
+  stageCountOrStages: number | readonly WorkflowStageRef[]
+): WorkflowCompletionState {
   if (!run) {
     return "not_started";
   }
-  if (run.status === "failed") {
-    return "failed";
-  }
-  if (run.status === "completed" && isWorkflowRunFinalized(run, stageCount)) {
-    return "completed";
-  }
 
-  return "running";
+  return deriveWorkflowRunExecutionContract(run, toStageRefs(stageCountOrStages)).completionState;
 }
 
-export function isWorkflowRunFinalized(run: WorkflowRun, stageCount: number) {
-  const stageIds = new Set<string>();
-  for (const event of run.events) {
-    if (event.workflowStageId) {
-      stageIds.add(event.workflowStageId);
-    }
-  }
-  for (const entry of run.trace) {
-    stageIds.add(entry.workflowStageId);
-  }
-  const stageContracts = [...stageIds].map((stageId, index) =>
-    deriveWorkflowStageExecutionContract(run, { id: stageId, ord: index })
-  );
-
-  if (run.status === "completed") {
-    return (
-      run.completedAt !== null &&
-      run.currentStepIndex >= stageCount &&
-      stageContracts.every((stage) => stage.state !== "failed")
-    );
-  }
-
-  if (run.status === "failed") {
-    return run.completedAt !== null;
-  }
-
-  return false;
+export function isWorkflowRunFinalized(
+  run: WorkflowRun,
+  stageCountOrStages: number | readonly WorkflowStageRef[]
+) {
+  return deriveWorkflowRunExecutionContract(run, toStageRefs(stageCountOrStages)).isFinalized;
 }

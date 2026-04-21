@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   applicationSchema,
   applicationsListQuerySchema,
-  briefResponseSchema,
   connectorPollResponseSchema,
   connectorRegistrationRequestSchema,
   connectorTestDispatchRequestSchema,
+  createSingleAgentScanRequestSchema,
   createAiToolBodySchema,
   createScanRequestSchema,
   createApplicationBodySchema,
@@ -15,17 +15,21 @@ import {
   defensiveLoopStages,
   executeDefensiveIteration,
   prioritizeDefensiveAction,
-  demoResponseSchema,
   healthResponseSchema,
   listApplicationsResponseSchema,
+  listSingleAgentScansResponseSchema,
   listScansResponseSchema,
+  scanLayerCoverageSchema,
   scansListQuerySchema,
+  securityVulnerabilitySchema,
   aiToolSchema,
+  singleAgentScanReportSchema,
   toolRequestSchema,
   toolRunSchema,
   updateAiProviderBodySchema,
   updateApplicationBodySchema
 } from "./index.js";
+import { workflowTraceEventSchema } from "./index.js";
 
 describe("contracts", () => {
   it("accepts a valid health payload", () => {
@@ -33,33 +37,6 @@ describe("contracts", () => {
       status: "ok",
       service: "synosec-backend",
       timestamp: "2026-04-12T12:00:00.000Z"
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects an invalid finding severity", () => {
-    const result = demoResponseSchema.safeParse({
-      scanMode: "depth-first",
-      targetCount: 1,
-      findings: [
-        {
-          id: "finding-1",
-          target: "localhost",
-          severity: "critical",
-          summary: "Should fail"
-        }
-      ]
-    });
-
-    expect(result.success).toBe(false);
-  });
-
-  it("accepts a valid brief payload", () => {
-    const result = briefResponseSchema.safeParse({
-      headline: "Manual scan trigger ready.",
-      actions: ["Enumerate targets", "Prioritize high-risk findings"],
-      generatedAt: "2026-04-12T12:00:00.000Z"
     });
 
     expect(result.success).toBe(true);
@@ -243,6 +220,49 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts workflow trace events for system and verification lanes", () => {
+    const systemEvent = workflowTraceEventSchema.safeParse({
+      id: "8ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+      workflowRunId: "7ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+      workflowId: "6ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+      workflowStageId: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+      stepIndex: 0,
+      ord: 1,
+      type: "system_message",
+      status: "completed",
+      title: "Rendered system prompt",
+      summary: "Persisted the system prompt.",
+      detail: "full prompt",
+      payload: {
+        lane: "system",
+        messageKind: "prompt"
+      },
+      createdAt: "2026-04-21T12:00:00.000Z"
+    });
+
+    const verificationEvent = workflowTraceEventSchema.safeParse({
+      id: "9ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+      workflowRunId: "7ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+      workflowId: "6ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+      workflowStageId: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+      stepIndex: 0,
+      ord: 2,
+      type: "verification",
+      status: "completed",
+      title: "Verifier accepted the scan closeout",
+      summary: "Closeout was accepted.",
+      detail: null,
+      payload: {
+        lane: "verification",
+        messageKind: "accept"
+      },
+      createdAt: "2026-04-21T12:00:01.000Z"
+    });
+
+    expect(systemEvent.success).toBe(true);
+    expect(verificationEvent.success).toBe(true);
+  });
+
   it("accepts connector poll responses with leased tool runs", () => {
     const result = connectorPollResponseSchema.safeParse({
       connectorId: "connector-1",
@@ -263,8 +283,7 @@ describe("contracts", () => {
           agentId: "agent-1",
           tool: "curl",
           toolId: "tool-1",
-          scriptPath: "scripts/tools/http-recon.sh",
-          scriptVersion: "v1",
+          executorType: "bash",
           capabilities: ["web-recon"],
           target: "example.com",
           status: "running",
@@ -280,8 +299,7 @@ describe("contracts", () => {
         request: {
           toolId: "tool-1",
           tool: "curl",
-          scriptPath: "scripts/tools/http-recon.sh",
-          scriptVersion: "v1",
+          executorType: "bash",
           capabilities: ["web-recon"],
           target: "example.com",
           layer: "L7",
@@ -290,13 +308,186 @@ describe("contracts", () => {
           sandboxProfile: "network-recon",
           privilegeProfile: "read-only-network",
           parameters: {
-            scriptPath: "scripts/tools/http-recon.sh",
-            scriptVersion: "v1",
-            scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
-            scriptArgs: ["-I", "http://example.com"]
+            bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
+            commandPreview: "curl -I http://example.com",
+            toolInput: { baseUrl: "http://example.com", target: "example.com" }
           }
         }
       }
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a single-agent scan request with application and agent context", () => {
+    const result = createSingleAgentScanRequestSchema.safeParse({
+      applicationId: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+      runtimeId: null,
+      agentId: "34e69347-4446-4c54-b8b0-b3962f701f0e",
+      scope: {
+        targets: ["http://localhost:8888"],
+        exclusions: [],
+        layers: ["L1", "L4", "L7"],
+        maxDepth: 2,
+        maxDurationMinutes: 5,
+        rateLimitRps: 5,
+        allowActiveExploits: false,
+        graceEnabled: true,
+        graceRoundInterval: 3,
+        cyberRangeMode: "simulation"
+      },
+      llm: {
+        provider: "local",
+        model: "qwen3:4b",
+        baseUrl: "http://127.0.0.1:11434"
+      }
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a structured security vulnerability with layer metadata", () => {
+    const result = securityVulnerabilitySchema.safeParse({
+      id: "vuln-1",
+      scanId: "scan-1",
+      agentId: "agent-1",
+      primaryLayer: "L7",
+      relatedLayers: ["L6"],
+      category: "auth_weakness",
+      title: "Weak session token handling",
+      description: "Session tokens are long-lived and not rotated on privilege change.",
+      impact: "Compromised sessions could remain valid longer than intended.",
+      recommendation: "Rotate tokens on login and privilege change.",
+      severity: "medium",
+      confidence: 0.82,
+      validationStatus: "single_source",
+      target: {
+        host: "localhost",
+        url: "http://localhost:8888/account"
+      },
+      evidence: [
+        {
+          sourceTool: "seed-http-recon",
+          quote: "Set-Cookie response lacks rotation semantics.",
+          toolRunRef: "tool-run-1"
+        }
+      ],
+      technique: "HTTP session analysis",
+      tags: ["session", "auth"],
+      createdAt: "2026-04-21T12:00:00.000Z"
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts scan layer coverage for L1 through L7 values", () => {
+    const result = scanLayerCoverageSchema.safeParse({
+      scanId: "scan-1",
+      layer: "L1",
+      coverageStatus: "not_covered",
+      confidenceSummary: "No physical-layer evidence path was available in the local demo.",
+      toolRefs: [],
+      evidenceRefs: [],
+      vulnerabilityIds: [],
+      gaps: ["No L1 adapter configured."],
+      updatedAt: "2026-04-21T12:00:00.000Z"
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts paginated single-agent scan responses", () => {
+    const result = listSingleAgentScansResponseSchema.safeParse({
+      scans: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          mode: "single-agent",
+          applicationId: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+          runtimeId: null,
+          agentId: "34e69347-4446-4c54-b8b0-b3962f701f0e",
+          scope: {
+            targets: ["localhost:8888"],
+            exclusions: [],
+            layers: ["L1", "L4", "L7"],
+            maxDepth: 2,
+            maxDurationMinutes: 5,
+            rateLimitRps: 5,
+            allowActiveExploits: false,
+            graceEnabled: true,
+            graceRoundInterval: 3,
+            cyberRangeMode: "simulation"
+          },
+          llm: {
+            provider: "local",
+            model: "qwen3:4b",
+            baseUrl: "http://127.0.0.1:11434"
+          },
+          status: "complete",
+          currentRound: 3,
+          tacticsTotal: 8,
+          tacticsComplete: 3,
+          stopReason: "no_further_material_progress",
+          createdAt: "2026-04-21T12:00:00.000Z",
+          completedAt: "2026-04-21T12:01:00.000Z"
+        }
+      ],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+      totalPages: 1
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a single-agent scan report with coverage overview", () => {
+    const result = singleAgentScanReportSchema.safeParse({
+      scanId: "scan-1",
+      executiveSummary: "The scan found one evidence-backed web vulnerability and partial transport coverage.",
+      stopReason: "submitted_completion",
+      totalVulnerabilities: 1,
+      vulnerabilitiesBySeverity: {
+        info: 0,
+        low: 0,
+        medium: 1,
+        high: 0,
+        critical: 0
+      },
+      coverageOverview: {
+        L1: "not_covered",
+        L4: "partially_covered",
+        L7: "covered"
+      },
+      topVulnerabilities: [
+        {
+          id: "vuln-1",
+          scanId: "scan-1",
+          agentId: "agent-1",
+          primaryLayer: "L7",
+          relatedLayers: [],
+          category: "auth_weakness",
+          title: "Weak session token handling",
+          description: "Session tokens are long-lived and not rotated on privilege change.",
+          impact: "Compromised sessions could remain valid longer than intended.",
+          recommendation: "Rotate tokens on login and privilege change.",
+          severity: "medium",
+          confidence: 0.82,
+          validationStatus: "single_source",
+          target: {
+            host: "localhost"
+          },
+          evidence: [
+            {
+              sourceTool: "seed-http-recon",
+              quote: "Token rotation not observed."
+            }
+          ],
+          technique: "HTTP session analysis",
+          tags: [],
+          createdAt: "2026-04-21T12:00:00.000Z"
+        }
+      ],
+      generatedAt: "2026-04-21T12:01:00.000Z"
     });
 
     expect(result.success).toBe(true);
@@ -340,7 +531,7 @@ describe("contracts", () => {
       agentId: "agent-1",
       tool: "curl",
       toolId: "tool-1",
-      scriptPath: "scripts/tools/http-recon.sh",
+      executorType: "bash",
       capabilities: ["web-recon"],
       target: "example.com",
       status: "running",
@@ -363,19 +554,16 @@ describe("contracts", () => {
       name: "HTTP Recon",
       status: "active",
       source: "custom",
-      description: "Sandboxed HTTP probe",
+      description: "Bash-backed HTTP probe",
       binary: "httpx",
-      scriptPath: "scripts/tools/http-recon.sh",
-      scriptVersion: "v1",
-      scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
+      executorType: "bash",
+      bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
       capabilities: ["web-recon"],
       category: "web",
       riskTier: "passive",
       notes: null,
-      executionMode: "sandboxed",
       sandboxProfile: "network-recon",
       privilegeProfile: "read-only-network",
-      defaultArgs: ["-silent", "-u", "{baseUrl}"],
       timeoutMs: 30000,
       inputSchema: { type: "object", properties: { target: { type: "string" } } },
       outputSchema: { type: "object", properties: { summary: { type: "string" } } },
@@ -393,15 +581,12 @@ describe("contracts", () => {
       source: "custom",
       description: "Missing sandbox policy",
       binary: "curl",
-      scriptPath: "scripts/tools/http-recon.sh",
-      scriptVersion: "v1",
-      scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
+      executorType: "bash",
+      bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
       capabilities: ["web-recon"],
       category: "utility",
       riskTier: "passive",
       notes: null,
-      executionMode: "sandboxed",
-      defaultArgs: ["-I", "{baseUrl}"],
       inputSchema: { type: "object", properties: {} },
       outputSchema: { type: "object", properties: {} }
     });
@@ -409,34 +594,29 @@ describe("contracts", () => {
     expect(result.success).toBe(false);
   });
 
-  it("requires sandboxed tool requests to carry db-backed execution metadata", () => {
+  it("requires bash tool requests to carry runtime execution metadata", () => {
     const result = toolRequestSchema.safeParse({
       toolId: "tool-1",
       tool: "HTTP Recon",
-      scriptPath: "scripts/tools/http-recon.sh",
-      scriptVersion: "v1",
+      executorType: "bash",
       capabilities: ["web-recon"],
       target: "example.com",
       layer: "L7",
       riskTier: "passive",
       justification: "Run the db-backed tool definition.",
       parameters: {
-        scriptPath: "scripts/tools/http-recon.sh",
-        scriptVersion: "v1",
-        scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
-        scriptArgs: ["-silent", "-u", "http://example.com"]
+        commandPreview: "httpx -silent -u http://example.com"
       }
     });
 
     expect(result.success).toBe(false);
   });
 
-  it("accepts sandboxed tool requests with privilege and sandbox metadata", () => {
+  it("accepts bash tool requests with privilege and sandbox metadata", () => {
     const result = toolRequestSchema.safeParse({
       toolId: "tool-1",
       tool: "HTTP Recon",
-      scriptPath: "scripts/tools/http-recon.sh",
-      scriptVersion: "v1",
+      executorType: "bash",
       capabilities: ["web-recon"],
       target: "example.com",
       layer: "L7",
@@ -445,10 +625,9 @@ describe("contracts", () => {
       sandboxProfile: "network-recon",
       privilegeProfile: "read-only-network",
       parameters: {
-        scriptPath: "scripts/tools/http-recon.sh",
-        scriptVersion: "v1",
-        scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
-        scriptArgs: ["-silent", "-u", "http://example.com"]
+        bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
+        commandPreview: "httpx -silent -u http://example.com",
+        toolInput: { target: "example.com", baseUrl: "http://example.com" }
       }
     });
 

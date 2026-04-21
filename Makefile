@@ -7,7 +7,7 @@ endif
 
 BACKEND_PORT ?= 3001
 VITE_DEV_PORT ?= 5173
-LOCAL_ENABHLED ?= TRUE
+LOCAL_ENABLED ?= $(if $(LOCAL_ENABHLED),$(LOCAL_ENABHLED),TRUE)
 
 help:
 	@printf "\033[1;32m╔══════════════════════════════════╗\033[0m\n"
@@ -63,7 +63,7 @@ free-dev-ports:
 
 dev-services:
 	@set -e; \
-	local_enabled=$$(printf '%s' "$${LOCAL_ENABHLED:-TRUE}" | tr '[:upper:]' '[:lower:]'); \
+	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-TRUE}}" | tr '[:upper:]' '[:lower:]'); \
 	if [ "$$local_enabled" = "false" ]; then \
 		docker compose up -d postgres vulnerable-target; \
 	else \

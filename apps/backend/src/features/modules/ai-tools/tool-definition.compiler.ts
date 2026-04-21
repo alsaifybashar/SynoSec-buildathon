@@ -1,11 +1,11 @@
 import type { AiTool, OsiLayer, ToolRequest } from "@synosec/contracts";
+import { RequestError } from "@/core/http/request-error.js";
 
 type CompilableTool = Pick<
   AiTool,
-  "id" | "name" | "scriptPath" | "scriptVersion" | "scriptSource" | "executionMode" | "riskTier" | "sandboxProfile" | "privilegeProfile" | "timeoutMs"
+  "id" | "name" | "executorType" | "bashSource" | "riskTier" | "sandboxProfile" | "privilegeProfile" | "timeoutMs"
 > & {
   capabilities: readonly string[];
-  defaultArgs: readonly string[];
 };
 
 interface CompileInput {
@@ -13,34 +13,49 @@ interface CompileInput {
   layer: OsiLayer;
   justification: string;
   port?: number;
+  toolInput?: Record<string, string | number | boolean | string[]>;
 }
 
 function interpolateArgument(template: string, input: CompileInput): string {
   const baseUrl = `http://${input.target}${input.port ? `:${input.port}` : ""}`;
-  return template
+  let result = template
     .replaceAll("{target}", input.target)
     .replaceAll("{baseUrl}", baseUrl)
     .replaceAll("{port}", input.port == null ? "" : String(input.port));
+
+  for (const [key, value] of Object.entries(input.toolInput ?? {})) {
+    if (Array.isArray(value)) {
+      continue;
+    }
+    result = result.replaceAll(`{${key}}`, String(value));
+  }
+
+  return result;
 }
 
 export function compileToolRequestFromDefinition(tool: CompilableTool, input: CompileInput): ToolRequest {
   if (
-    tool.executionMode !== "sandboxed"
-    || !tool.sandboxProfile
-    || !tool.privilegeProfile
-    || !tool.scriptPath
-    || !tool.scriptVersion
-    || !tool.scriptSource
+    tool.executorType !== "bash"
+    || !tool.bashSource
     || tool.capabilities.length === 0
   ) {
-    throw new Error(`Tool ${tool.id} is not configured for sandboxed execution.`);
+    throw new RequestError(500, "This AI tool is not configured for bash execution.", {
+      code: "AI_TOOL_BASH_NOT_CONFIGURED",
+      userFriendlyMessage: "This AI tool is not configured for bash execution."
+    });
   }
+
+  const toolInput = {
+    ...(input.toolInput ?? {}),
+    target: input.target,
+    ...(input.port == null ? {} : { port: input.port }),
+    baseUrl: `http://${input.target}${input.port ? `:${input.port}` : ""}`
+  };
 
   return {
     toolId: tool.id,
     tool: tool.name,
-    scriptPath: tool.scriptPath,
-    scriptVersion: tool.scriptVersion,
+    executorType: "bash",
     capabilities: [...tool.capabilities],
     target: input.target,
     ...(input.port == null ? {} : { port: input.port }),
@@ -50,11 +65,13 @@ export function compileToolRequestFromDefinition(tool: CompilableTool, input: Co
     sandboxProfile: tool.sandboxProfile,
     privilegeProfile: tool.privilegeProfile,
     parameters: {
-      scriptPath: tool.scriptPath,
-      scriptVersion: tool.scriptVersion,
-      scriptSource: tool.scriptSource,
-      scriptArgs: [...tool.defaultArgs].map((argument) => interpolateArgument(argument, input)),
-      ...(tool.timeoutMs == null ? {} : { timeoutMs: tool.timeoutMs })
+      bashSource: tool.bashSource,
+      timeoutMs: tool.timeoutMs,
+      commandPreview: interpolateArgument(`${tool.name} target=${toolInput.target} baseUrl=${toolInput.baseUrl}`, {
+        ...input,
+        toolInput
+      }),
+      toolInput
     }
   };
 }

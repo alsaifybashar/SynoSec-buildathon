@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { DetailPage } from "@/components/detail-page";
 
 describe("DetailPage", () => {
@@ -45,5 +45,26 @@ describe("DetailPage", () => {
 
     expect(screen.getByText("Main detail form")).toBeInTheDocument();
     expect(screen.queryByText("Related runtimes section")).not.toBeInTheDocument();
+  });
+
+  it("renders an export button when json export is enabled", () => {
+    const handleExport = vi.fn();
+
+    render(
+      <DetailPage
+        title="Application detail"
+        breadcrumbs={["Start", "Applications", "Application detail"]}
+        isDirty={false}
+        onBack={() => {}}
+        onSave={async () => {}}
+        onDismiss={() => {}}
+        onExportJson={handleExport}
+      >
+        <div>Main detail form</div>
+      </DetailPage>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Export JSON" }));
+    expect(handleExport).toHaveBeenCalledTimes(1);
   });
 });

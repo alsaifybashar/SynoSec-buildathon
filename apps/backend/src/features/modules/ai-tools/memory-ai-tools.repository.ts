@@ -5,7 +5,7 @@ import type {
   CreateAiToolBody,
   UpdateAiToolBody
 } from "@synosec/contracts";
-import { paginateItems, type PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
+import { paginateItems, type PaginatedResult } from "../../../core/pagination/paginated-result.js";
 import { type AiToolsRepository } from "../ai-tools/ai-tools.repository.js";
 import { encodeCreateToolInput, encodeUpdateToolInput, mapToolExecutionFields, stripExecutionConfig } from "./tool-execution-config.js";
 
@@ -85,7 +85,16 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
 
     const encoded = encodeUpdateToolInput(input, current);
     const nextInputSchema = encoded.inputSchema ?? current.inputSchema;
-    const execution = mapToolExecutionFields(nextInputSchema);
+    const execution = encoded.inputSchema
+      ? mapToolExecutionFields(encoded.inputSchema)
+      : {
+          executorType: current.executorType,
+          bashSource: current.bashSource,
+          sandboxProfile: current.sandboxProfile,
+          privilegeProfile: current.privilegeProfile,
+          timeoutMs: current.timeoutMs,
+          capabilities: current.capabilities
+        };
     const updated: AiTool = {
       ...current,
       name: encoded.name ?? current.name,

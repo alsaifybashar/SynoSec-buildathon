@@ -1,5 +1,5 @@
 import type { Application, ApplicationsListQuery, CreateApplicationBody, UpdateApplicationBody } from "@synosec/contracts";
-import type { PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
+import type { PaginatedResult } from "../../../core/pagination/paginated-result.js";
 
 export interface ApplicationsRepository {
   list(query: ApplicationsListQuery): Promise<PaginatedResult<Application>>;

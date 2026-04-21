@@ -18,40 +18,13 @@ interface SandboxExecutionOptions {
 function validateSandboxedJob(
   job: ConnectorExecutionJob,
   options: SandboxExecutionOptions
-): { binary: string; args: string[] } | ConnectorExecutionResult {
+): ConnectorExecutionResult | { bashSource: string } {
   if (!job.request.capabilities.some((capability) => options.allowedCapabilities.includes(capability))) {
     return {
       output: "",
       exitCode: 1,
       observations: [],
       statusReason: `Capabilities ${job.request.capabilities.join(", ")} are not allowed by this connector.`
-    };
-  }
-
-  if (!job.request.toolId) {
-    return {
-      output: "",
-      exitCode: 1,
-      observations: [],
-      statusReason: "Only scripted tool definitions can execute in connector execute mode."
-    };
-  }
-
-  if (!job.request.sandboxProfile) {
-    return {
-      output: "",
-      exitCode: 1,
-      observations: [],
-      statusReason: "Missing sandbox profile for db-backed tool execution."
-    };
-  }
-
-  if (!job.request.privilegeProfile) {
-    return {
-      output: "",
-      exitCode: 1,
-      observations: [],
-      statusReason: "Missing privilege profile for db-backed tool execution."
     };
   }
 
@@ -73,29 +46,20 @@ function validateSandboxedJob(
     };
   }
 
-  const binary = typeof job.request.parameters["scriptPath"] === "string"
-    ? job.request.parameters["scriptPath"]
-    : null;
-  const scriptVersion = typeof job.request.parameters["scriptVersion"] === "string"
-    ? job.request.parameters["scriptVersion"]
-    : null;
-  const scriptSource = typeof job.request.parameters["scriptSource"] === "string"
-    ? job.request.parameters["scriptSource"]
-    : null;
-  const args = Array.isArray(job.request.parameters["scriptArgs"])
-    ? job.request.parameters["scriptArgs"].filter((value): value is string => typeof value === "string")
+  const bashSource = typeof job.request.parameters["bashSource"] === "string"
+    ? job.request.parameters["bashSource"]
     : null;
 
-  if (!binary || !args || !scriptVersion || !scriptSource) {
+  if (!bashSource) {
     return {
       output: "",
       exitCode: 1,
       observations: [],
-      statusReason: "Structured script path, version, source, and args are required for scripted tool execution."
+      statusReason: "Structured bash source is required for connector execution."
     };
   }
 
-  return { binary, args };
+  return { bashSource };
 }
 
 export async function executeSandboxedConnectorJob(
@@ -108,18 +72,17 @@ export async function executeSandboxedConnectorJob(
   }
 
   return executeStructuredCommand(
-    validated.binary,
-    validated.args,
+    validated.bashSource,
     job,
     options.commandTimeoutMs ?? 30000
   );
 }
 
-async function materializeScript(binary: string, scriptVersion: string, scriptSource: string) {
+async function materializeScript(toolName: string, bashSource: string) {
   const tempDir = await mkdtemp(path.join(tmpdir(), "synosec-connector-tool-"));
-  const fileName = path.basename(binary) || `tool-${scriptVersion}.sh`;
+  const fileName = `${toolName.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "tool"}.sh`;
   const executablePath = path.join(tempDir, fileName);
-  await writeFile(executablePath, scriptSource, "utf8");
+  await writeFile(executablePath, bashSource, "utf8");
   await chmod(executablePath, 0o700);
   return {
     executablePath,
@@ -127,12 +90,14 @@ async function materializeScript(binary: string, scriptVersion: string, scriptSo
   };
 }
 
-async function executeStructuredCommand(binary: string, args: string[], job: ConnectorExecutionJob, timeoutMs: number): Promise<ConnectorExecutionResult> {
-  const scriptVersion = String(job.request.parameters["scriptVersion"]);
-  const scriptSource = String(job.request.parameters["scriptSource"]);
-  const materialized = await materializeScript(binary, scriptVersion, scriptSource);
+async function executeStructuredCommand(
+  bashSource: string,
+  job: ConnectorExecutionJob,
+  timeoutMs: number
+): Promise<ConnectorExecutionResult> {
+  const materialized = await materializeScript(job.request.tool, bashSource);
   return new Promise<ConnectorExecutionResult>((resolve) => {
-    const child = spawn(materialized.executablePath, args, {
+    const child = spawn(materialized.executablePath, [], {
       stdio: ["pipe", "pipe", "pipe"]
     });
 
@@ -160,13 +125,31 @@ async function executeStructuredCommand(binary: string, args: string[], job: Con
     child.stderr.on("data", (chunk: Buffer | string) => {
       stderr += chunk.toString();
     });
-    child.stdin.write(JSON.stringify({
+    child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EPIPE") {
+        return;
+      }
+
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timer);
+      void materialized.cleanup();
+      resolve({
+        output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
+        exitCode: 1,
+        observations: [],
+        statusReason: error.message
+      });
+    });
+    child.stdin.end(JSON.stringify({
       scanId: job.scanId,
       tacticId: job.tacticId,
       toolRun: job.toolRun,
       request: job.request
     }));
-    child.stdin.end();
 
     child.on("close", (code) => {
       if (settled) {
@@ -175,11 +158,23 @@ async function executeStructuredCommand(binary: string, args: string[], job: Con
       settled = true;
       clearTimeout(timer);
       void materialized.cleanup();
-      resolve({
-        output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
-        exitCode: code ?? 1,
-        observations: []
-      });
+
+      try {
+        const parsed = JSON.parse(stdout.trim()) as ConnectorExecutionResult & { commandPreview?: string };
+        resolve({
+          output: parsed.output,
+          exitCode: code ?? 1,
+          observations: parsed.observations ?? [],
+          ...(parsed.statusReason ? { statusReason: parsed.statusReason } : {})
+        });
+      } catch (error) {
+        resolve({
+          output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
+          exitCode: code ?? 1,
+          observations: [],
+          statusReason: `Connector bash tool emitted invalid JSON output: ${error instanceof Error ? error.message : String(error)}`
+        });
+      }
     });
 
     child.on("error", (error) => {

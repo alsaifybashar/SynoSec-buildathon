@@ -86,7 +86,7 @@ describe("ListPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("exports the current list view as an excel-friendly file", async () => {
+  it("exports the current list view as a csv file that excel can open cleanly", async () => {
     render(
       <ListPage
         title="Applications"
@@ -112,23 +112,63 @@ describe("ListPage", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Export Excel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
 
     expect(createObjectURLMock).toHaveBeenCalledTimes(1);
-    expect(createdLink?.download).toBe("applications.xls");
+    expect(createdLink?.download).toBe("applications.csv");
     expect(createdLink?.href).toBe("blob:test-export");
     expect(clickSpy).toHaveBeenCalledTimes(1);
     expect(revokeObjectURLMock).toHaveBeenCalledWith("blob:test-export");
 
     const blob = createObjectURLMock.mock.calls[0]?.[0] as { parts: BlobPart[]; type: string } | undefined;
-    expect(blob?.type).toBe("application/vnd.ms-excel;charset=utf-8;");
+    expect(blob?.type).toBe("text/csv;charset=utf-8;");
 
-    const workbook = String(blob?.parts[0] ?? "");
-    expect(workbook).toContain("<th>Name</th>");
-    expect(workbook).toContain("<th>Status</th>");
-    expect(workbook).toContain("<td>Operator Portal</td>");
-    expect(workbook).toContain("<td>Billing API</td>");
-    expect(workbook).toContain("<td>active</td>");
-    expect(workbook).toContain("<td>inactive</td>");
+    expect(blob?.parts[0]).toBe("\uFEFF");
+
+    const csv = String(blob?.parts[1] ?? "");
+    expect(csv).toContain("\"Name\",\"Status\"");
+    expect(csv).toContain("\"Operator Portal\",\"active\"");
+    expect(csv).toContain("\"Billing API\",\"inactive\"");
+  });
+
+  it("renders a minimal import control and forwards the selected json file", () => {
+    const handleImportJson = vi.fn();
+    const { container } = render(
+      <ListPage
+        title="Applications"
+        recordLabel="Application"
+        columns={columns}
+        query={{
+          page: 1,
+          pageSize: 25,
+          q: "",
+          sortBy: "name",
+          sortDirection: "asc"
+        }}
+        dataState={{ state: "loaded", data: meta }}
+        items={items}
+        meta={meta}
+        emptyMessage="No applications found."
+        onSearchChange={() => {}}
+        onFilterChange={() => {}}
+        onSortChange={() => {}}
+        onPageChange={() => {}}
+        onPageSizeChange={() => {}}
+        onRetry={() => {}}
+        onImportJson={handleImportJson}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Import JSON" })).toBeInTheDocument();
+
+    const fileInput = container.querySelector("input[type='file']");
+    expect(fileInput).not.toBeNull();
+
+    const file = new File(["{}"], "applications.json", { type: "application/json" });
+    fireEvent.change(fileInput as HTMLInputElement, {
+      target: { files: [file] }
+    });
+
+    expect(handleImportJson).toHaveBeenCalledWith(file);
   });
 });

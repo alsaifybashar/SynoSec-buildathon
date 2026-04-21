@@ -4,12 +4,12 @@ import type { ConnectorExecutionJob, OsiLayer, ToolRequest } from "@synosec/cont
 import { SynoSecConnectorClient, executeConnectorJob } from "./index.js";
 
 const seededToolDefinitions = [
-  { id: "seed-http-recon", name: "HTTP Recon", scriptPath: "scripts/tools/http-recon.sh", capabilities: ["web-recon", "passive"], riskTier: "passive", sandboxProfile: "network-recon", privilegeProfile: "read-only-network", defaultArgs: ["-silent", "-status-code", "-title", "-tech-detect", "-u", "{baseUrl}"], timeoutMs: 120000, executionMode: "sandboxed" },
-  { id: "seed-web-crawl", name: "Web Crawl", scriptPath: "scripts/tools/web-crawl.sh", capabilities: ["web-recon", "content-discovery", "passive"], riskTier: "passive", sandboxProfile: "network-recon", privilegeProfile: "read-only-network", defaultArgs: ["-u", "{baseUrl}", "-silent"], timeoutMs: 180000, executionMode: "sandboxed" },
-  { id: "seed-service-scan", name: "Service Scan", scriptPath: "scripts/tools/service-scan.sh", capabilities: ["network-recon", "passive"], riskTier: "passive", sandboxProfile: "network-recon", privilegeProfile: "read-only-network", defaultArgs: ["-Pn", "-p", "8888", "--host-timeout", "5s", "--max-retries", "1", "{target}"], timeoutMs: 180000, executionMode: "sandboxed" },
-  { id: "seed-content-discovery", name: "Content Discovery", scriptPath: "scripts/tools/content-discovery.sh", capabilities: ["content-discovery", "active-recon"], riskTier: "active", sandboxProfile: "active-recon", privilegeProfile: "active-network", defaultArgs: ["-u", "{baseUrl}/FUZZ", "-w", "/usr/share/dirb/wordlists/common.txt"], timeoutMs: 30000, executionMode: "sandboxed" },
-  { id: "seed-vuln-audit", name: "Vulnerability Audit", scriptPath: "scripts/tools/vulnerability-audit.sh", capabilities: ["vulnerability-audit", "active-recon"], riskTier: "active", sandboxProfile: "active-recon", privilegeProfile: "active-network", defaultArgs: ["-u", "{baseUrl}", "-severity", "medium,high,critical"], timeoutMs: 45000, executionMode: "sandboxed" },
-  { id: "seed-sql-injection-check", name: "SQL Injection Check", scriptPath: "scripts/tools/sql-injection-check.sh", capabilities: ["database-security", "controlled-exploit"], riskTier: "controlled-exploit", sandboxProfile: "controlled-exploit-lab", privilegeProfile: "controlled-exploit", defaultArgs: ["-u", "{baseUrl}/", "--batch"], timeoutMs: 45000, executionMode: "sandboxed" }
+  { id: "seed-http-recon", name: "HTTP Recon", capabilities: ["web-recon", "passive"], riskTier: "passive", sandboxProfile: "network-recon", privilegeProfile: "read-only-network", timeoutMs: 120000, executorType: "bash", bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'" },
+  { id: "seed-web-crawl", name: "Web Crawl", capabilities: ["web-recon", "content-discovery", "passive"], riskTier: "passive", sandboxProfile: "network-recon", privilegeProfile: "read-only-network", timeoutMs: 180000, executorType: "bash", bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'" },
+  { id: "seed-service-scan", name: "Service Scan", capabilities: ["network-recon", "passive"], riskTier: "passive", sandboxProfile: "network-recon", privilegeProfile: "read-only-network", timeoutMs: 180000, executorType: "bash", bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'" },
+  { id: "seed-content-discovery", name: "Content Discovery", capabilities: ["content-discovery", "active-recon"], riskTier: "active", sandboxProfile: "active-recon", privilegeProfile: "active-network", timeoutMs: 30000, executorType: "bash", bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'" },
+  { id: "seed-vuln-audit", name: "Vulnerability Audit", capabilities: ["vulnerability-audit", "active-recon"], riskTier: "active", sandboxProfile: "active-recon", privilegeProfile: "active-network", timeoutMs: 45000, executorType: "bash", bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'" },
+  { id: "seed-sql-injection-check", name: "SQL Injection Check", capabilities: ["database-security", "controlled-exploit"], riskTier: "controlled-exploit", sandboxProfile: "controlled-exploit-lab", privilegeProfile: "controlled-exploit", timeoutMs: 45000, executorType: "bash", bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'" }
 ] as const;
 
 function compileToolRequestFromDefinition(
@@ -20,7 +20,7 @@ function compileToolRequestFromDefinition(
   return {
     toolId: tool.id,
     tool: tool.name,
-    scriptPath: tool.scriptPath,
+    executorType: "bash",
     capabilities: [...tool.capabilities],
     target: input.target,
     ...(input.port == null ? {} : { port: input.port }),
@@ -30,13 +30,13 @@ function compileToolRequestFromDefinition(
     sandboxProfile: tool.sandboxProfile,
     privilegeProfile: tool.privilegeProfile,
     parameters: {
-      scriptPath: tool.scriptPath,
-      scriptArgs: tool.defaultArgs.map((value) =>
-        value
-          .replaceAll("{target}", input.target)
-          .replaceAll("{baseUrl}", baseUrl)
-          .replaceAll("{port}", input.port == null ? "" : String(input.port))
-      ),
+      bashSource: tool.bashSource,
+      commandPreview: `${tool.name} ${baseUrl}`,
+      toolInput: {
+        target: input.target,
+        baseUrl,
+        ...(input.port == null ? {} : { port: input.port })
+      },
       timeoutMs: tool.timeoutMs
     }
   };
@@ -60,8 +60,7 @@ function makeJob(overrides: Partial<ConnectorExecutionJob> = {}): ConnectorExecu
       agentId: "agent-1",
       tool: "curl",
       toolId: "tool-1",
-      scriptPath: "scripts/tools/http-recon.sh",
-      scriptVersion: "v1",
+      executorType: "bash",
       capabilities: ["web-recon"],
       target: "example.com",
       status: "running",
@@ -74,8 +73,7 @@ function makeJob(overrides: Partial<ConnectorExecutionJob> = {}): ConnectorExecu
     request: {
       toolId: "tool-1",
       tool: "curl",
-      scriptPath: "scripts/tools/http-recon.sh",
-      scriptVersion: "v1",
+      executorType: "bash",
       capabilities: ["web-recon"],
       target: "example.com",
       layer: "L7",
@@ -84,10 +82,9 @@ function makeJob(overrides: Partial<ConnectorExecutionJob> = {}): ConnectorExecu
       sandboxProfile: "network-recon",
       privilegeProfile: "read-only-network",
       parameters: {
-        scriptPath: "scripts/tools/http-recon.sh",
-        scriptVersion: "v1",
-        scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
-        scriptArgs: ["-I", "http://example.com"]
+        bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
+        commandPreview: "curl -I http://example.com",
+        toolInput: { target: "example.com", baseUrl: "http://example.com" }
       }
     },
     ...overrides
@@ -169,24 +166,22 @@ describe("connector client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it("rejects scripted tool jobs without sandbox and privilege profiles", async () => {
+  it("rejects bash tool jobs without sandbox and privilege profiles", async () => {
     const result = await executeConnectorJob(
       makeJob({
         mode: "execute",
         request: {
           ...makeJob().request,
           toolId: "tool-1",
-          scriptPath: "scripts/tools/http-recon.sh",
           capabilities: ["web-recon"],
           sandboxProfile: undefined,
           privilegeProfile: undefined,
           parameters: {
-            scriptPath: "scripts/tools/http-recon.sh",
-            scriptVersion: "v1",
-            scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
-            scriptArgs: ["hello"]
+            bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
+            commandPreview: "echo hello",
+            toolInput: {}
           }
-        },
+        } as unknown as ConnectorExecutionJob["request"],
         toolRun: {
           ...makeJob().toolRun,
           tool: "tool-1"
@@ -200,10 +195,10 @@ describe("connector client", () => {
     );
 
     expect(result.exitCode).toBe(1);
-    expect(result.statusReason).toContain("sandbox");
+    expect(result.statusReason?.toLowerCase()).toContain("sandbox");
   });
 
-  it("executes scripted tool jobs from structured script paths and args without a shell command string", async () => {
+  it("executes bash tool jobs from structured source without a shell command string", async () => {
     const result = await executeConnectorJob(
       makeJob({
         mode: "execute",
@@ -211,21 +206,19 @@ describe("connector client", () => {
           ...makeJob().request,
           toolId: "tool-1",
           tool: "Structured Echo",
-          scriptPath: "scripts/tools/http-recon.sh",
           capabilities: ["web-recon"],
           sandboxProfile: "network-recon",
           privilegeProfile: "read-only-network",
           parameters: {
-            scriptPath: "scripts/tools/http-recon.sh",
-            scriptVersion: "v1",
-            scriptSource: "#!/usr/bin/env bash\necho hello",
-            scriptArgs: ["-h"]
+            bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"hello\"}'",
+            commandPreview: "structured-echo",
+            toolInput: {}
           }
         },
         toolRun: {
           ...makeJob().toolRun,
           tool: "tool-1",
-          commandPreview: "scripts/tools/http-recon.sh -h"
+          commandPreview: "structured-echo"
         }
       }),
       {
@@ -239,7 +232,7 @@ describe("connector client", () => {
   });
 
   it("accepts every executable seeded tool definition for connector execution policy", async () => {
-    const executableTools = seededToolDefinitions.filter((tool) => tool.executionMode === "sandboxed");
+    const executableTools = seededToolDefinitions.filter((tool) => tool.executorType === "bash");
 
     for (const tool of executableTools) {
       const request = compileToolRequestFromDefinition(tool, {
@@ -256,9 +249,9 @@ describe("connector client", () => {
             ...makeJob().toolRun,
             tool: tool.id,
             toolId: request.toolId,
-            scriptPath: request.scriptPath,
+            executorType: "bash",
             capabilities: request.capabilities,
-            commandPreview: `${tool.scriptPath ?? tool.id} ${(request.parameters["scriptArgs"] as string[]).join(" ")}`
+            commandPreview: String(request.parameters["commandPreview"])
           }
         }),
         {
@@ -303,9 +296,9 @@ describe("connector client", () => {
           ...makeJob().toolRun,
           tool: tool.id,
           toolId: request.toolId,
-          scriptPath: request.scriptPath,
+          executorType: "bash",
           capabilities: request.capabilities,
-          commandPreview: `${tool.scriptPath ?? tool.id} ${(request.parameters["scriptArgs"] as string[]).join(" ")}`
+          commandPreview: String(request.parameters["commandPreview"])
         }
       }),
       {

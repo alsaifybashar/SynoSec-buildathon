@@ -3,9 +3,10 @@ import { toast } from "sonner";
 import {
   apiRoutes,
   type AiTool,
+  type AiToolRunResult,
   type AiToolStatus,
   type CreateAiToolBody,
-  type ToolExecutionMode,
+  localDemoTargetDefaults,
   type ToolPrivilegeProfile,
   type ToolSandboxProfile,
   type ToolCategory,
@@ -15,11 +16,14 @@ import { fetchJson } from "@/lib/api";
 import { useResourceDetail } from "@/hooks/useResourceDetail";
 import { useResourceList } from "@/hooks/useResourceList";
 import { aiToolsResource } from "@/lib/resources";
+import { aiToolTransfer, exportResourceRecords, importResourceRecords } from "@/lib/resource-transfer";
 import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/components/list-page";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/shared/ui/button";
+import { Input } from "@/shared/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
+import { Textarea } from "@/shared/ui/textarea";
+import { BashEditor } from "@/shared/ui/bash-editor";
 
 type ToolFormValues = {
   name: string;
@@ -27,17 +31,13 @@ type ToolFormValues = {
   source: "custom" | "system";
   description: string;
   binary: string;
-  scriptPath: string;
-  scriptVersion: string;
-  scriptSource: string;
+  bashSource: string;
   capabilitiesText: string;
   category: ToolCategory;
   riskTier: ToolRiskTier;
   notes: string;
-  executionMode: ToolExecutionMode;
-  sandboxProfile: ToolSandboxProfile | "";
-  privilegeProfile: ToolPrivilegeProfile | "";
-  defaultArgsText: string;
+  sandboxProfile: ToolSandboxProfile;
+  privilegeProfile: ToolPrivilegeProfile;
   timeoutMsText: string;
   inputSchemaText: string;
   outputSchemaText: string;
@@ -52,7 +52,6 @@ const statusLabels: Record<AiToolStatus, string> = {
 
 const categoryOptions: ToolCategory[] = ["web", "network", "content", "dns", "subdomain", "cloud", "utility", "password", "windows", "kubernetes", "forensics", "reversing", "exploitation"];
 const riskTierOptions: ToolRiskTier[] = ["passive", "active", "controlled-exploit"];
-const executionModeOptions: ToolExecutionMode[] = ["catalog", "sandboxed"];
 const sandboxProfileOptions: ToolSandboxProfile[] = ["network-recon", "read-only-parser", "active-recon", "controlled-exploit-lab"];
 const privilegeProfileOptions: ToolPrivilegeProfile[] = ["read-only-network", "active-network", "controlled-exploit"];
 
@@ -63,20 +62,16 @@ function createEmptyFormValues(): ToolFormValues {
     source: "custom",
     description: "",
     binary: "",
-    scriptPath: "",
-    scriptVersion: "v1",
-    scriptSource: "",
+    bashSource: "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' '{\"output\":\"Replace this placeholder with a JSON-emitting bash tool.\"}'\n",
     capabilitiesText: "",
     category: "utility",
     riskTier: "passive",
     notes: "",
-    executionMode: "catalog",
-    sandboxProfile: "",
-    privilegeProfile: "",
-    defaultArgsText: "",
+    sandboxProfile: "read-only-parser",
+    privilegeProfile: "read-only-network",
     timeoutMsText: "",
     inputSchemaText: JSON.stringify({ type: "object", properties: {} }, null, 2),
-    outputSchemaText: JSON.stringify({ type: "object", properties: {} }, null, 2)
+    outputSchemaText: JSON.stringify({ type: "object", properties: { output: { type: "string" } }, required: ["output"] }, null, 2)
   };
 }
 
@@ -87,18 +82,14 @@ function toFormValues(tool: AiTool): ToolFormValues {
     source: tool.source,
     description: tool.description ?? "",
     binary: tool.binary ?? "",
-    scriptPath: tool.scriptPath ?? "",
-    scriptVersion: tool.scriptVersion ?? "",
-    scriptSource: tool.scriptSource ?? "",
+    bashSource: tool.bashSource,
     capabilitiesText: tool.capabilities.join("\n"),
     category: tool.category,
     riskTier: tool.riskTier,
     notes: tool.notes ?? "",
-    executionMode: tool.executionMode,
-    sandboxProfile: tool.sandboxProfile ?? "",
-    privilegeProfile: tool.privilegeProfile ?? "",
-    defaultArgsText: tool.defaultArgs.join("\n"),
-    timeoutMsText: tool.timeoutMs == null ? "" : String(tool.timeoutMs),
+    sandboxProfile: tool.sandboxProfile,
+    privilegeProfile: tool.privilegeProfile,
+    timeoutMsText: String(tool.timeoutMs),
     inputSchemaText: JSON.stringify(tool.inputSchema, null, 2),
     outputSchemaText: JSON.stringify(tool.outputSchema, null, 2)
   };
@@ -112,6 +103,12 @@ function parseRequestBody(values: ToolFormValues): { body?: CreateAiToolBody; er
 
   if (!values.name.trim()) {
     errors.name = "Name is required.";
+  }
+  if (!values.description.trim()) {
+    errors.description = "Description is required.";
+  }
+  if (!values.bashSource.trim()) {
+    errors.bashSource = "Bash source is required.";
   }
 
   try {
@@ -144,11 +141,10 @@ function parseRequestBody(values: ToolFormValues): { body?: CreateAiToolBody; er
       name: values.name.trim(),
       status: values.status,
       source: "custom",
-      description: values.description.trim() || null,
+      description: values.description.trim(),
       binary: values.binary.trim() || null,
-      scriptPath: values.scriptPath.trim() || null,
-      scriptVersion: values.scriptVersion.trim() || null,
-      scriptSource: values.scriptSource || null,
+      executorType: "bash",
+      bashSource: values.bashSource,
       capabilities: values.capabilitiesText
         .split("\n")
         .map((value) => value.trim())
@@ -156,14 +152,9 @@ function parseRequestBody(values: ToolFormValues): { body?: CreateAiToolBody; er
       category: values.category,
       riskTier: values.riskTier,
       notes: values.notes.trim() || null,
-      executionMode: values.executionMode,
-      sandboxProfile: values.sandboxProfile || null,
-      privilegeProfile: values.privilegeProfile || null,
-      defaultArgs: values.defaultArgsText
-        .split("\n")
-        .map((value) => value.trim())
-        .filter(Boolean),
-      timeoutMs,
+      sandboxProfile: values.sandboxProfile,
+      privilegeProfile: values.privilegeProfile,
+      timeoutMs: timeoutMs ?? 30000,
       inputSchema: inputSchema as Record<string, unknown>,
       outputSchema: outputSchema as Record<string, unknown>
     },
@@ -177,6 +168,71 @@ function formatTimestamp(value: string) {
 
 function definedString(value: string | undefined) {
   return value ? { error: value } : {};
+}
+
+function describeRunStatus(result: AiToolRunResult | null) {
+  if (!result) {
+    return "";
+  }
+
+  if (result.exitCode === 0) {
+    return result.statusReason ? `Succeeded: ${result.statusReason}` : "Succeeded";
+  }
+
+  return result.statusReason ? `Failed: ${result.statusReason}` : `Failed with exit code ${result.exitCode}`;
+}
+
+function createExampleRunInput(tool: AiTool) {
+  const demoUrl = new URL(localDemoTargetDefaults.hostUrl);
+  const properties = tool.inputSchema["properties"];
+  if (!properties || typeof properties !== "object" || Array.isArray(properties)) {
+    return {};
+  }
+
+  const example: Record<string, string | number | boolean | string[]> = {};
+  for (const [key, rawSchema] of Object.entries(properties)) {
+    if (!rawSchema || typeof rawSchema !== "object" || Array.isArray(rawSchema)) {
+      continue;
+    }
+
+    const schema = rawSchema as Record<string, unknown>;
+    if (schema["default"] !== undefined) {
+      const value = schema["default"];
+      if (
+        typeof value === "string"
+        || typeof value === "number"
+        || typeof value === "boolean"
+        || (Array.isArray(value) && value.every((entry) => typeof entry === "string"))
+      ) {
+        example[key] = value;
+        continue;
+      }
+    }
+
+    switch (schema["type"]) {
+      case "string":
+        example[key] = key.toLowerCase().includes("url")
+          ? localDemoTargetDefaults.hostUrl
+          : key === "target"
+            ? demoUrl.host
+            : "";
+        break;
+      case "number":
+      case "integer":
+        example[key] = key === "port" ? Number(demoUrl.port || localDemoTargetDefaults.port) : 0;
+        break;
+      case "boolean":
+        example[key] = false;
+        break;
+      case "array":
+        example[key] = [];
+        break;
+      default:
+        break;
+    }
+  }
+
+  return example;
 }
 
 export function AiToolsPage({
@@ -197,6 +253,10 @@ export function AiToolsPage({
   const [initialValues, setInitialValues] = useState<ToolFormValues>(createEmptyFormValues);
   const [errors, setErrors] = useState<Partial<Record<keyof ToolFormValues, string>>>({});
   const [saving, setSaving] = useState(false);
+  const [runInputText, setRunInputText] = useState(JSON.stringify({}, null, 2));
+  const [runError, setRunError] = useState<string | null>(null);
+  const [runResult, setRunResult] = useState<AiToolRunResult | null>(null);
+  const [runningTool, setRunningTool] = useState(false);
   const isCreateMode = toolId === "new";
   const toolList = useResourceList(aiToolsResource);
   const toolDetail = useResourceDetail(aiToolsResource, toolId && toolId !== "new" ? toolId : null);
@@ -235,6 +295,9 @@ export function AiToolsPage({
     setFormValues(values);
     setInitialValues(values);
     setErrors({});
+    setRunInputText(JSON.stringify(createExampleRunInput(toolDetail.item), null, 2));
+    setRunError(null);
+    setRunResult(null);
   }, [onNavigateToList, toolDetail, toolId]);
 
   const columns = useMemo<ListPageColumn<AiTool>[]>(() => [
@@ -242,7 +305,7 @@ export function AiToolsPage({
     { id: "source", header: "Source", cell: (row) => <span className="text-muted-foreground">{row.source}</span> },
     { id: "category", header: "Category", cell: (row) => <span className="text-muted-foreground">{row.category}</span> },
     { id: "status", header: "Status", cell: (row) => <span className="text-muted-foreground">{statusLabels[row.status]}</span> },
-    { id: "riskTier", header: "Risk", sortable: false, cell: (row) => <span className="text-muted-foreground">{row.riskTier}</span> }
+    { id: "riskTier", header: "Risk", cell: (row) => <span className="text-muted-foreground">{row.riskTier}</span> }
   ], []);
 
   const filters = useMemo<ListPageFilter[]>(() => [
@@ -319,6 +382,58 @@ export function AiToolsPage({
     }
   }
 
+  async function handleRunTool() {
+    if (!tool || isCreateMode) {
+      return;
+    }
+
+    let parsedInput: Record<string, unknown>;
+    try {
+      parsedInput = JSON.parse(runInputText) as Record<string, unknown>;
+    } catch {
+      setRunError("Run input must be valid JSON.");
+      setRunResult(null);
+      return;
+    }
+
+    setRunningTool(true);
+    setRunError(null);
+
+    try {
+      const result = await fetchJson<AiToolRunResult>(`${apiRoutes.aiTools}/${tool.id}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: parsedInput })
+      });
+      setRunResult(result);
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : "Tool run failed.");
+      setRunResult(null);
+    } finally {
+      setRunningTool(false);
+    }
+  }
+
+  function handleExportJson() {
+    if (!tool) {
+      return;
+    }
+
+    exportResourceRecords(aiToolTransfer, [tool], `ai-tool-${tool.name}`);
+  }
+
+  async function handleImportJson(file: File) {
+    try {
+      const created = await importResourceRecords(aiToolTransfer, file);
+      toast.success(created.length === 1 ? "AI tool imported" : `${created.length} AI tools imported`);
+      toolList.refetch();
+    } catch (error) {
+      toast.error("AI tool import failed", {
+        description: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  }
+
   if (!toolId) {
     return (
       <ListPage
@@ -339,6 +454,7 @@ export function AiToolsPage({
         onRetry={toolList.refetch}
         onAddRecord={onNavigateToCreate}
         onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
+        onImportJson={handleImportJson}
       />
     );
   }
@@ -366,20 +482,17 @@ export function AiToolsPage({
         setFormValues(initialValues);
         setErrors({});
       }}
+      onExportJson={!isCreateMode ? handleExportJson : undefined}
       saveLabel={isSystemTool ? "System tool" : "Save"}
       sidebar={tool ? (
         <div className="space-y-4 rounded-xl border border-border bg-card/70 p-4">
           <DetailSidebarItem label="Source">{tool.source}</DetailSidebarItem>
-          <DetailSidebarItem label="Execution">{tool.executionMode}</DetailSidebarItem>
-          <DetailSidebarItem label="Sandbox">{tool.sandboxProfile ?? "Not set"}</DetailSidebarItem>
-          <DetailSidebarItem label="Privilege">{tool.privilegeProfile ?? "Not set"}</DetailSidebarItem>
-          <DetailSidebarItem label="Category">{tool.category}</DetailSidebarItem>
-          <DetailSidebarItem label="Risk tier">{tool.riskTier}</DetailSidebarItem>
+          <DetailSidebarItem label="Status">{statusLabels[tool.status]}</DetailSidebarItem>
           <DetailSidebarItem label="Updated">{formatTimestamp(tool.updatedAt)}</DetailSidebarItem>
         </div>
       ) : undefined}
     >
-      <DetailFieldGroup title="Tool Metadata" className="bg-card/70">
+      <DetailFieldGroup title="Definition" className="bg-card/70">
         <DetailField label="Name" required {...definedString(errors.name)}>
           <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" disabled={Boolean(isSystemTool)} />
         </DetailField>
@@ -394,21 +507,6 @@ export function AiToolsPage({
               ))}
             </SelectContent>
           </Select>
-        </DetailField>
-        <DetailField label="Binary">
-          <Input value={formValues.binary} onChange={(event) => handleFieldChange("binary", event.target.value)} aria-label="Binary" disabled={Boolean(isSystemTool)} />
-        </DetailField>
-        <DetailField label="Script path">
-          <Input value={formValues.scriptPath} onChange={(event) => handleFieldChange("scriptPath", event.target.value)} aria-label="Script path" disabled={Boolean(isSystemTool)} />
-        </DetailField>
-        <DetailField label="Script version">
-          <Input value={formValues.scriptVersion} onChange={(event) => handleFieldChange("scriptVersion", event.target.value)} aria-label="Script version" disabled={Boolean(isSystemTool)} />
-        </DetailField>
-        <DetailField label="Capabilities" className="md:col-span-2">
-          <Textarea value={formValues.capabilitiesText} onChange={(event) => handleFieldChange("capabilitiesText", event.target.value)} aria-label="Capabilities" rows={4} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
-        </DetailField>
-        <DetailField label="Script source" className="md:col-span-2">
-          <Textarea value={formValues.scriptSource} onChange={(event) => handleFieldChange("scriptSource", event.target.value)} aria-label="Script source" rows={10} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
         </DetailField>
         <DetailField label="Category">
           <Select value={formValues.category} onValueChange={(value) => handleFieldChange("category", value as ToolCategory)} disabled={Boolean(isSystemTool)}>
@@ -434,31 +532,123 @@ export function AiToolsPage({
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Description" className="md:col-span-2">
+        <DetailField label="Description" required className="md:col-span-2" {...definedString(errors.description)}>
           <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" disabled={Boolean(isSystemTool)} />
         </DetailField>
         <DetailField label="Notes" className="md:col-span-2">
           <Input value={formValues.notes} onChange={(event) => handleFieldChange("notes", event.target.value)} aria-label="Notes" disabled={Boolean(isSystemTool)} />
         </DetailField>
-        <DetailField label="Execution mode">
-          <Select value={formValues.executionMode} onValueChange={(value) => handleFieldChange("executionMode", value as ToolExecutionMode)} disabled={Boolean(isSystemTool)}>
-            <SelectTrigger aria-label="Execution mode">
-              <SelectValue placeholder="Select execution mode" />
-            </SelectTrigger>
-            <SelectContent>
-              {executionModeOptions.map((mode) => (
-                <SelectItem key={mode} value={mode}>{mode}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      </DetailFieldGroup>
+
+      <DetailFieldGroup title="Inputs & Outputs" className="bg-card/70">
+        <DetailField label="Example input" className="md:col-span-2">
+          <Textarea
+            value={tool ? JSON.stringify(createExampleRunInput(tool), null, 2) : ""}
+            readOnly
+            aria-label="Example tool input"
+            rows={6}
+            className="font-mono text-sm"
+          />
+        </DetailField>
+        <DetailField label="Input schema" className="md:col-span-2" {...definedString(errors.inputSchemaText)}>
+          <Textarea value={formValues.inputSchemaText} onChange={(event) => handleFieldChange("inputSchemaText", event.target.value)} aria-label="Input schema" rows={10} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
+        </DetailField>
+        <DetailField label="Output schema" className="md:col-span-2" {...definedString(errors.outputSchemaText)}>
+          <Textarea value={formValues.outputSchemaText} onChange={(event) => handleFieldChange("outputSchemaText", event.target.value)} aria-label="Output schema" rows={10} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
+        </DetailField>
+      </DetailFieldGroup>
+
+      {!isCreateMode && tool ? (
+        <DetailFieldGroup title="Test Tool" className="bg-card/70">
+          <DetailField label="Input JSON" className="md:col-span-2">
+            <Textarea
+              value={runInputText}
+              onChange={(event) => {
+                setRunInputText(event.target.value);
+                setRunError(null);
+              }}
+              aria-label="Run input JSON"
+              rows={10}
+              className="font-mono text-sm"
+            />
+          </DetailField>
+          <div className="md:col-span-2 flex items-center gap-3">
+            <Button type="button" onClick={() => void handleRunTool()} disabled={runningTool}>
+              {runningTool ? "Running…" : "Run Tool"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (!tool) {
+                  return;
+                }
+                setRunInputText(JSON.stringify(createExampleRunInput(tool), null, 2));
+                setRunError(null);
+              }}
+              disabled={runningTool}
+            >
+              Use Example Input
+            </Button>
+            {runError ? <p className="text-sm text-destructive">{runError}</p> : null}
+          </div>
+          <DetailField label="Last run status" className="md:col-span-2">
+            <Input
+              value={describeRunStatus(runResult)}
+              readOnly
+              aria-label="Tool last run status"
+            />
+          </DetailField>
+          <DetailField label="Command preview" className="md:col-span-2">
+            <Textarea
+              value={runResult?.commandPreview ?? ""}
+              readOnly
+              aria-label="Tool command preview"
+              rows={3}
+              className="font-mono text-sm"
+            />
+          </DetailField>
+          <DetailField label="Raw output" className="md:col-span-2">
+            <Textarea
+              value={runResult?.output ?? ""}
+              readOnly
+              aria-label="Tool raw output"
+              rows={8}
+              className="font-mono text-sm"
+            />
+          </DetailField>
+          <DetailField label="Parsed result" className="md:col-span-2">
+            <Textarea
+              value={runResult ? JSON.stringify({
+                exitCode: runResult.exitCode,
+                statusReason: runResult.statusReason,
+                durationMs: runResult.durationMs,
+                target: runResult.target,
+                port: runResult.port,
+                observations: runResult.observations
+              }, null, 2) : ""}
+              readOnly
+              aria-label="Tool parsed result"
+              rows={12}
+              className="font-mono text-sm"
+            />
+          </DetailField>
+        </DetailFieldGroup>
+      ) : null}
+
+      <DetailFieldGroup title="Execution" className="bg-card/70">
+        <DetailField label="Binary">
+          <Input value={formValues.binary} onChange={(event) => handleFieldChange("binary", event.target.value)} aria-label="Binary" disabled={Boolean(isSystemTool)} />
+        </DetailField>
+        <DetailField label="Timeout (ms)" {...definedString(errors.timeoutMsText)}>
+          <Input value={formValues.timeoutMsText} onChange={(event) => handleFieldChange("timeoutMsText", event.target.value)} aria-label="Timeout milliseconds" disabled={Boolean(isSystemTool)} />
         </DetailField>
         <DetailField label="Sandbox profile">
-          <Select value={formValues.sandboxProfile || "__empty__"} onValueChange={(value) => handleFieldChange("sandboxProfile", value === "__empty__" ? "" : value as ToolSandboxProfile)} disabled={Boolean(isSystemTool)}>
+          <Select value={formValues.sandboxProfile} onValueChange={(value) => handleFieldChange("sandboxProfile", value as ToolSandboxProfile)} disabled={Boolean(isSystemTool)}>
             <SelectTrigger aria-label="Sandbox profile">
               <SelectValue placeholder="Select sandbox profile" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__empty__">Not set</SelectItem>
               {sandboxProfileOptions.map((profile) => (
                 <SelectItem key={profile} value={profile}>{profile}</SelectItem>
               ))}
@@ -466,32 +656,28 @@ export function AiToolsPage({
           </Select>
         </DetailField>
         <DetailField label="Privilege profile">
-          <Select value={formValues.privilegeProfile || "__empty__"} onValueChange={(value) => handleFieldChange("privilegeProfile", value === "__empty__" ? "" : value as ToolPrivilegeProfile)} disabled={Boolean(isSystemTool)}>
+          <Select value={formValues.privilegeProfile} onValueChange={(value) => handleFieldChange("privilegeProfile", value as ToolPrivilegeProfile)} disabled={Boolean(isSystemTool)}>
             <SelectTrigger aria-label="Privilege profile">
               <SelectValue placeholder="Select privilege profile" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__empty__">Not set</SelectItem>
               {privilegeProfileOptions.map((profile) => (
                 <SelectItem key={profile} value={profile}>{profile}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Default args" className="md:col-span-2">
-          <Textarea value={formValues.defaultArgsText} onChange={(event) => handleFieldChange("defaultArgsText", event.target.value)} aria-label="Default args" rows={5} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
+        <DetailField label="Capabilities" className="md:col-span-2">
+          <Textarea value={formValues.capabilitiesText} onChange={(event) => handleFieldChange("capabilitiesText", event.target.value)} aria-label="Capabilities" rows={4} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
         </DetailField>
-        <DetailField label="Timeout (ms)" {...definedString(errors.timeoutMsText)}>
-          <Input value={formValues.timeoutMsText} onChange={(event) => handleFieldChange("timeoutMsText", event.target.value)} aria-label="Timeout milliseconds" disabled={Boolean(isSystemTool)} />
-        </DetailField>
-      </DetailFieldGroup>
-
-      <DetailFieldGroup title="Schemas" className="bg-card/70">
-        <DetailField label="Input schema" className="md:col-span-2" {...definedString(errors.inputSchemaText)}>
-          <Textarea value={formValues.inputSchemaText} onChange={(event) => handleFieldChange("inputSchemaText", event.target.value)} aria-label="Input schema" rows={10} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
-        </DetailField>
-        <DetailField label="Output schema" className="md:col-span-2" {...definedString(errors.outputSchemaText)}>
-          <Textarea value={formValues.outputSchemaText} onChange={(event) => handleFieldChange("outputSchemaText", event.target.value)} aria-label="Output schema" rows={10} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
+        <DetailField label="Bash source" required className="md:col-span-2" {...definedString(errors.bashSource)}>
+          <BashEditor
+            value={formValues.bashSource}
+            onChange={(next) => handleFieldChange("bashSource", next)}
+            disabled={Boolean(isSystemTool)}
+            filename={formValues.name ? `${formValues.name.replace(/[^A-Za-z0-9._-]+/g, "-").toLowerCase()}.sh` : "tool.sh"}
+            aria-label="Bash source"
+          />
         </DetailField>
       </DetailFieldGroup>
     </DetailPage>

@@ -41,12 +41,12 @@ Use this structure when adding a new feature to the catalog:
 ### Backend API And Resource Management
 
 - Status: Active
-- Purpose: Provide the backend HTTP surface for health, brief, applications, runtimes, AI providers, AI agents, AI tools, and related control-plane operations.
+- Purpose: Provide the backend HTTP surface for health, applications, runtimes, AI providers, AI agents, AI tools, workflows, and related control-plane operations.
 - Value: Gives the frontend and developers stable endpoints for configuration, inspection, and platform management.
 - Main components: `apps/backend/src/platform/app`, route modules under `apps/backend/src/features/modules`, shared contracts in `packages/contracts`.
 - How it is tested: Route tests under `apps/backend/src/features/modules/**/*routes.test.ts` and contract validation tests in `packages/contracts/src/index.test.ts`.
 - Local validation: Run `pnpm --filter @synosec/backend test` or targeted route tests, then start the stack with `make docker-up`.
-- Contribution notes: Extend existing route modules and shared contracts together. Keep request and response schemas aligned with the contracts package.
+- Contribution notes: Extend existing route modules and shared contracts together. Keep request and response schemas aligned with the contracts package. Backend API responses use centralized security-header middleware for defaults such as `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, and anti-framing headers; route-specific headers such as SSE streaming behavior should override only what they own.
 - Current limits or non-goals: Retired scan endpoints are not part of this active surface.
 
 ### AI Builder Defaults
@@ -57,8 +57,19 @@ Use this structure when adding a new feature to the catalog:
 - Main components: `apps/backend/prisma/seed.ts`, Prisma AI models, builder routes and UI pages.
 - How it is tested: Seed execution against local Postgres plus targeted provider/agent/tool route tests.
 - Local validation: Run `pnpm --filter @synosec/backend prisma:seed`, then verify `/api/ai-providers`, `/api/ai-agents`, and `/api/ai-tools` return the seeded records.
-- Contribution notes: Add or adjust starter records only through the seed path. Do not reintroduce runtime auto-population for builder defaults.
-- Current limits or non-goals: Seeded defaults are starter records, not immutable system resources.
+- Contribution notes: Add or adjust starter records only through the seed path. Do not reintroduce runtime auto-population for builder defaults. Keep a clear distinction between a seeded tool record existing in the database and that tool having a real executable implementation.
+- Current limits or non-goals: Seeded defaults are starter records, not immutable system resources. Some seeded bash tools still use placeholder implementations that only check whether a binary exists, then return an explicit "installed but not implemented yet" response.
+
+### Seeded Tool Runtime Availability
+
+- Status: Active
+- Purpose: Track which seeded security tools are actually runnable on the worker and which seeded records are still placeholder-only.
+- Value: Prevents false confidence from a tool being present in the seeded catalog or installed on the machine without a real execution path behind it.
+- Main components: `apps/backend/prisma/seed-data/ai-builder-defaults.ts`, `apps/backend/src/features/modules/ai-tools/tool-execution-config.ts`, `scripts/tools/*.sh`.
+- How it is tested: Manual worker validation by checking `PATH`, confirming the expected binary family, and running the shell wrappers with JSON payloads through `scripts/tools/run-tool.sh`.
+- Local validation: Confirm `bash`, `node`, `curl`, `httpx`, `katana`, `nmap`, `ffuf`, `nuclei`, and `sqlmap` resolve on `PATH`. Then exercise `scripts/tools/http-recon.sh`, `web-crawl.sh`, `service-scan.sh`, `content-discovery.sh`, `vulnerability-audit.sh`, and `sql-injection-check.sh` with a minimal JSON payload that supplies `scriptArgs`.
+- Contribution notes: Treat dependency installation and seeded-tool implementation as separate concerns. The worker environment currently has the required binaries installed, including ProjectDiscovery `httpx`, `katana`, and `nuclei`, plus `ffuf`, `nmap`, and `sqlmap`. Before claiming a seeded tool is usable, verify both that the binary is available and that the seeded `bashSource` is wired to a real wrapper or execution script.
+- Current limits or non-goals: The seeded records for `seed-web-crawl`, `seed-service-scan`, `seed-content-discovery`, `seed-vuln-audit`, and `seed-sql-injection-check` still use `createBinaryMissingScript(...)` placeholder bash in `apps/backend/prisma/seed-data/ai-builder-defaults.ts`. Because `resolveToolExecutionFields(...)` falls back to those seeded definitions, those tools will still return an unimplemented placeholder response even though the binaries are installed. Only the environment dependency gap has been closed so far; the seeded runtime wiring still needs to be updated if those tools should execute real scans through the seeded path.
 
 ### Live Local Tool Evaluation
 
@@ -103,6 +114,28 @@ Use this structure when adding a new feature to the catalog:
 - Local validation: Start with `make docker-up`, confirm `/api/health`, and use the documented commands in `README.md`.
 - Contribution notes: Keep environment parity in mind. If a change only works locally in-process but not in the connector-backed stack, it is incomplete.
 - Current limits or non-goals: Docker convenience should not replace contract and package-level tests.
+
+### App User Authentication
+
+- Status: Active
+- Purpose: Protect the frontend control plane and backend application APIs with Google sign-in, explicit email allowlisting, and server-managed session cookies.
+- Value: Restricts access to approved operators without mixing human login state into connector-machine authentication.
+- Main components: `apps/backend/src/modules/auth`, route registration in `apps/backend/src/app`, frontend auth state and login UI in `apps/frontend/src/features/auth`, and Prisma `User` and `Session` models.
+- How it is tested: Backend auth integration tests for public and protected routes, CSRF enforcement, connector separation, and Google ID token login; frontend app tests for login redirect and sign-out behavior.
+- Local validation: Set the auth env vars in `.env`, start the stack, confirm `/api/health` stays public, confirm a protected page redirects to `/login`, complete Google sign-in with an allowlisted account, and verify logout returns the app to the login screen.
+- Contribution notes: Keep auth as a separate module. The browser login flow uses Google Identity Services to obtain a Google ID token, then posts that token to `/api/auth/google` so the backend can verify it and create the SynoSec session cookie. New protected APIs must rely on the shared auth middleware and session/CSRF handling rather than bespoke route checks. `AUTH_ALLOWED_EMAILS` is re-checked on authenticated requests, and `AUTH_SESSION_TOUCH_INTERVAL_SECONDS` throttles session activity writes. Session cookies remain `HttpOnly` and `SameSite=Lax`; `AUTH_COOKIE_SECURE` should be enabled in production and now defaults to `true` when `BACKEND_ENV` or `NODE_ENV` is `production`.
+- Current limits or non-goals: Google is the only human-user provider in v1, admission is exact-email allowlisting only, the app does not use a Google OAuth callback flow or Google client secret, and connector bearer auth remains separate from session auth.
+
+### Frontend Edge Security Headers
+
+- Status: Active
+- Purpose: Define where the SPA's browser-facing security headers are enforced without conflating frontend HTML policy with backend API responses.
+- Value: Keeps CSP, HSTS, and framing policy attached to the actual frontend delivery boundary while leaving the backend focused on API-safe defaults.
+- Main components: Production ingress or CDN configuration plus frontend runtime dependencies such as Google Identity Services and Google Fonts.
+- How it is tested: Manual header inspection against the deployed frontend origin, plus browser validation that login and app rendering still work under the chosen CSP.
+- Local validation: Use `curl -I` or browser devtools against the production frontend host and verify the expected frontend headers separately from the API origin.
+- Contribution notes: Enforce frontend `Content-Security-Policy`, `frame-ancestors`, `Referrer-Policy`, `Permissions-Policy`, and `Strict-Transport-Security` at the edge that serves the SPA. Roll CSP out in phases because the current frontend still loads Google Identity Services, Google-hosted fonts, and inline styles that must either be allowlisted or removed first.
+- Current limits or non-goals: The backend app does not emit frontend CSP or HSTS, and local Vite dev behavior is not the source of truth for production header policy.
 
 ### Intentionally Vulnerable Demo Target
 

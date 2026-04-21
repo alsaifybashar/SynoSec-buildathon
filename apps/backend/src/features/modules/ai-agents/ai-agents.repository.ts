@@ -4,7 +4,7 @@ import type {
   CreateAiAgentBody,
   UpdateAiAgentBody
 } from "@synosec/contracts";
-import type { PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
+import type { PaginatedResult } from "../../../core/pagination/paginated-result.js";
 
 export interface AiAgentsRepository {
   list(query: AiAgentsListQuery): Promise<PaginatedResult<AiAgent>>;

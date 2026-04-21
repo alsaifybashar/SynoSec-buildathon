@@ -4,6 +4,7 @@ import {
   type AiProvider,
   type AiTool,
   type Application,
+  type ListSingleAgentScansResponse,
   type ListAiAgentsResponse,
   type ListAiProvidersResponse,
   type ListAiToolsResponse,
@@ -11,6 +12,7 @@ import {
   type ListRuntimesResponse,
   type ListWorkflowsResponse,
   type Runtime,
+  type SingleAgentScan,
   type Workflow,
 } from "@synosec/contracts";
 import { fetchJson } from "@/lib/api";
@@ -57,7 +59,7 @@ type RuntimesQuery = {
   page: number;
   pageSize: number;
   q: string;
-  sortBy: "name" | "status" | "provider" | "environment" | "region" | "createdAt" | "updatedAt";
+  sortBy: "name" | "serviceType" | "status" | "provider" | "environment" | "region" | "applicationId" | "createdAt" | "updatedAt";
   sortDirection: SortDirection;
   status: OptionalString;
   provider: OptionalString;
@@ -68,7 +70,7 @@ type AiProvidersQuery = {
   page: number;
   pageSize: number;
   q: string;
-  sortBy: "name" | "kind" | "status" | "model" | "createdAt" | "updatedAt";
+  sortBy: "name" | "kind" | "status" | "model" | "apiKey" | "createdAt" | "updatedAt";
   sortDirection: SortDirection;
   kind: OptionalString;
   status: OptionalString;
@@ -78,7 +80,7 @@ type AiAgentsQuery = {
   page: number;
   pageSize: number;
   q: string;
-  sortBy: "name" | "status" | "createdAt" | "updatedAt";
+  sortBy: "name" | "status" | "providerId" | "toolIds" | "createdAt" | "updatedAt";
   sortDirection: SortDirection;
   status: OptionalString;
   providerId: OptionalString;
@@ -88,7 +90,7 @@ type AiToolsQuery = {
   page: number;
   pageSize: number;
   q: string;
-  sortBy: "name" | "source" | "category" | "status" | "createdAt" | "updatedAt";
+  sortBy: "name" | "source" | "category" | "status" | "riskTier" | "createdAt" | "updatedAt";
   sortDirection: SortDirection;
   source: OptionalString;
   category: OptionalString;
@@ -99,10 +101,21 @@ type WorkflowsQuery = {
   page: number;
   pageSize: number;
   q: string;
-  sortBy: "name" | "status" | "createdAt" | "updatedAt";
+  sortBy: "name" | "status" | "applicationId" | "stages" | "createdAt" | "updatedAt";
   sortDirection: SortDirection;
   status: OptionalString;
   applicationId: OptionalString;
+};
+
+type SingleAgentScansQuery = {
+  page: number;
+  pageSize: number;
+  q: string;
+  sortBy: "createdAt" | "status" | "currentRound";
+  sortDirection: SortDirection;
+  status: OptionalString;
+  applicationId: OptionalString;
+  agentId: OptionalString;
 };
 
 function buildQueryString(query: ListQueryState, defaults: ListQueryState) {
@@ -148,10 +161,24 @@ export function parseListQueryState<TQuery extends ListQueryState>(defaults: TQu
   return nextQuery as TQuery;
 }
 
-export function updateUrlQuery<TQuery extends ListQueryState>(query: TQuery, defaults: TQuery) {
+export function updateUrlQuery<TQuery extends ListQueryState>(
+  query: TQuery,
+  defaults: TQuery,
+  mode: "push" | "replace" = "push"
+) {
   const queryString = buildQueryString(query, defaults);
   const nextUrl = queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname;
-  window.history.pushState({}, "", nextUrl);
+  const currentUrl = `${window.location.pathname}${window.location.search}`;
+  if (currentUrl === nextUrl) {
+    return;
+  }
+
+  if (mode === "replace") {
+    window.history.replaceState(window.history.state, "", nextUrl);
+    return;
+  }
+
+  window.history.pushState(window.history.state, "", nextUrl);
 }
 
 function normalizePaginatedResponse<TItem, TResponse extends Record<string, unknown>>(payload: TResponse, dataKey: string): PaginatedResource<TItem> {
@@ -275,5 +302,20 @@ export const workflowsResource = createResourceClient<Workflow, WorkflowsQuery, 
     sortDirection: "asc",
     status: undefined,
     applicationId: undefined
+  }
+});
+
+export const singleAgentScansResource = createResourceClient<SingleAgentScan, SingleAgentScansQuery, ListSingleAgentScansResponse>({
+  path: apiRoutes.singleAgentScans,
+  dataKey: "scans",
+  defaultQuery: {
+    page: 1,
+    pageSize: 25,
+    q: "",
+    sortBy: "createdAt",
+    sortDirection: "desc",
+    status: undefined,
+    applicationId: undefined,
+    agentId: undefined
   }
 });

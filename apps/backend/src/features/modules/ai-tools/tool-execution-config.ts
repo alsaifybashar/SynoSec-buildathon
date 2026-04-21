@@ -3,22 +3,30 @@ import type {
   CreateAiToolBody,
   UpdateAiToolBody
 } from "@synosec/contracts";
+import { RequestError } from "@/core/http/request-error.js";
+import { seededToolDefinitions } from "../../../../prisma/seed-data/ai-builder-defaults.js";
 
-const EXECUTION_KEY = "x-synosec-execution";
+const EXECUTION_KEY = "x-synosec-runtime";
 
 type JsonRecord = Record<string, unknown>;
 
 interface StoredExecutionConfig {
-  executionMode?: AiTool["executionMode"];
+  executorType?: AiTool["executorType"];
+  bashSource?: AiTool["bashSource"];
   sandboxProfile?: AiTool["sandboxProfile"];
   privilegeProfile?: AiTool["privilegeProfile"];
-  defaultArgs?: AiTool["defaultArgs"];
   timeoutMs?: AiTool["timeoutMs"];
-  scriptPath?: AiTool["scriptPath"];
-  scriptVersion?: AiTool["scriptVersion"];
-  scriptSource?: AiTool["scriptSource"];
   capabilities?: AiTool["capabilities"];
 }
+
+type ToolExecutionFields = Pick<
+  AiTool,
+  "executorType" | "bashSource" | "sandboxProfile" | "privilegeProfile" | "timeoutMs" | "capabilities"
+>;
+
+type ExecutionConfigLookup = Pick<AiTool, "id" | "name" | "category" | "riskTier"> & {
+  binary?: string | null;
+};
 
 function asJsonRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
@@ -26,69 +34,198 @@ function asJsonRecord(value: unknown): JsonRecord {
 
 function readStoredExecutionConfig(schema: unknown): StoredExecutionConfig {
   const record = asJsonRecord(schema);
-  return asJsonRecord(record[EXECUTION_KEY]);
+  const runtimeConfig = asJsonRecord(record[EXECUTION_KEY]);
+  if (Object.keys(runtimeConfig).length > 0) {
+    return runtimeConfig;
+  }
+
+  const legacyConfig = asJsonRecord(record["x-synosec-execution"]);
+  const legacyConfigNormalized: StoredExecutionConfig = {};
+  if (typeof legacyConfig["scriptSource"] === "string") {
+    legacyConfigNormalized.bashSource = legacyConfig["scriptSource"];
+  }
+  if (legacyConfig["sandboxProfile"] != null) {
+    legacyConfigNormalized.sandboxProfile = legacyConfig["sandboxProfile"] as AiTool["sandboxProfile"];
+  }
+  if (legacyConfig["privilegeProfile"] != null) {
+    legacyConfigNormalized.privilegeProfile = legacyConfig["privilegeProfile"] as AiTool["privilegeProfile"];
+  }
+  if (typeof legacyConfig["timeoutMs"] === "number") {
+    legacyConfigNormalized.timeoutMs = legacyConfig["timeoutMs"];
+  }
+  if (Array.isArray(legacyConfig["capabilities"])) {
+    legacyConfigNormalized.capabilities = legacyConfig["capabilities"].filter((value): value is string => typeof value === "string");
+  }
+  if (legacyConfigNormalized.bashSource) {
+    legacyConfigNormalized.executorType = "bash";
+  }
+  return legacyConfigNormalized;
+}
+
+function isCompleteExecutionConfig(config: StoredExecutionConfig): config is ToolExecutionFields {
+  return (
+    config.executorType === "bash"
+    && typeof config.bashSource === "string"
+    && config.bashSource.trim().length > 0
+    && !!config.sandboxProfile
+    && !!config.privilegeProfile
+    && typeof config.timeoutMs === "number"
+  );
+}
+
+function defaultSandboxProfile(tool: Pick<AiTool, "category" | "riskTier">): AiTool["sandboxProfile"] {
+  if (tool.riskTier === "controlled-exploit") {
+    return "controlled-exploit-lab";
+  }
+  if (tool.riskTier === "active") {
+    return "active-recon";
+  }
+  if (tool.category === "utility" || tool.category === "forensics" || tool.category === "reversing") {
+    return "read-only-parser";
+  }
+
+  return "network-recon";
+}
+
+function defaultPrivilegeProfile(tool: Pick<AiTool, "riskTier">): AiTool["privilegeProfile"] {
+  if (tool.riskTier === "controlled-exploit") {
+    return "controlled-exploit";
+  }
+  if (tool.riskTier === "active") {
+    return "active-network";
+  }
+
+  return "read-only-network";
+}
+
+function createLegacyFallbackBashSource(tool: ExecutionConfigLookup) {
+  const detail = `The AI tool "${tool.name}" is missing runtime execution config and must be updated before it can run.`;
+
+  return [
+    "#!/usr/bin/env bash",
+    "set -euo pipefail",
+    `detail=${JSON.stringify(detail)}`,
+    "node -e '",
+    "  const detail = process.argv[1];",
+    "  console.log(JSON.stringify({",
+    "    output: detail,",
+    "    statusReason: \"Missing runtime execution config\"",
+    "  }));",
+    "' \"$detail\""
+  ].join("\n");
+}
+
+function resolveFallbackExecutionConfig(tool: ExecutionConfigLookup): ToolExecutionFields {
+  const seeded = seededToolDefinitions.find((candidate) => candidate.id === tool.id);
+  if (seeded) {
+    return {
+      executorType: seeded.executorType,
+      bashSource: seeded.bashSource,
+      sandboxProfile: seeded.sandboxProfile,
+      privilegeProfile: seeded.privilegeProfile,
+      timeoutMs: seeded.timeoutMs,
+      capabilities: [...seeded.capabilities]
+    };
+  }
+
+  return {
+    executorType: "bash",
+    bashSource: createLegacyFallbackBashSource(tool),
+    sandboxProfile: defaultSandboxProfile(tool),
+    privilegeProfile: defaultPrivilegeProfile(tool),
+    timeoutMs: 30000,
+    capabilities: [tool.binary?.trim() || `${tool.category}-tool`]
+  };
 }
 
 export function stripExecutionConfig<T>(schema: T): T {
   const record = asJsonRecord(schema);
-  if (!(EXECUTION_KEY in record)) {
+  if (!(EXECUTION_KEY in record) && !("x-synosec-execution" in record)) {
     return schema;
   }
-  const { [EXECUTION_KEY]: _ignored, ...rest } = record;
+  const {
+    [EXECUTION_KEY]: _runtimeIgnored,
+    ["x-synosec-execution"]: _legacyIgnored,
+    ...rest
+  } = record;
   return rest as T;
 }
 
 export function attachExecutionConfig<T>(
   schema: T,
-  tool: Pick<AiTool, "executionMode" | "sandboxProfile" | "privilegeProfile" | "defaultArgs" | "timeoutMs" | "scriptPath" | "scriptVersion" | "scriptSource" | "capabilities">
+  tool: Pick<AiTool, "executorType" | "bashSource" | "sandboxProfile" | "privilegeProfile" | "timeoutMs" | "capabilities">
 ): T {
   const record = asJsonRecord(schema);
   const next: JsonRecord = {
     ...record,
     [EXECUTION_KEY]: {
-      executionMode: tool.executionMode,
+      executorType: tool.executorType,
+      bashSource: tool.bashSource,
       sandboxProfile: tool.sandboxProfile,
       privilegeProfile: tool.privilegeProfile,
-      defaultArgs: tool.defaultArgs,
       timeoutMs: tool.timeoutMs,
-      scriptPath: tool.scriptPath,
-      scriptVersion: tool.scriptVersion,
-      scriptSource: tool.scriptSource,
       capabilities: tool.capabilities
     }
   };
+  delete next["x-synosec-execution"];
   return next as T;
 }
 
 export function mapToolExecutionFields(
   inputSchema: unknown
-): Pick<AiTool, "executionMode" | "sandboxProfile" | "privilegeProfile" | "defaultArgs" | "timeoutMs" | "scriptPath" | "scriptVersion" | "scriptSource" | "capabilities"> {
+): ToolExecutionFields {
   const stored = readStoredExecutionConfig(inputSchema);
+  if (!isCompleteExecutionConfig(stored)) {
+    throw new RequestError(500, "This AI tool is missing required execution settings.", {
+      code: "AI_TOOL_EXECUTION_CONFIG_MISSING",
+      userFriendlyMessage: "This AI tool is missing required execution settings."
+    });
+  }
+
   return {
-    executionMode: stored.executionMode === "sandboxed" ? "sandboxed" : "catalog",
-    sandboxProfile: stored.sandboxProfile ?? null,
-    privilegeProfile: stored.privilegeProfile ?? null,
-    defaultArgs: Array.isArray(stored.defaultArgs) ? stored.defaultArgs.filter((value): value is string => typeof value === "string") : [],
-    timeoutMs: typeof stored.timeoutMs === "number" ? stored.timeoutMs : null,
-    scriptPath: typeof stored.scriptPath === "string" ? stored.scriptPath : null,
-    scriptVersion: typeof stored.scriptVersion === "string" ? stored.scriptVersion : null,
-    scriptSource: typeof stored.scriptSource === "string" ? stored.scriptSource : null,
-    capabilities: Array.isArray(stored.capabilities) ? stored.capabilities.filter((value): value is string => typeof value === "string") : []
+    executorType: "bash",
+    bashSource: stored.bashSource,
+    sandboxProfile: stored.sandboxProfile,
+    privilegeProfile: stored.privilegeProfile,
+    timeoutMs: stored.timeoutMs,
+    capabilities: Array.isArray(stored.capabilities)
+      ? stored.capabilities.filter((value): value is string => typeof value === "string")
+      : []
   };
+}
+
+export function resolveToolExecutionFields(tool: ExecutionConfigLookup, inputSchema: unknown): ToolExecutionFields {
+  try {
+    return mapToolExecutionFields(inputSchema);
+  } catch (error) {
+    if (error instanceof RequestError && error.code === "AI_TOOL_EXECUTION_CONFIG_MISSING") {
+      return resolveFallbackExecutionConfig(tool);
+    }
+
+    if (error instanceof RequestError) {
+      const options = {
+        ...(error.code ? { code: error.code } : {}),
+        ...(error.userFriendlyMessage ? { userFriendlyMessage: error.userFriendlyMessage } : {}),
+        cause: error
+      };
+      throw new RequestError(error.status, `${error.message} Tool: ${tool.name} (${tool.id}).`, {
+        ...options
+      });
+    }
+
+    throw error;
+  }
 }
 
 export function encodeCreateToolInput(input: CreateAiToolBody) {
   return {
     ...input,
     inputSchema: attachExecutionConfig(input.inputSchema, {
-      executionMode: input.executionMode,
-      sandboxProfile: input.sandboxProfile ?? null,
-      privilegeProfile: input.privilegeProfile ?? null,
-      defaultArgs: input.defaultArgs,
-      timeoutMs: input.timeoutMs ?? null,
-      scriptPath: input.scriptPath ?? null,
-      scriptVersion: input.scriptVersion ?? null,
-      scriptSource: input.scriptSource ?? null,
+      executorType: input.executorType,
+      bashSource: input.bashSource,
+      sandboxProfile: input.sandboxProfile,
+      privilegeProfile: input.privilegeProfile,
+      timeoutMs: input.timeoutMs,
       capabilities: input.capabilities
     })
   };
@@ -97,14 +234,11 @@ export function encodeCreateToolInput(input: CreateAiToolBody) {
 export function encodeUpdateToolInput(input: UpdateAiToolBody, current: AiTool) {
   const shouldRewriteExecutionConfig = (
     input.inputSchema !== undefined ||
-    input.executionMode !== undefined ||
+    input.executorType !== undefined ||
+    input.bashSource !== undefined ||
     input.sandboxProfile !== undefined ||
     input.privilegeProfile !== undefined ||
-    input.defaultArgs !== undefined ||
     input.timeoutMs !== undefined ||
-    input.scriptPath !== undefined ||
-    input.scriptVersion !== undefined ||
-    input.scriptSource !== undefined ||
     input.capabilities !== undefined
   );
 
@@ -113,14 +247,11 @@ export function encodeUpdateToolInput(input: UpdateAiToolBody, current: AiTool) 
     inputSchema: !shouldRewriteExecutionConfig
       ? undefined
       : attachExecutionConfig(input.inputSchema ?? current.inputSchema, {
-          executionMode: input.executionMode ?? current.executionMode,
-          sandboxProfile: input.sandboxProfile === undefined ? current.sandboxProfile : input.sandboxProfile ?? null,
-          privilegeProfile: input.privilegeProfile === undefined ? current.privilegeProfile : input.privilegeProfile ?? null,
-          defaultArgs: input.defaultArgs ?? current.defaultArgs,
-          timeoutMs: input.timeoutMs === undefined ? current.timeoutMs : input.timeoutMs ?? null,
-          scriptPath: input.scriptPath === undefined ? current.scriptPath : input.scriptPath ?? null,
-          scriptVersion: input.scriptVersion === undefined ? current.scriptVersion : input.scriptVersion ?? null,
-          scriptSource: input.scriptSource === undefined ? current.scriptSource : input.scriptSource ?? null,
+          executorType: input.executorType ?? current.executorType,
+          bashSource: input.bashSource ?? current.bashSource,
+          sandboxProfile: input.sandboxProfile ?? current.sandboxProfile,
+          privilegeProfile: input.privilegeProfile ?? current.privilegeProfile,
+          timeoutMs: input.timeoutMs ?? current.timeoutMs,
           capabilities: input.capabilities ?? current.capabilities
         })
   };

@@ -14,10 +14,11 @@ import { fetchJson } from "@/lib/api";
 import { useResourceDetail } from "@/hooks/useResourceDetail";
 import { useResourceList } from "@/hooks/useResourceList";
 import { applicationsResource, runtimesResource } from "@/lib/resources";
+import { exportResourceRecords, importResourceRecords, runtimeTransfer } from "@/lib/resource-transfer";
 import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/components/list-page";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/shared/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
 
 type RuntimeFormValues = {
   name: string;
@@ -232,8 +233,7 @@ export function RuntimesPage({
     {
       id: "serviceType",
       header: "Service type",
-      cell: (row) => <span className="text-muted-foreground">{serviceTypeLabels[row.serviceType]}</span>,
-      sortable: false
+      cell: (row) => <span className="text-muted-foreground">{serviceTypeLabels[row.serviceType]}</span>
     },
     {
       id: "provider",
@@ -246,10 +246,9 @@ export function RuntimesPage({
       cell: (row) => <StatusBadge label={statusLabels[row.status]} className={statusBadgeStyles[row.status]} />
     },
     {
-      id: "application",
+      id: "applicationId",
       header: "Application",
-      cell: (row) => <span className="text-muted-foreground">{applicationLookup[row.applicationId ?? ""] ?? "Unlinked"}</span>,
-      sortable: false
+      cell: (row) => <span className="text-muted-foreground">{applicationLookup[row.applicationId ?? ""] ?? "Unlinked"}</span>
     }
   ], [applicationLookup]);
 
@@ -346,6 +345,26 @@ export function RuntimesPage({
     }
   }
 
+  function handleExportJson() {
+    if (!runtime) {
+      return;
+    }
+
+    exportResourceRecords(runtimeTransfer, [runtime], `runtime-${runtime.name}`);
+  }
+
+  async function handleImportJson(file: File) {
+    try {
+      const created = await importResourceRecords(runtimeTransfer, file);
+      toast.success(created.length === 1 ? "Runtime imported" : `${created.length} runtimes imported`);
+      runtimeList.refetch();
+    } catch (error) {
+      toast.error("Runtime import failed", {
+        description: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  }
+
   function handleDismiss() {
     setFormValues(initialValues);
     setErrors({});
@@ -371,6 +390,7 @@ export function RuntimesPage({
         onRetry={runtimeList.refetch}
         onAddRecord={onNavigateToCreate}
         onRowClick={(selected) => onNavigateToDetail(selected.id, selected.name)}
+        onImportJson={handleImportJson}
       />
     );
   }
@@ -396,6 +416,7 @@ export function RuntimesPage({
       onBack={onNavigateToList}
       onSave={handleSave}
       onDismiss={handleDismiss}
+      onExportJson={!isCreateMode ? handleExportJson : undefined}
       sidebar={
         !isCreateMode && runtime ? (
           <>

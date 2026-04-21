@@ -5,8 +5,8 @@ import type {
   CreateAiAgentBody,
   UpdateAiAgentBody
 } from "@synosec/contracts";
-import { RequestError } from "../../../platform/core/http/request-error.js";
-import { paginateItems, type PaginatedResult } from "../../../platform/core/pagination/paginated-result.js";
+import { RequestError } from "../../../core/http/request-error.js";
+import { paginateItems, type PaginatedResult } from "../../../core/pagination/paginated-result.js";
 import { type AiProvidersRepository } from "../ai-providers/ai-providers.repository.js";
 import { type AiToolsRepository } from "../ai-tools/ai-tools.repository.js";
 import { type AiAgentsRepository } from "../ai-agents/ai-agents.repository.js";
@@ -40,8 +40,8 @@ export class MemoryAiAgentsRepository implements AiAgentsRepository {
       .sort((left, right) => {
         const sortBy = query.sortBy ?? "name";
         const direction = query.sortDirection === "desc" ? -1 : 1;
-        const leftValue = left[sortBy];
-        const rightValue = right[sortBy];
+        const leftValue = sortBy === "toolIds" ? left.toolIds.length : left[sortBy];
+        const rightValue = sortBy === "toolIds" ? right.toolIds.length : right[sortBy];
 
         if (leftValue === rightValue) {
           return left.name.localeCompare(right.name) * direction;

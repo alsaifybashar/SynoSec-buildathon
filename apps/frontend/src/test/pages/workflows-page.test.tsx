@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiAgent, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
-import { WorkflowsPage } from "@/pages/workflows-page";
+import type { AiAgent, AiProvider, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
+import { WorkflowsPage } from "@/features/workflows/workflows-page";
 
 const application: Application = {
   id: "app-1",
@@ -34,17 +34,14 @@ const tool: AiTool = {
   source: "custom",
   description: "HTTP reconnaissance",
   binary: "httpx",
-  scriptPath: "scripts/tools/http-recon.sh",
-  scriptVersion: "v1",
-  scriptSource: "#!/usr/bin/env bash\nprintf 'ok'",
+  executorType: "bash",
+  bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
   capabilities: ["web-recon"],
   category: "web",
   riskTier: "passive",
   notes: null,
-  executionMode: "sandboxed",
   sandboxProfile: "network-recon",
   privilegeProfile: "read-only-network",
-  defaultArgs: ["-silent"],
   timeoutMs: 30000,
   inputSchema: { type: "object", properties: {} },
   outputSchema: { type: "object", properties: {} },
@@ -54,13 +51,26 @@ const tool: AiTool = {
 
 const agent: AiAgent = {
   id: "agent-1",
-  name: "Local Orchestrator",
+  name: "Single-Agent Security Runner",
   status: "active",
   description: "Local workflow orchestrator",
   providerId: "provider-1",
   systemPrompt: "Coordinate the next best step.",
   modelOverride: null,
   toolIds: [tool.id],
+  createdAt: "2026-04-21T00:00:00.000Z",
+  updatedAt: "2026-04-21T00:00:00.000Z"
+};
+
+const provider: AiProvider = {
+  id: "provider-1",
+  name: "Anthropic",
+  kind: "anthropic",
+  status: "active",
+  description: "Anthropic provider",
+  baseUrl: null,
+  model: "claude-sonnet-4",
+  apiKeyConfigured: true,
   createdAt: "2026-04-21T00:00:00.000Z",
   updatedAt: "2026-04-21T00:00:00.000Z"
 };
@@ -73,8 +83,68 @@ const workflow: Workflow = {
   applicationId: application.id,
   runtimeId: runtime.id,
   stages: [
-    { id: "stage-1", label: "Initial Recon", agentId: agent.id, ord: 0 },
-    { id: "stage-2", label: "Validation", agentId: agent.id, ord: 1 }
+    {
+      id: "stage-1",
+      label: "Initial Recon",
+      agentId: agent.id,
+      ord: 0,
+      objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
+      allowedToolIds: [tool.id],
+      requiredEvidenceTypes: [],
+      findingPolicy: {
+        taxonomy: "typed-core-v1",
+        allowedTypes: [
+          "service_exposure",
+          "content_discovery",
+          "missing_security_header",
+          "tls_weakness",
+          "injection_signal",
+          "auth_weakness",
+          "sensitive_data_exposure",
+          "misconfiguration",
+          "other"
+        ]
+      },
+      completionRule: {
+        requireStageResult: true,
+        requireToolCall: false,
+        allowEmptyResult: true,
+        minFindings: 0
+      },
+      resultSchemaVersion: 1,
+      handoffSchema: null
+    },
+    {
+      id: "stage-2",
+      label: "Validation",
+      agentId: agent.id,
+      ord: 1,
+      objective: "Complete the Validation stage using allowed tools and structured reporting.",
+      allowedToolIds: [tool.id],
+      requiredEvidenceTypes: [],
+      findingPolicy: {
+        taxonomy: "typed-core-v1",
+        allowedTypes: [
+          "service_exposure",
+          "content_discovery",
+          "missing_security_header",
+          "tls_weakness",
+          "injection_signal",
+          "auth_weakness",
+          "sensitive_data_exposure",
+          "misconfiguration",
+          "other"
+        ]
+      },
+      completionRule: {
+        requireStageResult: true,
+        requireToolCall: false,
+        allowEmptyResult: true,
+        minFindings: 0
+      },
+      resultSchemaVersion: 1,
+      handoffSchema: null
+    }
   ],
   createdAt: "2026-04-21T00:00:00.000Z",
   updatedAt: "2026-04-21T00:00:00.000Z"
@@ -268,6 +338,17 @@ const failedRun: WorkflowRun = {
   ]
 };
 
+const unevidencedCompletedRun: WorkflowRun = {
+  id: "run-3",
+  workflowId: workflow.id,
+  status: "completed",
+  currentStepIndex: 2,
+  startedAt: "2026-04-21T00:00:00.000Z",
+  completedAt: "2026-04-21T00:00:04.500Z",
+  trace: [],
+  events: []
+};
+
 function paginatedResponse<T>(key: string, items: T[]) {
   return {
     [key]: items,
@@ -295,7 +376,7 @@ describe("WorkflowsPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders a guided evidence-first stage timeline with reasoning, tokens, and hand-off context", async () => {
+  it("renders the compact workflow trace layout and edit controls", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -307,6 +388,9 @@ describe("WorkflowsPage", () => {
       }
       if (url.startsWith("/api/ai-agents?")) {
         return new Response(JSON.stringify(paginatedResponse("agents", [agent])));
+      }
+      if (url.startsWith("/api/ai-providers?")) {
+        return new Response(JSON.stringify(paginatedResponse("providers", [provider])));
       }
       if (url.startsWith("/api/ai-tools?")) {
         return new Response(JSON.stringify(paginatedResponse("tools", [tool])));
@@ -333,31 +417,20 @@ describe("WorkflowsPage", () => {
       />
     );
 
-    expect((await screen.findAllByText("Who Acted")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Intent").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Reasoning").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Tool Choice").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Outcome").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Next Stage Handoff").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Evidence").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Local Orchestrator").length).toBeGreaterThan(0);
-    expect(screen.getByText("Received Initial Recon context for Local Vulnerable Target at http://127.0.0.1:3000.")).toBeInTheDocument();
-    expect(screen.getAllByText("HTTP recon is the highest-signal first step.").length).toBeGreaterThan(0);
-    expect(screen.getByText("Input 180 tokens")).toBeInTheDocument();
-    expect(screen.getByText("Output 42 tokens")).toBeInTheDocument();
-    expect(screen.getByText("Total 222 tokens")).toBeInTheDocument();
-    expect(screen.getByText("Returned Evidence")).toBeInTheDocument();
-    expect(screen.getByText("Tool Token Usage")).toBeInTheDocument();
-    expect(screen.getByText("Total 18 tokens")).toBeInTheDocument();
-    expect(screen.getByText("Homepage reachable")).toBeInTheDocument();
-    expect(screen.getByText("Validation receives HTTP Recon, executed tools: http recon., and the target context from Initial Recon.")).toBeInTheDocument();
-    expect(screen.getByText("That context matters so Validation can continue from validated evidence instead of re-deriving the previous stage state.")).toBeInTheDocument();
-    expect(screen.getByText("Explicit result: success.")).toBeInTheDocument();
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Show Activity" })[0]!);
-
-    expect(await screen.findByText("Supporting Activity")).toBeInTheDocument();
-    expect(screen.getByText("Raw Trace")).toBeInTheDocument();
+    expect(await screen.findByText("Initial Recon")).toBeInTheDocument();
+    expect(screen.getAllByText("Complete the Initial Recon stage using allowed tools and structured reporting.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/single-agent security runner/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/claude-sonnet-4/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("HTTP Recon").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Start Run" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Reset" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Edit Workflow" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Continue Run" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("Local Vulnerable Target").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/local runtime/i).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Workflow" }));
+    expect(await screen.findByText("Workflow Edit")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Evidence Workflow")).toBeInTheDocument();
   });
 
   it("shows explicit failure outcome and blocked hand-off when a stage fails", async () => {
@@ -372,6 +445,9 @@ describe("WorkflowsPage", () => {
       }
       if (url.startsWith("/api/ai-agents?")) {
         return new Response(JSON.stringify(paginatedResponse("agents", [agent])));
+      }
+      if (url.startsWith("/api/ai-providers?")) {
+        return new Response(JSON.stringify(paginatedResponse("providers", [provider])));
       }
       if (url.startsWith("/api/ai-tools?")) {
         return new Response(JSON.stringify(paginatedResponse("tools", [tool])));
@@ -398,12 +474,57 @@ describe("WorkflowsPage", () => {
       />
     );
 
-    expect(await screen.findByText("Initial Recon failed because HTTP Recon did not complete successfully.")).toBeInTheDocument();
-    expect(screen.getByText("Explicit result: failure.")).toBeInTheDocument();
-    expect(screen.getByText("Returned Evidence")).toBeInTheDocument();
-    expect(screen.getByText("Homepage reachable")).toBeInTheDocument();
-    expect(screen.getByText("Initial recon complete")).toBeInTheDocument();
-    expect(screen.getByText("No downstream stage received a hand-off because this stage failed.")).toBeInTheDocument();
-    expect(screen.getByText("Review the failure evidence on this stage before resuming the workflow.")).toBeInTheDocument();
+    expect((await screen.findAllByText("Initial Recon failed because HTTP Recon did not complete successfully.")).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Explicit result: failure\./)).toBeInTheDocument();
+    expect(screen.getByText("evidence dossier · sealed")).toBeInTheDocument();
+    expect(screen.getAllByText("Homepage reachable").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Continue Run" })).not.toBeInTheDocument();
+  });
+
+  it("does not show unevidenced completed runs as finalized", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.startsWith("/api/applications?")) {
+        return new Response(JSON.stringify(paginatedResponse("applications", [application])));
+      }
+      if (url.startsWith("/api/runtimes?")) {
+        return new Response(JSON.stringify(paginatedResponse("runtimes", [runtime])));
+      }
+      if (url.startsWith("/api/ai-agents?")) {
+        return new Response(JSON.stringify(paginatedResponse("agents", [agent])));
+      }
+      if (url.startsWith("/api/ai-providers?")) {
+        return new Response(JSON.stringify(paginatedResponse("providers", [provider])));
+      }
+      if (url.startsWith("/api/ai-tools?")) {
+        return new Response(JSON.stringify(paginatedResponse("tools", [tool])));
+      }
+      if (url.startsWith("/api/workflows?")) {
+        return new Response(JSON.stringify(paginatedResponse("workflows", [workflow])));
+      }
+      if (url === `/api/workflows/${workflow.id}`) {
+        return new Response(JSON.stringify(workflow));
+      }
+      if (url === `/api/workflows/${workflow.id}/runs/latest`) {
+        return new Response(JSON.stringify(unevidencedCompletedRun));
+      }
+
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    render(
+      <WorkflowsPage
+        workflowId={workflow.id}
+        onNavigateToList={() => {}}
+        onNavigateToCreate={() => {}}
+        onNavigateToDetail={() => {}}
+      />
+    );
+
+    expect(await screen.findByText("Initial Recon")).toBeInTheDocument();
+    expect(screen.getAllByText("Complete the Initial Recon stage using allowed tools and structured reporting.").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/No workflow transcript is available yet\./)).not.toBeInTheDocument();
+    expect(screen.queryByText(/finalized/)).not.toBeInTheDocument();
   });
 });

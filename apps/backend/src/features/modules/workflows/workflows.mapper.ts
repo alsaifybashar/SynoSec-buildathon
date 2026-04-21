@@ -5,14 +5,33 @@ import type {
   WorkflowStage as WorkflowStageRow,
   WorkflowTraceEntry as WorkflowTraceEntryRow,
   WorkflowTraceEvent as WorkflowTraceEventRow
-} from "../../../platform/generated/prisma/index.js";
+} from "@prisma/client";
+import { normalizeWorkflowStageContract } from "./workflow-stage-contract.js";
 
 export function mapWorkflowStageRow(row: WorkflowStageRow): WorkflowStage {
+  const contract = normalizeWorkflowStageContract({
+    label: row.label,
+    ...(row.objective ? { objective: row.objective } : {}),
+    ...(Array.isArray(row.allowedToolIds) ? { allowedToolIds: row.allowedToolIds.map(String) } : {}),
+    ...(Array.isArray(row.requiredEvidenceTypes) ? { requiredEvidenceTypes: row.requiredEvidenceTypes.map(String) } : {}),
+    ...(row.findingPolicy && typeof row.findingPolicy === "object" && !Array.isArray(row.findingPolicy)
+      ? { findingPolicy: row.findingPolicy as Record<string, unknown> }
+      : {}),
+    ...(row.completionRule && typeof row.completionRule === "object" && !Array.isArray(row.completionRule)
+      ? { completionRule: row.completionRule as Record<string, unknown> }
+      : {}),
+    resultSchemaVersion: row.resultSchemaVersion,
+    ...(row.handoffSchema && typeof row.handoffSchema === "object" && !Array.isArray(row.handoffSchema)
+      ? { handoffSchema: row.handoffSchema as Record<string, unknown> }
+      : {})
+  });
+
   return {
     id: row.id,
     label: row.label,
     agentId: row.agentId,
-    ord: row.ord
+    ord: row.ord,
+    ...contract
   };
 }
 

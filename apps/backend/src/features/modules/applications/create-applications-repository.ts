@@ -1,4 +1,4 @@
-import { prisma } from "../../../platform/core/database/prisma-client.js";
+import { prisma } from "../../../core/database/prisma-client.js";
 import { PrismaApplicationsRepository } from "../applications/prisma-applications.repository.js";
 
 export function createApplicationsRepositoryFromEnvironment() {

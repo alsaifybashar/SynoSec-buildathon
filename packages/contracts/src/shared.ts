@@ -2,8 +2,9 @@ import { z } from "zod";
 
 export const apiRoutes = {
   health: "/api/health",
-  demo: "/api/demo",
-  brief: "/api/brief",
+  authGoogleLogin: "/api/auth/google",
+  authLogout: "/api/auth/logout",
+  authSession: "/api/auth/session",
   applications: "/api/applications",
   runtimes: "/api/runtimes",
   aiProviders: "/api/ai-providers",
@@ -12,6 +13,7 @@ export const apiRoutes = {
   workflows: "/api/workflows",
   workflowRuns: "/api/workflow-runs",
   workflowRunEvents: "/api/workflow-runs/:id/events",
+  singleAgentScans: "/api/single-agent-scans",
   toolCapabilities: "/api/tools/capabilities",
   connectorRegister: "/api/connectors/register",
   connectorPoll: "/api/connectors/:connectorId/poll",
@@ -37,26 +39,35 @@ export const healthResponseSchema = z.object({
 });
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
-export const demoFindingSchema = z.object({
-  id: z.string().min(1),
-  target: z.string().min(1),
-  severity: z.enum(["low", "medium", "high"]),
-  summary: z.string().min(1)
+export const authenticatedUserSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().email(),
+  displayName: z.string().nullable(),
+  avatarUrl: z.string().url().nullable()
 });
+export type AuthenticatedUser = z.infer<typeof authenticatedUserSchema>;
 
-export const demoResponseSchema = z.object({
-  scanMode: z.literal("depth-first"),
-  targetCount: z.number().int().nonnegative(),
-  findings: z.array(demoFindingSchema).min(1)
+export const authSessionResponseSchema = z.object({
+  authEnabled: z.boolean(),
+  authenticated: z.boolean(),
+  csrfToken: z.string().min(1).nullable(),
+  googleClientId: z.string().min(1).nullable(),
+  user: authenticatedUserSchema.nullable()
+}).superRefine((value, ctx) => {
+  if (value.authenticated && !value.user) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Authenticated sessions must include a user.",
+      path: ["user"]
+    });
+  }
 });
-export type DemoResponse = z.infer<typeof demoResponseSchema>;
+export type AuthSessionResponse = z.infer<typeof authSessionResponseSchema>;
 
-export const briefResponseSchema = z.object({
-  headline: z.string().min(1),
-  actions: z.array(z.string().min(1)).min(1),
-  generatedAt: z.string().datetime()
+export const googleLoginBodySchema = z.object({
+  idToken: z.string().min(1)
 });
-export type BriefResponse = z.infer<typeof briefResponseSchema>;
+export type GoogleLoginBody = z.infer<typeof googleLoginBodySchema>;
 
 export const sortDirectionSchema = z.enum(["asc", "desc"]);
 export type SortDirection = z.infer<typeof sortDirectionSchema>;
