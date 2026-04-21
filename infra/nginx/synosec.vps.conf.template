@@ -1,5 +1,3 @@
-server_tokens off;
-
 server {
   listen 80;
   server_name __SERVER_NAME__ www.__SERVER_NAME__;
