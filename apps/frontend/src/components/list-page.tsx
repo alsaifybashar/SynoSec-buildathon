@@ -246,9 +246,16 @@ export function ListPage<T extends { id: string }>({
                   </Button>
                 </>
               ) : null}
-              <Button type="button" variant="outline" onClick={handleExportExcel} className="h-9 text-[0.75rem]">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9"
+                title="Export CSV"
+                aria-label="Export CSV"
+                onClick={handleExportExcel}
+              >
                 <Download className="h-4 w-4" />
-                Export CSV
               </Button>
               <Button onClick={onAddRecord ?? handleDefaultAddRecord} className="h-9 text-[0.75rem]">
                 <Plus className="h-4 w-4" />
