@@ -53,6 +53,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validate deploy configuration
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CONNECTOR_SHARED_TOKEN: ${{ secrets.CONNECTOR_SHARED_TOKEN }}
+          AUTH_SESSION_SECRET: ${{ secrets.AUTH_SESSION_SECRET }}
+          AUTH_ALLOWED_EMAILS: ${{ secrets.AUTH_ALLOWED_EMAILS }}
         run: |
           set -euo pipefail
 
@@ -66,11 +72,27 @@ jobs:
             fi
           }
 
+          require_secret() {
+            local name="$1"
+            local value="$2"
+
+            if [ -z "$value" ]; then
+              echo "Missing required GitHub Actions secret: $name" >&2
+              exit 1
+            fi
+          }
+
           require_var "VPS_HOST" "${{ vars.VPS_HOST }}"
           require_var "VPS_USER" "${{ vars.VPS_USER }}"
           require_var "SERVER_NAME" "${{ vars.SERVER_NAME }}"
           require_var "NGINX_CONFIG_PATH" "${{ vars.NGINX_CONFIG_PATH }}"
           require_var "FRONTEND_URL" "${{ vars.FRONTEND_URL }}"
+          require_var "AUTH_GOOGLE_CLIENT_ID" "${{ vars.AUTH_GOOGLE_CLIENT_ID }}"
+          require_secret "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
+          require_secret "ANTHROPIC_API_KEY" "$ANTHROPIC_API_KEY"
+          require_secret "CONNECTOR_SHARED_TOKEN" "$CONNECTOR_SHARED_TOKEN"
+          require_secret "AUTH_SESSION_SECRET" "$AUTH_SESSION_SECRET"
+          require_secret "AUTH_ALLOWED_EMAILS" "$AUTH_ALLOWED_EMAILS"
       - name: Verify deploy files exist
         run: |
           test -f docker-compose.vps.yml
@@ -106,12 +128,14 @@ jobs:
 
             template = Path("infra/deploy/env.vps.template").read_text()
             rendered = template.replace("__FRONTEND_URL__", """${{ vars.FRONTEND_URL }}""")
+            rendered = rendered.replace("__AUTH_GOOGLE_CLIENT_ID__", """${{ vars.AUTH_GOOGLE_CLIENT_ID }}""")
 
             secrets = {
                 "POSTGRES_PASSWORD": """${{ secrets.POSTGRES_PASSWORD }}""",
                 "ANTHROPIC_API_KEY": """${{ secrets.ANTHROPIC_API_KEY }}""",
                 "CONNECTOR_SHARED_TOKEN": """${{ secrets.CONNECTOR_SHARED_TOKEN }}""",
                 "AUTH_SESSION_SECRET": """${{ secrets.AUTH_SESSION_SECRET }}""",
+                "AUTH_ALLOWED_EMAILS": """${{ secrets.AUTH_ALLOWED_EMAILS }}""",
             }
 
             Path(".env").write_text(
@@ -149,7 +173,7 @@ jobs:
             wait_for_http() {
               local name="$1"
               local url="$2"
-              local attempts="${3:-30}"
+              local attempts="${3:-10}"
               local sleep_seconds="${4:-2}"
 
               for attempt in $(seq 1 "$attempts"); do
