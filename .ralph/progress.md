@@ -5,6 +5,41 @@ Started: Mon Apr 13 00:40:18 CEST 2026
 - (add reusable patterns here)
 
 ---
+## [2026-04-21 02:11:15 CEST] - S3: Harden deterministic stage execution
+Thread: 
+Run: 20260421-014550-336751 (iteration 3)
+Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260421-014550-336751-iter-3.log
+Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260421-014550-336751-iter-3.md
+- Guardrails reviewed: yes
+- No-commit run: false
+- Commit: 383c42e6 Harden deterministic workflow stage execution
+- Post-commit status: `pending progress-log commit`
+- Verification:
+  - Command: `pnpm --filter @synosec/contracts test` -> PASS
+  - Command: `pnpm --filter @synosec/contracts typecheck` -> PASS
+  - Command: `pnpm --filter @synosec/contracts build` -> PASS
+  - Command: `pnpm --filter @synosec/backend exec vitest run src/features/modules/workflows/workflow-execution.service.test.ts` -> PASS
+  - Command: `pnpm --filter @synosec/backend typecheck` -> PASS
+  - Command: `pnpm --filter @synosec/backend build` -> PASS
+  - Command: `pnpm build` -> FAIL (existing `apps/connector/src/index.test.ts(261,56)` never-type error outside this story)
+- Files changed:
+  - apps/backend/src/features/modules/workflows/workflow-execution.service.test.ts
+  - packages/contracts/src/workflow-lifecycle.ts
+  - packages/contracts/src/workflow-lifecycle.test.ts
+  - .ralph/activity.log
+  - .ralph/progress.md
+- What was implemented
+- Added a shared workflow stage execution contract that derives stage state from authoritative stage boundary events first, then persisted trace entries, and only then the persisted run record fallback.
+- Added a shared run execution contract that evaluates per-stage lifecycle together so surfaced completion state stays aligned with terminal stage outcomes.
+- Added targeted backend lifecycle coverage for a successful two-stage run and a failed first-stage run to prove later stages do not become corrupted after failure.
+- **Learnings for future iterations:**
+  - Patterns discovered
+  - Trust-critical workflow state is easier to keep deterministic when stage boundary events and trace entries are interpreted through one exported helper instead of repeated local conditionals.
+  - Gotchas encountered
+  - Workspace `pnpm build` is still blocked by an existing connector typing failure, so backend/contracts package builds are the reliable verification path for workflow stories.
+  - Useful context
+  - `deriveWorkflowRunExecutionContract` is the stricter helper for stage-by-stage trust checks, while the legacy completion helper still treats the persisted run record as authoritative unless known stage records contradict it.
+---
 ## [2026-04-21 02:02:08 CEST] - S2: Reconcile PRD and progress state mismatches
 Thread: 019dad50-b58c-7441-bb23-7a87738d26e5
 Run: 20260421-014550-336751 (iteration 2)
