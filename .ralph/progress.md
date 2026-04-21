@@ -5,6 +5,40 @@ Started: Mon Apr 13 00:40:18 CEST 2026
 - (add reusable patterns here)
 
 ---
+## [2026-04-21 02:02:08 CEST] - S2: Reconcile PRD and progress state mismatches
+Thread: 019dad50-b58c-7441-bb23-7a87738d26e5
+Run: 20260421-014550-336751 (iteration 2)
+Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260421-014550-336751-iter-2.log
+Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260421-014550-336751-iter-2.md
+- Guardrails reviewed: yes
+- No-commit run: false
+- Commit: c07097e3 Reconcile Ralph workflow state
+- Post-commit status: `clean`
+- Verification:
+  - Command: `bash -n .agents/ralph/loop.sh` -> PASS
+  - Command: `node --test .agents/ralph/workflow-state.test.mjs` -> PASS
+  - Command: `pnpm test` -> FAIL (existing `apps/connector` unhandled `EPIPE` during `src/index.test.ts`)
+  - Command: `pnpm build` -> FAIL (existing `apps/connector/src/index.test.ts(261,56)` never-type error)
+- Files changed:
+  - .agents/ralph/loop.sh
+  - .agents/ralph/workflow-state.mjs
+  - .agents/ralph/workflow-state.test.mjs
+  - .ralph/activity.log
+  - .ralph/errors.log
+  - .ralph/progress.md
+- What was implemented
+- Replaced Ralph's inline PRD story selection and terminal-status mutation logic with a dedicated workflow-state helper so story status is reconciled against persisted run records and progress entries before a story is selected.
+- Added a structured per-iteration run record in `.ralph/runs/*.json`, deterministic latest-run selection that ignores partial JSON writes, stale running recovery, and terminal finalization that refuses to mark a story done unless the matching progress entry exists.
+- Added failure-path progress reconciliation so failed or interrupted runs reopen the story and append an explicit failed progress entry instead of leaving PRD, progress, and run state out of sync.
+- Added targeted Node tests covering deterministic latest-run choice with partial writes, stale in-progress recovery, conflicting done-state reconciliation, and success/failure terminal outcome handling.
+- **Learnings for future iterations:**
+  - Patterns discovered
+  - Ralph state reconciliation is easier to trust when PRD mutation is driven by a small structured helper plus persisted run records instead of ad hoc shell snippets.
+  - Gotchas encountered
+  - `.agents/*` is gitignored in this repo, so new Ralph helper files must be force-added or they silently stay out of the commit.
+  - Useful context
+  - Workspace-wide `pnpm test` and `pnpm build` still surface pre-existing `apps/connector` failures unrelated to this story, so the new helper is validated with focused loop tests and shell syntax checks.
+---
 ## [2026-04-21 01:53:07 CEST] - S1: Define the authoritative workflow state model
 Thread: 
 Run: 20260421-014550-336751 (iteration 1)
