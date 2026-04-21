@@ -5,6 +5,41 @@ Started: Mon Apr 13 00:40:18 CEST 2026
 - (add reusable patterns here)
 
 ---
+## [2026-04-21 02:39:38 CEST] - S6: Lock the lifecycle down with end-to-end tests
+Thread: 
+Run: 20260421-014550-336751 (iteration 6)
+Run log: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260421-014550-336751-iter-6.log
+Run summary: /home/nilwi971/projects/SynoSec-buildathon/.ralph/runs/run-20260421-014550-336751-iter-6.md
+- Guardrails reviewed: yes
+- No-commit run: false
+- Commit: 67e61b5e test: lock workflow lifecycle coverage
+- Post-commit status: `clean`
+- Verification:
+  - Command: `node --test .agents/ralph/workflow-state.test.mjs` -> PASS
+  - Command: `pnpm --filter @synosec/backend exec vitest run src/features/modules/workflows/workflow-execution.service.test.ts src/features/modules/workflows/workflows.routes.test.ts` -> PASS
+  - Command: `pnpm --filter @synosec/frontend test -- src/test/pages/workflows-page.test.tsx` -> PASS
+  - Command: `pnpm build` -> FAIL (existing TypeScript error in `apps/connector/src/index.test.ts:261`)
+- Files changed:
+  - .agents/ralph/workflow-state.test.mjs
+  - .ralph/activity.log
+  - .ralph/errors.log
+  - .ralph/progress.md
+  - apps/backend/src/features/modules/workflows/workflow-execution.service.test.ts
+  - apps/backend/src/features/modules/workflows/workflows.routes.test.ts
+  - apps/frontend/src/test/pages/workflows-page.test.tsx
+- What was implemented
+- Added Ralph workflow-state coverage that proves the latest run drives PRD status reconciliation only when matching progress evidence exists, across both successful and failed outcomes.
+- Extended backend workflow lifecycle integration tests to assert deterministic latest-run selection, successful stage hand-off context for the next stage, and surfaced tool-result payloads for both success and failure paths.
+- Tightened workflow UI tests so the failed path explicitly proves returned evidence and highlights remain visible alongside the blocked hand-off state.
+- Reviewed the test-only changes for security, performance, and regression risk; no runtime-path regressions or new unsafe behavior were introduced.
+- **Learnings for future iterations:**
+  - Patterns discovered
+  - Direct `vitest` invocation at the package level is the reliable way to validate just the workflow lifecycle files when the backend package script pulls unrelated tests and can hang on open handles.
+  - Gotchas encountered
+  - The root `pnpm build` is currently blocked by an unrelated connector TypeScript issue at `apps/connector/src/index.test.ts:261`, so workspace build failures need to be separated from S6-specific lifecycle coverage.
+  - Useful context
+  - The repo-root `ralph` activity logger path in the build prompt is stale for this checkout; `.agents/ralph/log-activity.sh` is the working helper.
+---
 ## [2026-04-21 02:32:29 +0200] - S5: Expose agent reasoning, tool activity, and hand-offs clearly
 Thread: 
 Run: 20260421-014550-336751 (iteration 5)
