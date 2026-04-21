@@ -80,6 +80,86 @@ test("reconcilePrdState reopens conflicting done stories when progress is missin
   assert.equal(prd.stories[0].completedAt, null);
 });
 
+test("reconcilePrdState follows the latest run outcome and matching progress for surfaced story status", () => {
+  const prd = createPrd([
+    {
+      id: "S2",
+      title: "Completed latest run",
+      status: "open",
+      startedAt: null,
+      completedAt: null,
+      updatedAt: "2026-04-21T01:00:00.000Z"
+    },
+    {
+      id: "S3",
+      title: "Failed latest run",
+      status: "done",
+      startedAt: "2026-04-21T01:00:00.000Z",
+      completedAt: "2026-04-21T01:10:00.000Z",
+      updatedAt: "2026-04-21T01:10:00.000Z"
+    }
+  ]);
+
+  const progressEntries = [
+    {
+      index: 0,
+      storyId: "S2",
+      title: "Completed latest run",
+      runId: "20260421-020000-000002",
+      iteration: 2,
+      outcome: "completed"
+    },
+    {
+      index: 1,
+      storyId: "S3",
+      title: "Failed latest run",
+      runId: "20260421-010000-000001",
+      iteration: 1,
+      outcome: "completed"
+    }
+  ];
+
+  reconcilePrdState(prd, progressEntries, [
+    {
+      runId: "20260421-010000-000001",
+      iteration: 1,
+      storyId: "S2",
+      status: "failed",
+      startedAt: "2026-04-21T01:00:00.000Z",
+      finishedAt: "2026-04-21T01:05:00.000Z"
+    },
+    {
+      runId: "20260421-020000-000002",
+      iteration: 2,
+      storyId: "S2",
+      status: "completed",
+      startedAt: "2026-04-21T02:00:00.000Z",
+      finishedAt: "2026-04-21T02:05:00.000Z"
+    },
+    {
+      runId: "20260421-010000-000001",
+      iteration: 1,
+      storyId: "S3",
+      status: "completed",
+      startedAt: "2026-04-21T01:00:00.000Z",
+      finishedAt: "2026-04-21T01:05:00.000Z"
+    },
+    {
+      runId: "20260421-020000-000002",
+      iteration: 2,
+      storyId: "S3",
+      status: "failed",
+      startedAt: "2026-04-21T02:00:00.000Z",
+      finishedAt: "2026-04-21T02:02:00.000Z"
+    }
+  ], 0);
+
+  assert.equal(prd.stories[0].status, "done");
+  assert.ok(prd.stories[0].completedAt);
+  assert.equal(prd.stories[1].status, "open");
+  assert.equal(prd.stories[1].completedAt, null);
+});
+
 test("selectStory recovers stale in-progress runs before choosing the next story", () => {
   const tempDir = createTempDir();
   const prdPath = path.join(tempDir, "prd.json");

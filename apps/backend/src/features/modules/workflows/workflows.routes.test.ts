@@ -6,6 +6,7 @@ import {
   workflowRunSchema,
   workflowRunStreamMessageSchema,
   workflowSchema,
+  type WorkflowRun,
   type AiAgent,
   type AiProvider,
   type AiTool,
@@ -148,7 +149,7 @@ const runtimesRepository: RuntimesRepository = {
   remove: async () => false
 };
 
-function createTestApp() {
+function createTestApp(seedRuns: WorkflowRun[] = []) {
   const aiProvidersRepository = new MemoryAiProvidersRepository(seedProviders.map((provider) => ({ ...provider })));
   const aiToolsRepository = new MemoryAiToolsRepository(seedTools.map((tool) => ({ ...tool })));
   const aiAgentsRepository = new MemoryAiAgentsRepository(
@@ -160,7 +161,8 @@ function createTestApp() {
     applicationsRepository,
     runtimesRepository,
     aiAgentsRepository,
-    seedWorkflows.map((workflow) => ({ ...workflow }))
+    seedWorkflows.map((workflow) => ({ ...workflow })),
+    seedRuns.map((run) => ({ ...run, trace: run.trace.map((entry) => ({ ...entry })), events: run.events.map((event) => ({ ...event })) }))
   );
 
   return createApp({
@@ -228,6 +230,37 @@ describe("workflow routes", () => {
     expect(response.status).toBe(200);
     expect(workflowRunSchema.safeParse(response.body).success).toBe(true);
     expect(response.body.id).toBe(started.body.id);
+  });
+
+  it("returns the deterministic latest run when timestamps tie", async () => {
+    const app = createTestApp([
+      {
+        id: "00000000-0000-0000-0000-000000000010",
+        workflowId: seedWorkflows[0]?.id ?? "",
+        status: "completed",
+        currentStepIndex: 1,
+        startedAt: "2026-04-21T00:00:00.000Z",
+        completedAt: "2026-04-21T00:05:00.000Z",
+        trace: [],
+        events: []
+      },
+      {
+        id: "00000000-0000-0000-0000-000000000011",
+        workflowId: seedWorkflows[0]?.id ?? "",
+        status: "failed",
+        currentStepIndex: 0,
+        startedAt: "2026-04-21T00:00:00.000Z",
+        completedAt: "2026-04-21T00:05:00.000Z",
+        trace: [],
+        events: []
+      }
+    ]);
+    const response = await request(app).get("/api/workflows/2a3761a0-c424-4634-83ad-5145fbd2697c/runs/latest");
+
+    expect(response.status).toBe(200);
+    expect(workflowRunSchema.safeParse(response.body).success).toBe(true);
+    expect(response.body.id).toBe("00000000-0000-0000-0000-000000000011");
+    expect(response.body.status).toBe("failed");
   });
 
   it("streams a workflow run snapshot over SSE", async () => {

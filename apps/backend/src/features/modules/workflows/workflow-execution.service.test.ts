@@ -284,6 +284,13 @@ describe("WorkflowExecutionService", () => {
     const firstStep = await service.stepRun(started.id);
     const secondStep = await service.stepRun(started.id);
     const persisted = await workflowsRepository.getRunById(started.id);
+    const latest = await workflowsRepository.getLatestRunByWorkflowId(workflow.id);
+    const secondStageAgentInput = secondStep.events.find(
+      (event) => event.stepIndex === 1 && event.type === "agent_input"
+    );
+    const successfulToolResult = secondStep.events.find(
+      (event) => event.stepIndex === 1 && event.type === "tool_result"
+    );
 
     expect(firstStep.status).toBe("running");
     expect(firstStep.currentStepIndex).toBe(1);
@@ -296,6 +303,32 @@ describe("WorkflowExecutionService", () => {
 
     expect(persisted?.status).toBe("completed");
     expect(persisted?.completedAt).toBe(secondStep.completedAt);
+    expect(latest?.id).toBe(started.id);
+    expect(secondStageAgentInput?.summary).toBe("Received Validation context for Local Vulnerable Target at http://127.0.0.1:3000/.");
+    expect(secondStageAgentInput?.payload).toMatchObject({
+      stageLabel: "Validation",
+      targetUrl: "http://127.0.0.1:3000/",
+      targetHost: "127.0.0.1",
+      targetPort: 3000,
+      runtime: {
+        id: runtime.id,
+        name: runtime.name,
+        provider: runtime.provider,
+        region: runtime.region
+      },
+      allowedToolIds: [tool.id]
+    });
+    expect(successfulToolResult?.status).toBe("completed");
+    expect(successfulToolResult?.payload).toMatchObject({
+      toolId: tool.id,
+      toolName: tool.name,
+      outputPreview: "200 OK",
+      fullOutput: "200 OK",
+      observationSummaries: ["Homepage reachable"],
+      findingSummaries: ["Initial recon complete"],
+      configuredTimeoutMs: tool.timeoutMs,
+      timedOut: false
+    });
 
     const contract = deriveWorkflowRunExecutionContract(secondStep, workflow.stages);
     expect(contract.completionState).toBe("completed");
@@ -314,6 +347,8 @@ describe("WorkflowExecutionService", () => {
     const started = await service.startRun(workflow.id);
     const failed = await service.stepRun(started.id);
     const persisted = await workflowsRepository.getRunById(started.id);
+    const failedToolResult = failed.events.find((event) => event.type === "tool_result");
+    const failedStageBoundary = failed.events.find((event) => event.type === "stage_failed");
 
     expect(failed.status).toBe("failed");
     expect(failed.currentStepIndex).toBe(0);
@@ -325,6 +360,25 @@ describe("WorkflowExecutionService", () => {
 
     expect(persisted?.status).toBe("failed");
     expect(persisted?.currentStepIndex).toBe(0);
+    expect(failedToolResult?.status).toBe("failed");
+    expect(failedToolResult?.detail).toBe("HTTP recon crashed");
+    expect(failedToolResult?.payload).toMatchObject({
+      toolId: tool.id,
+      toolName: tool.name,
+      outputPreview: "HTTP recon crashed",
+      fullOutput: "HTTP recon crashed",
+      observationSummaries: [],
+      findingSummaries: [],
+      configuredTimeoutMs: tool.timeoutMs,
+      timedOut: false
+    });
+    expect(failedStageBoundary?.summary).toBe("Initial Recon failed because HTTP Recon did not complete successfully.");
+    expect(failedStageBoundary?.payload).toMatchObject({
+      stageLabel: "Initial Recon",
+      selectedToolIds: [tool.id],
+      failedToolRunId: "tool-run-failed",
+      degraded: false
+    });
 
     const contract = deriveWorkflowRunExecutionContract(failed, workflow.stages);
     expect(contract.completionState).toBe("failed");

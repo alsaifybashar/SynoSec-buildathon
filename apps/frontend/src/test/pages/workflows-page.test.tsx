@@ -400,6 +400,9 @@ describe("WorkflowsPage", () => {
 
     expect(await screen.findByText("Initial Recon failed because HTTP Recon did not complete successfully.")).toBeInTheDocument();
     expect(screen.getByText("Explicit result: failure.")).toBeInTheDocument();
+    expect(screen.getByText("Returned Evidence")).toBeInTheDocument();
+    expect(screen.getByText("Homepage reachable")).toBeInTheDocument();
+    expect(screen.getByText("Initial recon complete")).toBeInTheDocument();
     expect(screen.getByText("No downstream stage received a hand-off because this stage failed.")).toBeInTheDocument();
     expect(screen.getByText("Review the failure evidence on this stage before resuming the workflow.")).toBeInTheDocument();
   });
