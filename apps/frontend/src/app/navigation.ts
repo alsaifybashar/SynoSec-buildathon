@@ -7,7 +7,6 @@ import {
   Newspaper,
   Orbit,
   PlugZap,
-  Radar,
   Route,
   ScrollText,
   Shapes,
@@ -30,7 +29,6 @@ import { WorkflowBiospherePage } from "@/pages/workflow-biosphere-page";
 import { WorkflowDossierPage } from "@/pages/workflow-dossier-page";
 import { WorkflowTerminalPage } from "@/pages/workflow-terminal-page";
 import { WorkflowsPage } from "@/features/workflows/workflows-page";
-import { SingleAgentScansPage } from "@/features/scans/single-agent-scans-page";
 
 export type NavigationId =
   | "runtimes"
@@ -39,7 +37,6 @@ export type NavigationId =
   | "ai-agents"
   | "ai-tools"
   | "workflows"
-  | "single-agent-scans"
   | "flow-studio"
   | "choreography"
   | "bpmn-atlas"
@@ -258,18 +255,6 @@ export const navigationTree: NavigationTreeEntry[] = [
       detailIdProp: "workflowId",
       detailLabelProp: "workflowNameHint",
       component: WorkflowsPage
-    })
-  },
-  {
-    kind: "item",
-    item: createCrudNavigationItem({
-      id: "single-agent-scans",
-      label: "Single-Agent Scans",
-      slug: "single-agent-scans",
-      icon: Radar,
-      detailIdProp: "scanId",
-      detailLabelProp: "scanNameHint",
-      component: SingleAgentScansPage
     })
   },
   {

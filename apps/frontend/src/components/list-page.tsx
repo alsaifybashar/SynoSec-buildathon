@@ -154,24 +154,9 @@ export function ListPage<T extends { id: string }>({
   const visiblePageNumbers = meta.totalPages === 0
     ? []
     : [meta.page, meta.page + 1, meta.page + 2].filter((page, index, values) => page <= meta.totalPages && values.indexOf(page) === index);
-  const sortColumn = query.sortBy ? columns.find((column) => column.id === query.sortBy) : undefined;
-  const sortLabel = sortColumn?.header ?? query.sortBy;
-
   return (
     <div className="space-y-3 pb-6">
       <PageHeader title={title} breadcrumbs={["Start", title]} />
-
-      <div className="mx-3 -mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-[0.625rem] uppercase tracking-[0.25em] text-muted-foreground md:justify-start">
-        <span>{meta.total.toLocaleString()} records</span>
-        <span aria-hidden className="h-px w-3 bg-border" />
-        {sortLabel ? (
-          <span>
-            Sort · {sortLabel} {query.sortDirection === "asc" ? "↑" : "↓"}
-          </span>
-        ) : (
-          <span>Unsorted</span>
-        )}
-      </div>
 
       <div className="sticky top-0 z-10 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="flex flex-col gap-2 px-3 py-2.5 md:flex-row md:items-center md:gap-2.5">

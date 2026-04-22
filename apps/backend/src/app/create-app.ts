@@ -1,6 +1,8 @@
 import cors from "cors";
 import express, { type Express } from "express";
+import { loadRateLimitConfig } from "@/core/env/backend-env.js";
 import { applySecurityHeaders } from "@/core/http/security-headers.js";
+import { createRateLimitMiddleware } from "@/core/http/rate-limit.js";
 import { RequestError } from "@/core/http/request-error.js";
 import { loadAuthConfig } from "@/modules/auth/auth-config.js";
 import { attachAuthContext } from "@/modules/auth/auth-middleware.js";
@@ -49,6 +51,7 @@ export function createApp(options: {
       next(error);
     }
   });
+  app.use(createRateLimitMiddleware(loadRateLimitConfig()));
 
   registerRoutes(app, {
     ...options,

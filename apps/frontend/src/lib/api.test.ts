@@ -115,4 +115,21 @@ describe("fetchJson", () => {
       code: "INTERNAL_ERROR"
     });
   });
+
+  it("uses a specific fallback message for rate-limited responses", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      code: "RATE_LIMITED",
+      message: "Rate limit exceeded for api requests."
+    }), {
+      status: 429,
+      headers: { "Content-Type": "application/json" }
+    })));
+
+    await expect(fetchJson("/api/workflows", { method: "POST" })).rejects.toMatchObject({
+      name: "ApiError",
+      message: "Too many requests were sent while trying to create Workflow. Try again shortly.",
+      status: 429,
+      code: "RATE_LIMITED"
+    });
+  });
 });

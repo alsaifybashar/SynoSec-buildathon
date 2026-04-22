@@ -442,7 +442,7 @@ export type WorkflowFindingSubmission = z.infer<typeof workflowFindingSubmission
 export const workflowReportedFindingSchema = workflowFindingSubmissionSchema.extend({
   id: z.string().uuid(),
   workflowRunId: z.string().uuid(),
-  workflowStageId: z.string().uuid(),
+  workflowStageId: z.string().uuid().nullable(),
   createdAt: z.string().datetime()
 });
 export type WorkflowReportedFinding = z.infer<typeof workflowReportedFindingSchema>;
@@ -512,7 +512,23 @@ export const workflowSchema = z.object({
   description: z.string().nullable(),
   applicationId: z.string().uuid(),
   runtimeId: z.string().uuid().nullable(),
-  stages: z.array(workflowStageSchema).min(1),
+  agentId: z.string().uuid(),
+  objective: z.string().min(1),
+  allowedToolIds: z.array(z.string().min(1)).default([]),
+  requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
+  findingPolicy: workflowStageFindingPolicySchema.default({
+    taxonomy: "typed-core-v1",
+    allowedTypes: allWorkflowFindingTypes
+  }),
+  completionRule: workflowStageCompletionRuleSchema.default({
+    requireStageResult: true,
+    requireToolCall: false,
+    allowEmptyResult: true,
+    minFindings: 0
+  }),
+  resultSchemaVersion: z.number().int().min(1).default(1),
+  handoffSchema: z.union([jsonSchemaObjectSchema, z.null()]).default(null),
+  stages: z.array(workflowStageSchema).default([]),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 });
@@ -521,7 +537,7 @@ export type Workflow = z.infer<typeof workflowSchema>;
 export const workflowsListQuerySchema = resourceListQuerySchema.extend({
   status: workflowStatusSchema.optional(),
   applicationId: z.string().uuid().optional(),
-  sortBy: z.enum(["name", "status", "applicationId", "stages", "createdAt", "updatedAt"]).optional()
+  sortBy: z.enum(["name", "status", "applicationId", "agentId", "createdAt", "updatedAt"]).optional()
 });
 export type WorkflowsListQuery = z.infer<typeof workflowsListQuerySchema>;
 
@@ -556,7 +572,22 @@ const workflowBodyBaseSchema = z.object({
   description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
   applicationId: z.string().uuid(),
   runtimeId: z.union([z.string().uuid(), z.literal(""), z.null()]).transform((value) => value || null),
-  stages: z.array(workflowStageBodySchema).min(1)
+  agentId: z.string().uuid(),
+  objective: z.string().trim().min(1),
+  allowedToolIds: z.array(z.string().min(1)).default([]),
+  requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
+  findingPolicy: workflowStageFindingPolicySchema.default({
+    taxonomy: "typed-core-v1",
+    allowedTypes: allWorkflowFindingTypes
+  }),
+  completionRule: workflowStageCompletionRuleSchema.default({
+    requireStageResult: true,
+    requireToolCall: false,
+    allowEmptyResult: true,
+    minFindings: 0
+  }),
+  resultSchemaVersion: z.number().int().min(1).default(1),
+  handoffSchema: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
 });
 
 export const createWorkflowBodySchema = workflowBodyBaseSchema;
@@ -614,7 +645,7 @@ export const workflowTraceEntrySchema = z.object({
   id: z.string().uuid(),
   workflowRunId: z.string().uuid(),
   workflowId: z.string().uuid(),
-  workflowStageId: z.string().uuid(),
+  workflowStageId: z.string().uuid().nullable(),
   stepIndex: z.number().int().min(0),
   stageLabel: z.string().min(1),
   agentId: z.string().uuid(),

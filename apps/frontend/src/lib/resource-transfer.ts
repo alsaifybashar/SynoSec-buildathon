@@ -305,20 +305,13 @@ export const workflowTransfer = {
     description: workflow.description,
     applicationId: workflow.applicationId,
     runtimeId: workflow.runtimeId,
-    stages: workflow.stages
-      .slice()
-      .sort((left, right) => left.ord - right.ord)
-      .map((stage) => ({
-        id: stage.id,
-        label: stage.label,
-        agentId: stage.agentId,
-        objective: stage.objective,
-        allowedToolIds: stage.allowedToolIds,
-        requiredEvidenceTypes: stage.requiredEvidenceTypes,
-        findingPolicy: stage.findingPolicy,
-        completionRule: stage.completionRule,
-        resultSchemaVersion: stage.resultSchemaVersion,
-        handoffSchema: stage.handoffSchema
-      }))
+    agentId: workflow.agentId,
+    objective: workflow.objective,
+    allowedToolIds: workflow.allowedToolIds,
+    requiredEvidenceTypes: workflow.requiredEvidenceTypes,
+    findingPolicy: workflow.findingPolicy,
+    completionRule: workflow.completionRule,
+    resultSchemaVersion: workflow.resultSchemaVersion,
+    handoffSchema: workflow.handoffSchema
   })
 } satisfies ResourceTransferConfig<Workflow, CreateWorkflowBody>;

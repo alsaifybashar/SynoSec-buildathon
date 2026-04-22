@@ -3,6 +3,7 @@ import type { AiAgent, AiTool, Application, Runtime, Workflow, WorkflowRun } fro
 import {
   BookLock,
   BrainCog,
+  CircleHelp,
   Gauge,
   Orbit,
   Paperclip,
@@ -17,6 +18,7 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
   formatTimestamp,
@@ -138,6 +140,25 @@ function SectionLabel({ children, className }: { children: React.ReactNode; clas
     <p className={cn("font-mono text-[0.6rem] font-semibold uppercase tracking-[0.32em] text-muted-foreground/80", className)}>
       {children}
     </p>
+  );
+}
+
+function HelpHint({ label, hint }: { label: string; hint: string }) {
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex cursor-default items-center text-muted-foreground transition hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+            aria-label={`Show guidance for ${label}`}
+          >
+            <CircleHelp className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{hint}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -329,7 +350,15 @@ function StageHeaderCard({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <p className="font-mono text-[0.62rem] uppercase tracking-[0.24em] text-muted-foreground">
-            {workflow.stages.length === 1 ? "Workflow Trace" : `Stage ${item.stageIndex + 1}`}
+            <span className="inline-flex items-center gap-1.5">
+              <span>{workflow.stages.length === 1 ? "Workflow Trace" : `Step ${item.stageIndex + 1}`}</span>
+              <HelpHint
+                label={workflow.stages.length === 1 ? "Workflow Trace" : `Step ${item.stageIndex + 1}`}
+                hint={workflow.stages.length === 1
+                  ? "This is the full recorded transcript of one workflow run: what the agent was told, which tool it chose, what came back, and how it closed out."
+                  : "A step is one execution segment in the workflow transcript, including its objective, tool activity, and closeout."}
+              />
+            </span>
           </p>
           <Bracket className="text-[0.65rem] uppercase tracking-[0.2em] text-primary">
             <span>{item.stageStatus}</span>
@@ -342,7 +371,13 @@ function StageHeaderCard({
         <p className="text-sm text-muted-foreground">{item.agentName}</p>
       </div>
       <div className="mt-4 rounded-xl border border-border/70 bg-card/70 px-4 py-3">
-        <SectionLabel>Instructions</SectionLabel>
+        <div className="flex items-center gap-1.5">
+          <SectionLabel>Instructions</SectionLabel>
+          <HelpHint
+            label="Instructions"
+            hint="These are the workflow instructions given to the linked agent for this run. They define the objective and boundaries the agent should follow."
+          />
+        </div>
         <p className="mt-2 text-sm leading-6 text-foreground">{item.stageObjective}</p>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -411,7 +446,11 @@ function TranscriptCell({
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 font-mono text-[0.625rem] uppercase tracking-[0.26em] text-foreground">
               <BrainCog className="h-3.5 w-3.5 text-primary" />
-              reasoning
+              <span>reasoning</span>
+              <HelpHint
+                label="reasoning"
+                hint="This is the model's own short explanation for why it chose the next action. It is model-generated trace text, not token usage and not a placeholder."
+              />
             </span>
             <span className="text-muted-foreground/60">·</span>
             <span className="font-mono text-[0.6875rem] text-muted-foreground">{item.agentName}</span>
@@ -562,7 +601,13 @@ function DossierCell({ item }: { item: Extract<TranscriptItem, { kind: "dossier"
               <div className="min-w-0">
                 <div className="flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.32em] text-muted-foreground">
                   <Stamp className="h-3 w-3 text-primary" />
-                  evidence dossier · sealed
+                  <span className="inline-flex items-center gap-1.5">
+                    <span>evidence dossier · sealed</span>
+                    <HelpHint
+                      label="evidence dossier"
+                      hint="This is the workflow closeout card. It summarizes the outcome, findings, evidence chain, and the final state the run ended with."
+                    />
+                  </span>
                 </div>
                 <h2 className="mt-2 font-mono text-[1.5rem] font-semibold tracking-tight text-foreground">{item.stageLabel}</h2>
                 <p className="mt-1 text-[0.8125rem] text-muted-foreground">{item.outcome}</p>
@@ -615,7 +660,13 @@ function DossierCell({ item }: { item: Extract<TranscriptItem, { kind: "dossier"
 
               <div className="space-y-5">
                 <div>
-                  <SectionLabel className="mb-2">Chain of reasoning</SectionLabel>
+                  <div className="mb-2 flex items-center gap-1.5">
+                    <SectionLabel>Chain of reasoning</SectionLabel>
+                    <HelpHint
+                      label="Chain of reasoning"
+                      hint="This is the condensed decision trail extracted from the run: intent, action taken, model justification, and the handoff or stopping reason."
+                    />
+                  </div>
                   <ol className="space-y-2">
                     {item.chain.map((step, idx) => (
                       <li key={`${item.id}-${idx}`} className="flex items-start gap-2.5">

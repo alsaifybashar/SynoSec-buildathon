@@ -4,7 +4,6 @@ import {
   type AiProvider,
   type AiTool,
   type Application,
-  type ListSingleAgentScansResponse,
   type ListAiAgentsResponse,
   type ListAiProvidersResponse,
   type ListAiToolsResponse,
@@ -12,7 +11,6 @@ import {
   type ListRuntimesResponse,
   type ListWorkflowsResponse,
   type Runtime,
-  type SingleAgentScan,
   type Workflow,
 } from "@synosec/contracts";
 import { fetchJson } from "@/lib/api";
@@ -101,21 +99,10 @@ type WorkflowsQuery = {
   page: number;
   pageSize: number;
   q: string;
-  sortBy: "name" | "status" | "applicationId" | "stages" | "createdAt" | "updatedAt";
+  sortBy: "name" | "status" | "applicationId" | "agentId" | "createdAt" | "updatedAt";
   sortDirection: SortDirection;
   status: OptionalString;
   applicationId: OptionalString;
-};
-
-type SingleAgentScansQuery = {
-  page: number;
-  pageSize: number;
-  q: string;
-  sortBy: "createdAt" | "status" | "currentRound";
-  sortDirection: SortDirection;
-  status: OptionalString;
-  applicationId: OptionalString;
-  agentId: OptionalString;
 };
 
 function buildQueryString(query: ListQueryState, defaults: ListQueryState) {
@@ -302,20 +289,5 @@ export const workflowsResource = createResourceClient<Workflow, WorkflowsQuery, 
     sortDirection: "asc",
     status: undefined,
     applicationId: undefined
-  }
-});
-
-export const singleAgentScansResource = createResourceClient<SingleAgentScan, SingleAgentScansQuery, ListSingleAgentScansResponse>({
-  path: apiRoutes.singleAgentScans,
-  dataKey: "scans",
-  defaultQuery: {
-    page: 1,
-    pageSize: 25,
-    q: "",
-    sortBy: "createdAt",
-    sortDirection: "desc",
-    status: undefined,
-    applicationId: undefined,
-    agentId: undefined
   }
 });

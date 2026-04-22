@@ -18,6 +18,9 @@ function defaultMessageForStatus(status: number) {
   if (status === 409) {
     return "The request could not be completed because the resource changed.";
   }
+  if (status === 429) {
+    return "Too many requests were sent in a short period.";
+  }
   if (status >= 500) {
     return "Something went wrong while processing the request.";
   }

@@ -51,8 +51,8 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       .sort((left, right) => {
         const sortBy = query.sortBy ?? "name";
         const direction = query.sortDirection === "desc" ? -1 : 1;
-        const leftValue = sortBy === "stages" ? left.stages.length : left[sortBy];
-        const rightValue = sortBy === "stages" ? right.stages.length : right[sortBy];
+        const leftValue = left[sortBy];
+        const rightValue = right[sortBy];
 
         if (leftValue === rightValue) {
           return left.name.localeCompare(right.name) * direction;
@@ -69,8 +69,40 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
   }
 
   async create(input: CreateWorkflowBody): Promise<Workflow> {
-    await this.assertReferences(input.applicationId, input.runtimeId, input.stages.map((stage) => stage.agentId));
+    const legacyStage = (input as CreateWorkflowBody & { stages?: Array<Record<string, unknown>> }).stages?.[0];
+    const agentId = input.agentId ?? (typeof legacyStage?.["agentId"] === "string" ? legacyStage["agentId"] : "");
+    const contractInput = legacyStage
+      ? {
+          label: typeof legacyStage["label"] === "string" ? legacyStage["label"] : "Workflow Run",
+          objective: input.objective ?? legacyStage["objective"],
+          allowedToolIds: input.allowedToolIds ?? legacyStage["allowedToolIds"],
+          requiredEvidenceTypes: input.requiredEvidenceTypes ?? legacyStage["requiredEvidenceTypes"],
+          findingPolicy: input.findingPolicy ?? legacyStage["findingPolicy"],
+          completionRule: input.completionRule ?? legacyStage["completionRule"],
+          resultSchemaVersion: input.resultSchemaVersion ?? legacyStage["resultSchemaVersion"],
+          handoffSchema: input.handoffSchema ?? legacyStage["handoffSchema"]
+        }
+      : {
+          label: "Workflow Run",
+          objective: input.objective,
+          allowedToolIds: input.allowedToolIds,
+          requiredEvidenceTypes: input.requiredEvidenceTypes,
+          findingPolicy: input.findingPolicy,
+          completionRule: input.completionRule,
+          resultSchemaVersion: input.resultSchemaVersion,
+          handoffSchema: input.handoffSchema
+        };
+
+    await this.assertReferences(input.applicationId, input.runtimeId, [agentId]);
     const timestamp = new Date().toISOString();
+    const normalizedContract = normalizeWorkflowStageContract(contractInput);
+    const stage = {
+      id: randomUUID(),
+      label: contractInput.label,
+      agentId,
+      ord: 0,
+      ...normalizedContract
+    };
     const workflow: Workflow = {
       id: randomUUID(),
       name: input.name,
@@ -78,13 +110,15 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       description: input.description,
       applicationId: input.applicationId,
       runtimeId: input.runtimeId,
-      stages: input.stages.map((stage, index) => ({
-        id: stage.id ?? randomUUID(),
-        label: stage.label,
-        agentId: stage.agentId,
-        ord: index,
-        ...normalizeWorkflowStageContract(stage)
-      })),
+      agentId,
+      objective: normalizedContract.objective,
+      allowedToolIds: normalizedContract.allowedToolIds,
+      requiredEvidenceTypes: normalizedContract.requiredEvidenceTypes,
+      findingPolicy: normalizedContract.findingPolicy,
+      completionRule: normalizedContract.completionRule,
+      resultSchemaVersion: normalizedContract.resultSchemaVersion,
+      handoffSchema: normalizedContract.handoffSchema,
+      stages: [stage],
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -102,8 +136,19 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     await this.assertReferences(
       input.applicationId ?? current.applicationId,
       input.runtimeId === undefined ? current.runtimeId : input.runtimeId,
-      (input.stages ?? current.stages).map((stage) => stage.agentId)
+      [input.agentId ?? current.agentId]
     );
+
+    const nextStageContract = normalizeWorkflowStageContract({
+      label: current.stages[0]?.label ?? "Workflow Run",
+      objective: input.objective ?? current.objective,
+      allowedToolIds: input.allowedToolIds ?? current.allowedToolIds,
+      requiredEvidenceTypes: input.requiredEvidenceTypes ?? current.requiredEvidenceTypes,
+      findingPolicy: input.findingPolicy ?? current.findingPolicy,
+      completionRule: input.completionRule ?? current.completionRule,
+      resultSchemaVersion: input.resultSchemaVersion ?? current.resultSchemaVersion,
+      handoffSchema: input.handoffSchema === undefined ? current.handoffSchema : input.handoffSchema
+    });
 
     const updated: Workflow = {
       ...current,
@@ -112,13 +157,21 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       description: input.description === undefined ? current.description : input.description,
       applicationId: input.applicationId ?? current.applicationId,
       runtimeId: input.runtimeId === undefined ? current.runtimeId : input.runtimeId,
-      stages: (input.stages ?? current.stages).map((stage, index) => ({
-        id: stage.id ?? randomUUID(),
-        label: stage.label,
-        agentId: stage.agentId,
-        ord: index,
-        ...normalizeWorkflowStageContract(stage)
-      })),
+      agentId: input.agentId ?? current.agentId,
+      objective: input.objective ?? current.objective,
+      allowedToolIds: input.allowedToolIds ?? current.allowedToolIds,
+      requiredEvidenceTypes: input.requiredEvidenceTypes ?? current.requiredEvidenceTypes,
+      findingPolicy: input.findingPolicy ?? current.findingPolicy,
+      completionRule: input.completionRule ?? current.completionRule,
+      resultSchemaVersion: input.resultSchemaVersion ?? current.resultSchemaVersion,
+      handoffSchema: input.handoffSchema === undefined ? current.handoffSchema : input.handoffSchema,
+      stages: [{
+        id: current.stages[0]?.id ?? randomUUID(),
+        label: current.stages[0]?.label ?? "Workflow Run",
+        agentId: input.agentId ?? current.agentId,
+        ord: 0,
+        ...nextStageContract
+      }],
       updatedAt: new Date().toISOString()
     };
 
@@ -144,6 +197,18 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       })),
       updatedAt: new Date().toISOString()
     };
+
+    const primaryStage = updated.stages[0];
+    if (primaryStage) {
+      updated.agentId = primaryStage.agentId;
+      updated.objective = primaryStage.objective;
+      updated.allowedToolIds = primaryStage.allowedToolIds;
+      updated.requiredEvidenceTypes = primaryStage.requiredEvidenceTypes;
+      updated.findingPolicy = primaryStage.findingPolicy;
+      updated.completionRule = primaryStage.completionRule;
+      updated.resultSchemaVersion = primaryStage.resultSchemaVersion;
+      updated.handoffSchema = primaryStage.handoffSchema;
+    }
 
     this.workflows.set(workflowId, updated);
     return updated;

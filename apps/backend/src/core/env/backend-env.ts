@@ -25,6 +25,35 @@ function defaultCookieSecure() {
   return backendEnv.toLowerCase() === "production";
 }
 
+export const rateLimitPolicySchema = z.object({
+  windowMs: z.coerce.number().int().min(1),
+  max: z.coerce.number().int().min(1)
+});
+
+export const rateLimitConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  cleanupIntervalMs: z.coerce.number().int().min(1).default(60_000),
+  health: rateLimitPolicySchema.default({
+    windowMs: 60_000,
+    max: 120
+  }),
+  auth: rateLimitPolicySchema.default({
+    windowMs: 60_000,
+    max: 10
+  }),
+  connector: rateLimitPolicySchema.default({
+    windowMs: 60_000,
+    max: 120
+  }),
+  api: rateLimitPolicySchema.default({
+    windowMs: 60_000,
+    max: 60
+  })
+});
+
+export type RateLimitPolicy = z.infer<typeof rateLimitPolicySchema>;
+export type RateLimitConfig = z.infer<typeof rateLimitConfigSchema>;
+
 const backendEnvSchema = z.object({
   backendEnv: z.string().min(1).default("development"),
   nodeEnv: z.string().min(1).default("development"),
@@ -41,7 +70,17 @@ const backendEnvSchema = z.object({
   cookieName: z.string().min(1).default("synosec_session"),
   cookieSecure: z.boolean(),
   sessionTtlHours: z.coerce.number().int().min(1).max(24 * 30).default(168),
-  sessionTouchIntervalSeconds: z.coerce.number().int().min(0).max(24 * 60 * 60).default(600)
+  sessionTouchIntervalSeconds: z.coerce.number().int().min(0).max(24 * 60 * 60).default(600),
+  rateLimitEnabled: z.boolean().default(true),
+  rateLimitCleanupIntervalMs: z.coerce.number().int().min(1).default(60_000),
+  rateLimitHealthWindowMs: z.coerce.number().int().min(1).default(60_000),
+  rateLimitHealthMax: z.coerce.number().int().min(1).default(120),
+  rateLimitAuthWindowMs: z.coerce.number().int().min(1).default(60_000),
+  rateLimitAuthMax: z.coerce.number().int().min(1).default(10),
+  rateLimitConnectorWindowMs: z.coerce.number().int().min(1).default(60_000),
+  rateLimitConnectorMax: z.coerce.number().int().min(1).default(120),
+  rateLimitApiWindowMs: z.coerce.number().int().min(1).default(60_000),
+  rateLimitApiMax: z.coerce.number().int().min(1).default(60)
 }).superRefine((env, ctx) => {
   if (env.toolExecutionMode === "connector" && !env.connectorSharedToken) {
     ctx.addIssue({
@@ -90,6 +129,29 @@ const backendEnvSchema = z.object({
 
 export type BackendEnv = z.infer<typeof backendEnvSchema>;
 
+export function loadRateLimitConfig(): RateLimitConfig {
+  return rateLimitConfigSchema.parse({
+    enabled: parseBoolean(process.env["RATE_LIMIT_ENABLED"], true),
+    cleanupIntervalMs: process.env["RATE_LIMIT_CLEANUP_INTERVAL_MS"] ?? "60000",
+    health: {
+      windowMs: process.env["RATE_LIMIT_HEALTH_WINDOW_MS"] ?? "60000",
+      max: process.env["RATE_LIMIT_HEALTH_MAX"] ?? "120"
+    },
+    auth: {
+      windowMs: process.env["RATE_LIMIT_AUTH_WINDOW_MS"] ?? "60000",
+      max: process.env["RATE_LIMIT_AUTH_MAX"] ?? "10"
+    },
+    connector: {
+      windowMs: process.env["RATE_LIMIT_CONNECTOR_WINDOW_MS"] ?? "60000",
+      max: process.env["RATE_LIMIT_CONNECTOR_MAX"] ?? "120"
+    },
+    api: {
+      windowMs: process.env["RATE_LIMIT_API_WINDOW_MS"] ?? "60000",
+      max: process.env["RATE_LIMIT_API_MAX"] ?? "60"
+    }
+  });
+}
+
 export function loadBackendEnv(): BackendEnv {
   return backendEnvSchema.parse({
     backendEnv: process.env["BACKEND_ENV"] ?? "development",
@@ -107,6 +169,16 @@ export function loadBackendEnv(): BackendEnv {
     cookieName: process.env["AUTH_COOKIE_NAME"] ?? "synosec_session",
     cookieSecure: parseBoolean(process.env["AUTH_COOKIE_SECURE"], defaultCookieSecure()),
     sessionTtlHours: process.env["AUTH_SESSION_TTL_HOURS"] ?? "168",
-    sessionTouchIntervalSeconds: process.env["AUTH_SESSION_TOUCH_INTERVAL_SECONDS"] ?? "600"
+    sessionTouchIntervalSeconds: process.env["AUTH_SESSION_TOUCH_INTERVAL_SECONDS"] ?? "600",
+    rateLimitEnabled: parseBoolean(process.env["RATE_LIMIT_ENABLED"], true),
+    rateLimitCleanupIntervalMs: process.env["RATE_LIMIT_CLEANUP_INTERVAL_MS"] ?? "60000",
+    rateLimitHealthWindowMs: process.env["RATE_LIMIT_HEALTH_WINDOW_MS"] ?? "60000",
+    rateLimitHealthMax: process.env["RATE_LIMIT_HEALTH_MAX"] ?? "120",
+    rateLimitAuthWindowMs: process.env["RATE_LIMIT_AUTH_WINDOW_MS"] ?? "60000",
+    rateLimitAuthMax: process.env["RATE_LIMIT_AUTH_MAX"] ?? "10",
+    rateLimitConnectorWindowMs: process.env["RATE_LIMIT_CONNECTOR_WINDOW_MS"] ?? "60000",
+    rateLimitConnectorMax: process.env["RATE_LIMIT_CONNECTOR_MAX"] ?? "120",
+    rateLimitApiWindowMs: process.env["RATE_LIMIT_API_WINDOW_MS"] ?? "60000",
+    rateLimitApiMax: process.env["RATE_LIMIT_API_MAX"] ?? "60"
   });
 }

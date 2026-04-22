@@ -3,6 +3,7 @@ import { ArrowLeft, Check, CircleHelp, Download, Undo2 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { Spinner } from "@/shared/ui/spinner";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 
 export function DetailPage({
   title,
@@ -167,22 +168,20 @@ export function DetailField({
           {required ? <span className="ml-1 text-destructive">*</span> : null}
         </span>
         {hint ? (
-          <span className="relative inline-flex">
-            <button
-              type="button"
-              className="peer inline-flex items-center text-muted-foreground transition hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
-              aria-label={`Show guidance for ${label}`}
-              title={hint}
-            >
-              <CircleHelp className="h-3.5 w-3.5" />
-            </button>
-            <span
-              role="tooltip"
-              className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden w-56 -translate-x-1/2 rounded-md bg-foreground px-3 py-2 text-left text-xs font-normal normal-case tracking-normal leading-relaxed text-background shadow-md peer-hover:block peer-focus-visible:block"
-            >
-              {hint}
-            </span>
-          </span>
+          <TooltipProvider delayDuration={150}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex cursor-default items-center text-muted-foreground transition hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+                  aria-label={`Show guidance for ${label}`}
+                >
+                  <CircleHelp className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{hint}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         ) : null}
       </div>
       {children}

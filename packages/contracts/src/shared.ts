@@ -13,7 +13,6 @@ export const apiRoutes = {
   workflows: "/api/workflows",
   workflowRuns: "/api/workflow-runs",
   workflowRunEvents: "/api/workflow-runs/:id/events",
-  singleAgentScans: "/api/single-agent-scans",
   toolCapabilities: "/api/tools/capabilities",
   connectorRegister: "/api/connectors/register",
   connectorPoll: "/api/connectors/:connectorId/poll",

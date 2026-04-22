@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Pencil, RefreshCcw, Trash2, Workflow as WorkflowIcon } from "lucide-react";
+import { ArrowLeft, Check, Download, ExternalLink, Pencil, RefreshCcw, Undo2, Workflow as WorkflowIcon } from "lucide-react";
 import { toast } from "sonner";
 import {
   apiRoutes,
@@ -26,11 +26,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/shared/ui/textarea";
 import {
   createEmptyFormValues,
-  createStage,
   definedFieldError,
   toWorkflowFormValues,
   toWorkflowRequestBody,
-  type WorkflowFormStage,
   type WorkflowFormValues,
   validateWorkflowForm
 } from "@/features/workflows/workflow-form";
@@ -94,11 +92,7 @@ function WorkflowConfigEditor({
   agentLookup,
   toolLookup,
   filteredRuntimes,
-  onFieldChange,
-  onStageChange,
-  onMoveStage,
-  onRemoveStage,
-  onAddStage
+  onFieldChange
 }: {
   formValues: WorkflowFormValues;
   errors: Record<string, string>;
@@ -108,11 +102,11 @@ function WorkflowConfigEditor({
   toolLookup: Record<string, string>;
   filteredRuntimes: Runtime[];
   onFieldChange: <Key extends keyof WorkflowFormValues>(field: Key, value: WorkflowFormValues[Key]) => void;
-  onStageChange: (index: number, nextStage: WorkflowFormStage) => void;
-  onMoveStage: (index: number, direction: -1 | 1) => void;
-  onRemoveStage: (index: number) => void;
-  onAddStage: () => void;
 }) {
+  const selectedAgent = agentLookup[formValues.agentId];
+  const inheritedToolIds = selectedAgent?.toolIds ?? [];
+  const effectiveToolIds = formValues.allowedToolIds.length > 0 ? formValues.allowedToolIds : inheritedToolIds;
+
   return (
     <>
       <DetailFieldGroup title="Workflow Configuration" className="bg-card/70">
@@ -161,65 +155,75 @@ function WorkflowConfigEditor({
         </DetailField>
       </DetailFieldGroup>
 
-      <DetailFieldGroup title="Stages" className="bg-card/70">
-        <div className="space-y-3 md:col-span-2">
-          {formValues.stages.map((stage, index) => {
-            const agent = agentLookup[stage.agentId];
-            const inheritedTools = agent?.toolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ") ?? "No tools assigned";
-
-            return (
-              <div key={stage.id} className="space-y-3 rounded-xl border border-border bg-background/40 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Stage {index + 1}</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => onMoveStage(index, -1)} disabled={index === 0}>
-                      <ArrowUp className="h-4 w-4" />
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => onMoveStage(index, 1)} disabled={index === formValues.stages.length - 1}>
-                      <ArrowDown className="h-4 w-4" />
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => onRemoveStage(index)} disabled={formValues.stages.length === 1}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <DetailField label="Stage label" required {...definedFieldError(errors[`stage-${index}-label`])}>
-                    <Input
-                      value={stage.label}
-                      onChange={(event) => onStageChange(index, { ...stage, label: event.target.value })}
-                      aria-label={`Stage ${index + 1} label`}
-                    />
-                  </DetailField>
-                  <DetailField label="Agent" required {...definedFieldError(errors[`stage-${index}-agentId`])}>
-                    <Select value={stage.agentId} onValueChange={(value) => onStageChange(index, { ...stage, agentId: value })}>
-                      <SelectTrigger aria-label={`Stage ${index + 1} agent`}>
-                        <SelectValue placeholder="Select agent" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {agents.map((agentOption) => (
-                          <SelectItem key={agentOption.id} value={agentOption.id}>{agentOption.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </DetailField>
-                </div>
-
-                <div className="space-y-1">
-                  <p className="text-[0.625rem] uppercase tracking-[0.18em] text-muted-foreground">Inherited tools</p>
-                  <p className="text-sm text-foreground">{inheritedTools}</p>
-                </div>
-              </div>
-            );
-          })}
-
-          {errors["stages"] ? <p className="text-xs text-destructive">{errors["stages"]}</p> : null}
-
-          <Button type="button" variant="outline" onClick={onAddStage}>
-            Add Stage
-          </Button>
-        </div>
+      <DetailFieldGroup title="Execution Contract" className="bg-card/70">
+        <DetailField label="Agent" required {...definedFieldError(errors["agentId"])}>
+          <Select value={formValues.agentId} onValueChange={(value) => onFieldChange("agentId", value)}>
+            <SelectTrigger aria-label="Agent">
+              <SelectValue placeholder="Select agent" />
+            </SelectTrigger>
+            <SelectContent>
+              {agents.map((agentOption) => (
+                <SelectItem key={agentOption.id} value={agentOption.id}>{agentOption.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </DetailField>
+        <DetailField label="Objective" required className="md:col-span-2" {...definedFieldError(errors["objective"])}>
+          <Textarea value={formValues.objective} onChange={(event) => onFieldChange("objective", event.target.value)} aria-label="Objective" rows={4} />
+        </DetailField>
+        <DetailField label="Agent prompt" className="md:col-span-2">
+          <div className="space-y-2 rounded-xl border border-border bg-background/40 p-4">
+            <p className="text-sm leading-6 text-foreground">{selectedAgent?.systemPrompt ?? "Select an agent to inspect its prompt."}</p>
+            <p className="text-xs text-muted-foreground">
+              Prompt and base tool grants are owned by the linked agent and edited from the AI Agents page.
+            </p>
+          </div>
+        </DetailField>
+        <DetailField label="Allowed tools" className="md:col-span-2">
+          <div className="space-y-3 rounded-xl border border-border bg-background/40 p-4">
+            <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
+              <p className="text-xs font-medium text-foreground">
+                {formValues.allowedToolIds.length === 0
+                  ? "Mode: inherit all agent tools"
+                  : `Mode: restricted to ${formValues.allowedToolIds.length} selected tool${formValues.allowedToolIds.length === 1 ? "" : "s"}`}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Click a tool to mark it selected for this workflow. If none are selected, the workflow uses every tool granted on the agent.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {inheritedToolIds.length > 0 ? inheritedToolIds.map((toolId) => {
+                const restricted = formValues.allowedToolIds.length > 0;
+                const active = restricted ? formValues.allowedToolIds.includes(toolId) : true;
+                return (
+                  <Button
+                    key={toolId}
+                    type="button"
+                    variant={active ? "default" : "outline"}
+                    className="h-auto min-h-8 px-3 py-2 text-[0.7rem]"
+                    onClick={() => onFieldChange(
+                      "allowedToolIds",
+                      restricted && active
+                        ? formValues.allowedToolIds.filter((id) => id !== toolId)
+                        : [...new Set([...formValues.allowedToolIds, toolId])]
+                    )}
+                  >
+                    <span className="flex items-center gap-2">
+                      {active ? <Check className="h-3.5 w-3.5" /> : <span className="h-3.5 w-3.5 rounded-full border border-current/40" />}
+                      <span>{toolLookup[toolId] ?? toolId}</span>
+                      <span className="rounded-full border border-current/20 px-1.5 py-0.5 text-[0.58rem] uppercase tracking-[0.14em]">
+                        {active ? "Allowed" : "Not allowed"}
+                      </span>
+                    </span>
+                  </Button>
+                );
+              }) : <p className="text-sm text-muted-foreground">No tools are assigned to this agent.</p>}
+            </div>
+            <p className="text-sm text-foreground">
+              Effective tools for this workflow: {effectiveToolIds.length > 0 ? effectiveToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ") : "None"}
+            </p>
+          </div>
+        </DetailField>
       </DetailFieldGroup>
     </>
   );
@@ -280,14 +284,12 @@ export function WorkflowsPage({
 
         setFormValues((current) => {
           const defaultApplicationId = current.applicationId || applicationsResult.items[0]?.id || "";
-          const defaultAgentId = current.stages[0]?.agentId || agentsResult.items[0]?.id || "";
+          const defaultAgentId = current.agentId || agentsResult.items[0]?.id || "";
 
           return {
             ...current,
             applicationId: defaultApplicationId,
-            stages: current.stages.length
-              ? current.stages.map((stage) => ({ ...stage, agentId: stage.agentId || defaultAgentId }))
-              : [createStage(defaultAgentId)]
+            agentId: defaultAgentId
           };
         });
       })
@@ -418,8 +420,12 @@ export function WorkflowsPage({
     { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
     { id: "applicationId", header: "Target", cell: (row) => <span className="text-muted-foreground">{applicationLookup[row.applicationId] ?? "Unknown"}</span> },
     { id: "status", header: "Status", cell: (row) => <span className="text-muted-foreground">{statusLabels[row.status]}</span> },
-    { id: "stages", header: "Stages", cell: (row) => <span className="text-muted-foreground">{row.stages.length}</span> }
-  ], [applicationLookup]);
+    {
+      id: "agentId",
+      header: "Agent",
+      cell: (row) => <span className="text-muted-foreground">{agentLookup[row.agentId ?? row.stages?.[0]?.agentId ?? ""]?.name ?? "Unknown"}</span>
+    }
+  ], [applicationLookup, agentLookup]);
 
   const filters = useMemo<ListPageFilter[]>(() => [
     {
@@ -440,45 +446,6 @@ export function WorkflowsPage({
       delete next[String(field)];
       return next;
     });
-  }
-
-  function handleStageChange(index: number, nextStage: WorkflowFormStage) {
-    setFormValues((current) => ({
-      ...current,
-      stages: current.stages.map((stage, stageIndex) => stageIndex === index ? nextStage : stage)
-    }));
-  }
-
-  function moveStage(index: number, direction: -1 | 1) {
-    setFormValues((current) => {
-      const nextIndex = index + direction;
-      if (nextIndex < 0 || nextIndex >= current.stages.length) {
-        return current;
-      }
-
-      const stages = current.stages.slice();
-      const [stage] = stages.splice(index, 1);
-      if (!stage) {
-        return current;
-      }
-
-      stages.splice(nextIndex, 0, stage);
-      return { ...current, stages };
-    });
-  }
-
-  function addStage() {
-    setFormValues((current) => ({
-      ...current,
-      stages: [...current.stages, createStage(agents[0]?.id ?? "")]
-    }));
-  }
-
-  function removeStage(index: number) {
-    setFormValues((current) => ({
-      ...current,
-      stages: current.stages.filter((_, stageIndex) => stageIndex !== index)
-    }));
   }
 
   async function handleSave() {
@@ -635,15 +602,19 @@ export function WorkflowsPage({
     );
   }
 
-  const workflowAgent = workflow?.stages[0] ? agentLookup[workflow.stages[0].agentId] : null;
+  const workflowStageFallback = workflow?.stages?.[0];
+  const workflowAgentId = workflow?.agentId ?? workflowStageFallback?.agentId ?? "";
+  const workflowObjective = workflow?.objective ?? workflowStageFallback?.objective ?? "Run the configured workflow against the selected target with the approved tools.";
+  const workflowAllowedToolIds = workflow?.allowedToolIds ?? workflowStageFallback?.allowedToolIds ?? [];
+  const workflowAgent = workflowAgentId ? agentLookup[workflowAgentId] : null;
   const workflowProvider = workflowAgent ? providerLookup[workflowAgent.providerId] : null;
   const effectiveModel = workflowAgent?.modelOverride ?? workflowProvider?.model ?? "Unknown model";
-  const approvedToolCount = workflow?.stages[0]
-    ? (workflow.stages[0].allowedToolIds.length > 0 ? workflow.stages[0].allowedToolIds.length : workflowAgent?.toolIds.length ?? 0)
+  const approvedToolCount = workflow
+    ? (workflowAllowedToolIds.length > 0 ? workflowAllowedToolIds.length : workflowAgent?.toolIds.length ?? 0)
     : 0;
-  const runSummaryDescription = workflow?.stages[0]?.objective ?? "Run the configured workflow against the selected target with the approved tools.";
-  const visibleToolIds = workflow?.stages[0]
-    ? (workflow.stages[0].allowedToolIds.length > 0 ? workflow.stages[0].allowedToolIds : workflowAgent?.toolIds ?? [])
+  const runSummaryDescription = workflowObjective;
+  const visibleToolIds = workflow
+    ? (workflowAllowedToolIds.length > 0 ? workflowAllowedToolIds : workflowAgent?.toolIds ?? [])
     : [];
   const visibleToolNames = visibleToolIds.map((toolId: string) => toolLookup[toolId] ?? toolId);
 
@@ -665,10 +636,12 @@ export function WorkflowsPage({
       actions={(
         <>
           <Button type="button" variant="outline" onClick={onNavigateToList} className="h-9 text-[0.75rem]">
+            <ArrowLeft className="h-4 w-4" />
             Back
           </Button>
           {!isCreateMode ? (
             <Button type="button" variant="outline" onClick={handleExportJson} className="h-9 text-[0.75rem]">
+              <Download className="h-4 w-4" />
               Export JSON
             </Button>
           ) : null}
@@ -676,12 +649,14 @@ export function WorkflowsPage({
           {isCreateMode ? (
             <>
               <Button type="button" onClick={() => void handleSave()} disabled={!isDirty || saving} className="h-9 text-[0.75rem]">
+                <Check className="h-4 w-4" />
                 Save
               </Button>
               <Button type="button" variant="outline" onClick={() => {
                 setFormValues(initialValues);
                 setErrors({});
               }} disabled={!isDirty || saving} className="h-9 text-[0.75rem]">
+                <Undo2 className="h-4 w-4" />
                 Dismiss
               </Button>
             </>
@@ -699,15 +674,21 @@ export function WorkflowsPage({
                 <Pencil className="h-4 w-4" />
                 Edit Workflow
               </Button>
+              <Button type="button" variant="outline" onClick={() => {
+                window.location.hash = `#/ai-agents/${workflowAgentId}`;
+              }} disabled={!workflow}>
+                <ExternalLink className="h-4 w-4" />
+                Edit Agent
+              </Button>
             </>
           )}
         </>
       )}
       sidebar={workflow ? (
-        <div className="space-y-4 rounded-xl border border-border bg-card/70 p-4">
+        <div className="space-y-4">
           <DetailSidebarItem label="Status">{statusLabels[workflow.status]}</DetailSidebarItem>
           <DetailSidebarItem label="Target">{applicationLookup[workflow.applicationId] ?? "Unknown"}</DetailSidebarItem>
-          <DetailSidebarItem label="Stages">{workflow.stages.length}</DetailSidebarItem>
+          <DetailSidebarItem label="Agent">{workflowAgent?.name ?? "Unknown"}</DetailSidebarItem>
           <DetailSidebarItem label="Current Run">
             {currentRun ? `${currentRun.status} · ${currentRun.trace.length} traced` : "No active run"}
           </DetailSidebarItem>
@@ -740,10 +721,6 @@ export function WorkflowsPage({
           toolLookup={toolLookup}
           filteredRuntimes={filteredRuntimes}
           onFieldChange={handleFieldChange}
-          onStageChange={handleStageChange}
-          onMoveStage={moveStage}
-          onRemoveStage={removeStage}
-          onAddStage={addStage}
         />
       ) : (
         <DetailFieldGroup title="Run Snapshot" className="bg-card/70">
@@ -811,10 +788,6 @@ export function WorkflowsPage({
               toolLookup={toolLookup}
               filteredRuntimes={filteredRuntimes}
               onFieldChange={handleFieldChange}
-              onStageChange={handleStageChange}
-              onMoveStage={moveStage}
-              onRemoveStage={removeStage}
-              onAddStage={addStage}
             />
           </div>
         </WorkflowEditModal>

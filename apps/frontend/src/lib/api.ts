@@ -45,9 +45,6 @@ function inferRequestContext(url: string, init?: RequestInit): RequestContext {
   if (pathname.match(/\/api\/workflow-runs\/[^/]+\/step$/) && method === "POST") {
     return { method, action: "advance workflow run", singularLabel: "workflow run", pluralLabel: "workflow runs" };
   }
-  if (pathname.match(/\/api\/single-agent-scans\/[^/]+\/(vulnerabilities|coverage|trace|report)$/) && method === "GET") {
-    return { method, action: "load single-agent scan artifacts", singularLabel: "single-agent scan", pluralLabel: "single-agent scans" };
-  }
 
   const resourceMatch = pathname.match(/\/api\/([^/]+)(?:\/[^/]+)?$/);
   const resource = resourceMatch?.[1] ?? "resource";
@@ -58,8 +55,7 @@ function inferRequestContext(url: string, init?: RequestInit): RequestContext {
     "ai-agents": { singular: "AI agent", plural: "AI agents" },
     "ai-tools": { singular: "AI tool", plural: "AI tools" },
     workflows: { singular: "Workflow", plural: "Workflows" },
-    "workflow-runs": { singular: "Workflow run", plural: "Workflow runs" },
-    "single-agent-scans": { singular: "Single-agent scan", plural: "Single-agent scans" }
+    "workflow-runs": { singular: "Workflow run", plural: "Workflow runs" }
   };
   const label = labels[resource] ?? { singular: "Resource", plural: "Resources" };
   const isCollectionRequest = !pathname.match(/\/api\/[^/]+\/[^/]+$/);
@@ -121,6 +117,9 @@ function defaultMessageForStatus(status: number, context: RequestContext) {
   }
   if (status === 409) {
     return `${context.singularLabel} changed before the request completed. Try again.`;
+  }
+  if (status === 429) {
+    return `Too many requests were sent while trying to ${context.action}. Try again shortly.`;
   }
   if (status >= 500) {
     return `Unable to ${context.action} right now.`;

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiAgent, AiProvider, AiTool, Application, AuthSessionResponse, Runtime, SingleAgentScan, Workflow } from "@synosec/contracts";
+import type { AiAgent, AiProvider, AiTool, Application, AuthSessionResponse, Runtime, Workflow } from "@synosec/contracts";
 import App from "@/app/App";
 
 function createPaginatedPayload<T>(key: string, items: T[]) {
@@ -20,7 +20,6 @@ describe("App", () => {
   let agents: AiAgent[];
   let tools: AiTool[];
   let workflows: Workflow[];
-  let scans: SingleAgentScan[];
   let authSession: AuthSessionResponse;
   let authSessionFailureCount: number;
 
@@ -173,9 +172,6 @@ describe("App", () => {
         updatedAt: "2026-04-12T12:00:00.000Z"
       }
     ];
-
-    scans = [];
-
     authSession = {
       authEnabled: false,
       authenticated: false,
@@ -274,39 +270,6 @@ describe("App", () => {
           ? new Response(JSON.stringify(workflow))
           : new Response(JSON.stringify({ message: "Workflow not found." }), { status: 404 });
       }
-      if ((url === "/api/single-agent-scans" || url.startsWith("/api/single-agent-scans?")) && method === "GET") {
-        return new Response(JSON.stringify(createPaginatedPayload("scans", scans)));
-      }
-      if (url.startsWith("/api/single-agent-scans/") && method === "GET") {
-        const parts = url.split("/");
-        const id = parts[3] ?? "";
-        const scan = scans.find((candidate) => candidate.id === id);
-        if (parts[4] === "vulnerabilities") {
-          return new Response(JSON.stringify({ scanId: id, vulnerabilities: [] }));
-        }
-        if (parts[4] === "coverage") {
-          return new Response(JSON.stringify({ scanId: id, layers: [] }));
-        }
-        if (parts[4] === "trace") {
-          return new Response(JSON.stringify({ scanId: id, entries: [] }));
-        }
-        if (parts[4] === "report") {
-          return new Response(JSON.stringify({
-            scanId: id,
-            executiveSummary: "No report available.",
-            stopReason: null,
-            totalVulnerabilities: 0,
-            vulnerabilitiesBySeverity: { info: 0, low: 0, medium: 0, high: 0, critical: 0 },
-            coverageOverview: {},
-            topVulnerabilities: [],
-            generatedAt: "2026-04-12T12:00:00.000Z"
-          }));
-        }
-        return scan
-          ? new Response(JSON.stringify(scan))
-          : new Response(JSON.stringify({ message: "Single-agent scan not found." }), { status: 404 });
-      }
-
       throw new Error(`Unhandled fetch: ${method} ${url}`);
     }));
   });
@@ -333,9 +296,6 @@ describe("App", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: "Workflows" })[0]!);
     expect(await screen.findByRole("heading", { name: "Workflows" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Single-Agent Scans" })[0]!);
-    expect(await screen.findByRole("heading", { name: "Single-Agent Runs" })).toBeInTheDocument();
 
     expect(screen.queryByText("Templates")).not.toBeInTheDocument();
   });

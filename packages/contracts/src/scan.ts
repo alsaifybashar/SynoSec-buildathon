@@ -100,27 +100,6 @@ export const singleAgentScanSchema = scanSchema.extend({
 });
 export type SingleAgentScan = z.infer<typeof singleAgentScanSchema>;
 
-export const createSingleAgentScanRequestSchema = z.object({
-  applicationId: z.string().uuid(),
-  runtimeId: z.union([z.string().uuid(), z.literal(""), z.null()]).transform((value) => value || null),
-  agentId: z.string().uuid(),
-  scope: scanScopeSchema,
-  llm: scanLlmConfigSchema.optional()
-});
-export type CreateSingleAgentScanRequest = z.infer<typeof createSingleAgentScanRequestSchema>;
-
-export const singleAgentScansListQuerySchema = resourceListQuerySchema.extend({
-  status: scanStatusSchema.optional(),
-  applicationId: z.string().uuid().optional(),
-  agentId: z.string().uuid().optional(),
-  sortBy: z.enum(["createdAt", "status", "currentRound"]).optional().default("createdAt"),
-  sortDirection: sortDirectionSchema.default("desc")
-});
-export type SingleAgentScansListQuery = z.infer<typeof singleAgentScansListQuerySchema>;
-
-export const listSingleAgentScansResponseSchema = createPaginatedResponseSchema("scans", singleAgentScanSchema);
-export type ListSingleAgentScansResponse = z.infer<typeof listSingleAgentScansResponseSchema>;
-
 export const singleAgentScanVulnerabilitiesResponseSchema = z.object({
   scanId: z.string(),
   vulnerabilities: z.array(securityVulnerabilitySchema)

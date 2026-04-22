@@ -52,9 +52,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
           }
         : {})
     };
-    const orderBy = query.sortBy === "stages"
-      ? { stages: { _count: query.sortDirection } }
-      : query.sortBy === "applicationId"
+    const orderBy = query.sortBy === "applicationId"
         ? { application: { name: query.sortDirection } }
         : { [query.sortBy ?? "name"]: query.sortDirection };
     const skip = (query.page - 1) * query.pageSize;
@@ -87,7 +85,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
   }
 
   async create(input: CreateWorkflowBody): Promise<Workflow> {
-    await this.assertReferences(input.applicationId, input.runtimeId, input.stages.map((stage) => stage.agentId));
+    await this.assertReferences(input.applicationId, input.runtimeId, [input.agentId]);
 
     const workflow = await this.prisma.workflow.create({
       data: {
@@ -99,18 +97,17 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
         runtimeId: input.runtimeId,
         stages: {
           createMany: {
-            data: input.stages.map((stage, index) => toWorkflowStageCreateManyInput({
-              label: stage.label,
-              agentId: stage.agentId,
-              ...(stage.id ? { id: stage.id } : {}),
-              objective: stage.objective,
-              allowedToolIds: stage.allowedToolIds,
-              requiredEvidenceTypes: stage.requiredEvidenceTypes,
-              findingPolicy: stage.findingPolicy,
-              completionRule: stage.completionRule,
-              resultSchemaVersion: stage.resultSchemaVersion,
-              handoffSchema: stage.handoffSchema
-            }, index))
+            data: [toWorkflowStageCreateManyInput({
+              label: "Workflow Run",
+              agentId: input.agentId,
+              objective: input.objective,
+              allowedToolIds: input.allowedToolIds,
+              requiredEvidenceTypes: input.requiredEvidenceTypes,
+              findingPolicy: input.findingPolicy,
+              completionRule: input.completionRule,
+              resultSchemaVersion: input.resultSchemaVersion,
+              handoffSchema: input.handoffSchema
+            }, 0)]
           }
         }
       }
@@ -133,29 +130,39 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
       return null;
     }
 
-    const nextStages = input.stages ?? current.stages.map((stage) => ({
-      id: stage.id,
-      label: stage.label,
-      agentId: stage.agentId,
-      objective: stage.objective ?? `Complete the ${stage.label} stage using allowed tools and structured reporting.`,
-      allowedToolIds: Array.isArray(stage.allowedToolIds) ? stage.allowedToolIds.map(String) : [],
-      requiredEvidenceTypes: Array.isArray(stage.requiredEvidenceTypes) ? stage.requiredEvidenceTypes.map(String) : [],
-      ...(stage.findingPolicy && typeof stage.findingPolicy === "object" && !Array.isArray(stage.findingPolicy)
-        ? { findingPolicy: stage.findingPolicy as Record<string, unknown> }
-        : {}),
-      ...(stage.completionRule && typeof stage.completionRule === "object" && !Array.isArray(stage.completionRule)
-        ? { completionRule: stage.completionRule as Record<string, unknown> }
-        : {}),
-      resultSchemaVersion: stage.resultSchemaVersion,
-      ...(stage.handoffSchema && typeof stage.handoffSchema === "object" && !Array.isArray(stage.handoffSchema)
-        ? { handoffSchema: stage.handoffSchema as Record<string, unknown> }
-        : {})
-    }));
+    const currentPrimaryStage = current.stages.sort((left, right) => left.ord - right.ord)[0];
+    if (!currentPrimaryStage) {
+      throw new RequestError(400, "Workflow is missing its persisted execution contract.");
+    }
+    const nextStage = {
+      id: currentPrimaryStage.id,
+      label: currentPrimaryStage.label,
+      agentId: input.agentId ?? currentPrimaryStage.agentId,
+      objective: input.objective ?? currentPrimaryStage.objective ?? `Complete the ${currentPrimaryStage.label} workflow using allowed tools and structured reporting.`,
+      allowedToolIds: input.allowedToolIds ?? (Array.isArray(currentPrimaryStage.allowedToolIds) ? currentPrimaryStage.allowedToolIds.map(String) : []),
+      requiredEvidenceTypes: input.requiredEvidenceTypes ?? (Array.isArray(currentPrimaryStage.requiredEvidenceTypes) ? currentPrimaryStage.requiredEvidenceTypes.map(String) : []),
+      ...(input.findingPolicy
+        ? { findingPolicy: input.findingPolicy }
+        : currentPrimaryStage.findingPolicy && typeof currentPrimaryStage.findingPolicy === "object" && !Array.isArray(currentPrimaryStage.findingPolicy)
+          ? { findingPolicy: currentPrimaryStage.findingPolicy as Record<string, unknown> }
+          : {}),
+      ...(input.completionRule
+        ? { completionRule: input.completionRule }
+        : currentPrimaryStage.completionRule && typeof currentPrimaryStage.completionRule === "object" && !Array.isArray(currentPrimaryStage.completionRule)
+          ? { completionRule: currentPrimaryStage.completionRule as Record<string, unknown> }
+          : {}),
+      resultSchemaVersion: input.resultSchemaVersion ?? currentPrimaryStage.resultSchemaVersion,
+      ...(input.handoffSchema !== undefined
+        ? { handoffSchema: input.handoffSchema }
+        : currentPrimaryStage.handoffSchema && typeof currentPrimaryStage.handoffSchema === "object" && !Array.isArray(currentPrimaryStage.handoffSchema)
+          ? { handoffSchema: currentPrimaryStage.handoffSchema as Record<string, unknown> }
+          : {})
+    };
 
     await this.assertReferences(
       input.applicationId ?? current.applicationId,
       input.runtimeId === undefined ? current.runtimeId : input.runtimeId,
-      nextStages.map((stage) => stage.agentId)
+      [nextStage.agentId]
     );
 
     const workflow = await this.prisma.$transaction(async (transaction) => {
@@ -173,18 +180,18 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
           runtimeId: input.runtimeId === undefined ? current.runtimeId : input.runtimeId,
           stages: {
             createMany: {
-              data: nextStages.map((stage, index) => toWorkflowStageCreateManyInput({
-                label: stage.label,
-                agentId: stage.agentId,
-                ...(stage.id ? { id: stage.id } : {}),
-                objective: stage.objective,
-                allowedToolIds: stage.allowedToolIds,
-                requiredEvidenceTypes: stage.requiredEvidenceTypes,
-                findingPolicy: stage.findingPolicy,
-                completionRule: stage.completionRule,
-                resultSchemaVersion: stage.resultSchemaVersion,
-                handoffSchema: stage.handoffSchema
-              }, index))
+              data: [toWorkflowStageCreateManyInput({
+                label: nextStage.label,
+                agentId: nextStage.agentId,
+                ...(nextStage.id ? { id: nextStage.id } : {}),
+                objective: nextStage.objective,
+                allowedToolIds: nextStage.allowedToolIds,
+                requiredEvidenceTypes: nextStage.requiredEvidenceTypes,
+                findingPolicy: nextStage.findingPolicy,
+                completionRule: nextStage.completionRule,
+                resultSchemaVersion: nextStage.resultSchemaVersion,
+                handoffSchema: nextStage.handoffSchema
+              }, 0)]
             }
           }
         }

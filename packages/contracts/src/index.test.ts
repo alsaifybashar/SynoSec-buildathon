@@ -5,7 +5,6 @@ import {
   connectorPollResponseSchema,
   connectorRegistrationRequestSchema,
   connectorTestDispatchRequestSchema,
-  createSingleAgentScanRequestSchema,
   createAiToolBodySchema,
   createScanRequestSchema,
   createApplicationBodySchema,
@@ -17,7 +16,6 @@ import {
   prioritizeDefensiveAction,
   healthResponseSchema,
   listApplicationsResponseSchema,
-  listSingleAgentScansResponseSchema,
   listScansResponseSchema,
   scanLayerCoverageSchema,
   scansListQuerySchema,
@@ -319,33 +317,6 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
-  it("accepts a single-agent scan request with application and agent context", () => {
-    const result = createSingleAgentScanRequestSchema.safeParse({
-      applicationId: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
-      runtimeId: null,
-      agentId: "34e69347-4446-4c54-b8b0-b3962f701f0e",
-      scope: {
-        targets: ["http://localhost:8888"],
-        exclusions: [],
-        layers: ["L1", "L4", "L7"],
-        maxDepth: 2,
-        maxDurationMinutes: 5,
-        rateLimitRps: 5,
-        allowActiveExploits: false,
-        graceEnabled: true,
-        graceRoundInterval: 3,
-        cyberRangeMode: "simulation"
-      },
-      llm: {
-        provider: "local",
-        model: "qwen3:4b",
-        baseUrl: "http://127.0.0.1:11434"
-      }
-    });
-
-    expect(result.success).toBe(true);
-  });
-
   it("accepts a structured security vulnerability with layer metadata", () => {
     const result = securityVulnerabilitySchema.safeParse({
       id: "vuln-1",
@@ -391,50 +362,6 @@ describe("contracts", () => {
       vulnerabilityIds: [],
       gaps: ["No L1 adapter configured."],
       updatedAt: "2026-04-21T12:00:00.000Z"
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts paginated single-agent scan responses", () => {
-    const result = listSingleAgentScansResponseSchema.safeParse({
-      scans: [
-        {
-          id: "11111111-1111-4111-8111-111111111111",
-          mode: "single-agent",
-          applicationId: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
-          runtimeId: null,
-          agentId: "34e69347-4446-4c54-b8b0-b3962f701f0e",
-          scope: {
-            targets: ["localhost:8888"],
-            exclusions: [],
-            layers: ["L1", "L4", "L7"],
-            maxDepth: 2,
-            maxDurationMinutes: 5,
-            rateLimitRps: 5,
-            allowActiveExploits: false,
-            graceEnabled: true,
-            graceRoundInterval: 3,
-            cyberRangeMode: "simulation"
-          },
-          llm: {
-            provider: "local",
-            model: "qwen3:4b",
-            baseUrl: "http://127.0.0.1:11434"
-          },
-          status: "complete",
-          currentRound: 3,
-          tacticsTotal: 8,
-          tacticsComplete: 3,
-          stopReason: "no_further_material_progress",
-          createdAt: "2026-04-21T12:00:00.000Z",
-          completedAt: "2026-04-21T12:01:00.000Z"
-        }
-      ],
-      page: 1,
-      pageSize: 25,
-      total: 1,
-      totalPages: 1
     });
 
     expect(result.success).toBe(true);

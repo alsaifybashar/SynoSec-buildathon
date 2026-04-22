@@ -13,7 +13,6 @@ import { registerAiAgentsRoutes } from "@/features/modules/ai-agents/ai-agents.r
 import { type AiAgentsRepository } from "@/features/modules/ai-agents/ai-agents.repository.js";
 import { registerAiToolsRoutes } from "@/features/modules/ai-tools/ai-tools.routes.js";
 import { type AiToolsRepository } from "@/features/modules/ai-tools/ai-tools.repository.js";
-import { registerScansRoutes } from "@/features/modules/scans/scans.routes.js";
 import { SingleAgentScanService } from "@/features/modules/scans/single-agent-scan.service.js";
 import { registerWorkflowsRoutes } from "@/features/modules/workflows/workflows.routes.js";
 import { WorkflowExecutionService } from "@/features/modules/workflows/workflow-execution.service.js";
@@ -61,7 +60,6 @@ export function registerRoutes(app: Express, dependencies: {
   registerAiProvidersRoutes(app, dependencies.aiProvidersRepository);
   registerAiAgentsRoutes(app, dependencies.aiAgentsRepository);
   registerAiToolsRoutes(app, dependencies.aiToolsRepository);
-  registerScansRoutes(app, singleAgentScanService);
   registerWorkflowsRoutes(app, dependencies.workflowsRepository, workflowExecutionService, workflowRunStream);
   app.use(createToolsRouter());
 }

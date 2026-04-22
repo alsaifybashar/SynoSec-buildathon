@@ -82,45 +82,32 @@ describe("MemoryWorkflowsRepository", () => {
       description: null,
       applicationId: application.id,
       runtimeId: runtime.id,
-      stages: [
-        {
-          label: "Recon",
-          agentId: agent.id,
-          objective: "   ",
-          allowedToolIds: ["tool-a", "tool-a", ""],
-          requiredEvidenceTypes: ["http", "http", ""],
-          findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
-          completionRule: {
-            requireStageResult: true,
-            requireToolCall: false,
-            allowEmptyResult: true,
-            minFindings: 0
-          },
-          resultSchemaVersion: 0,
-          handoffSchema: null
-        },
-        {
-          label: "Validate",
-          agentId: agent.id,
-          objective: "Validate findings",
-          allowedToolIds: [],
-          requiredEvidenceTypes: [],
-          findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
-          completionRule: {
-            requireStageResult: true,
-            requireToolCall: false,
-            allowEmptyResult: true,
-            minFindings: 0
-          },
-          resultSchemaVersion: 1,
-          handoffSchema: null
-        }
-      ]
+      agentId: agent.id,
+      objective: "   ",
+      allowedToolIds: ["tool-a", "tool-a", ""],
+      requiredEvidenceTypes: ["http", "http", ""],
+      findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
+      completionRule: {
+        requireStageResult: true,
+        requireToolCall: false,
+        allowEmptyResult: true,
+        minFindings: 0
+      },
+      resultSchemaVersion: 0,
+      handoffSchema: null
     });
 
-    expect(workflow.stages.map((stage) => stage.ord)).toEqual([0, 1]);
+    expect(workflow.agentId).toBe(agent.id);
+    expect(workflow.objective).toBe("Complete the Workflow Run stage using allowed tools and structured reporting.");
+    expect(workflow.allowedToolIds).toEqual(["tool-a"]);
+    expect(workflow.requiredEvidenceTypes).toEqual(["http"]);
+    expect(workflow.resultSchemaVersion).toBe(1);
+    expect(workflow.stages).toHaveLength(1);
     expect(workflow.stages[0]).toMatchObject({
-      objective: "Complete the Recon stage using allowed tools and structured reporting.",
+      ord: 0,
+      label: "Workflow Run",
+      agentId: agent.id,
+      objective: "Complete the Workflow Run stage using allowed tools and structured reporting.",
       allowedToolIds: ["tool-a"],
       requiredEvidenceTypes: ["http"],
       resultSchemaVersion: 1
@@ -136,22 +123,19 @@ describe("MemoryWorkflowsRepository", () => {
       description: null,
       applicationId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
       runtimeId: runtime.id,
-      stages: [{
-        label: "Recon",
-        agentId: agent.id,
-        objective: "Objective",
-        allowedToolIds: [],
-        requiredEvidenceTypes: [],
-        findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
-        completionRule: {
-          requireStageResult: true,
-          requireToolCall: false,
-          allowEmptyResult: true,
-          minFindings: 0
-        },
-        resultSchemaVersion: 1,
-        handoffSchema: null
-      }]
+      agentId: agent.id,
+      objective: "Objective",
+      allowedToolIds: [],
+      requiredEvidenceTypes: [],
+      findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
+      completionRule: {
+        requireStageResult: true,
+        requireToolCall: false,
+        allowEmptyResult: true,
+        minFindings: 0
+      },
+      resultSchemaVersion: 1,
+      handoffSchema: null
     })).rejects.toMatchObject({
       status: 400,
       message: "Application not found."

@@ -417,8 +417,7 @@ describe("WorkflowsPage", () => {
       />
     );
 
-    expect(await screen.findByText("Initial Recon")).toBeInTheDocument();
-    expect(screen.getAllByText("Complete the Initial Recon stage using allowed tools and structured reporting.").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Complete the Initial Recon stage using allowed tools and structured reporting.")).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/single-agent security runner/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/claude-sonnet-4/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText("HTTP Recon").length).toBeGreaterThan(0);
