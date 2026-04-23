@@ -66,6 +66,15 @@ For host-mode development against the same local model stack:
 make dev
 ```
 
+### Stop development environment
+
+To completely stop the development environment, including both local processes and Docker-backed services (Postgres, target, Ollama):
+
+```bash
+# Stop Docker services and free local dev ports
+make docker-down && make free-dev-ports
+```
+
 For auth-enabled local development, the relevant `.env` values are:
 
 ```env
@@ -165,12 +174,13 @@ Use it to check:
 ## Key commands
 
 ```bash
-make docker-up
-make docker-down
-make smoke-e2e
-make dev
-make test
-pnpm build
+make docker-up         # Start full stack (Docker Compose)
+make docker-down       # Stop and remove containers
+make dev               # Start local dev against Docker-backed infra
+make docker-down && make free-dev-ports # Stop everything completely
+make smoke-e2e         # Run the Docker E2E smoke scan
+make test              # Run workspace tests
+pnpm build             # Build all workspace packages
 ```
 
 ## Contributing
@@ -184,3 +194,151 @@ The cutoff is strict:
 - Do not contribute new behavior to retired or frozen areas unless the reactivation effort is explicitly documented as a new active feature.
 
 For connector-related work, preserve local/VPS parity and keep execution broker-mediated. Do not introduce direct model-to-tool or model-to-shell access as a shortcut.
+
+
+  ---
+  Project Overview
+
+  SynoSec is an AI-driven automated pentesting platform. The architecture has three key
+  layers:
+
+  1. AI Agent (Claude/Ollama) — decides which tools to run based on OSI layer analysis
+  2. Tool Broker — policy engine + execution dispatcher
+  3. Tool Layer — bash scripts or native binaries that do the actual scanning
+
+  ---
+  How Tools Are Implemented
+
+  Two Types of Tools
+
+  Type 1: Seeded Self-Contained Tools (stored in the database as bash scripts)
+
+  These run Node.js inline HTTP code — no external binaries required:
+
+  ┌──────────────────────────┬───────────────────────────────┬──────────────────────────┐
+  │           Tool           │         What It Does          │     Real Pentesting      │
+  │                          │                               │        Equivalent        │
+  ├──────────────────────────┼───────────────────────────────┼──────────────────────────┤
+  │                          │                               │ Initial footprinting —   │
+  │ seed-http-recon          │ Probes URL for status, title, │ httpx -silent            │
+  │                          │  tech stack via httpx         │ -status-code -title      │
+  │                          │                               │ -tech-detect             │
+  ├──────────────────────────┼───────────────────────────────┼──────────────────────────┤
+  │                          │ curl -sS -I -L to grab raw    │ Manual banner grabbing   │
+  │ seed-http-headers        │ response headers              │ to find server version   │
+  │                          │                               │ leaks                    │
+  ├──────────────────────────┼───────────────────────────────┼──────────────────────────┤
+  │                          │ BFS crawls up to 8            │ Spider phase — maps      │
+  │ seed-web-crawl           │ same-origin pages following   │ attack surface before    │
+  │                          │ href links                    │ exploitation             │
+  ├──────────────────────────┼───────────────────────────────┼──────────────────────────┤
+  │                          │                               │ Poor-man's nmap -sV —    │
+  │ seed-service-scan        │ Raw TCP socket + HEAD banner  │ confirms the service is  │
+  │                          │ grab on derived port          │ alive and extracts       │
+  │                          │                               │ banner                   │
+  ├──────────────────────────┼───────────────────────────────┼──────────────────────────┤
+  │                          │ Probes a fixed wordlist:      │ Mimics gobuster dir or   │
+  │ seed-content-discovery   │ /admin, /login, /.env,        │ ffuf with a small        │
+  │                          │ /.git/config, etc.            │ wordlist                 │
+  ├──────────────────────────┼───────────────────────────────┼──────────────────────────┤
+  │                          │ Checks unauthenticated        │ Mimics nuclei template   │
+  │ seed-vuln-audit          │ /admin, PII leaks at          │ checks + manual header   │
+  │                          │ /api/users, missing security  │ review                   │
+  │                          │ headers                       │                          │
+  ├──────────────────────────┼───────────────────────────────┼──────────────────────────┤
+  │                          │ POSTs username=' OR '1'='1 to │ Same payload as sqlmap   │
+  │ seed-sql-injection-check │  /login, detects bypass by    │ --level=1 auth bypass    │
+  │                          │ regex                         │ test                     │
+  └──────────────────────────┴───────────────────────────────┴──────────────────────────┘
+
+  Type 2: Shell Wrapper Scripts (delegate to real installed binaries)
+
+  Located in scripts/tools/, these call the actual tools when available:
+
+  ┌────────────────────────┬────────────┬───────────────────────────────────────────────┐
+  │         Script         │   Real     │                   Use Case                    │
+  │                        │   Binary   │                                               │
+  ├────────────────────────┼────────────┼───────────────────────────────────────────────┤
+  │ service-scan.sh        │ nmap       │ Full port/service/OS detection                │
+  ├────────────────────────┼────────────┼───────────────────────────────────────────────┤
+  │ content-discovery.sh   │ ffuf       │ High-speed directory fuzzing with custom      │
+  │                        │            │ wordlists                                     │
+  ├────────────────────────┼────────────┼───────────────────────────────────────────────┤
+  │ sql-injection-check.sh │ sqlmap     │ Automated SQL injection + DB extraction       │
+  ├────────────────────────┼────────────┼───────────────────────────────────────────────┤
+  │ vulnerability-audit.sh │ nuclei     │ Template-based CVE scanning                   │
+  ├────────────────────────┼────────────┼───────────────────────────────────────────────┤
+  │ web-crawl.sh           │ katana     │ JavaScript-aware deep web crawling            │
+  ├────────────────────────┼────────────┼───────────────────────────────────────────────┤
+  │ http-recon.sh          │ httpx      │ Bulk HTTP probing at scale                    │
+  └────────────────────────┴────────────┴───────────────────────────────────────────────┘
+
+  ---
+  Real Pentesting Scenario Walkthrough
+
+  Here's how a full scan maps to a real-world pentest methodology:
+
+  Phase 1 — RECONNAISSANCE (OSI L3/L4)
+    seed-service-scan → tcp banner grab → finds open ports
+    seed-http-recon   → httpx probe    → confirms HTTP(S) service, grabs tech stack
+
+  Phase 2 — ENUMERATION (OSI L7)
+    seed-http-headers     → curl -I      → finds Server: Apache/2.2.34 (outdated), missing
+  headers
+    seed-web-crawl        → BFS crawler  → discovers /admin, /api/users, /files, /search
+    seed-content-discovery → wordlist    → finds /.env, /.git/config, /login
+
+  Phase 3 — VULNERABILITY IDENTIFICATION (OSI L7)
+    seed-vuln-audit → checks:
+      - /admin accessible without auth  → HIGH finding
+      - /api/users returns SSNs/cards   → CRITICAL finding
+      - Missing CSP/X-Frame-Options     → MEDIUM finding
+
+  Phase 4 — EXPLOITATION (requires allowActiveExploits=true)
+    seed-sql-injection-check → POST ' OR '1'='1 → confirms auth bypass
+    [real sqlmap via sql-injection-check.sh when binary installed]
+
+  Phase 5 — REPORTING
+    AI agent calls report_vulnerability() for each confirmed finding
+    submit_scan_completion() with per-OSI-layer coverage claims
+
+  ---
+  The AI's Role
+
+  The AI agent (Claude or Ollama) acts as the pentester's decision loop. It:
+
+  1. Receives a system prompt describing the target and scope
+  2. Chooses which tool to call next based on what's been discovered so far
+  3. Must justify each tool call by OSI layer (L1–L7)
+  4. Interprets tool output and decides whether to dig deeper or move on
+  5. Calls report_vulnerability() when it has sufficient confidence in a finding
+  6. Has a max of 8 tool-call steps per run
+
+  The confidence engine uses Bayesian merging — if two independent tools both detect the
+  same finding, the combined confidence score rises above either alone.
+
+  ---
+  The Policy Engine (Safety Layer)
+
+  Before any tool executes, authorizeToolRequest() checks:
+
+  - Is the target in scan.scope.targets? (no scanning out-of-scope hosts)
+  - If riskTier === "controlled-exploit" (sqlmap, hydra, metasploit) → requires
+  allowActiveExploits: true explicitly set on the scan
+  - Passive tools always run; active exploit tools are gated
+
+  ---
+  The 62-Tool Catalog
+
+  The full catalog (tool-catalog.ts) includes tools across all pentesting domains:
+  - Network: nmap, masscan, rustscan, autorecon
+  - Web: nikto, nuclei, dalfox (XSS), ffuf, gobuster, feroxbuster
+  - SQLi: sqlmap
+  - Password: hydra, hashcat, john, medusa
+  - Windows/AD: crackmapexec, enum4linux-ng, responder, evil-winrm
+  - Subdomain/OSINT: amass, subfinder, theHarvester
+  - Cloud: prowler, trivy, scout-suite
+  - Forensics/Reversing: volatility3, radare2, binwalk, exiftool
+
+  GET /api/tools/capabilities tells you which of these are actually installed on the current
+   machine.
