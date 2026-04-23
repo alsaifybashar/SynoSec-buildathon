@@ -93,11 +93,19 @@ jobs:
           require_secret "CONNECTOR_SHARED_TOKEN" "$CONNECTOR_SHARED_TOKEN"
           require_secret "AUTH_SESSION_SECRET" "$AUTH_SESSION_SECRET"
           require_secret "AUTH_ALLOWED_EMAILS" "$AUTH_ALLOWED_EMAILS"
+
       - name: Verify deploy files exist
         run: |
           test -f docker-compose.vps.yml
           test -f infra/deploy/env.vps.template
           test -f infra/nginx/synosec.vps.conf.template
+
+      - name: Add VPS to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -H ${{ vars.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          chmod 644 ~/.ssh/known_hosts
 
       - name: Copy project to VPS
         uses: appleboy/scp-action@v0.1.7
@@ -109,6 +117,7 @@ jobs:
           target: "${{ env.VPS_TARGET_DIR }}"
           strip_components: 1
           rm: true
+          debug: true
 
       - name: Deploy with Docker Compose
         uses: appleboy/ssh-action@v1.0.3
