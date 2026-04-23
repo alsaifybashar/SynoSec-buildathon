@@ -107,14 +107,14 @@ jobs:
           ssh-keyscan -H ${{ vars.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Prepare VPS directory
+      - name: Prepare deploy directory on VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ vars.VPS_HOST }}
           username: ${{ vars.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            sudo rm -rf "${{ env.VPS_TARGET_DIR }}"
+            set -euo pipefail
             sudo mkdir -p "${{ env.VPS_TARGET_DIR }}"
             sudo chown "$USER:$USER" "${{ env.VPS_TARGET_DIR }}"
 
