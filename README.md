@@ -120,6 +120,7 @@ Define these GitHub repository secrets as well:
 
 Most non-secret application defaults now live in `infra/deploy/env.vps.template`, so GitHub only needs the host-specific variables above plus the runtime secrets. If you need to change default model, scan, connector, auth, or public port settings for every deployment, edit that committed template instead of adding more Actions variables.
 The deploy workflow now hardcodes the VPS app directory to `/opt/synosec` and binds the host loopback ports to `3030` for the frontend and `3031` for the backend.
+The deploy user must have passwordless `sudo` for `install`, `find`, and `rm` against that path, because the workflow prepares and clears `/opt/synosec` before uploading each release.
 
 Set `SERVER_NAME` to the apex domain only, for example `synosecai.com`. The nginx template will serve both `synosecai.com` and `www.synosecai.com`.
 
