@@ -116,13 +116,7 @@ jobs:
           script: |
             set -euo pipefail
 
-            if ! command -v sudo >/dev/null 2>&1; then
-              echo "sudo is required to manage ${{ env.VPS_TARGET_DIR }}" >&2
-              exit 1
-            fi
-
-            sudo install -d -m 0755 -o "$(id -un)" -g "$(id -gn)" "${{ env.VPS_TARGET_DIR }}"
-            sudo find "${{ env.VPS_TARGET_DIR }}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+            mkdir -p "${{ env.VPS_TARGET_DIR }}"
 
             if [ ! -w "${{ env.VPS_TARGET_DIR }}" ]; then
               echo "Deploy directory is not writable: ${{ env.VPS_TARGET_DIR }}" >&2
@@ -138,7 +132,6 @@ jobs:
           source: "."
           target: "${{ env.VPS_TARGET_DIR }}"
           strip_components: 1
-          debug: true
 
       - name: Deploy with Docker Compose
         uses: appleboy/ssh-action@v1.0.3
