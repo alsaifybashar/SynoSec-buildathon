@@ -300,6 +300,7 @@ function ToolBlock({
   tool: AiTool | undefined;
 }) {
   const command = tool?.executorType === "bash" ? tool.bashSource : null;
+  const commandLabel = tool?.binary ?? detail.toolName;
   const statusText = detail.kind === "tool_result" ? detail.status : "running";
   const body = detail.kind === "tool_result" ? detail.body : detail.body;
   const failed = statusText === "failed";
@@ -328,7 +329,7 @@ function ToolBlock({
       {command ? (
         <div className="border-b border-border/70 bg-background px-4 py-2 font-mono text-[0.74rem] text-muted-foreground">
           <span className="text-border">$ </span>
-          {tool.binary}
+          {commandLabel}
         </div>
       ) : null}
       <div className="px-4 py-3">
@@ -595,7 +596,7 @@ export function WorkflowTraceSection({
   tools: AiTool[];
   run: WorkflowRun | null;
   running: boolean;
-  liveModelOutput: LiveModelOutput | null;
+  liveModelOutput?: LiveModelOutput | null;
   summaryCard: SummaryCardData;
 }) {
   if (!workflow) {
@@ -611,7 +612,7 @@ export function WorkflowTraceSection({
     agents,
     toolLookup,
     running,
-    liveModelOutput
+    liveModelOutput: liveModelOutput ?? null
   });
   const findingsById = new Map(transcript.findings.map((finding) => [finding.id, finding]));
   const applicationName = applications.find((item) => item.id === workflow.applicationId)?.name ?? "Unknown application";
