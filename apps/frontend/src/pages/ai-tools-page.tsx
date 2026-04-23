@@ -62,7 +62,7 @@ function createEmptyFormValues(): ToolFormValues {
     source: "custom",
     description: "",
     binary: "",
-    bashSource: "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' '{\"output\":\"Replace this placeholder with a JSON-emitting bash tool.\"}'\n",
+    bashSource: "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' '{\"output\":\"Replace this placeholder with a structured evidence result.\"}'\n",
     capabilitiesText: "",
     category: "utility",
     riskTier: "passive",
@@ -434,6 +434,17 @@ export function AiToolsPage({
     }
   }
 
+  function handleListExportJson(selected: AiTool) {
+    exportResourceRecords(aiToolTransfer, [selected], `ai-tool-${selected.name}`);
+  }
+
+  async function handleDeleteTool(selected: AiTool) {
+    await fetchJson<void>(`${apiRoutes.aiTools}/${selected.id}`, {
+      method: "DELETE"
+    });
+    toolList.refetch();
+  }
+
   if (!toolId) {
     return (
       <ListPage
@@ -455,6 +466,9 @@ export function AiToolsPage({
         onAddRecord={onNavigateToCreate}
         onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
         onImportJson={handleImportJson}
+        getRowLabel={(row) => row.name}
+        onExportRowJson={handleListExportJson}
+        onDeleteRow={handleDeleteTool}
       />
     );
   }
@@ -540,7 +554,7 @@ export function AiToolsPage({
         </DetailField>
       </DetailFieldGroup>
 
-      <DetailFieldGroup title="Inputs & Outputs" className="bg-card/70">
+      <DetailFieldGroup title="Evidence Contract" className="bg-card/70">
         <DetailField label="Example input" className="md:col-span-2">
           <Textarea
             value={tool ? JSON.stringify(createExampleRunInput(tool), null, 2) : ""}
@@ -553,7 +567,10 @@ export function AiToolsPage({
         <DetailField label="Input schema" className="md:col-span-2" {...definedString(errors.inputSchemaText)}>
           <Textarea value={formValues.inputSchemaText} onChange={(event) => handleFieldChange("inputSchemaText", event.target.value)} aria-label="Input schema" rows={10} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
         </DetailField>
-        <DetailField label="Output schema" className="md:col-span-2" {...definedString(errors.outputSchemaText)}>
+        <DetailField label="Structured result schema" className="md:col-span-2" {...definedString(errors.outputSchemaText)}>
+          <p className="mb-2 text-sm leading-6 text-muted-foreground">
+            Evidence tools return a structured result envelope. `output` is required. `observations` are optional evidence records and are not persisted findings.
+          </p>
           <Textarea value={formValues.outputSchemaText} onChange={(event) => handleFieldChange("outputSchemaText", event.target.value)} aria-label="Output schema" rows={10} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
         </DetailField>
       </DetailFieldGroup>
@@ -617,7 +634,10 @@ export function AiToolsPage({
               className="font-mono text-sm"
             />
           </DetailField>
-          <DetailField label="Parsed result" className="md:col-span-2">
+          <DetailField label="Parsed evidence result" className="md:col-span-2">
+            <p className="mb-2 text-sm leading-6 text-muted-foreground">
+              Parsed observations here become evidence artifacts. Findings are created separately by workflow system actions such as vulnerability reporting.
+            </p>
             <Textarea
               value={runResult ? JSON.stringify({
                 exitCode: runResult.exitCode,

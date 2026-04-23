@@ -7,8 +7,8 @@
     "postinstall": "pnpm --filter @synosec/backend prisma:generate",
     "dev": "pnpm --filter @synosec/contracts build && concurrently -n backend,frontend -c green,magenta \"pnpm --filter @synosec/backend dev\" \"pnpm --filter @synosec/frontend dev\"",
     "build": "pnpm -r build",
-    "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @synosec/contracts build && pnpm -r test",
+    "typecheck": "pnpm --filter @synosec/contracts build && pnpm -r typecheck",
     "lint": "eslint ."
   },
   "devDependencies": {

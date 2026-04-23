@@ -308,6 +308,17 @@ export function ApplicationsPage({
     }
   }
 
+  function handleListExportJson(selected: Application) {
+    exportResourceRecords(applicationTransfer, [selected], `application-${selected.name}`);
+  }
+
+  async function handleDeleteApplication(selected: Application) {
+    await fetchJson<void>(`${apiRoutes.applications}/${selected.id}`, {
+      method: "DELETE"
+    });
+    applicationList.refetch();
+  }
+
   if (!applicationId) {
     return (
       <ListPage
@@ -329,6 +340,9 @@ export function ApplicationsPage({
         onAddRecord={onNavigateToCreate}
         onRowClick={(selected) => onNavigateToDetail(selected.id, selected.name)}
         onImportJson={handleImportJson}
+        getRowLabel={(selected) => selected.name}
+        onExportRowJson={handleListExportJson}
+        onDeleteRow={handleDeleteApplication}
       />
     );
   }

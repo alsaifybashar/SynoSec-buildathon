@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ListPage, type ListPageColumn } from "@/components/list-page";
 import type { PaginatedResource } from "@/lib/resources";
@@ -170,5 +170,56 @@ describe("ListPage", () => {
     });
 
     expect(handleImportJson).toHaveBeenCalledWith(file);
+  });
+
+  it("renders row actions and routes action clicks without triggering row navigation", async () => {
+    const handleRowClick = vi.fn();
+    const handleExportRowJson = vi.fn();
+    const handleDeleteRow = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ListPage
+        title="Applications"
+        recordLabel="Application"
+        columns={columns}
+        query={{
+          page: 1,
+          pageSize: 25,
+          q: "",
+          sortBy: "name",
+          sortDirection: "asc"
+        }}
+        dataState={{ state: "loaded", data: meta }}
+        items={items}
+        meta={meta}
+        emptyMessage="No applications found."
+        onSearchChange={() => {}}
+        onFilterChange={() => {}}
+        onSortChange={() => {}}
+        onPageChange={() => {}}
+        onPageSizeChange={() => {}}
+        onRetry={() => {}}
+        onRowClick={handleRowClick}
+        getRowLabel={(row) => row.name}
+        onExportRowJson={handleExportRowJson}
+        onDeleteRow={handleDeleteRow}
+      />
+    );
+
+    expect(screen.getAllByText("Actions")).not.toHaveLength(0);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Download Operator Portal as JSON" })[0]!);
+    expect(handleExportRowJson).toHaveBeenCalledWith(items[0]);
+    expect(handleRowClick).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete Operator Portal" })[0]!);
+    expect(handleDeleteRow).not.toHaveBeenCalled();
+    expect(screen.getAllByText("Delete Operator Portal?").length).toBeGreaterThan(0);
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "Confirm delete Operator Portal" })[0]!);
+    });
+    expect(handleDeleteRow).toHaveBeenCalledWith(items[0]);
+    expect(handleRowClick).not.toHaveBeenCalled();
   });
 });

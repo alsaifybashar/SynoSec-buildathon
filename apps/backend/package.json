@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm run prisma:generate && tsx watch src/main.ts",
-    "build": "pnpm run prisma:generate && tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
-    "typecheck": "pnpm run prisma:generate && tsc -p tsconfig.json --noEmit",
-    "test": "pnpm run prisma:generate && vitest run",
+    "build": "pnpm --filter @synosec/contracts build && pnpm run prisma:generate && tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
+    "typecheck": "pnpm --filter @synosec/contracts build && pnpm run prisma:generate && tsc -p tsconfig.json --noEmit",
+    "test": "pnpm --filter @synosec/contracts build && pnpm run prisma:generate && vitest run",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:seed": "prisma db seed"

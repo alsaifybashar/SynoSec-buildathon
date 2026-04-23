@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "build": "pnpm --filter @synosec/contracts build && tsc -p tsconfig.json",
+    "typecheck": "pnpm --filter @synosec/contracts build && tsc -p tsconfig.json --noEmit",
+    "test": "pnpm --filter @synosec/contracts build && vitest run"
   },
   "dependencies": {
     "@synosec/contracts": "workspace:*",

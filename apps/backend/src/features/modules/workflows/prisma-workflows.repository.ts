@@ -4,6 +4,7 @@ import type {
   UpdateWorkflowBody,
   Workflow,
   WorkflowRun,
+  WorkflowStage,
   WorkflowTraceEntry,
   WorkflowTraceEvent,
   WorkflowsListQuery
@@ -33,6 +34,44 @@ function toWorkflowStageCreateManyInput(
     completionRule: contract.completionRule as Prisma.InputJsonValue,
     resultSchemaVersion: contract.resultSchemaVersion,
     handoffSchema: (contract.handoffSchema ?? Prisma.JsonNull) as Prisma.InputJsonValue
+  };
+}
+
+type PersistedWorkflowStageInput = {
+  id?: string;
+  label: string;
+  agentId: string;
+  objective: WorkflowStage["objective"];
+  allowedToolIds: WorkflowStage["allowedToolIds"];
+  requiredEvidenceTypes: WorkflowStage["requiredEvidenceTypes"];
+  findingPolicy: WorkflowStage["findingPolicy"];
+  completionRule: WorkflowStage["completionRule"];
+  resultSchemaVersion: WorkflowStage["resultSchemaVersion"];
+  handoffSchema: WorkflowStage["handoffSchema"];
+};
+
+function toWorkflowTraceEntryCreateInput(
+  traceEntry: WorkflowTraceEntry
+): Prisma.WorkflowTraceEntryUncheckedCreateWithoutWorkflowRunInput {
+  if (!traceEntry.workflowStageId) {
+    throw new RequestError(400, "Workflow trace entries must reference a workflow stage.");
+  }
+
+  return {
+    id: traceEntry.id,
+    workflowId: traceEntry.workflowId,
+    workflowStageId: traceEntry.workflowStageId,
+    stepIndex: traceEntry.stepIndex,
+    stageLabel: traceEntry.stageLabel,
+    agentId: traceEntry.agentId,
+    agentName: traceEntry.agentName,
+    status: traceEntry.status,
+    selectedToolIds: traceEntry.selectedToolIds,
+    toolSelectionReason: traceEntry.toolSelectionReason,
+    targetSummary: traceEntry.targetSummary,
+    evidenceHighlights: traceEntry.evidenceHighlights,
+    outputSummary: traceEntry.outputSummary,
+    createdAt: new Date(traceEntry.createdAt)
   };
 }
 
@@ -134,29 +173,27 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
     if (!currentPrimaryStage) {
       throw new RequestError(400, "Workflow is missing its persisted execution contract.");
     }
-    const nextStage = {
+    const nextStage: PersistedWorkflowStageInput = {
       id: currentPrimaryStage.id,
       label: currentPrimaryStage.label,
       agentId: input.agentId ?? currentPrimaryStage.agentId,
       objective: input.objective ?? currentPrimaryStage.objective ?? `Complete the ${currentPrimaryStage.label} workflow using allowed tools and structured reporting.`,
       allowedToolIds: input.allowedToolIds ?? (Array.isArray(currentPrimaryStage.allowedToolIds) ? currentPrimaryStage.allowedToolIds.map(String) : []),
       requiredEvidenceTypes: input.requiredEvidenceTypes ?? (Array.isArray(currentPrimaryStage.requiredEvidenceTypes) ? currentPrimaryStage.requiredEvidenceTypes.map(String) : []),
-      ...(input.findingPolicy
-        ? { findingPolicy: input.findingPolicy }
-        : currentPrimaryStage.findingPolicy && typeof currentPrimaryStage.findingPolicy === "object" && !Array.isArray(currentPrimaryStage.findingPolicy)
-          ? { findingPolicy: currentPrimaryStage.findingPolicy as Record<string, unknown> }
-          : {}),
-      ...(input.completionRule
-        ? { completionRule: input.completionRule }
-        : currentPrimaryStage.completionRule && typeof currentPrimaryStage.completionRule === "object" && !Array.isArray(currentPrimaryStage.completionRule)
-          ? { completionRule: currentPrimaryStage.completionRule as Record<string, unknown> }
-          : {}),
+      findingPolicy: input.findingPolicy
+        ?? (currentPrimaryStage.findingPolicy && typeof currentPrimaryStage.findingPolicy === "object" && !Array.isArray(currentPrimaryStage.findingPolicy)
+          ? currentPrimaryStage.findingPolicy as WorkflowStage["findingPolicy"]
+          : normalizeWorkflowStageContract({ label: currentPrimaryStage.label }).findingPolicy),
+      completionRule: input.completionRule
+        ?? (currentPrimaryStage.completionRule && typeof currentPrimaryStage.completionRule === "object" && !Array.isArray(currentPrimaryStage.completionRule)
+          ? currentPrimaryStage.completionRule as WorkflowStage["completionRule"]
+          : normalizeWorkflowStageContract({ label: currentPrimaryStage.label }).completionRule),
       resultSchemaVersion: input.resultSchemaVersion ?? currentPrimaryStage.resultSchemaVersion,
-      ...(input.handoffSchema !== undefined
-        ? { handoffSchema: input.handoffSchema }
+      handoffSchema: input.handoffSchema !== undefined
+        ? input.handoffSchema
         : currentPrimaryStage.handoffSchema && typeof currentPrimaryStage.handoffSchema === "object" && !Array.isArray(currentPrimaryStage.handoffSchema)
-          ? { handoffSchema: currentPrimaryStage.handoffSchema as Record<string, unknown> }
-          : {})
+          ? currentPrimaryStage.handoffSchema as WorkflowStage["handoffSchema"]
+          : null
     };
 
     await this.assertReferences(
@@ -341,22 +378,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
         ...(patch.currentStepIndex === undefined ? {} : { currentStepIndex: patch.currentStepIndex }),
         ...(patch.completedAt === undefined ? {} : { completedAt: patch.completedAt ? new Date(patch.completedAt) : null }),
         traceEntries: {
-          create: {
-            id: traceEntry.id,
-            workflowId: traceEntry.workflowId,
-            workflowStageId: traceEntry.workflowStageId,
-            stepIndex: traceEntry.stepIndex,
-            stageLabel: traceEntry.stageLabel,
-            agentId: traceEntry.agentId,
-            agentName: traceEntry.agentName,
-            status: traceEntry.status,
-            selectedToolIds: traceEntry.selectedToolIds,
-            toolSelectionReason: traceEntry.toolSelectionReason,
-            targetSummary: traceEntry.targetSummary,
-            evidenceHighlights: traceEntry.evidenceHighlights,
-            outputSummary: traceEntry.outputSummary,
-            createdAt: new Date(traceEntry.createdAt)
-          }
+          create: toWorkflowTraceEntryCreateInput(traceEntry)
         }
       },
       include: { traceEntries: true, traceEvents: true }
@@ -395,22 +417,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
           currentStepIndex: run.currentStepIndex,
           completedAt: run.completedAt ? new Date(run.completedAt) : null,
           traceEntries: {
-            create: run.trace.map((entry) => ({
-              id: entry.id,
-              workflowId: entry.workflowId,
-              workflowStageId: entry.workflowStageId,
-              stepIndex: entry.stepIndex,
-              stageLabel: entry.stageLabel,
-              agentId: entry.agentId,
-              agentName: entry.agentName,
-              status: entry.status,
-              selectedToolIds: entry.selectedToolIds,
-              toolSelectionReason: entry.toolSelectionReason,
-              targetSummary: entry.targetSummary,
-              evidenceHighlights: entry.evidenceHighlights,
-              outputSummary: entry.outputSummary,
-              createdAt: new Date(entry.createdAt)
-            }))
+            create: run.trace.map(toWorkflowTraceEntryCreateInput)
           },
           traceEvents: {
             create: run.events.map((event) => ({

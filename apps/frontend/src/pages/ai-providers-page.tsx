@@ -267,6 +267,17 @@ export function AiProvidersPage({
     }
   }
 
+  function handleListExportJson(selected: AiProvider) {
+    exportResourceRecords(aiProviderTransfer, [selected], `ai-provider-${selected.name}`);
+  }
+
+  async function handleDeleteProvider(selected: AiProvider) {
+    await fetchJson<void>(`${apiRoutes.aiProviders}/${selected.id}`, {
+      method: "DELETE"
+    });
+    providerList.refetch();
+  }
+
   if (!providerId) {
     return (
       <ListPage
@@ -288,6 +299,9 @@ export function AiProvidersPage({
         onAddRecord={onNavigateToCreate}
         onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
         onImportJson={handleImportJson}
+        getRowLabel={(row) => row.name}
+        onExportRowJson={handleListExportJson}
+        onDeleteRow={handleDeleteProvider}
       />
     );
   }

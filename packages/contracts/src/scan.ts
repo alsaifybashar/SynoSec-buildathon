@@ -100,6 +100,15 @@ export const singleAgentScanSchema = scanSchema.extend({
 });
 export type SingleAgentScan = z.infer<typeof singleAgentScanSchema>;
 
+export const createSingleAgentScanRequestSchema = z.object({
+  applicationId: z.string().uuid(),
+  runtimeId: z.string().uuid().nullable(),
+  agentId: z.string().uuid(),
+  scope: scanScopeSchema,
+  llm: scanLlmConfigSchema.optional()
+});
+export type CreateSingleAgentScanRequest = z.infer<typeof createSingleAgentScanRequestSchema>;
+
 export const singleAgentScanVulnerabilitiesResponseSchema = z.object({
   scanId: z.string(),
   vulnerabilities: z.array(securityVulnerabilitySchema)

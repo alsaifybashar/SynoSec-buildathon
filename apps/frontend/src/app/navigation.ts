@@ -1,10 +1,15 @@
 import { createElement, type ComponentType, type ReactNode } from "react";
 import {
+  AlignLeft,
   AppWindow,
   Bot,
   BrainCog,
+  Columns2,
+  ListTree,
+  MessageSquareText,
   Network,
   Newspaper,
+  NotebookText,
   Orbit,
   PlugZap,
   Route,
@@ -27,7 +32,12 @@ import { RuntimesPage } from "@/pages/runtimes-page";
 import { Workflow2Page } from "@/pages/workflow-2-page";
 import { WorkflowBiospherePage } from "@/pages/workflow-biosphere-page";
 import { WorkflowDossierPage } from "@/pages/workflow-dossier-page";
+import { WorkflowJournalPage } from "@/pages/workflow-journal-page";
+import { WorkflowLedgerPage } from "@/pages/workflow-ledger-page";
+import { WorkflowStepsPage } from "@/pages/workflow-steps-page";
 import { WorkflowTerminalPage } from "@/pages/workflow-terminal-page";
+import { WorkflowThreadPage } from "@/pages/workflow-thread-page";
+import { WorkflowTracePage } from "@/pages/workflow-trace-page";
 import { WorkflowsPage } from "@/features/workflows/workflows-page";
 
 export type NavigationId =
@@ -43,7 +53,12 @@ export type NavigationId =
   | "workflow-2"
   | "workflow-dossier"
   | "workflow-terminal"
-  | "workflow-biosphere";
+  | "workflow-biosphere"
+  | "workflow-thread"
+  | "workflow-trace"
+  | "workflow-ledger"
+  | "workflow-steps"
+  | "workflow-journal";
 
 export type AppRoute = {
   section: NavigationId;
@@ -173,6 +188,56 @@ const workflowBiosphereItem: NavigationItem = {
   }
 };
 
+const workflowThreadItem: NavigationItem = {
+  id: "workflow-thread",
+  label: "Chat · Thread",
+  slug: "workflow-thread",
+  icon: MessageSquareText,
+  render() {
+    return createElement(WorkflowThreadPage, { key: "workflow-thread" });
+  }
+};
+
+const workflowTraceItem: NavigationItem = {
+  id: "workflow-trace",
+  label: "Chat · Trace",
+  slug: "workflow-trace",
+  icon: AlignLeft,
+  render() {
+    return createElement(WorkflowTracePage, { key: "workflow-trace" });
+  }
+};
+
+const workflowLedgerItem: NavigationItem = {
+  id: "workflow-ledger",
+  label: "Chat · Ledger",
+  slug: "workflow-ledger",
+  icon: Columns2,
+  render() {
+    return createElement(WorkflowLedgerPage, { key: "workflow-ledger" });
+  }
+};
+
+const workflowStepsItem: NavigationItem = {
+  id: "workflow-steps",
+  label: "Chat · Steps",
+  slug: "workflow-steps",
+  icon: ListTree,
+  render() {
+    return createElement(WorkflowStepsPage, { key: "workflow-steps" });
+  }
+};
+
+const workflowJournalItem: NavigationItem = {
+  id: "workflow-journal",
+  label: "Chat · Journal",
+  slug: "workflow-journal",
+  icon: NotebookText,
+  render() {
+    return createElement(WorkflowJournalPage, { key: "workflow-journal" });
+  }
+};
+
 export type NavigationGroup = {
   id: string;
   label: string;
@@ -270,7 +335,12 @@ export const navigationTree: NavigationTreeEntry[] = [
         workflow2Item,
         workflowDossierItem,
         workflowTerminalItem,
-        workflowBiosphereItem
+        workflowBiosphereItem,
+        workflowThreadItem,
+        workflowTraceItem,
+        workflowLedgerItem,
+        workflowStepsItem,
+        workflowJournalItem
       ]
     }
   }

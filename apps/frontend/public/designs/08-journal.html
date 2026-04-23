@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Journal · Workflow · SYN-2026-0421-A7</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #faf9f5;
+    --surface: #ffffff;
+    --ink: #0e0e0c;
+    --ink-soft: #3d3d38;
+    --muted: #8a8880;
+    --faint: #c8c6bd;
+    --hair: rgba(14, 14, 12, 0.07);
+    --hair-firm: rgba(14, 14, 12, 0.14);
+    --accent: #0f7a85;
+    --accent-deep: #074650;
+    --accent-wash: rgba(15, 122, 133, 0.06);
+    --rose: #a5332c;
+    --amber: #a06414;
+    --sage: #4a7a4a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Geist", -apple-system, sans-serif;
+    font-size: 14.5px;
+    font-weight: 400;
+    line-height: 1.55;
+    letter-spacing: -0.003em;
+    -webkit-font-smoothing: antialiased;
+  }
+  code { font-family: "Geist Mono", monospace; font-size: 0.88em; letter-spacing: 0; }
+
+  .app { max-width: 960px; margin: 0 auto; padding: 0 48px 120px; }
+
+  /* ───────── TOP BAR ───────── */
+  .bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(250, 249, 245, 0.9);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--hair);
+    padding: 12px 48px 10px;
+    margin: 0 -48px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 28px;
+    font-family: "Geist Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .bar .right { text-align: right; }
+  .bar .mid {
+    font-family: "Geist", sans-serif;
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+    text-transform: none;
+  }
+  .bar .status { display: inline-flex; align-items: center; gap: 6px; }
+  .bar .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sage); }
+
+  /* ───────── HEADER ───────── */
+  .head { padding: 56px 0 24px; }
+  .head .kicker {
+    font-family: "Geist Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 18px;
+  }
+  .head h1 {
+    font-weight: 500;
+    font-size: 28px;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    margin: 0 0 6px;
+  }
+  .head p { font-size: 14.5px; color: var(--ink-soft); margin: 0 0 20px; max-width: 60ch; }
+  .head .facts {
+    display: flex;
+    border-top: 1px solid var(--hair-firm);
+    border-bottom: 1px solid var(--hair-firm);
+    margin-top: 8px;
+  }
+  .head .facts .f { padding: 12px 18px 11px; border-right: 1px solid var(--hair); }
+  .head .facts .f:last-child { border-right: none; }
+  .head .facts .k {
+    font-family: "Geist Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .head .facts .v { font-family: "Geist Mono", monospace; font-size: 12.5px; font-weight: 500; }
+
+  /* ───────── TOOLBAR ───────── */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0 14px;
+    margin: 24px 0 8px;
+    border-top: 1px solid var(--hair);
+    border-bottom: 1px solid var(--hair);
+    font-family: "Geist Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+  .toolbar .filters { display: flex; gap: 4px; }
+  .toolbar .chip {
+    padding: 4px 10px;
+    border: 1px solid var(--hair);
+    border-radius: 100px;
+    background: var(--surface);
+    color: var(--ink-soft);
+    font-family: "Geist Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .toolbar .chip.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .toolbar .count { margin-left: auto; color: var(--ink); font-weight: 500; }
+  .toolbar .expand-all {
+    font-family: "Geist Mono", monospace;
+    font-size: 10px;
+    color: var(--accent);
+    text-decoration: none;
+    padding: 4px 10px;
+    border: 1px solid var(--hair);
+    border-radius: 100px;
+    background: var(--surface);
+  }
+
+  /* ───────── JOURNAL ROWS ───────── */
+  .journal {
+    border-top: 1px solid var(--hair);
+  }
+
+  details.row {
+    border-bottom: 1px solid var(--hair);
+    background: transparent;
+  }
+  details.row[open] {
+    background: var(--surface);
+  }
+  details.row > summary {
+    list-style: none;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: 14px 46px 68px 90px 1fr auto;
+    gap: 14px;
+    align-items: center;
+    padding: 11px 14px;
+    font-size: 13.5px;
+    transition: background 0.12s;
+  }
+  details.row > summary::-webkit-details-marker { display: none; }
+  details.row > summary:hover { background: var(--accent-wash); }
+  details.row[open] > summary { border-bottom: 1px solid var(--hair); }
+
+  .chevron {
+    font-family: "Geist Mono", monospace;
+    font-size: 11px;
+    color: var(--faint);
+    transition: transform 0.15s;
+  }
+  details.row[open] > summary .chevron { transform: rotate(90deg); color: var(--accent); }
+
+  .row-ord {
+    font-family: "Geist Mono", monospace;
+    font-size: 10.5px;
+    color: var(--faint);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .row-ts {
+    font-family: "Geist Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .row-kind {
+    font-family: "Geist Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 600;
+    text-align: center;
+    display: inline-block;
+  }
+  .row-kind.system { color: var(--muted); background: rgba(14,14,12,0.05); }
+  .row-kind.model { color: var(--accent); background: var(--accent-wash); }
+  .row-kind.tool { color: var(--ink); background: var(--bg); border: 1px solid var(--hair-firm); padding: 1px 8px; }
+  .row-kind.result { color: var(--sage); background: rgba(74, 122, 74, 0.08); }
+  .row-kind.finding { color: #fff; background: var(--amber); }
+  .row-kind.finding.high { background: var(--rose); }
+  .row-kind.close { color: #fff; background: var(--accent); }
+
+  .row-summary {
+    font-size: 13.5px;
+    color: var(--ink);
+    letter-spacing: -0.003em;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .row-summary .dim { color: var(--muted); }
+  .row-summary code {
+    font-family: "Geist Mono", monospace;
+    font-size: 12px;
+    color: var(--accent-deep);
+    background: var(--accent-wash);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .row-summary .hi { color: var(--rose); font-weight: 500; }
+  .row-summary .amb { color: var(--amber); font-weight: 500; }
+
+  .row-right {
+    font-family: "Geist Mono", monospace;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+
+  /* Expanded body */
+  .row-body {
+    padding: 14px 14px 16px 74px;
+    background: var(--surface);
+    border-top: 1px dashed var(--hair);
+  }
+  .row-body .section {
+    margin-bottom: 16px;
+  }
+  .row-body .section:last-child { margin-bottom: 0; }
+  .row-body .sec-label {
+    font-family: "Geist Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .row-body .sec-label.thought { color: var(--accent); }
+  .row-body .sec-label.action { color: var(--ink); }
+  .row-body .sec-label.observation { color: var(--sage); }
+  .row-body .sec-label.resolution { color: var(--rose); }
+
+  .row-body p {
+    margin: 0 0 0.5em;
+    font-size: 14px;
+    color: var(--ink);
+    line-height: 1.6;
+    max-width: 66ch;
+  }
+  .row-body p:last-child { margin-bottom: 0; }
+  .row-body p.soft { color: var(--ink-soft); }
+  .row-body p code { color: var(--accent-deep); background: var(--accent-wash); padding: 1px 5px; border-radius: 3px; }
+
+  .cmd-box {
+    margin: 6px 0;
+    padding: 8px 12px;
+    background: var(--bg);
+    border: 1px solid var(--hair);
+    border-radius: 6px;
+    font-family: "Geist Mono", monospace;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .cmd-box::before { content: '$ '; color: var(--faint); }
+
+  .result-box {
+    margin: 6px 0;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--hair);
+    border-radius: 6px;
+    font-family: "Geist Mono", monospace;
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--ink);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .result-box .c { color: var(--muted); font-style: italic; }
+  .result-box .hl { color: var(--amber); font-weight: 500; background: rgba(160, 100, 20, 0.08); padding: 0 3px; }
+  .result-box .rose { color: var(--rose); font-weight: 500; }
+  .result-box .ok { color: var(--sage); font-weight: 500; }
+
+  .obs-mini {
+    list-style: none;
+    padding: 0;
+    margin: 4px 0 0;
+  }
+  .obs-mini li {
+    display: grid;
+    grid-template-columns: 16px 1fr;
+    gap: 8px;
+    padding: 2px 0;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  .obs-mini li::before { content: '—'; color: var(--faint); font-family: "Geist Mono", monospace; }
+  .obs-mini li.mark { color: var(--ink); }
+  .obs-mini li.mark::before { color: var(--amber); }
+
+  .finding-inline {
+    display: inline-grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
+    align-items: center;
+    margin: 8px 0 0;
+    padding: 6px 12px;
+    border: 1px solid var(--hair-firm);
+    border-left: 3px solid var(--amber);
+    border-radius: 4px;
+    background: var(--bg);
+    max-width: 100%;
+  }
+  .finding-inline.high { border-left-color: var(--rose); }
+  .finding-inline .sev {
+    font-family: "Geist Mono", monospace;
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 3px;
+    color: #fff;
+    background: var(--amber);
+  }
+  .finding-inline.high .sev { background: var(--rose); }
+  .finding-inline .f-title { font-size: 13px; font-weight: 500; color: var(--ink); }
+  .finding-inline .f-meta { font-family: "Geist Mono", monospace; font-size: 10px; color: var(--muted); }
+
+  /* Reveal */
+  details.row { opacity: 0; transform: translateY(3px); animation: in 0.3s ease forwards; }
+  .journal > details:nth-child(1) { animation-delay: 0.04s; }
+  .journal > details:nth-child(2) { animation-delay: 0.08s; }
+  .journal > details:nth-child(3) { animation-delay: 0.12s; }
+  .journal > details:nth-child(4) { animation-delay: 0.16s; }
+  .journal > details:nth-child(5) { animation-delay: 0.2s; }
+  .journal > details:nth-child(6) { animation-delay: 0.24s; }
+  .journal > details:nth-child(7) { animation-delay: 0.28s; }
+  .journal > details:nth-child(8) { animation-delay: 0.32s; }
+  .journal > details:nth-child(n+9) { animation-delay: 0.36s; }
+  @keyframes in { to { opacity: 1; transform: translateY(0); } }
+
+  /* Closeout (rendered as final row) */
+  .closeout-summary {
+    padding: 16px 14px;
+    background: var(--surface);
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
+    border-top: 2px solid var(--accent);
+  }
+  .closeout-summary > div { padding: 2px 14px; border-right: 1px solid var(--hair); }
+  .closeout-summary > div:last-child { border-right: none; }
+  .closeout-summary .k { font-family: "Geist Mono", monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+  .closeout-summary .v { font-size: 16px; font-weight: 500; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+
+  /* Responsive */
+  @media (max-width: 780px) {
+    details.row > summary {
+      grid-template-columns: 14px 46px 1fr;
+      row-gap: 4px;
+    }
+    .row-ts, .row-kind, .row-right { grid-column: 3 / -1; }
+    .row-summary { grid-column: 3 / -1; white-space: normal; }
+    .row-body { padding-left: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="bar">
+    <span class="left">Workflows · SSO Surface Audit</span>
+    <span class="mid">Run SYN-2026-0421-A7</span>
+    <span class="right status"><span class="dot"></span>Completed · 04:12</span>
+  </header>
+
+  <section class="head">
+    <div class="kicker">Journal · single-agent chat · compact trace log</div>
+    <h1>Halberd-R1 — reconnaissance of vault.sparrow.io:8443</h1>
+    <p>One row per event. Click any row to expand its full detail — reasoning, tool input/output, observations, and resolution — inline without leaving the log.</p>
+    <div class="facts">
+      <div class="f"><div class="k">Case</div><div class="v">SYN-2026-0421-A7</div></div>
+      <div class="f"><div class="k">Target</div><div class="v">vault.sparrow.io:8443</div></div>
+      <div class="f"><div class="k">Agent</div><div class="v">halberd-r1</div></div>
+      <div class="f"><div class="k">Duration</div><div class="v">04:12</div></div>
+    </div>
+  </section>
+
+  <!-- TOOLBAR -->
+  <div class="toolbar">
+    <span style="letter-spacing: 0.14em; text-transform: uppercase;">filter</span>
+    <div class="filters">
+      <span class="chip on">All</span>
+      <span class="chip">System</span>
+      <span class="chip">Turns</span>
+      <span class="chip">Tools</span>
+      <span class="chip">Findings</span>
+    </div>
+    <span class="count">9 events · 4 findings</span>
+    <a href="#" class="expand-all">expand all</a>
+  </div>
+
+  <!-- JOURNAL -->
+  <div class="journal">
+
+    <!-- ord 00 · system -->
+    <details class="row">
+      <summary>
+        <span class="chevron">›</span>
+        <span class="row-ord">00</span>
+        <span class="row-ts">+00:00</span>
+        <span class="row-kind system">system</span>
+        <span class="row-summary">Agent charge — <span class="dim">recon / enumerate / identify / discover / audit · submit at conf ≥ 0.80</span></span>
+        <span class="row-right">—</span>
+      </summary>
+      <div class="row-body">
+        <div class="section">
+          <div class="sec-label">Instructions</div>
+          <p>Coordinate a reconnaissance probe of <code>vault.sparrow.io:8443</code>. Enumerate services, identify framework, discover content, audit transport. Submit findings only at confidence ≥ 0.80. Do not fuzz until the framework is known.</p>
+        </div>
+        <div class="section">
+          <div class="sec-label">Context</div>
+          <div class="result-box">target:       vault.sparrow.io:8443
+runtime:      tofu-west-02 (docker)
+allowed_tools: [nmap, whatweb, curl, ffuf, gobuster, testssl, nuclei, sslscan, dig]
+scope:        single_host
+max_duration: 300s</div>
+        </div>
+      </div>
+    </details>
+
+    <!-- ord 01 · turn 1 — EXPANDED by default -->
+    <details class="row" open>
+      <summary>
+        <span class="chevron">›</span>
+        <span class="row-ord">01</span>
+        <span class="row-ts">+00:02</span>
+        <span class="row-kind model">turn 01</span>
+        <span class="row-summary"><b>fingerprint the service</b> — <code>nmap</code> for version &amp; ciphers <span class="dim">· emitted <span class="amb">#F-02 medium</span></span></span>
+        <span class="row-right">1.71s · 412 tok</span>
+      </summary>
+      <div class="row-body">
+        <div class="section">
+          <div class="sec-label thought">Thought</div>
+          <p>Host advertises TLS on 8443 with no plaintext alternative. Starting from cold.</p>
+          <p class="soft">A directory fuzzer against an unknown stack trips the ingress and wastes tokens — fingerprint first. <code>nmap</code> with version detection and cipher enumeration is the quietest opening move.</p>
+        </div>
+        <div class="section">
+          <div class="sec-label action">Action · nmap</div>
+          <div class="cmd-box">nmap -sV -p 8443 --script ssl-enum-ciphers vault.sparrow.io</div>
+        </div>
+        <div class="section">
+          <div class="sec-label observation">Observation · exit 0 · 3.42s</div>
+          <div class="result-box"><span class="c"># Nmap 7.94 scan initiated — 2026-04-21 14:07:36</span>
+PORT     STATE SERVICE   VERSION
+8443/tcp <span class="ok">open</span>  ssl/https <span class="hl">nginx 1.24.0</span>
+| ssl-enum-ciphers:
+|   TLSv1.2:
+|     TLS_ECDHE_RSA_WITH_AES_256_<span class="hl">CBC</span>_SHA384 — <span class="hl">C</span>
+|     TLS_RSA_WITH_AES_256_GCM_SHA384        — <span class="hl">C</span>
+|_  least strength: <span class="hl">C</span></div>
+          <ul class="obs-mini">
+            <li>nginx/1.24.0 on TLS 8443</li>
+            <li class="mark">CBC ciphers · C-grade</li>
+            <li class="mark">TLSv1.3 not offered</li>
+          </ul>
+        </div>
+        <div class="section">
+          <div class="sec-label resolution">Resolution</div>
+          <div class="finding-inline">
+            <span class="sev">Medium</span>
+            <span class="f-title">Weak TLS cipher suite exposed</span>
+            <span class="f-meta">#F-02 · conf 0.82</span>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- ord 02 · turn 2 — EXPANDED -->
+    <details class="row" open>
+      <summary>
+        <span class="chevron">›</span>
+        <span class="row-ord">02</span>
+        <span class="row-ts">+00:10</span>
+        <span class="row-kind model">turn 02</span>
+        <span class="row-summary"><b>identify the framework</b> — <code>whatweb -a 3</code> <span class="dim">· Django 4.2 · hostname leak · emitted <span class="amb">#F-04 medium</span></span></span>
+        <span class="row-right">0.74s · 218 tok</span>
+      </summary>
+      <div class="row-body">
+        <div class="section">
+          <div class="sec-label thought">Thought</div>
+          <p class="soft">If it's Django, the admin surface is predictable and I can bias a later wordlist. If it's something else, I skip admin-path fuzzing entirely. One round-trip buys the constraint.</p>
+        </div>
+        <div class="section">
+          <div class="sec-label action">Action · whatweb</div>
+          <div class="cmd-box">whatweb -a 3 --no-errors https://vault.sparrow.io:8443/</div>
+        </div>
+        <div class="section">
+          <div class="sec-label observation">Observation · exit 0 · 2.65s</div>
+          <div class="result-box">https://vault.sparrow.io:8443/ [<span class="ok">200 OK</span>]
+  nginx[1.24.0], Django[4.2],
+  X-Frame-Options[DENY],
+  Strict-Transport-Security[max-age=63072000],
+  Cookie[csrftoken,sessionid], HttpOnly, Secure,
+  <span class="hl">Server[vault-ingress-03.int.sparrow.io]</span></div>
+          <ul class="obs-mini">
+            <li>Django 4.2 behind nginx</li>
+            <li class="mark">Server leaks internal hostname</li>
+          </ul>
+        </div>
+        <div class="section">
+          <div class="sec-label resolution">Resolution</div>
+          <div class="finding-inline">
+            <span class="sev">Medium</span>
+            <span class="f-title">Internal hostname disclosed in Server header</span>
+            <span class="f-meta">#F-04 · conf 0.91</span>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- ord 03 · turn 3 — COLLAPSED -->
+    <details class="row">
+      <summary>
+        <span class="chevron">›</span>
+        <span class="row-ord">03</span>
+        <span class="row-ts">+02:14</span>
+        <span class="row-kind model">turn 03</span>
+        <span class="row-summary"><b>content probe</b> — <code>ffuf</code> raft-medium, -t 8 <span class="dim">· <span class="hi">/.git/HEAD</span>, /backup.zip · emitted <span class="hi">#F-01 high</span></span></span>
+        <span class="row-right">0.88s · 298 tok</span>
+      </summary>
+      <div class="row-body">
+        <div class="section">
+          <div class="sec-label thought">Thought</div>
+          <p class="soft">Django 4.2 invites a focused content probe. The leaked hostname from turn 02 implies a deploy pipeline touches this tree; pipelines leave working directories. Weight <code>/.git</code>, <code>/backup</code>, <code>/admin</code>. Low threading to stay under the rate-limiter.</p>
+        </div>
+        <div class="section">
+          <div class="sec-label action">Action · ffuf</div>
+          <div class="cmd-box">ffuf -w raft-medium.txt -u https://vault.sparrow.io:8443/FUZZ -mc 200,301,302,401,403 -t 8</div>
+        </div>
+        <div class="section">
+          <div class="sec-label observation">Observation · exit 0 · 133.10s</div>
+          <div class="result-box">  /admin/login          [Status: <span class="ok">200</span>, Size: 2218]
+  /healthz              [Status: <span class="ok">200</span>, Size: 17]
+  /backup.zip           [Status: <span class="hl">200</span>, Size: <span class="hl">4.1 MiB</span>]  ← escalated
+  <span class="rose">/.git/HEAD</span>            [Status: <span class="rose">200</span>, Size: 23]         ← escalated
+  /api/v1/auth          [Status: 401, Size: 89]
+  /static/admin/css/    [Status: 403, Size: 162]</div>
+          <ul class="obs-mini">
+            <li class="mark">Live <code>/.git/HEAD</code> (confirmed via secondary curl)</li>
+            <li class="mark">Public <code>/backup.zip</code> at 4.1 MiB</li>
+            <li>Admin login page at <code>/admin/login</code></li>
+          </ul>
+        </div>
+        <div class="section">
+          <div class="sec-label resolution">Resolution</div>
+          <div class="finding-inline high">
+            <span class="sev">High</span>
+            <span class="f-title">Exposed <code>/.git</code> directory on production host</span>
+            <span class="f-meta">#F-01 · conf 0.97</span>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- ord 04 · turn 4 — COLLAPSED -->
+    <details class="row">
+      <summary>
+        <span class="chevron">›</span>
+        <span class="row-ord">04</span>
+        <span class="row-ts">+03:41</span>
+        <span class="row-kind model">turn 04</span>
+        <span class="row-summary"><b>CORS audit on auth</b> — <code>curl</code> with hostile Origin <span class="dim">· reflection + credentials · emitted <span class="hi">#F-03 high</span></span></span>
+        <span class="row-right">0.62s · 201 tok</span>
+      </summary>
+      <div class="row-body">
+        <div class="section">
+          <div class="sec-label thought">Thought</div>
+          <p class="soft">One transport question remains: whether <code>/api/v1/auth</code> reflects arbitrary origins. Fast to verify, high-impact if found.</p>
+        </div>
+        <div class="section">
+          <div class="sec-label action">Action · curl</div>
+          <div class="cmd-box">curl -sI -H "Origin: https://evil.example.com" https://vault.sparrow.io:8443/api/v1/auth</div>
+        </div>
+        <div class="section">
+          <div class="sec-label observation">Observation · exit 0 · 0.48s</div>
+          <div class="result-box">HTTP/2 401
+server: nginx/1.24.0
+<span class="rose">access-control-allow-origin: https://evil.example.com</span>
+<span class="rose">access-control-allow-credentials: true</span>
+vary: Origin
+content-type: application/json
+www-authenticate: Bearer realm="vault"</div>
+          <ul class="obs-mini">
+            <li class="mark">Origin reflection on credentialed auth endpoint</li>
+            <li class="mark"><code>Allow-Credentials: true</code></li>
+          </ul>
+        </div>
+        <div class="section">
+          <div class="sec-label resolution">Resolution</div>
+          <div class="finding-inline high">
+            <span class="sev">High</span>
+            <span class="f-title">Permissive CORS on <code>/api/v1/auth</code></span>
+            <span class="f-meta">#F-03 · conf 0.95</span>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- ord 05 · closeout -->
+    <details class="row">
+      <summary>
+        <span class="chevron">›</span>
+        <span class="row-ord">05</span>
+        <span class="row-ts">+04:12</span>
+        <span class="row-kind close">close</span>
+        <span class="row-summary"><b>Run sealed</b> — <span class="dim">4 findings · 2 high · 2 medium · dispatched to Red-Cell / Orion</span></span>
+        <span class="row-right">sealed</span>
+      </summary>
+      <div class="row-body">
+        <div class="section">
+          <div class="sec-label">Summary</div>
+          <p>Four turns, four tools, four findings. Two warrant immediate triage — the exposed <code>/.git</code> on the production ingress and the permissive CORS on <code>/api/v1/auth</code>. The other two are medium: weak TLS ciphers and an internal hostname leak. Package signed and dispatched.</p>
+        </div>
+        <div class="closeout-summary">
+          <div><div class="k">Turns</div><div class="v">4</div></div>
+          <div><div class="k">Tools</div><div class="v">4</div></div>
+          <div><div class="k">Observations</div><div class="v">12</div></div>
+          <div><div class="k">Findings</div><div class="v">4 · 2↑</div></div>
+          <div><div class="k">Duration</div><div class="v">04:12</div></div>
+        </div>
+      </div>
+    </details>
+
+  </div>
+
+</div>
+
+<script>
+  // Expand-all toggle
+  const expandAll = document.querySelector('.expand-all');
+  expandAll.addEventListener('click', (e) => {
+    e.preventDefault();
+    const all = document.querySelectorAll('details.row');
+    const everyOpen = Array.from(all).every(d => d.open);
+    all.forEach(d => d.open = !everyOpen);
+    expandAll.textContent = everyOpen ? 'expand all' : 'collapse all';
+  });
+  // Filter chips (purely visual for now)
+  document.querySelectorAll('.toolbar .chip').forEach(c => {
+    c.addEventListener('click', () => {
+      document.querySelectorAll('.toolbar .chip').forEach(x => x.classList.remove('on'));
+      c.classList.add('on');
+    });
+  });
+</script>
+
+</body>
+</html>

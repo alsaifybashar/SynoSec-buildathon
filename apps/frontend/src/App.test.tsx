@@ -135,6 +135,32 @@ describe("App", () => {
         description: "Seeded workflow for the local target",
         applicationId: applications[0]?.id ?? "",
         runtimeId: runtimes[0]?.id ?? null,
+        agentId: agents[0]?.id ?? "",
+        objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
+        allowedToolIds: [],
+        requiredEvidenceTypes: [],
+        findingPolicy: {
+          taxonomy: "typed-core-v1",
+          allowedTypes: [
+            "service_exposure",
+            "content_discovery",
+            "missing_security_header",
+            "tls_weakness",
+            "injection_signal",
+            "auth_weakness",
+            "sensitive_data_exposure",
+            "misconfiguration",
+            "other"
+          ]
+        },
+        completionRule: {
+          requireStageResult: true,
+          requireToolCall: false,
+          allowEmptyResult: true,
+          minFindings: 0
+        },
+        resultSchemaVersion: 1,
+        handoffSchema: null,
         stages: [
           {
             id: "80ad5033-136b-49dd-ae1f-c19136205cec",

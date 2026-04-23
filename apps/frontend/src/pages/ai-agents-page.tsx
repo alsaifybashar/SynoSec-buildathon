@@ -283,6 +283,17 @@ export function AiAgentsPage({
     }
   }
 
+  function handleListExportJson(selected: AiAgent) {
+    exportResourceRecords(aiAgentTransfer, [selected], `ai-agent-${selected.name}`);
+  }
+
+  async function handleDeleteAgent(selected: AiAgent) {
+    await fetchJson<void>(`${apiRoutes.aiAgents}/${selected.id}`, {
+      method: "DELETE"
+    });
+    agentList.refetch();
+  }
+
   if (!agentId) {
     return (
       <ListPage
@@ -304,6 +315,9 @@ export function AiAgentsPage({
         onAddRecord={onNavigateToCreate}
         onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
         onImportJson={handleImportJson}
+        getRowLabel={(row) => row.name}
+        onExportRowJson={handleListExportJson}
+        onDeleteRow={handleDeleteAgent}
       />
     );
   }

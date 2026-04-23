@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Thread · Workflow trace · SYN-2026-0421-A7</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #faf9f5;
+    --surface: #ffffff;
+    --ink: #0e0e0c;
+    --ink-soft: #3d3d38;
+    --muted: #8a8880;
+    --faint: #c8c6bd;
+    --hair: rgba(14, 14, 12, 0.07);
+    --hair-firm: rgba(14, 14, 12, 0.14);
+    --accent: #0f7a85;
+    --accent-deep: #074650;
+    --accent-wash: rgba(15, 122, 133, 0.06);
+    --rose: #a5332c;
+    --amber: #a06414;
+    --sage: #4a7a4a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Geist", -apple-system, sans-serif;
+    font-size: 14.5px;
+    font-weight: 400;
+    line-height: 1.55;
+    letter-spacing: -0.003em;
+    -webkit-font-smoothing: antialiased;
+  }
+  body { min-height: 100vh; padding: 0; }
+
+  a { color: inherit; }
+  code, kbd {
+    font-family: "Geist Mono", monospace;
+    font-size: 0.88em;
+    letter-spacing: 0;
+  }
+
+  /* Page shell */
+  .app {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 56px 140px;
+  }
+
+  /* ───────── TOP META BAR ───────── */
+  .bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(250, 249, 245, 0.9);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--hair);
+    padding: 12px 56px 10px;
+    margin: 0 -56px 0;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 28px;
+    font-family: "Geist Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .bar .right { text-align: right; }
+  .bar .mid {
+    font-family: "Geist", sans-serif;
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+    text-transform: none;
+  }
+  .bar .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .bar .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--sage);
+  }
+
+  /* ───────── HEADER ───────── */
+  .head {
+    padding: 56px 0 36px;
+  }
+  .head .kicker {
+    font-family: "Geist Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 18px;
+  }
+  .head h1 {
+    font-family: "Geist", sans-serif;
+    font-weight: 500;
+    font-size: 28px;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    margin: 0 0 6px;
+    color: var(--ink);
+  }
+  .head p {
+    font-size: 14.5px;
+    color: var(--ink-soft);
+    margin: 0 0 20px;
+    max-width: 60ch;
+  }
+  .head .facts {
+    display: flex;
+    gap: 0;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--hair-firm);
+    border-bottom: 1px solid var(--hair-firm);
+    margin-top: 8px;
+  }
+  .head .facts .f {
+    padding: 12px 18px 11px;
+    border-right: 1px solid var(--hair);
+    min-width: 120px;
+  }
+  .head .facts .f:last-child { border-right: none; }
+  .head .facts .k {
+    font-family: "Geist Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .head .facts .v {
+    font-family: "Geist Mono", monospace;
+    font-size: 12.5px;
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  /* ───────── SYSTEM PROMPT (first message) ───────── */
+  .sys {
+    margin: 20px 0 0;
+    padding: 14px 18px;
+    border: 1px solid var(--hair-firm);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  .sys .sys-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .sys .sys-label {
+    font-family: "Geist Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .sys .sys-ts {
+    font-family: "Geist Mono", monospace;
+    font-size: 11px;
+    color: var(--faint);
+  }
+  .sys p {
+    margin: 0;
+    font-size: 14.5px;
+    color: var(--ink-soft);
+    line-height: 1.55;
+  }
+  .sys details {
+    margin-top: 10px;
+    border-top: 1px dashed var(--hair);
+    padding-top: 10px;
+  }
+  .sys details summary {
+    cursor: pointer;
+    font-family: "Geist Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .sys details summary::-webkit-details-marker { display: none; }
+  .sys details summary::before { content: '+'; color: var(--accent); font-weight: 500; }
+  .sys details[open] summary::before { content: '−'; }
+  .sys pre {
+    margin: 8px 0 0;
+    padding: 10px 12px;
+    font-family: "Geist Mono", monospace;
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--ink-soft);
+    background: var(--bg);
+    border: 1px solid var(--hair);
+    border-radius: 6px;
+    white-space: pre-wrap;
+  }
+
+  /* ───────── THREAD ───────── */
+  .thread {
+    margin-top: 8px;
+  }
+
+  .turn {
+    padding: 32px 0 24px;
+    border-bottom: 1px solid var(--hair);
+  }
+  .turn:last-of-type { border-bottom: none; }
+
+  .turn-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .avatar {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Geist Mono", monospace;
+    font-size: 10px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .who {
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  .who .role {
+    color: var(--muted);
+    font-weight: 400;
+    margin-left: 6px;
+    font-size: 13px;
+  }
+  .meta {
+    font-family: "Geist Mono", monospace;
+    font-size: 10.5px;
+    color: var(--muted);
+    letter-spacing: 0.03em;
+    margin-left: auto;
+  }
+  .meta .ord {
+    color: var(--faint);
+    margin-right: 8px;
+  }
+
+  .turn-body p {
+    margin: 0 0 0.65em;
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--ink);
+    max-width: 62ch;
+  }
+  .turn-body p:last-child { margin-bottom: 0; }
+  .turn-body p code {
+    color: var(--accent-deep);
+    background: var(--accent-wash);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* Reasoning — the why */
+  .reasoning {
+    margin: 12px 0 12px;
+    padding: 0 0 0 14px;
+    border-left: 2px solid var(--accent);
+    max-width: 60ch;
+  }
+  .reasoning .r-label {
+    font-family: "Geist Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .reasoning p {
+    font-size: 14px;
+    color: var(--ink-soft);
+    margin: 0;
+    line-height: 1.55;
+  }
+
+  /* Tool call + result (integrated block) */
+  .tool {
+    margin: 14px 0 4px;
+    border: 1px solid var(--hair-firm);
+    border-radius: 8px;
+    background: var(--surface);
+    overflow: hidden;
+    max-width: 660px;
+  }
+  .tool-hd {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--hair);
+    background: var(--bg);
+  }
+  .tool-tag {
+    font-family: "Geist Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .tool-name {
+    font-family: "Geist Mono", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .tool-status {
+    margin-left: auto;
+    font-family: "Geist Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--sage);
+    font-weight: 500;
+  }
+  .tool-status.fail { color: var(--rose); }
+  .tool-cmd {
+    padding: 8px 14px;
+    font-family: "Geist Mono", monospace;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--hair);
+    background: var(--surface);
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .tool-cmd::before { content: '$ '; color: var(--faint); }
+  .tool-body {
+    padding: 10px 14px 12px;
+    font-family: "Geist Mono", monospace;
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--ink);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .tool-body .c { color: var(--muted); font-style: italic; }
+  .tool-body .hl { color: var(--amber); font-weight: 500; background: rgba(160, 100, 20, 0.08); padding: 0 3px; }
+  .tool-body .rose { color: var(--rose); font-weight: 500; }
+  .tool-body .ok { color: var(--sage); font-weight: 500; }
+
+  /* Observations */
+  .obs {
+    list-style: none;
+    padding: 0;
+    margin: 12px 0 4px;
+    max-width: 62ch;
+  }
+  .obs li {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    gap: 10px;
+    padding: 4px 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+  }
+  .obs li::before {
+    content: '—';
+    color: var(--faint);
+    font-family: "Geist Mono", monospace;
+    margin-top: 0;
+  }
+  .obs li.mark { color: var(--ink); }
+  .obs li.mark::before { color: var(--amber); }
+
+  /* Finding chip (inline) */
+  .finding {
+    display: inline-grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
+    align-items: center;
+    margin: 14px 0 2px;
+    padding: 8px 14px;
+    border: 1px solid var(--hair-firm);
+    border-left: 3px solid var(--amber);
+    border-radius: 4px;
+    background: var(--surface);
+    max-width: 100%;
+  }
+  .finding.high { border-left-color: var(--rose); }
+  .finding .sev {
+    font-family: "Geist Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 3px;
+    color: #fff;
+    background: var(--amber);
+  }
+  .finding.high .sev { background: var(--rose); }
+  .finding .f-title {
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .finding .f-meta {
+    font-family: "Geist Mono", monospace;
+    font-size: 10.5px;
+    color: var(--muted);
+    letter-spacing: 0.03em;
+  }
+
+  /* Closeout */
+  .close {
+    margin-top: 40px;
+    padding: 24px 22px;
+    border: 1px solid var(--hair-firm);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .close .c-kicker {
+    font-family: "Geist Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--sage);
+    margin-bottom: 6px;
+  }
+  .close .c-kicker::before {
+    content: '';
+    display: inline-block;
+    width: 7px; height: 7px;
+    background: var(--sage);
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: 1px;
+  }
+  .close h3 {
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+    color: var(--ink);
+  }
+  .close p {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 14px;
+    max-width: 60ch;
+  }
+  .close-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--hair);
+  }
+  .close-stats > div {
+    padding: 0 14px 0 0;
+    border-right: 1px solid var(--hair);
+  }
+  .close-stats > div:last-child { border-right: none; padding-right: 0; }
+  .close-stats .k {
+    font-family: "Geist Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+  .close-stats .v {
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Composer */
+  .composer {
+    position: sticky;
+    bottom: 0;
+    margin: 32px -8px 0;
+    padding: 18px 8px 22px;
+    background: linear-gradient(180deg, transparent 0%, var(--bg) 28%);
+  }
+  .composer .comp-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--hair-firm);
+    border-radius: 10px;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.02);
+  }
+  .composer input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    outline: none;
+    font: inherit;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .composer input::placeholder { color: var(--muted); }
+  .composer .comp-btn {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    background: var(--ink);
+    color: var(--surface);
+    border: none;
+    cursor: pointer;
+    opacity: 0.4;
+    pointer-events: none;
+    font-size: 14px;
+  }
+  .composer .comp-hint {
+    font-family: "Geist Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 3px 8px;
+    border: 1px solid var(--hair);
+    border-radius: 4px;
+  }
+
+  /* Reveal */
+  .turn, .sys, .close {
+    opacity: 0;
+    transform: translateY(4px);
+    animation: in 0.35s ease forwards;
+  }
+  .thread > *:nth-child(1) { animation-delay: 0.05s; }
+  .thread > *:nth-child(2) { animation-delay: 0.14s; }
+  .thread > *:nth-child(3) { animation-delay: 0.21s; }
+  .thread > *:nth-child(4) { animation-delay: 0.28s; }
+  .thread > *:nth-child(5) { animation-delay: 0.35s; }
+  .thread > *:nth-child(6) { animation-delay: 0.42s; }
+  .thread > *:nth-child(n+7) { animation-delay: 0.5s; }
+  @keyframes in { to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- TOP BAR -->
+  <header class="bar">
+    <span class="left">Workflows · SSO Surface Audit</span>
+    <span class="mid">Run SYN-2026-0421-A7</span>
+    <span class="right status"><span class="dot"></span>Completed · 04:12</span>
+  </header>
+
+  <!-- HEADER -->
+  <section class="head">
+    <div class="kicker">Thread · single-agent chat · linear flow</div>
+    <h1>Halberd-R1 — reconnaissance of vault.sparrow.io:8443</h1>
+    <p>A four-turn probe: enumerate service, identify framework, discover content, audit transport. Findings submitted only at confidence ≥ 0.80.</p>
+    <div class="facts">
+      <div class="f"><div class="k">Case</div><div class="v">SYN-2026-0421-A7</div></div>
+      <div class="f"><div class="k">Target</div><div class="v">vault.sparrow.io:8443</div></div>
+      <div class="f"><div class="k">Agent</div><div class="v">halberd-r1</div></div>
+      <div class="f"><div class="k">Model</div><div class="v">opus-4-7</div></div>
+      <div class="f"><div class="k">Duration</div><div class="v">04:12</div></div>
+    </div>
+  </section>
+
+  <!-- SYSTEM PROMPT -->
+  <div class="sys">
+    <div class="sys-head">
+      <span class="sys-label">System · instructions</span>
+      <span class="sys-ts">14:07:33 UTC · ord 00</span>
+    </div>
+    <p>Coordinate a reconnaissance probe of <code>vault.sparrow.io:8443</code>. Enumerate services, identify framework, discover content, audit transport. Submit findings only at confidence ≥ 0.80. Do not fuzz until the framework is known.</p>
+    <details>
+      <summary>show full context</summary>
+      <pre>target:       vault.sparrow.io:8443
+runtime:      tofu-west-02 (docker)
+allowed_tools:
+  - nmap, whatweb, curl
+  - ffuf, gobuster
+  - testssl, nuclei, sslscan, dig
+scope:        single_host
+max_duration: 300s
+min_findings: 1
+handoff:      [host_confirmed, framework, tls_grade]</pre>
+    </details>
+  </div>
+
+  <!-- THREAD -->
+  <div class="thread">
+
+    <!-- TURN 1 -->
+    <article class="turn">
+      <div class="turn-head">
+        <span class="avatar">H1</span>
+        <span class="who">Halberd-R1<span class="role">· recon agent</span></span>
+        <span class="meta"><span class="ord">ord 01</span>14:07:35 · +00:02</span>
+      </div>
+      <div class="turn-body">
+        <p>Starting from cold. Host advertises TLS on 8443 with no observed plaintext alternative. I'll fingerprint the service before anything else — <code>nmap</code> with version detection and cipher enumeration is the quietest opening move.</p>
+        <div class="reasoning">
+          <div class="r-label">reasoning</div>
+          <p>A directory fuzzer against an unknown stack trips the ingress and wastes tokens. Fingerprinting first pins the server kind, which constrains every tool I pick after.</p>
+        </div>
+        <div class="tool">
+          <div class="tool-hd">
+            <span class="tool-tag">tool</span>
+            <span class="tool-name">nmap</span>
+            <span class="tool-status">exit 0 · 3.42s</span>
+          </div>
+          <div class="tool-cmd">nmap -sV -p 8443 --script ssl-enum-ciphers vault.sparrow.io</div>
+          <div class="tool-body"><span class="c"># Nmap 7.94 scan initiated — 2026-04-21 14:07:36</span>
+PORT     STATE SERVICE   VERSION
+8443/tcp <span class="ok">open</span>  ssl/https <span class="hl">nginx 1.24.0</span>
+| ssl-enum-ciphers:
+|   TLSv1.2:
+|     TLS_ECDHE_RSA_WITH_AES_256_<span class="hl">CBC</span>_SHA384 — <span class="hl">C</span>
+|     TLS_RSA_WITH_AES_256_GCM_SHA384        — <span class="hl">C</span>
+|_  least strength: <span class="hl">C</span></div>
+        </div>
+        <ul class="obs">
+          <li>nginx/1.24.0 answering on TLS port 8443</li>
+          <li class="mark">CBC-mode ciphers present with C-grade scoring</li>
+          <li class="mark">TLSv1.3 not offered at all</li>
+        </ul>
+        <div class="finding">
+          <span class="sev">Medium</span>
+          <span class="f-title">Weak TLS cipher suite exposed</span>
+          <span class="f-meta">#F-02 · conf 0.82</span>
+        </div>
+      </div>
+    </article>
+
+    <!-- TURN 2 -->
+    <article class="turn">
+      <div class="turn-head">
+        <span class="avatar">H1</span>
+        <span class="who">Halberd-R1<span class="role">· recon agent</span></span>
+        <span class="meta"><span class="ord">ord 02</span>14:07:44 · +00:10</span>
+      </div>
+      <div class="turn-body">
+        <p>Transport pinned down. I still don't know the framework — which narrows or widens every next decision. <code>whatweb</code> with <code>-a 3</code> gives plugin-aware identification with one round-trip.</p>
+        <div class="reasoning">
+          <div class="r-label">reasoning</div>
+          <p>If it's Django, the admin surface is predictable and I can bias a later wordlist. If it's something else, I skip admin-path fuzzing entirely.</p>
+        </div>
+        <div class="tool">
+          <div class="tool-hd">
+            <span class="tool-tag">tool</span>
+            <span class="tool-name">whatweb</span>
+            <span class="tool-status">exit 0 · 2.65s</span>
+          </div>
+          <div class="tool-cmd">whatweb -a 3 --no-errors https://vault.sparrow.io:8443/</div>
+          <div class="tool-body">https://vault.sparrow.io:8443/ [<span class="ok">200 OK</span>]
+  nginx[1.24.0], HTTPServer[nginx/1.24.0],
+  Django[4.2], X-Frame-Options[DENY],
+  Strict-Transport-Security[max-age=63072000],
+  Cookie[csrftoken,sessionid], HttpOnly, Secure,
+  <span class="hl">Server[vault-ingress-03.int.sparrow.io]</span> ← internal name</div>
+        </div>
+        <ul class="obs">
+          <li>Django 4.2 confirmed behind nginx reverse proxy</li>
+          <li class="mark">Server header leaks internal hostname <code>vault-ingress-03.int.sparrow.io</code></li>
+        </ul>
+        <div class="finding">
+          <span class="sev">Medium</span>
+          <span class="f-title">Internal hostname disclosed in Server header</span>
+          <span class="f-meta">#F-04 · conf 0.91</span>
+        </div>
+      </div>
+    </article>
+
+    <!-- TURN 3 -->
+    <article class="turn">
+      <div class="turn-head">
+        <span class="avatar">H1</span>
+        <span class="who">Halberd-R1<span class="role">· recon agent</span></span>
+        <span class="meta"><span class="ord">ord 03</span>14:10:25 · +02:14</span>
+      </div>
+      <div class="turn-body">
+        <p>Framework and transport are on the books. Django 4.2 invites a focused content probe — admin routes, VCS artefacts, backup files. Low threading to stay under any rate-limiter the ingress is running.</p>
+        <div class="reasoning">
+          <div class="r-label">reasoning</div>
+          <p>The internal hostname from turn 02 implies a deploy pipeline touches this tree. Pipelines leave working directories — I weight <code>/.git</code>, <code>/backup</code>, <code>/admin</code> heavily.</p>
+        </div>
+        <div class="tool">
+          <div class="tool-hd">
+            <span class="tool-tag">tool</span>
+            <span class="tool-name">ffuf</span>
+            <span class="tool-status">exit 0 · 133.10s</span>
+          </div>
+          <div class="tool-cmd">ffuf -w raft-medium.txt -u https://vault.sparrow.io:8443/FUZZ -mc 200,301,302,401,403 -t 8</div>
+          <div class="tool-body">  /admin/login          [Status: <span class="ok">200</span>, Size: 2218]
+  /healthz              [Status: <span class="ok">200</span>, Size: 17]
+  /backup.zip           [Status: <span class="hl">200</span>, Size: <span class="hl">4.1 MiB</span>]  ← escalated
+  <span class="rose">/.git/HEAD</span>            [Status: <span class="rose">200</span>, Size: 23]         ← escalated
+  /api/v1/auth          [Status: 401, Size: 89]
+  /static/admin/css/    [Status: 403, Size: 162]</div>
+        </div>
+        <ul class="obs">
+          <li class="mark">Live <code>/.git/HEAD</code> (confirmed via secondary curl on <code>/.git/config</code>)</li>
+          <li class="mark">Public <code>/backup.zip</code> at 4.1 MiB reachable unauthenticated</li>
+          <li>Admin login page present at <code>/admin/login</code></li>
+        </ul>
+        <div class="finding high">
+          <span class="sev">High</span>
+          <span class="f-title">Exposed <code>/.git</code> directory on production host</span>
+          <span class="f-meta">#F-01 · conf 0.97</span>
+        </div>
+      </div>
+    </article>
+
+    <!-- TURN 4 -->
+    <article class="turn">
+      <div class="turn-head">
+        <span class="avatar">H1</span>
+        <span class="who">Halberd-R1<span class="role">· recon agent</span></span>
+        <span class="meta"><span class="ord">ord 04</span>14:11:14 · +03:41</span>
+      </div>
+      <div class="turn-body">
+        <p>One transport question remains: whether the authentication endpoint reflects arbitrary origins. A single curl with a hostile <code>Origin</code> header is enough to answer it.</p>
+        <div class="reasoning">
+          <div class="r-label">reasoning</div>
+          <p>Auth endpoints that reflect <code>Origin</code> with <code>Allow-Credentials: true</code> permit cross-origin token theft. Fast to verify, high-impact if found.</p>
+        </div>
+        <div class="tool">
+          <div class="tool-hd">
+            <span class="tool-tag">tool</span>
+            <span class="tool-name">curl</span>
+            <span class="tool-status">exit 0 · 0.48s</span>
+          </div>
+          <div class="tool-cmd">curl -sI -H "Origin: https://evil.example.com" https://vault.sparrow.io:8443/api/v1/auth</div>
+          <div class="tool-body">HTTP/2 401
+server: nginx/1.24.0
+<span class="rose">access-control-allow-origin: https://evil.example.com</span>
+<span class="rose">access-control-allow-credentials: true</span>
+vary: Origin
+content-type: application/json
+www-authenticate: Bearer realm="vault"</div>
+        </div>
+        <ul class="obs">
+          <li class="mark">Origin reflection on credentialed auth endpoint</li>
+          <li class="mark"><code>Allow-Credentials: true</code> — cross-origin theft in scope</li>
+        </ul>
+        <div class="finding high">
+          <span class="sev">High</span>
+          <span class="f-title">Permissive CORS on <code>/api/v1/auth</code></span>
+          <span class="f-meta">#F-03 · conf 0.95</span>
+        </div>
+      </div>
+    </article>
+
+  </div>
+
+  <!-- CLOSEOUT -->
+  <section class="close">
+    <div class="c-kicker">Run complete · sealed 14:11:45 UTC</div>
+    <h3>Four turns, four tools, four findings — two warrant immediate triage.</h3>
+    <p>Exposed <code>/.git</code> on the production ingress and permissive CORS on <code>/api/v1/auth</code> are the two high-severity items; the other two are medium. Package dispatched to Red-Cell / Orion.</p>
+    <div class="close-stats">
+      <div><div class="k">Turns</div><div class="v">4</div></div>
+      <div><div class="k">Tools</div><div class="v">4</div></div>
+      <div><div class="k">Observations</div><div class="v">12</div></div>
+      <div><div class="k">Findings</div><div class="v">4 · 2↑</div></div>
+    </div>
+  </section>
+
+  <!-- COMPOSER -->
+  <div class="composer">
+    <div class="comp-card">
+      <input disabled placeholder="Run is sealed — replay, branch, or spawn a follow-up probe…" />
+      <span class="comp-hint">⌘K · run</span>
+      <button class="comp-btn">↑</button>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

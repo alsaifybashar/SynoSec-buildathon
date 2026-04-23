@@ -1,5 +1,5 @@
-import { useId, useRef, type ChangeEvent, isValidElement, startTransition, type ReactNode } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, ChevronsLeft, ChevronsRight, Download, FileUp, Plus, Search } from "lucide-react";
+import { useId, useRef, useState, type ChangeEvent, isValidElement, startTransition, type MouseEvent, type ReactNode } from "react";
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Check, ChevronsLeft, ChevronsRight, Download, FileUp, Plus, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent } from "@/shared/ui/card";
@@ -76,7 +76,10 @@ export function ListPage<T extends { id: string }>({
   onRetry,
   onAddRecord,
   onRowClick,
-  onImportJson
+  onImportJson,
+  getRowLabel,
+  onExportRowJson,
+  onDeleteRow
 }: {
   title: string;
   recordLabel: string;
@@ -96,9 +99,15 @@ export function ListPage<T extends { id: string }>({
   onAddRecord?: () => void;
   onRowClick?: (row: T) => void;
   onImportJson?: (file: File) => void | Promise<void>;
+  getRowLabel?: (row: T) => string;
+  onExportRowJson?: (row: T) => void;
+  onDeleteRow?: (row: T) => void | Promise<void>;
 }) {
   const importInputId = useId();
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const showRowActions = Boolean(onExportRowJson || onDeleteRow);
 
   function handleDefaultAddRecord() {
     toast("Coming soon", {
@@ -146,6 +155,121 @@ export function ListPage<T extends { id: string }>({
     }
 
     event.target.value = "";
+  }
+
+  function stopRowClick(event: MouseEvent<HTMLElement>) {
+    event.stopPropagation();
+  }
+
+  async function handleDeleteRow(row: T, event: MouseEvent<HTMLButtonElement>) {
+    stopRowClick(event);
+    if (!onDeleteRow) {
+      return;
+    }
+
+    const rowLabel = getRowLabel?.(row) ?? row.id;
+    setDeletingId(row.id);
+    try {
+      await onDeleteRow(row);
+      setConfirmDeleteId(null);
+      toast.success(`${recordLabel} deleted`, {
+        description: `${rowLabel} was deleted.`
+      });
+    } catch (error) {
+      toast.error(`${recordLabel} deletion failed`, {
+        description: error instanceof Error ? error.message : "Unknown error"
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  function renderRowActions(row: T) {
+    const rowLabel = getRowLabel?.(row) ?? row.id;
+    const confirmingDelete = confirmDeleteId === row.id;
+    const deleting = deletingId === row.id;
+
+    if (confirmingDelete && onDeleteRow) {
+      return (
+        <div className="flex min-w-[16rem] flex-col items-end gap-2 text-right">
+          <div className="inline-flex items-start gap-2 rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-left">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+            <div className="space-y-0.5">
+              <p className="text-[0.7rem] font-medium text-foreground">Delete {rowLabel}?</p>
+              <p className="text-[0.68rem] leading-5 text-muted-foreground">This action cannot be undone.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              aria-label={`Cancel delete ${rowLabel}`}
+              title="Cancel"
+              onClick={(event) => {
+                stopRowClick(event);
+                setConfirmDeleteId(null);
+              }}
+              disabled={deleting}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="icon"
+              className="h-7 w-7"
+              aria-label={`Confirm delete ${rowLabel}`}
+              title="Confirm delete"
+              onClick={(event) => {
+                void handleDeleteRow(row, event);
+              }}
+              disabled={deleting}
+            >
+              {deleting ? <Spinner className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center justify-end gap-2">
+        {onExportRowJson ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            aria-label={`Download ${rowLabel} as JSON`}
+            title="Download JSON"
+            onClick={(event) => {
+              stopRowClick(event);
+              onExportRowJson(row);
+            }}
+          >
+            <Download className="h-3.5 w-3.5" />
+          </Button>
+        ) : null}
+        {onDeleteRow ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            aria-label={`Delete ${rowLabel}`}
+            title="Delete record"
+            onClick={(event) => {
+              stopRowClick(event);
+              setConfirmDeleteId(row.id);
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        ) : null}
+      </div>
+    );
   }
 
   const pageLabel = meta.total === 0
@@ -272,6 +396,11 @@ export function ListPage<T extends { id: string }>({
                           {column.header}
                         </TableHead>
                       ))}
+                      {showRowActions ? (
+                        <TableHead className="border-b border-b-border border-t border-t-border bg-muted/40 text-right font-mono text-[0.625rem] font-medium uppercase tracking-[0.24em] text-muted-foreground">
+                          Actions
+                        </TableHead>
+                      ) : null}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -285,6 +414,7 @@ export function ListPage<T extends { id: string }>({
                           ) : null}
                         </TableCell>
                       ))}
+                      {showRowActions ? <TableCell /> : null}
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -323,6 +453,11 @@ export function ListPage<T extends { id: string }>({
                           </div>
                         </div>
                       ))}
+                      {showRowActions ? (
+                        <div className="border-t border-border/70 pt-3" onClick={stopRowClick}>
+                          {renderRowActions(row)}
+                        </div>
+                      ) : null}
                     </CardContent>
                   </Card>
                 ))}
@@ -352,6 +487,11 @@ export function ListPage<T extends { id: string }>({
                           )}
                         </TableHead>
                       ))}
+                      {showRowActions ? (
+                        <TableHead className="border-b border-b-border border-t border-t-border bg-muted/40 text-right font-mono text-[0.625rem] font-medium uppercase tracking-[0.24em] text-muted-foreground">
+                          Actions
+                        </TableHead>
+                      ) : null}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -368,6 +508,13 @@ export function ListPage<T extends { id: string }>({
                             {column.cell(row)}
                           </TableCell>
                         ))}
+                        {showRowActions ? (
+                          <TableCell className="w-[1%] min-w-[13rem] align-top text-[0.75rem]">
+                            <div onClick={stopRowClick}>
+                              {renderRowActions(row)}
+                            </div>
+                          </TableCell>
+                        ) : null}
                       </TableRow>
                     ))}
                   </TableBody>

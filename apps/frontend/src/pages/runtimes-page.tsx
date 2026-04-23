@@ -365,6 +365,17 @@ export function RuntimesPage({
     }
   }
 
+  function handleListExportJson(selected: Runtime) {
+    exportResourceRecords(runtimeTransfer, [selected], `runtime-${selected.name}`);
+  }
+
+  async function handleDeleteRuntime(selected: Runtime) {
+    await fetchJson<void>(`${apiRoutes.runtimes}/${selected.id}`, {
+      method: "DELETE"
+    });
+    runtimeList.refetch();
+  }
+
   function handleDismiss() {
     setFormValues(initialValues);
     setErrors({});
@@ -391,6 +402,9 @@ export function RuntimesPage({
         onAddRecord={onNavigateToCreate}
         onRowClick={(selected) => onNavigateToDetail(selected.id, selected.name)}
         onImportJson={handleImportJson}
+        getRowLabel={(selected) => selected.name}
+        onExportRowJson={handleListExportJson}
+        onDeleteRow={handleDeleteRuntime}
       />
     );
   }

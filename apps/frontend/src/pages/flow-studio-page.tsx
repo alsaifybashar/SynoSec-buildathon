@@ -37,7 +37,6 @@ import {
   type Workflow,
   type WorkflowRun,
   type WorkflowRunStreamMessage,
-  type WorkflowStageBody,
   type WorkflowStatus,
   type WorkflowTraceEvent
 } from "@synosec/contracts";
@@ -125,42 +124,40 @@ function draftFromWorkflow(workflow: Workflow): FlowDraft {
 }
 
 function draftToBody(draft: FlowDraft): CreateWorkflowBody {
+  const primaryStage = draft.stages[0] ?? emptyStage();
+
   return {
     name: draft.name.trim(),
     status: draft.status,
     description: draft.description.trim() || null,
     applicationId: draft.applicationId,
     runtimeId: draft.runtimeId || null,
-    stages: draft.stages.map<WorkflowStageBody>((stage) => ({
-      id: stage.id,
-      label: stage.label.trim(),
-      agentId: stage.agentId,
-      objective: stage.objective.trim() || `Complete the ${stage.label.trim()} stage using allowed tools and structured reporting.`,
-      allowedToolIds: stage.allowedToolIds,
-      requiredEvidenceTypes: [],
-      findingPolicy: {
-        taxonomy: "typed-core-v1",
-        allowedTypes: [
-          "service_exposure",
-          "content_discovery",
-          "missing_security_header",
-          "tls_weakness",
-          "injection_signal",
-          "auth_weakness",
-          "sensitive_data_exposure",
-          "misconfiguration",
-          "other"
-        ]
-      },
-      completionRule: {
-        requireStageResult: true,
-        requireToolCall: false,
-        allowEmptyResult: true,
-        minFindings: 0
-      },
-      resultSchemaVersion: 1,
-      handoffSchema: null
-    }))
+    agentId: primaryStage.agentId,
+    objective: primaryStage.objective.trim() || `Complete the ${primaryStage.label.trim() || "Workflow Run"} stage using allowed tools and structured reporting.`,
+    allowedToolIds: primaryStage.allowedToolIds,
+    requiredEvidenceTypes: [],
+    findingPolicy: {
+      taxonomy: "typed-core-v1",
+      allowedTypes: [
+        "service_exposure",
+        "content_discovery",
+        "missing_security_header",
+        "tls_weakness",
+        "injection_signal",
+        "auth_weakness",
+        "sensitive_data_exposure",
+        "misconfiguration",
+        "other"
+      ]
+    },
+    completionRule: {
+      requireStageResult: true,
+      requireToolCall: false,
+      allowEmptyResult: true,
+      minFindings: 0
+    },
+    resultSchemaVersion: 1,
+    handoffSchema: null
   };
 }
 
