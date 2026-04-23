@@ -108,7 +108,7 @@ jobs:
           source: "."
           target: "${{ env.VPS_TARGET_DIR }}"
           strip_components: 1
-          rm: false
+          rm: true
 
       - name: Deploy with Docker Compose
         uses: appleboy/ssh-action@v1.0.3
@@ -120,6 +120,7 @@ jobs:
             set -euo pipefail
             mkdir -p "${{ env.VPS_TARGET_DIR }}"
             cd "${{ env.VPS_TARGET_DIR }}"
+            printf '%s\n' '${{ github.sha }}' > .deploy-revision
             test -f docker-compose.vps.yml
             test -f infra/deploy/env.vps.template
             test -f infra/nginx/synosec.vps.conf.template
