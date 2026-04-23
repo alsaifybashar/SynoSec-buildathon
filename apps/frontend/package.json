@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p tsconfig.app.json && vite build",
-    "typecheck": "tsc -p tsconfig.app.json --noEmit",
-    "test": "vitest run"
+    "build": "pnpm --filter @synosec/contracts build && tsc -p tsconfig.app.json && vite build",
+    "typecheck": "pnpm --filter @synosec/contracts build && tsc -p tsconfig.app.json --noEmit",
+    "test": "pnpm --filter @synosec/contracts build && vitest run"
   },
   "dependencies": {
     "@radix-ui/react-select": "^2.2.6",
@@ -19,6 +19,8 @@
     "lucide-react": "^1.8.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0"
   },

@@ -7,10 +7,41 @@ import type {
   Runtime,
   Workflow,
   WorkflowRun,
+  WorkflowTraceEntry,
   WorkflowTraceEvent
 } from "@synosec/contracts";
 import { WorkflowExecutionService } from "./workflow-execution.service.js";
 import { WorkflowRunStream } from "./workflow-run-stream.js";
+
+type WorkflowDebugEventInput = {
+  type: WorkflowTraceEvent["type"];
+  status?: WorkflowTraceEvent["status"];
+  title: string;
+  summary: string;
+  detail?: string | null;
+  payload?: Record<string, unknown>;
+  createdAt?: string;
+};
+
+type WorkflowLinkedScanInput = {
+  runId: string;
+  applicationId: string;
+  runtimeId: string | null;
+  agentId: string;
+  scope: {
+    targets: string[];
+    exclusions: string[];
+    layers: ("L1" | "L2" | "L3" | "L4" | "L5" | "L6" | "L7")[];
+    maxDepth: number;
+    maxDurationMinutes: number;
+    rateLimitRps: number;
+    allowActiveExploits: boolean;
+    graceEnabled: boolean;
+    graceRoundInterval: number;
+    cyberRangeMode: "simulation";
+  };
+  onWorkflowEvent: (event: WorkflowDebugEventInput) => Promise<void>;
+};
 
 const workflow: Workflow = {
   id: "10000000-0000-0000-0000-000000000001",
@@ -19,6 +50,22 @@ const workflow: Workflow = {
   description: "Workflow execution provider test",
   applicationId: "20000000-0000-0000-0000-000000000001",
   runtimeId: "30000000-0000-0000-0000-000000000001",
+  agentId: "50000000-0000-0000-0000-000000000001",
+  objective: "Complete the Recon stage using allowed tools and structured reporting.",
+  allowedToolIds: [],
+  requiredEvidenceTypes: [],
+  findingPolicy: {
+    taxonomy: "typed-core-v1",
+    allowedTypes: ["other"]
+  },
+  completionRule: {
+    requireStageResult: true,
+    requireToolCall: false,
+    allowEmptyResult: true,
+    minFindings: 0
+  },
+  resultSchemaVersion: 1,
+  handoffSchema: null,
   stages: [
     {
       id: "40000000-0000-0000-0000-000000000001",
@@ -90,7 +137,7 @@ function createService(
     agent?: AiAgent;
     toolsById?: Record<string, AiTool | null>;
     appendRunEvent?: (run: WorkflowRun, event: WorkflowTraceEvent, patch?: Partial<WorkflowRun>) => Promise<WorkflowRun>;
-    runWorkflowLinkedScan?: () => Promise<void>;
+    runWorkflowLinkedScan?: (input: WorkflowLinkedScanInput) => Promise<void>;
   } = {}
 ) {
   let createdRun: WorkflowRun | null = null;
@@ -138,10 +185,14 @@ function createService(
         };
         return createdRun;
       },
-      appendTraceEntry: async () => {
+      appendTraceEntry: async (_runId, traceEntry: WorkflowTraceEntry) => {
         if (!createdRun) {
           throw new Error("run not created");
         }
+        createdRun = {
+          ...createdRun,
+          trace: [...createdRun.trace, traceEntry]
+        };
         return createdRun;
       },
       updateRunState: async (_runId, patch) => {
@@ -186,7 +237,7 @@ function createService(
     },
     new WorkflowRunStream(),
     {
-      runWorkflowLinkedScan: async () => overrides.runWorkflowLinkedScan ? overrides.runWorkflowLinkedScan() : undefined
+      runWorkflowLinkedScan: async (input: WorkflowLinkedScanInput) => overrides.runWorkflowLinkedScan ? overrides.runWorkflowLinkedScan(input) : undefined
     } as never
   );
 
@@ -352,5 +403,108 @@ describe("WorkflowExecutionService startRun provider support", () => {
 
     expect(failedRun?.status).toBe("failed");
     expect(failedRun?.completedAt).not.toBeNull();
+  });
+
+  it("completes the OSI single-agent workflow and persists the emitted workflow transcript", async () => {
+    const singleAgentWorkflow: Workflow = {
+      ...workflow,
+      name: "OSI Single-Agent",
+      allowedToolIds: ["seed-service-scan"],
+      stages: workflow.stages.map((stage) => ({
+        ...stage,
+        allowedToolIds: ["seed-service-scan"]
+      }))
+    };
+    const singleAgentAgent: AiAgent = {
+      ...agent,
+      name: "Single-Agent Security Runner",
+      toolIds: ["seed-service-scan", "seed-http-recon"]
+    };
+    let receivedScanInput: WorkflowLinkedScanInput | null = null;
+    const service = createService({
+      id: agent.providerId,
+      name: "Local",
+      kind: "local",
+      status: "active",
+      description: "Local provider",
+      baseUrl: "http://127.0.0.1:11434",
+      model: "qwen3:1.7b",
+      apiKeyConfigured: false,
+      apiKey: null,
+      createdAt: "2026-04-21T00:00:00.000Z",
+      updatedAt: "2026-04-21T00:00:00.000Z"
+    }, {
+      workflow: singleAgentWorkflow,
+      agent: singleAgentAgent,
+      runWorkflowLinkedScan: async (input) => {
+        receivedScanInput = input;
+        await input.onWorkflowEvent({
+          type: "system_message",
+          status: "completed",
+          title: "Rendered system prompt",
+          summary: "Persisted the exact system instruction payload used to drive the single-agent loop.",
+          detail: "System prompt body",
+          payload: {
+            prompt: "System prompt body"
+          }
+        });
+        await input.onWorkflowEvent({
+          type: "tool_call",
+          status: "running",
+          title: "Service Scan invoked",
+          summary: "The agent requested Service Scan for transport evidence.",
+          detail: null,
+          payload: {
+            toolId: "seed-service-scan",
+            toolName: "Service Scan"
+          }
+        });
+        await input.onWorkflowEvent({
+          type: "agent_summary",
+          status: "completed",
+          title: "Single-agent closeout submitted",
+          summary: "The agent submitted the final structured closeout.",
+          detail: "Completed the scan.",
+          payload: {
+            summary: "Completed the scan.",
+            stopReason: "no_further_material_progress"
+          }
+        });
+      }
+    });
+
+    await service.startRun(singleAgentWorkflow.id);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const completedRun = service.__getCreatedRun();
+
+    expect(receivedScanInput).not.toBeNull();
+    expect(receivedScanInput).toMatchObject({
+      applicationId: application.id,
+      runtimeId: runtime.id,
+      agentId: singleAgentAgent.id,
+      scope: {
+        targets: [application.baseUrl],
+        layers: ["L1", "L2", "L3", "L4", "L5", "L6", "L7"],
+        maxDepth: 8,
+        maxDurationMinutes: 20,
+        allowActiveExploits: false
+      }
+    });
+    expect(completedRun?.status).toBe("completed");
+    expect(completedRun?.currentStepIndex).toBe(1);
+    expect(completedRun?.completedAt).not.toBeNull();
+    expect(completedRun?.events.map((event) => event.type)).toEqual([
+      "stage_started",
+      "system_message",
+      "tool_call",
+      "agent_summary",
+      "stage_completed"
+    ]);
+    expect(completedRun?.trace).toHaveLength(1);
+    expect(completedRun?.trace[0]).toMatchObject({
+      agentName: "Single-Agent Security Runner",
+      selectedToolIds: ["seed-service-scan"],
+      status: "completed"
+    });
   });
 });

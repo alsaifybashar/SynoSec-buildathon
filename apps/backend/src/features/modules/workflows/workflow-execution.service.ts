@@ -820,6 +820,14 @@ export class WorkflowExecutionService {
         runtimeId: runtime?.id ?? null,
         agentId: agent.id,
         scope: this.buildSingleAgentScope(application.baseUrl ?? "http://localhost:8888"),
+        onWorkflowModelOutput: async (output) => {
+          this.publishModelOutput(currentRun, {
+            source: output.source,
+            text: output.text,
+            final: output.final ?? false,
+            createdAt: output.createdAt ?? new Date().toISOString()
+          });
+        },
         onWorkflowEvent: async (event) => {
           const workflowEvent = this.createEvent({
             run: currentRun,
@@ -1033,6 +1041,22 @@ export class WorkflowExecutionService {
     this.workflowRunStream.publish(run.id, {
       type: "snapshot",
       run
+    });
+  }
+
+  private publishModelOutput(run: WorkflowRun, output: {
+    source: "local" | "hosted";
+    text: string;
+    final: boolean;
+    createdAt: string;
+  }) {
+    this.workflowRunStream.publish(run.id, {
+      type: "model_output",
+      run,
+      source: output.source,
+      text: output.text,
+      final: output.final,
+      createdAt: output.createdAt
     });
   }
 

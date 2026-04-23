@@ -175,6 +175,13 @@ type WorkflowDebugEventInput = {
   createdAt?: string;
 };
 
+type WorkflowModelOutputInput = {
+  source: "local" | "hosted";
+  text: string;
+  final?: boolean;
+  createdAt?: string;
+};
+
 type SingleAgentContext = {
   scan: Scan;
   scanId: string;
@@ -191,6 +198,7 @@ type SingleAgentContext = {
   tools: AiTool[];
   onAudit: ((entry: { action: string; details: Record<string, unknown>; timestamp: string }) => Promise<void> | void) | undefined;
   onWorkflowEvent: ((event: WorkflowDebugEventInput) => Promise<void> | void) | undefined;
+  onWorkflowModelOutput: ((output: WorkflowModelOutputInput) => Promise<void> | void) | undefined;
 };
 
 type LoopState = {
@@ -260,6 +268,7 @@ export class SingleAgentScanService {
     llm?: ScanLlmConfig;
     onAudit?: (entry: { action: string; details: Record<string, unknown>; timestamp: string }) => Promise<void> | void;
     onWorkflowEvent?: (event: WorkflowDebugEventInput) => Promise<void> | void;
+    onWorkflowModelOutput?: (output: WorkflowModelOutputInput) => Promise<void> | void;
   }) {
     const { context } = await this.createExecutionContext({
       scanId: input.runId,
@@ -272,7 +281,8 @@ export class SingleAgentScanService {
         ...(input.llm ? { llm: input.llm } : {})
       },
       ...(input.onAudit ? { onAudit: input.onAudit } : {}),
-      ...(input.onWorkflowEvent ? { onWorkflowEvent: input.onWorkflowEvent } : {})
+      ...(input.onWorkflowEvent ? { onWorkflowEvent: input.onWorkflowEvent } : {}),
+      ...(input.onWorkflowModelOutput ? { onWorkflowModelOutput: input.onWorkflowModelOutput } : {})
     });
     await this.runLoop(context);
   }
@@ -283,6 +293,7 @@ export class SingleAgentScanService {
     input: CreateSingleAgentScanRequest;
     onAudit?: (entry: { action: string; details: Record<string, unknown>; timestamp: string }) => Promise<void> | void;
     onWorkflowEvent?: (event: WorkflowDebugEventInput) => Promise<void> | void;
+    onWorkflowModelOutput?: (output: WorkflowModelOutputInput) => Promise<void> | void;
   }) {
     const [application, runtime, agent] = await Promise.all([
       this.applicationsRepository.getById(input.input.applicationId),
@@ -370,7 +381,8 @@ export class SingleAgentScanService {
       target,
       tools,
       onAudit: input.onAudit,
-      onWorkflowEvent: input.onWorkflowEvent
+      onWorkflowEvent: input.onWorkflowEvent,
+      onWorkflowModelOutput: input.onWorkflowModelOutput
     };
 
     return { context };
@@ -572,6 +584,32 @@ export class SingleAgentScanService {
       stopWhen: stepCountIs(this.maxSteps)
     });
 
+    if (result.text?.trim()) {
+      await context.onWorkflowModelOutput?.({
+        source: "hosted",
+        text: result.text,
+        final: true,
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (!state.completion) {
+      await this.emitWorkflowEvent(context, {
+        type: "verification",
+        status: "failed",
+        title: "Verifier rejected the hosted-model closeout",
+        summary: "The hosted model ended without submitting submit_scan_completion.",
+        detail: result.text || "The hosted model returned no final structured completion payload.",
+        payload: {
+          lane: "verification",
+          messageKind: "challenge",
+          rawModelOutput: result.text || null,
+          usage: result.usage ?? null
+        }
+      });
+      throw new Error("Hosted model did not submit a completion payload.");
+    }
+
     await this.emitWorkflowEvent(context, {
       type: "model_decision",
       status: "completed",
@@ -602,6 +640,14 @@ export class SingleAgentScanService {
 
     for (let iteration = 0; iteration < this.maxSteps; iteration += 1) {
       const rawContent = await this.callLocalModel(context.provider, context.model, messages, context.llm?.apiPath);
+      if (rawContent.trim()) {
+        await context.onWorkflowModelOutput?.({
+          source: "local",
+          text: rawContent,
+          final: true,
+          createdAt: new Date().toISOString()
+        });
+      }
       messages.push({ role: "assistant", content: rawContent });
       const actionEnvelope = this.parseJsonObjectFromModel(rawContent);
       const action = typeof actionEnvelope["action"] === "string" ? actionEnvelope["action"] : "";
@@ -700,7 +746,18 @@ export class SingleAgentScanService {
           action
         }
       });
-      messages.push({ role: "user", content: `Unsupported action ${action || "<missing>"}.` });
+      messages.push({
+        role: "user",
+        content: [
+          `Unsupported action ${action || "<missing>"}.`,
+          "Supported actions:",
+          "- call_tool",
+          "- report_vulnerability",
+          "- update_layer_coverage",
+          "- submit_scan_completion",
+          "Return exactly one JSON object using one supported action."
+        ].join("\n")
+      });
     }
   }
 
@@ -1100,56 +1157,45 @@ export class SingleAgentScanService {
   }
 
   private buildSystemPrompt(context: SingleAgentContext, mode: "local" | "hosted") {
-    const sharedLines = [
+    if (mode === "hosted") {
+      return context.agent.systemPrompt;
+    }
+
+    return [
       context.agent.systemPrompt,
       "You are operating a single-agent security scan loop across the requested OSI layers.",
       `Target application: ${context.application.name}`,
       `Target URL: ${context.target.baseUrl}`,
-      context.runtime ? `Runtime: ${context.runtime.name} (${context.runtime.provider}, ${context.runtime.region})` : "",
+      context.runtime ? `Runtime: ${context.runtime.name} (${context.runtime.provider}, ${context.runtime.region})` : null,
       `Allowed tools: ${context.tools.map((tool) => `${tool.id}=${tool.name}`).join(", ") || "none"}`,
-      `Requested layers: ${context.request.scope.layers.join(", ")}`
-    ].filter(Boolean);
-
-    if (mode === "local") {
-      return [
-        ...sharedLines,
-        "You are running in structured JSON action mode.",
-        "Return exactly one JSON object per turn.",
-        "Canonical OSI mapping: L1 Physical, L2 Data Link, L3 Network, L4 Transport, L5 Session, L6 Presentation, L7 Application.",
-        'Valid actions: {"action":"call_tool","toolId":"string","input":{...},"reasoning":"string"}',
-        'Valid actions: {"action":"report_vulnerability","vulnerability":{...},"reasoning":"string"}',
-        'Valid actions: {"action":"update_layer_coverage","coverage":{...},"reasoning":"string"}',
-        'Valid actions: {"action":"submit_scan_completion","completion":{...},"reasoning":"string"}',
-        'For call_tool, include input.target, input.baseUrl, and input.layer when known. Prefer target="localhost" and baseUrl="http://localhost:8888" style shapes over url-only inputs.',
-        'Example call_tool: {"action":"call_tool","toolId":"seed-service-scan","input":{"target":"localhost","baseUrl":"http://localhost:8888","layer":"L4"},"reasoning":"Use L4 transport evidence to confirm service reachability."}',
-        'submit_scan_completion requires completion.summary, completion.residualRisk, completion.recommendedNextStep, and completion.stopReason.',
-        "Use tools only for concrete evidence collection inside the approved scope.",
-        "Do not invent tool results.",
-        "Persist every concrete vulnerability through report_vulnerability.",
-        "Persist per-layer coverage updates as your knowledge changes.",
-        "Do not claim full L1-L7 coverage unless the persisted layer coverage actually shows every requested layer as covered.",
-        "You must finish with submit_scan_completion exactly once."
-      ].join("\n");
-    }
-
-    return [
-      ...sharedLines,
+      `Requested layers: ${context.request.scope.layers.join(", ")}`,
+      "You are running in structured JSON action mode.",
+      "Return exactly one JSON object per turn.",
+      "Canonical OSI mapping: L1 Physical, L2 Data Link, L3 Network, L4 Transport, L5 Session, L6 Presentation, L7 Application.",
+      'Valid actions: {"action":"call_tool","toolId":"string","input":{...},"reasoning":"string"}',
+      'Valid actions: {"action":"report_vulnerability","vulnerability":{...},"reasoning":"string"}',
+      'Valid actions: {"action":"update_layer_coverage","coverage":{...},"reasoning":"string"}',
+      'Valid actions: {"action":"submit_scan_completion","completion":{...},"reasoning":"string"}',
+      'For call_tool, include input.target, input.baseUrl, and input.layer when known. Prefer target="localhost" and baseUrl="http://localhost:8888" style shapes over url-only inputs.',
+      'Example call_tool: {"action":"call_tool","toolId":"seed-service-scan","input":{"target":"localhost","baseUrl":"http://localhost:8888","layer":"L4"},"reasoning":"Use L4 transport evidence to confirm service reachability."}',
+      "submit_scan_completion requires completion.summary, completion.residualRisk, completion.recommendedNextStep, and completion.stopReason.",
       "Use tools only for concrete evidence collection inside the approved scope.",
       "Do not invent tool results.",
       "Persist every concrete vulnerability through report_vulnerability.",
       "Persist per-layer coverage updates as your knowledge changes.",
-      "submit_scan_completion requires summary, residualRisk, recommendedNextStep, and stopReason.",
-      "Do not claim full L1-L7 coverage unless every requested layer is actually covered by persisted evidence.",
+      "Do not claim full L1-L7 coverage unless the persisted layer coverage actually shows every requested layer as covered.",
       "You must finish with submit_scan_completion exactly once."
-    ].join("\n");
+    ].filter(Boolean).join("\n");
   }
 
   private buildUserPrompt(context: SingleAgentContext) {
     return [
       `Scan scope targets: ${context.request.scope.targets.join(", ")}`,
       `Requested layers: ${context.request.scope.layers.join(", ")}`,
+      `Max depth: ${context.request.scope.maxDepth}`,
       `Max duration minutes: ${context.request.scope.maxDurationMinutes}`,
-      `Allow active exploits: ${context.request.scope.allowActiveExploits}`,
+      `Rate limit RPS: ${context.request.scope.rateLimitRps}`,
+      `Allow active exploits: ${String(context.request.scope.allowActiveExploits)}`,
       "Start with the next highest-value evidence action.",
       "If a requested layer is blocked or unsupported, record that explicitly in layer coverage.",
       "Only claim coverage that is supported by persisted tool evidence or accepted vulnerabilities.",

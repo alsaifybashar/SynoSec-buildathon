@@ -106,6 +106,11 @@ function WorkflowConfigEditor({
   const selectedAgent = agentLookup[formValues.agentId];
   const inheritedToolIds = selectedAgent?.toolIds ?? [];
   const effectiveToolIds = formValues.allowedToolIds.length > 0 ? formValues.allowedToolIds : inheritedToolIds;
+  const workflowActions = [
+    "Report vulnerability",
+    "Update layer coverage",
+    "Submit scan completion"
+  ];
 
   return (
     <>
@@ -184,11 +189,11 @@ function WorkflowConfigEditor({
             <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
               <p className="text-xs font-medium text-foreground">
                 {formValues.allowedToolIds.length === 0
-                  ? "Mode: inherit all agent tools"
-                  : `Mode: restricted to ${formValues.allowedToolIds.length} selected tool${formValues.allowedToolIds.length === 1 ? "" : "s"}`}
+                  ? "Mode: inherit all agent evidence tools"
+                  : `Mode: restricted to ${formValues.allowedToolIds.length} selected evidence tool${formValues.allowedToolIds.length === 1 ? "" : "s"}`}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Click a tool to mark it selected for this workflow. If none are selected, the workflow uses every tool granted on the agent.
+                Click an evidence tool to allow it for this workflow. If none are selected, the workflow uses every evidence tool granted on the agent.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -217,11 +222,24 @@ function WorkflowConfigEditor({
                     </span>
                   </Button>
                 );
-              }) : <p className="text-sm text-muted-foreground">No tools are assigned to this agent.</p>}
+              }) : <p className="text-sm text-muted-foreground">No evidence tools are assigned to this agent.</p>}
             </div>
             <p className="text-sm text-foreground">
-              Effective tools for this workflow: {effectiveToolIds.length > 0 ? effectiveToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ") : "None"}
+              Effective evidence tools for this workflow: {effectiveToolIds.length > 0 ? effectiveToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ") : "None"}
             </p>
+            <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
+              <p className="text-xs font-medium text-foreground">Built-in workflow actions</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                These are provided by the workflow engine and are not agent-managed tools.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {workflowActions.map((action) => (
+                  <span key={action} className="inline-flex items-center rounded-full border border-border/70 bg-card px-2.5 py-1 font-mono text-[0.62rem] uppercase tracking-[0.14em] text-foreground/85">
+                    {action}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
         </DetailField>
       </DetailFieldGroup>
@@ -253,6 +271,13 @@ export function WorkflowsPage({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [currentRun, setCurrentRun] = useState<WorkflowRun | null>(null);
+  const [liveModelOutput, setLiveModelOutput] = useState<{
+    runId: string;
+    source: "local" | "hosted";
+    text: string;
+    final: boolean;
+    createdAt: string;
+  } | null>(null);
   const [runPending, setRunPending] = useState(false);
   const [runAction, setRunAction] = useState<RunAction>(null);
   const [runStreamState, setRunStreamState] = useState<RunStreamState>("idle");
@@ -315,6 +340,7 @@ export function WorkflowsPage({
       setFormValues(nextValues);
       setInitialValues(nextValues);
       setCurrentRun(null);
+      setLiveModelOutput(null);
       setRunAction(null);
       setRunStreamState("idle");
       setEditModalOpen(false);
@@ -334,6 +360,7 @@ export function WorkflowsPage({
       setFormValues(nextValues);
       setInitialValues(nextValues);
       setCurrentRun(null);
+      setLiveModelOutput(null);
       setRunAction(null);
       setRunStreamState("idle");
       setEditModalOpen(false);
@@ -354,6 +381,7 @@ export function WorkflowsPage({
   useEffect(() => {
     if (!workflow || isCreateMode) {
       setCurrentRun(null);
+      setLiveModelOutput(null);
       return;
     }
 
@@ -392,6 +420,17 @@ export function WorkflowsPage({
     eventSource.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data) as WorkflowRunStreamMessage;
+        if (payload.type === "model_output") {
+          setCurrentRun(payload.run);
+          setLiveModelOutput({
+            runId: payload.run.id,
+            source: payload.source,
+            text: payload.text,
+            final: payload.final,
+            createdAt: payload.createdAt
+          });
+          return;
+        }
         setCurrentRun(payload.run);
       } catch {
         setRunStreamState("disconnected");
@@ -406,6 +445,15 @@ export function WorkflowsPage({
       eventSource.close();
     };
   }, [currentRun?.id, currentRun?.status]);
+
+  useEffect(() => {
+    if (!currentRun) {
+      setLiveModelOutput(null);
+      return;
+    }
+
+    setLiveModelOutput((existing) => existing?.runId === currentRun.id ? existing : null);
+  }, [currentRun?.id]);
 
   const applicationLookup = useMemo(() => Object.fromEntries(applications.map((item) => [item.id, item.name])), [applications]);
   const agentLookup = useMemo(() => Object.fromEntries(agents.map((item) => [item.id, item])), [agents]);
@@ -566,6 +614,17 @@ export function WorkflowsPage({
     }
   }
 
+  function handleListExportJson(selected: Workflow) {
+    exportResourceRecords(workflowTransfer, [selected], `workflow-${selected.name}`);
+  }
+
+  async function handleDeleteWorkflow(selected: Workflow) {
+    await fetchJson<void>(`${apiRoutes.workflows}/${selected.id}`, {
+      method: "DELETE"
+    });
+    workflowList.refetch();
+  }
+
   if (!workflowId) {
     return (
       <ListPage
@@ -587,6 +646,9 @@ export function WorkflowsPage({
         onAddRecord={onNavigateToCreate}
         onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
         onImportJson={handleImportJson}
+        getRowLabel={(row) => row.name}
+        onExportRowJson={handleListExportJson}
+        onDeleteRow={handleDeleteWorkflow}
       />
     );
   }
@@ -617,6 +679,11 @@ export function WorkflowsPage({
     ? (workflowAllowedToolIds.length > 0 ? workflowAllowedToolIds : workflowAgent?.toolIds ?? [])
     : [];
   const visibleToolNames = visibleToolIds.map((toolId: string) => toolLookup[toolId] ?? toolId);
+  const workflowActions = [
+    "Report vulnerability",
+    "Update layer coverage",
+    "Submit scan completion"
+  ];
 
   return (
     <>
@@ -704,6 +771,7 @@ export function WorkflowsPage({
           tools={tools}
           run={currentRun}
           running={runPending || currentRun?.status === "running"}
+          liveModelOutput={liveModelOutput && currentRun && liveModelOutput.runId === currentRun.id ? liveModelOutput : null}
           summaryCard={{
             toolCount: approvedToolCount,
             toolNames: visibleToolNames
@@ -738,6 +806,34 @@ export function WorkflowsPage({
                   {label}
                 </span>
               ))}
+            </div>
+            <div className="rounded-xl border border-border bg-background/40 p-4">
+              <p className="text-sm font-medium text-foreground">Evidence tools</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                These are the agent-granted tools allowed to collect evidence during the run.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {visibleToolNames.length > 0 ? visibleToolNames.map((toolName) => (
+                  <span key={toolName} className="inline-flex items-center rounded-full border border-border/70 bg-card px-3 py-1 font-mono text-[0.68rem] uppercase tracking-[0.16em] text-foreground/85">
+                    {toolName}
+                  </span>
+                )) : (
+                  <span className="text-sm text-muted-foreground">No evidence tools allowed.</span>
+                )}
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-background/40 p-4">
+              <p className="text-sm font-medium text-foreground">Built-in workflow actions</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Findings, layer coverage, and closeout are handled by the workflow engine, not by agent-managed tools.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {workflowActions.map((action) => (
+                  <span key={action} className="inline-flex items-center rounded-full border border-border/70 bg-card px-3 py-1 font-mono text-[0.68rem] uppercase tracking-[0.16em] text-foreground/85">
+                    {action}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
         </DetailFieldGroup>

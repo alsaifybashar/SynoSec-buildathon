@@ -1,6 +1,15 @@
-import type { WorkflowRunStreamMessage } from "@synosec/contracts";
+import type { WorkflowRun, WorkflowRunStreamMessage } from "@synosec/contracts";
 
-type RunListener = (message: WorkflowRunStreamMessage) => void;
+type WorkflowRunStreamBroadcastMessage = WorkflowRunStreamMessage | {
+  type: "model_output";
+  run: WorkflowRun;
+  source: "local" | "hosted";
+  text: string;
+  final: boolean;
+  createdAt: string;
+};
+
+type RunListener = (message: WorkflowRunStreamBroadcastMessage) => void;
 
 export class WorkflowRunStream {
   private readonly listeners = new Map<string, Set<RunListener>>();
@@ -26,7 +35,7 @@ export class WorkflowRunStream {
     };
   }
 
-  publish(runId: string, message: WorkflowRunStreamMessage) {
+  publish(runId: string, message: WorkflowRunStreamBroadcastMessage) {
     const listeners = this.listeners.get(runId);
     if (!listeners || listeners.size === 0) {
       return;

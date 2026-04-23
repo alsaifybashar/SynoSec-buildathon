@@ -1,147 +1,24 @@
-import type { WorkflowTraceEvent } from "@synosec/contracts";
+import type { ReactNode } from "react";
 import type { AiAgent, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
-import {
-  BookLock,
-  BrainCog,
-  CircleHelp,
-  Gauge,
-  Orbit,
-  Paperclip,
-  Quote,
-  ScrollText,
-  ShieldAlert,
-  Sparkles,
-  Stamp,
-  Target,
-  Terminal,
-  Wrench,
-  type LucideIcon
-} from "lucide-react";
-import { Button } from "@/shared/ui/button";
+import { AlertTriangle, Bot, CircleHelp, LoaderCircle, RotateCcw, ShieldAlert, Target } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
-  formatTimestamp,
-  getEventPreview,
+  buildWorkflowTranscript,
   getToolLookup,
-  summarizeWorkflowStageTrace
+  getWorkflowAllowedToolIds,
+  type AssistantTurnDetail,
+  type FindingsRailItem,
+  type LiveModelOutput,
+  type TranscriptProjection
 } from "@/features/workflows/workflow-trace";
 
 type SummaryCardData = {
   toolCount: number;
   toolNames: string[];
 };
-
-type TranscriptItem =
-  | {
-      kind: "stage_header";
-      id: string;
-      stageId: string;
-      stageIndex: number;
-      stageLabel: string;
-      stageObjective: string;
-      stageStatus: string;
-      agentName: string;
-      createdAt: string | null;
-    }
-  | {
-      kind: "event";
-      id: string;
-      stageId: string;
-      stageIndex: number;
-      stageLabel: string;
-      agentName: string;
-      event: WorkflowTraceEvent;
-    }
-  | {
-      kind: "dossier";
-      id: string;
-      stageId: string;
-      stageIndex: number;
-      stageLabel: string;
-      agentName: string;
-      createdAt: string | null;
-      outcome: string;
-      explicitResult: string | null;
-      findings: Array<{
-        id: string;
-        title: string;
-        severity: string;
-        type: string;
-        impact: string;
-        recommendation: string;
-        confidence: number;
-      }>;
-      chain: string[];
-      artifacts: string[];
-      confidence: number;
-    };
-
-function getRunSummary(run: WorkflowRun | null, workflow: Workflow | null) {
-  if (!run || !workflow) {
-    return "No workflow run has been recorded yet.";
-  }
-
-  const totalSteps = workflow.stages.length;
-  const activeStep = Math.min(Math.max(run.currentStepIndex + 1, 1), Math.max(totalSteps, 1));
-  const lifecycle = run.status === "completed" && run.trace.length === 0 ? "running" : run.status;
-
-  return `${run.status} · ${lifecycle} · step ${activeStep}/${totalSteps}`;
-}
-
-function getAgentName(stageId: string, run: WorkflowRun | null, workflow: Workflow, agents: AiAgent[]) {
-  const traceAgent = run?.trace.find((entry) => entry.workflowStageId === stageId)?.agentName;
-  if (traceAgent) {
-    return traceAgent;
-  }
-
-  const eventAgent = run?.events
-    .find((event) => event.workflowStageId === stageId && typeof event.payload?.["agentName"] === "string")
-    ?.payload?.["agentName"];
-  if (typeof eventAgent === "string" && eventAgent.trim().length > 0) {
-    return eventAgent;
-  }
-
-  const stage = workflow.stages.find((item) => item.id === stageId);
-  return agents.find((agent) => agent.id === stage?.agentId)?.name ?? "Unknown agent";
-}
-
-function getEventPayloadString(event: WorkflowTraceEvent, key: string) {
-  const value = event.payload?.[key];
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function getEventPayloadStringList(event: WorkflowTraceEvent, key: string) {
-  const value = event.payload?.[key];
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
-}
-
-function getRunContextName(run: WorkflowRun | null, key: "applicationName" | "runtimeName") {
-  const value = run?.events.find((event) => typeof event.payload?.[key] === "string")?.payload?.[key];
-  return typeof value === "string" && value.trim().length > 0 ? value : null;
-}
-
-function getExplicitResultStatus(terminalType: string | undefined) {
-  if (terminalType === "stage_failed") {
-    return "failure";
-  }
-  if (terminalType === "stage_completed") {
-    return "success";
-  }
-  return null;
-}
-
-function SectionLabel({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <p className={cn("font-mono text-[0.6rem] font-semibold uppercase tracking-[0.32em] text-muted-foreground/80", className)}>
-      {children}
-    </p>
-  );
-}
 
 function HelpHint({ label, hint }: { label: string; hint: string }) {
   return (
@@ -162,559 +39,541 @@ function HelpHint({ label, hint }: { label: string; hint: string }) {
   );
 }
 
-function Bracket({ className, children }: { className?: string; children: React.ReactNode }) {
+function MonoLabel({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-1 font-mono", className)}>
-      <span aria-hidden className="text-muted-foreground/70">[</span>
+    <p className={cn("font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground", className)}>
       {children}
-      <span aria-hidden className="text-muted-foreground/70">]</span>
-    </span>
+    </p>
   );
 }
 
-function CornerMarks({ className }: { className?: string }) {
-  return (
-    <>
-      <span aria-hidden className={cn("pointer-events-none absolute left-0 top-0 h-3 w-3 border-l border-t border-foreground/25", className)} />
-      <span aria-hidden className={cn("pointer-events-none absolute right-0 top-0 h-3 w-3 border-r border-t border-foreground/25", className)} />
-      <span aria-hidden className={cn("pointer-events-none absolute bottom-0 left-0 h-3 w-3 border-b border-l border-foreground/25", className)} />
-      <span aria-hidden className={cn("pointer-events-none absolute bottom-0 right-0 h-3 w-3 border-b border-r border-foreground/25", className)} />
-    </>
-  );
-}
-
-function TimelineSpine({ tone = "idle", live = false }: { tone?: "idle" | "active" | "done" | "warn"; live?: boolean }) {
-  const dotTone =
-    tone === "active"
-      ? "bg-primary ring-primary/30"
-      : tone === "done"
-        ? "bg-emerald-500 ring-emerald-500/30"
-        : tone === "warn"
-          ? "bg-amber-500 ring-amber-500/30"
-          : "bg-muted-foreground/40 ring-muted-foreground/20";
-  return (
-    <div className="relative flex w-10 shrink-0 justify-center">
-      <span aria-hidden className="absolute inset-y-0 w-px bg-gradient-to-b from-border via-border/70 to-border/10" />
-      <span aria-hidden className={cn("relative mt-3 h-2.5 w-2.5 rounded-full ring-4", dotTone)}>
-        {live ? <span aria-hidden className="absolute -inset-1 animate-ping rounded-full bg-current opacity-50" /> : null}
-      </span>
-    </div>
-  );
-}
-
-function SeverityPip({ severity }: { severity: string }) {
+function SeverityBadge({ severity }: { severity: string }) {
   const tone =
     severity === "critical"
-      ? "bg-rose-600 text-rose-50 ring-rose-500/40"
+      ? "border-destructive/40 bg-destructive text-destructive-foreground"
       : severity === "high"
-        ? "bg-rose-500/90 text-rose-50 ring-rose-500/30"
+        ? "border-destructive/25 bg-destructive/90 text-destructive-foreground"
         : severity === "medium"
-          ? "bg-amber-500/90 text-amber-950 ring-amber-500/30"
-          : "bg-sky-500/80 text-sky-50 ring-sky-500/30";
+          ? "border-warning/35 bg-warning text-warning-foreground"
+          : "border-primary/25 bg-primary/90 text-primary-foreground";
+
   return (
-    <span className={cn("inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 font-mono text-[0.6rem] font-semibold uppercase tracking-[0.2em] ring-1", tone)}>
-      <span aria-hidden className="h-1 w-1 rounded-full bg-current" />
+    <span className={cn("inline-flex items-center rounded-sm border px-2 py-0.5 font-mono text-[0.62rem] uppercase tracking-[0.16em]", tone)}>
       {severity}
     </span>
   );
 }
 
-function buildTranscriptItems(input: {
-  workflow: Workflow;
-  run: WorkflowRun | null;
-  agents: AiAgent[];
-  toolLookup: Record<string, string>;
-}) {
-  const items: TranscriptItem[] = [];
-  const orderedStages = input.workflow.stages.slice().sort((left, right) => left.ord - right.ord);
-
-  for (const [stageIndex, stage] of orderedStages.entries()) {
-    const summary = summarizeWorkflowStageTrace({
-      workflow: input.workflow,
-      run: input.run,
-      stageId: stage.id,
-      stageIndex,
-      toolLookup: input.toolLookup
-    });
-
-    if (!summary) {
-      continue;
-    }
-
-    const stageEvents = (input.run?.events ?? [])
-      .filter((event) => event.workflowStageId === stage.id)
-      .sort((left, right) => left.ord - right.ord)
-      .filter((event) => !(event.type === "system_message" && event.title === "Single-agent runtime bootstrapped"))
-      .filter((event) => event.type !== "stage_started");
-
-    const agentName = getAgentName(stage.id, input.run, input.workflow, input.agents);
-    const explicitResult = summary.stageResult?.status ?? getExplicitResultStatus(summary.terminalEvent?.type);
-
-    if (stageEvents.length === 0 && !summary.terminalEvent) {
-      continue;
-    }
-
-    items.push({
-      kind: "stage_header",
-      id: `header-${stage.id}`,
-      stageId: stage.id,
-      stageIndex,
-      stageLabel: stage.label,
-      stageObjective: stage.objective,
-      stageStatus: summary.visualState,
-      agentName,
-      createdAt: summary.startedEvent?.createdAt ?? stageEvents[0]?.createdAt ?? null
-    });
-
-    for (const event of stageEvents) {
-      items.push({
-        kind: "event",
-        id: event.id,
-        stageId: stage.id,
-        stageIndex,
-        stageLabel: stage.label,
-        agentName,
-        event
-      });
-    }
-
-    if (summary.stageResultEvent || summary.terminalEvent || explicitResult) {
-      items.push({
-        kind: "dossier",
-        id: `dossier-${stage.id}`,
-        stageId: stage.id,
-        stageIndex,
-        stageLabel: stage.label,
-        agentName,
-        createdAt: summary.terminalEvent?.createdAt ?? summary.stageResultEvent?.createdAt ?? stageEvents.at(-1)?.createdAt ?? null,
-        outcome: summary.stageOutcome,
-        explicitResult,
-        findings: summary.findings.map((finding) => ({
-          id: finding.id,
-          title: finding.title,
-          severity: finding.severity,
-          type: finding.type,
-          impact: finding.impact,
-          recommendation: finding.recommendation,
-          confidence: finding.confidence
-        })),
-        chain: [
-          summary.stageIntent,
-          summary.stageAction,
-          summary.stageReasoning,
-          summary.handoffSummary.why
-        ],
-        artifacts: summary.toolResultEvents.flatMap((event) => {
-          const refs = getEventPayloadStringList(event, "observationSummaries");
-          return refs.length > 0 ? refs : [event.summary];
-        }).filter((value, index, values) => values.indexOf(value) === index),
-        confidence: summary.findings.length > 0
-          ? summary.findings.reduce((max, finding) => Math.max(max, finding.confidence), 0)
-          : 0.65
-      });
-    }
-  }
-
-  return items.sort((left, right) => {
-    const leftTime = left.kind === "event"
-      ? left.event.ord
-      : left.kind === "stage_header"
-        ? ((input.run?.events ?? []).find((event) => event.workflowStageId === left.stageId)?.ord ?? left.stageIndex * 1000) - 0.5
-        : (((input.run?.events ?? []).filter((event) => event.workflowStageId === left.stageId).at(-1)?.ord ?? left.stageIndex * 1000) + 0.5);
-    const rightTime = right.kind === "event"
-      ? right.event.ord
-      : right.kind === "stage_header"
-        ? ((input.run?.events ?? []).find((event) => event.workflowStageId === right.stageId)?.ord ?? right.stageIndex * 1000) - 0.5
-        : (((input.run?.events ?? []).filter((event) => event.workflowStageId === right.stageId).at(-1)?.ord ?? right.stageIndex * 1000) + 0.5);
-    return leftTime - rightTime;
-  });
+function ThreadAvatar() {
+  return (
+    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary font-mono text-[0.62rem] font-semibold uppercase tracking-[0.1em] text-primary-foreground">
+      <Bot className="h-3.5 w-3.5" />
+    </span>
+  );
 }
 
-function StageHeaderCard({
+function InlineExpandable({
+  summary,
+  body,
+  monospace = true
+}: {
+  summary: string;
+  body: string;
+  monospace?: boolean;
+}) {
+  return (
+    <details className="mt-2 rounded-md border border-border/70 bg-background/60 px-3 py-2">
+      <summary className="cursor-pointer font-mono text-[0.68rem] uppercase tracking-[0.12em] text-primary">{summary}</summary>
+      {monospace ? (
+        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-md border border-border/70 bg-background px-3 py-3 font-mono text-[0.74rem] leading-6 text-foreground">
+          {body}
+        </pre>
+      ) : (
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">{body}</p>
+      )}
+    </details>
+  );
+}
+
+function MarkdownBlock({ content, className }: { content: string; className?: string }) {
+  return (
+    <div className={cn(
+      "prose prose-sm max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-headings:font-medium prose-headings:text-foreground prose-p:my-3 prose-p:text-foreground prose-p:leading-7 prose-strong:text-foreground prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.9em] prose-pre:border prose-pre:border-border/70 prose-pre:bg-background prose-pre:text-foreground prose-table:w-full prose-table:border-collapse prose-th:border prose-th:border-border prose-th:bg-muted/50 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-th:text-foreground prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2 prose-td:text-foreground prose-ul:my-3 prose-ol:my-3 prose-li:my-1 prose-hr:border-border prose-blockquote:border-l-2 prose-blockquote:border-border prose-blockquote:pl-4 prose-blockquote:text-muted-foreground",
+      className
+    )}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function sanitizeAssistantBody(body: string, hasRenderedToolDetails: boolean) {
+  const withoutWrapper = body
+    .split("\n")
+    .filter((line) => !/^The agent selected .*\.$/i.test(line.trim()))
+    .join("\n")
+    .trim();
+
+  if (!hasRenderedToolDetails) {
+    return withoutWrapper;
+  }
+
+  const withoutStructuredAction = withoutWrapper.replace(/\{[\s\S]*?"action"\s*:\s*"[^"]+"[\s\S]*?\}\s*/m, "").trim();
+  return withoutStructuredAction;
+}
+
+function sanitizeAssistantSummary(summary: string, body: string) {
+  const normalized = summary
+    .split("\n")
+    .filter((line) => !/^The agent selected .*\.$/i.test(line.trim()))
+    .join("\n")
+    .trim();
+  if (!normalized || normalized === body) {
+    return "";
+  }
+  return normalized;
+}
+
+function formatDuration(run: WorkflowRun | null) {
+  if (!run?.startedAt) {
+    return "00:00";
+  }
+
+  const start = Date.parse(run.startedAt);
+  const end = Date.parse(run.completedAt ?? new Date().toISOString());
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) {
+    return "00:00";
+  }
+
+  const seconds = Math.round((end - start) / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;
+}
+
+function compactDate(value: string | null | undefined) {
+  if (!value) {
+    return "Not started";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(new Date(value));
+}
+
+function RunBar({
   workflow,
-  run,
-  applicationName,
-  runtimeName,
-  summaryCard,
-  item
+  run
 }: {
   workflow: Workflow;
   run: WorkflowRun | null;
+}) {
+  const shortId = run?.id ? run.id.slice(0, 8) : workflow.id.slice(0, 8);
+  const inFlight = run?.status === "running";
+  return (
+    <header className="sticky top-0 z-10 -mx-4 grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-border/70 bg-background/90 px-4 py-3 backdrop-blur md:-mx-6 md:px-6">
+      <span className="font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">
+        Workflows · {workflow.name}
+      </span>
+      <span className="text-center text-sm font-medium tracking-[-0.01em] text-foreground">
+        Run {shortId}
+      </span>
+      <span className="justify-self-end font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">
+        <span className="inline-flex items-center gap-2">
+          {inFlight ? <LoaderCircle className="h-3.5 w-3.5 animate-spin text-primary" /> : null}
+          <span className={cn("h-1.5 w-1.5 rounded-full", run?.status === "failed" ? "bg-destructive" : "bg-success")} />
+          {(run?.status ?? "idle")} · {formatDuration(run)}
+        </span>
+      </span>
+    </header>
+  );
+}
+
+function ThreadHeader({
+  workflow,
+  applicationName,
+  runtimeName,
+  toolNames
+}: {
+  workflow: Workflow;
   applicationName: string;
   runtimeName: string;
-  summaryCard: SummaryCardData;
-  item: Extract<TranscriptItem, { kind: "stage_header" }>;
+  toolNames: string[];
 }) {
   return (
-    <div className="rounded-2xl border border-border/70 bg-background/70 px-5 py-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="font-mono text-[0.62rem] uppercase tracking-[0.24em] text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5">
-              <span>{workflow.stages.length === 1 ? "Workflow Trace" : `Step ${item.stageIndex + 1}`}</span>
-              <HelpHint
-                label={workflow.stages.length === 1 ? "Workflow Trace" : `Step ${item.stageIndex + 1}`}
-                hint={workflow.stages.length === 1
-                  ? "This is the full recorded transcript of one workflow run: what the agent was told, which tool it chose, what came back, and how it closed out."
-                  : "A step is one execution segment in the workflow transcript, including its objective, tool activity, and closeout."}
-              />
-            </span>
-          </p>
-          <Bracket className="text-[0.65rem] uppercase tracking-[0.2em] text-primary">
-            <span>{item.stageStatus}</span>
-          </Bracket>
-        </div>
-        <p className="text-[0.75rem] text-muted-foreground">{formatTimestamp(item.createdAt)}</p>
+    <section className="space-y-5 pt-8">
+      <div>
+        <MonoLabel>Thread · Workflow Transcript · Hybrid Flow</MonoLabel>
+        <h2 className="mt-4 text-[1.85rem] font-medium tracking-[-0.03em] text-foreground">{workflow.name}</h2>
+        <p className="mt-2 max-w-[62ch] text-sm leading-6 text-muted-foreground">
+          {workflow.description || workflow.objective}
+        </p>
       </div>
-      <div className="mt-3 space-y-2">
-        <p className="text-base font-semibold text-foreground">{item.stageLabel}</p>
-        <p className="text-sm text-muted-foreground">{item.agentName}</p>
+      <div className="flex flex-wrap border-y border-border/80">
+        {[
+          ["Target", applicationName],
+          ["Runtime", runtimeName],
+          ["Status", workflow.status],
+          ["Tools", `${toolNames.length}`]
+        ].map(([label, value]) => (
+          <div key={label} className="min-w-[120px] border-r border-border/60 px-4 py-3 last:border-r-0">
+            <MonoLabel>{label}</MonoLabel>
+            <p className="mt-1 font-mono text-[0.78rem] font-medium text-foreground">{value}</p>
+          </div>
+        ))}
       </div>
-      <div className="mt-4 rounded-xl border border-border/70 bg-card/70 px-4 py-3">
-        <div className="flex items-center gap-1.5">
-          <SectionLabel>Instructions</SectionLabel>
-          <HelpHint
-            label="Instructions"
-            hint="These are the workflow instructions given to the linked agent for this run. They define the objective and boundaries the agent should follow."
-          />
-        </div>
-        <p className="mt-2 text-sm leading-6 text-foreground">{item.stageObjective}</p>
-      </div>
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <span className="font-mono text-[0.625rem] uppercase tracking-[0.22em] text-muted-foreground">
-          {getRunSummary(run, workflow)}
+    </section>
+  );
+}
+
+function PromptSections({
+  items
+}: {
+  items: Extract<TranscriptProjection["items"][number], { kind: "system_message" }>[];
+}) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  const promptItems = items.filter((item) => {
+    const title = item.title.toLowerCase();
+    return title.includes("prompt");
+  });
+
+  if (promptItems.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="mt-6 space-y-2">
+      {promptItems.map((item) => {
+        const body = item.body && item.body !== item.summary ? item.body : null;
+        if (!body) {
+          return null;
+        }
+
+        return (
+          <div key={item.id} className="rounded-lg border border-border/80 bg-card px-4 py-3">
+            <div className="mb-2 flex items-baseline gap-3">
+              <MonoLabel className="text-foreground">{item.title}</MonoLabel>
+              <span className="font-mono text-[0.68rem] text-muted-foreground">
+                {compactDate(item.createdAt)}
+              </span>
+            </div>
+            <p className="text-sm leading-6 text-muted-foreground">{item.summary}</p>
+            <InlineExpandable
+              summary={`Show ${item.title}`}
+              body={body}
+            />
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function FindingChip({ finding }: { finding: FindingsRailItem }) {
+  return (
+    <div className={cn(
+      "mt-3 inline-grid max-w-full grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border bg-card px-3 py-2",
+      finding.severity === "high" || finding.severity === "critical"
+        ? "border-destructive/25"
+        : "border-warning/25"
+    )}>
+      <SeverityBadge severity={finding.severity} />
+      <span className="min-w-0 text-sm font-medium text-foreground">{finding.title}</span>
+      <span className="font-mono text-[0.68rem] text-muted-foreground">
+        conf {finding.confidence.toFixed(2)}
+      </span>
+    </div>
+  );
+}
+
+function ToolBlock({
+  detail,
+  tool
+}: {
+  detail: Extract<AssistantTurnDetail, { kind: "tool_call" | "tool_result" }>;
+  tool: AiTool | undefined;
+}) {
+  const command = tool?.executorType === "bash" ? tool.bashSource : null;
+  const statusText = detail.kind === "tool_result" ? detail.status : "running";
+  const body = detail.kind === "tool_result" ? detail.body : detail.body;
+  const failed = statusText === "failed";
+  const running = statusText === "running";
+
+  return (
+    <div className={cn(
+      "mt-4 overflow-hidden rounded-lg border bg-card",
+      failed ? "border-destructive/35" : "border-border/80"
+    )}>
+      <div className={cn(
+        "flex items-center gap-3 border-b px-4 py-2.5",
+        failed ? "border-destructive/20 bg-destructive/8" : "border-border/70 bg-muted/35"
+      )}>
+        <span className="font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">Tool</span>
+        <span className="font-mono text-[0.76rem] font-semibold text-foreground">{detail.toolName}</span>
+        {running ? <LoaderCircle className="h-3.5 w-3.5 animate-spin text-primary" aria-label="Tool running" /> : null}
+        {failed ? <AlertTriangle className="h-3.5 w-3.5 text-destructive" aria-label="Tool error" /> : null}
+        <span className={cn(
+          "ml-auto font-mono text-[0.62rem] uppercase tracking-[0.12em]",
+          failed ? "text-destructive" : running ? "text-primary" : "text-success"
+        )}>
+          {running ? "running" : statusText}
         </span>
-        <span className="text-sm text-muted-foreground">{applicationName} via {runtimeName}</span>
       </div>
-      {summaryCard.toolNames.length > 0 ? (
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="font-mono text-[0.625rem] uppercase tracking-[0.22em] text-muted-foreground">
-            {summaryCard.toolCount} approved
-          </span>
-          {summaryCard.toolNames.map((toolName) => (
-            <span key={toolName} className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/70 px-2.5 py-1 font-mono text-[0.6875rem] uppercase tracking-[0.14em] text-foreground/85">
-              <Orbit className="h-3 w-3 text-primary" />
-              {toolName}
-            </span>
-          ))}
+      {command ? (
+        <div className="border-b border-border/70 bg-background px-4 py-2 font-mono text-[0.74rem] text-muted-foreground">
+          <span className="text-border">$ </span>
+          {tool.binary}
         </div>
+      ) : null}
+      <div className="px-4 py-3">
+        <p className="font-mono text-[0.72rem] text-foreground">{detail.title}</p>
+        {detail.kind === "tool_result" && detail.summary ? (
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail.summary}</p>
+        ) : null}
+        {detail.kind === "tool_result" && detail.observations.length > 0 ? (
+          <ul className="mt-3 space-y-1.5">
+            {detail.observations.map((observation) => (
+              <li key={observation} className="grid grid-cols-[14px_1fr] gap-2 text-sm leading-6 text-muted-foreground">
+                <span className="font-mono text-border">—</span>
+                <span>{observation}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {detail.kind === "tool_call" && detail.body ? (
+          <InlineExpandable summary="Show tool input" body={detail.body} />
+        ) : null}
+        {command ? <InlineExpandable summary="Show tool command" body={command} /> : null}
+        {detail.kind === "tool_result" && body ? (
+          <InlineExpandable summary="Show tool response" body={body} />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function VerificationBlock({
+  detail
+}: {
+  detail: Extract<AssistantTurnDetail, { kind: "verification" }>;
+}) {
+  const isFailure = detail.status === "failed";
+  const isModelError = detail.tone === "model_error";
+  const isToolError = detail.tone === "tool_error";
+  const isRetry = detail.tone === "retry";
+
+  return (
+    <div className={cn(
+      "mt-4 rounded-lg border px-4 py-3",
+      isFailure
+        ? "border-destructive/35 bg-destructive/8"
+        : "border-border/70 bg-background/50"
+    )}>
+      <div className="flex items-center gap-2">
+        {isFailure ? <AlertTriangle className="h-3.5 w-3.5 text-destructive" /> : <ShieldAlert className="h-3.5 w-3.5 text-primary" />}
+        <MonoLabel className={cn("text-foreground", isFailure ? "text-destructive" : undefined)}>
+          {isModelError ? "Model Error" : isToolError ? "Tool Error" : isRetry ? "Retry" : "Verification"}
+        </MonoLabel>
+        {isRetry ? <RotateCcw className="h-3.5 w-3.5 text-warning" /> : null}
+      </div>
+      <p className="mt-2 text-sm font-medium text-foreground">{detail.title}</p>
+      <p className="mt-1 text-sm leading-6 text-muted-foreground">{detail.summary}</p>
+      {isToolError ? (
+        <p className="mt-2 font-mono text-[0.68rem] uppercase tracking-[0.14em] text-destructive">
+          retry policy · retry the tool, switch tools, or mark the layer as blocked
+        </p>
+      ) : null}
+      {isModelError ? (
+        <p className="mt-2 font-mono text-[0.68rem] uppercase tracking-[0.14em] text-destructive">
+          supported actions · call_tool, report_vulnerability, update_layer_coverage, submit_scan_completion
+        </p>
+      ) : null}
+      {detail.body && detail.body !== detail.summary ? (
+        <InlineExpandable summary="Show verification detail" body={detail.body} monospace={false} />
       ) : null}
     </div>
   );
 }
 
-function getEventBody(event: WorkflowTraceEvent) {
-  if (event.type === "system_message") {
-    return getEventPayloadString(event, "fullPrompt") ?? event.detail ?? event.summary;
-  }
-  if (event.type === "model_decision") {
-    return getEventPayloadString(event, "modelReasoning") ?? getEventPayloadString(event, "reasoning") ?? event.detail ?? event.summary;
-  }
-  if (event.type === "tool_call") {
-    const toolInput = event.payload?.["toolInput"];
-    return toolInput && typeof toolInput === "object" ? JSON.stringify(toolInput, null, 2) : (event.detail ?? event.summary);
-  }
-  if (event.type === "tool_result") {
-    return getEventPayloadString(event, "fullOutput") ?? event.detail ?? event.summary;
-  }
-  return event.detail ?? event.summary;
+function NoteBlock({
+  detail
+}: {
+  detail: Extract<AssistantTurnDetail, { kind: "note" }>;
+}) {
+  return (
+    <div className="mt-4 border-t border-border/70 pt-3">
+      <MonoLabel className="text-foreground">Summary</MonoLabel>
+      <p className="mt-2 text-sm font-medium text-foreground">{detail.title}</p>
+      <p className="mt-1 text-sm leading-6 text-muted-foreground">{detail.summary}</p>
+      {detail.body && detail.body !== detail.summary ? (
+        <p className="mt-2 text-sm leading-6 text-foreground/90">{detail.body}</p>
+      ) : null}
+    </div>
+  );
 }
 
-function TranscriptCell({
+function ThreadTurn({
   item,
-  live
+  ord,
+  toolsById,
+  toolsByName,
+  findingsById
 }: {
-  item: Extract<TranscriptItem, { kind: "event" }>;
-  live: boolean;
+  item: Extract<TranscriptProjection["items"][number], { kind: "assistant_turn" }>;
+  ord: number;
+  toolsById: Map<string, AiTool>;
+  toolsByName: Map<string, AiTool>;
+  findingsById: Map<string, FindingsRailItem>;
 }) {
-  const { event } = item;
-  const lane = typeof event.payload?.["lane"] === "string" ? event.payload["lane"] : null;
-  const body = getEventBody(event);
-  const preview = getEventPreview(event);
-  const toolObservations = getEventPayloadStringList(event, "observationSummaries");
-  const Icon: LucideIcon =
-    lane === "system" ? BookLock :
-      lane === "verification" ? ShieldAlert :
-        event.type === "model_decision" ? BrainCog :
-          (event.type === "tool_call" || event.type === "tool_result") ? Terminal : Wrench;
-
-  if (event.type === "model_decision") {
-    return (
-      <article className="flex gap-3">
-        <TimelineSpine tone={live ? "active" : "done"} live={live} />
-        <div className="flex-1 space-y-2 pb-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 font-mono text-[0.625rem] uppercase tracking-[0.26em] text-foreground">
-              <BrainCog className="h-3.5 w-3.5 text-primary" />
-              <span>reasoning</span>
-              <HelpHint
-                label="reasoning"
-                hint="This is the model's own short explanation for why it chose the next action. It is model-generated trace text, not token usage and not a placeholder."
-              />
-            </span>
-            <span className="text-muted-foreground/60">·</span>
-            <span className="font-mono text-[0.6875rem] text-muted-foreground">{item.agentName}</span>
-          </div>
-          <div className="relative rounded-xl border border-dashed border-border/60 bg-background/40 px-4 py-3">
-            <span aria-hidden className="absolute -left-[3px] top-3 h-6 w-0.5 rounded-full bg-primary/70" />
-            <p className="text-[0.875rem] font-medium leading-6 text-foreground">{event.title}</p>
-            <p className="mt-2 text-[0.875rem] leading-7 text-foreground/90">{preview ?? event.summary}</p>
-            {body && body !== preview && body !== event.summary ? (
-              <pre className="mt-3 overflow-x-auto rounded-md border border-border/70 bg-background px-3 py-2 text-xs leading-5 text-foreground whitespace-pre-wrap">
-                {body}
-              </pre>
-            ) : null}
-          </div>
-        </div>
-      </article>
-    );
-  }
-
-  if (event.type === "tool_call") {
-    return (
-      <article className="flex gap-3">
-        <TimelineSpine tone="done" />
-        <div className="flex-1 space-y-2 pb-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 font-mono text-[0.625rem] uppercase tracking-[0.26em] text-foreground">
-              <Terminal className="h-3.5 w-3.5 text-primary" />
-              tool call
-            </span>
-            <span className="text-muted-foreground/60">·</span>
-            <span className="font-mono text-[0.6875rem] text-muted-foreground">{getEventPayloadString(event, "toolName") ?? event.title}</span>
-          </div>
-          <div className="overflow-hidden rounded-xl border border-border/80 bg-gradient-to-b from-muted/60 to-muted/20">
-            <div className="flex items-center justify-between border-b border-border/60 bg-background/40 px-3 py-1.5">
-              <div className="inline-flex items-center gap-2">
-                <Target className="h-3.5 w-3.5 text-primary" />
-                <span className="font-mono text-[0.75rem] font-semibold text-foreground">{event.title}</span>
-              </div>
-              <Bracket className="text-[0.625rem] uppercase tracking-[0.2em] text-muted-foreground">
-                <span>invoke</span>
-              </Bracket>
-            </div>
-            <pre className="overflow-x-auto px-4 py-3 font-mono text-[0.75rem] leading-6 text-foreground whitespace-pre-wrap">
-              {body ?? event.summary}
-            </pre>
-          </div>
-        </div>
-      </article>
-    );
-  }
-
-  if (event.type === "tool_result") {
-    return (
-      <article className="flex gap-3">
-        <TimelineSpine tone="done" />
-        <div className="flex-1 space-y-2 pb-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 font-mono text-[0.625rem] uppercase tracking-[0.26em] text-emerald-600 dark:text-emerald-300">
-              <Wrench className="h-3.5 w-3.5" />
-              returned · {event.status}
-            </span>
-            <span className="text-muted-foreground/60">·</span>
-            <span className="font-mono text-[0.6875rem] text-muted-foreground">{getEventPayloadString(event, "toolName") ?? event.title}</span>
-          </div>
-          <div className="rounded-xl border border-border/80 bg-card/80 px-4 py-3">
-            <p className="text-[0.8125rem] font-medium leading-6 text-foreground">{preview ?? event.summary}</p>
-            {toolObservations.length > 0 ? (
-              <ul className="mt-2 space-y-1.5 border-l border-border/60 pl-3">
-                {toolObservations.map((snippet, idx) => (
-                  <li key={`${event.id}-${idx}`} className="flex items-start gap-2 font-mono text-[0.75rem] leading-6 text-muted-foreground">
-                    <span aria-hidden className="mt-[0.5rem] h-1 w-1 shrink-0 rounded-full bg-primary/70" />
-                    <span className="text-foreground/85">{snippet}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {body && body !== preview ? (
-              <details className="mt-3 rounded-md border border-border/70 bg-background px-3 py-2">
-                <summary className="cursor-pointer text-sm font-medium text-foreground">View tool output</summary>
-                <pre className="mt-2 overflow-x-auto text-xs leading-5 text-foreground whitespace-pre-wrap">{body}</pre>
-              </details>
-            ) : null}
-          </div>
-        </div>
-      </article>
-    );
-  }
-
-  const palette =
-    lane === "verification"
-      ? {
-          border: "border-amber-500/60",
-          bg: "bg-amber-500/10",
-          accent: "text-amber-700 dark:text-amber-300",
-          ribbon: "bg-amber-500",
-          label: "system · verification"
-        }
-      : {
-          border: "border-primary/60",
-          bg: "bg-primary/10",
-          accent: "text-primary",
-          ribbon: "bg-primary",
-          label: "system · prompt"
-        };
+  const toolDetails = item.details.filter((detail): detail is Extract<AssistantTurnDetail, { kind: "tool_call" | "tool_result" }> =>
+    detail.kind === "tool_call" || detail.kind === "tool_result");
+  const verificationDetails = item.details.filter((detail): detail is Extract<AssistantTurnDetail, { kind: "verification" }> => detail.kind === "verification");
+  const noteDetails = item.details.filter((detail): detail is Extract<AssistantTurnDetail, { kind: "note" }> => detail.kind === "note");
+  const hasModelError = verificationDetails.some((detail) => detail.tone === "model_error");
+  const rawBodyText = item.body?.trim() ?? "";
+  const suppressStructuredPrelude = toolDetails.length > 0 && rawBodyText.includes('"action"');
+  const bodyText = suppressStructuredPrelude ? "" : sanitizeAssistantBody(rawBodyText, toolDetails.length > 0);
+  const summaryText = sanitizeAssistantSummary(item.summary, bodyText);
+  const hideBodyAsRawModelOutput = hasModelError && bodyText.startsWith("{") && bodyText.endsWith("}");
 
   return (
-    <article className="flex gap-3">
-      <TimelineSpine tone={lane === "verification" ? "warn" : "active"} />
-      <div className="flex-1 pb-6">
-        <div className={cn("relative overflow-hidden rounded-2xl border-2 border-dashed px-5 py-4 shadow-[0_10px_36px_-20px_hsl(var(--foreground)/0.22)]", palette.border, palette.bg)}>
-          <div className="relative flex items-start gap-4">
-            <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-foreground/10 bg-background/70", palette.accent)}>
-              <Icon className="h-5 w-5" />
-            </div>
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <Bracket className={cn("text-[0.6rem] font-semibold uppercase tracking-[0.32em]", palette.accent)}>
-                  <span>inject</span>
-                </Bracket>
-                <span className={cn("font-mono text-[0.6rem] uppercase tracking-[0.28em]", palette.accent)}>
-                  {palette.label}
-                </span>
-              </div>
-              <h3 className="font-mono text-[0.9375rem] font-semibold tracking-tight text-foreground">{event.title}</h3>
-              <p className="text-[0.8125rem] leading-6 text-foreground/80">{event.summary}</p>
-              {body && body !== event.summary ? (
-                <pre className="overflow-x-auto rounded-md border border-border/70 bg-background/70 px-3 py-2 text-xs leading-5 text-foreground whitespace-pre-wrap">
-                  {body}
-                </pre>
-              ) : null}
-            </div>
-          </div>
-        </div>
+    <article className="border-b border-border/60 py-8 last:border-b-0">
+      <div className="flex items-center gap-3">
+        <ThreadAvatar />
+        <span className="text-sm font-medium text-foreground">
+          {item.agentName}
+          <span className="ml-2 text-[0.82rem] font-normal text-muted-foreground">· workflow agent</span>
+        </span>
+        {item.live ? <LoaderCircle className="h-3.5 w-3.5 animate-spin text-primary" aria-label="Run step in progress" /> : null}
+        <span className="ml-auto font-mono text-[0.66rem] text-muted-foreground">
+          <span className="mr-2 text-border">ord {String(ord).padStart(2, "0")}</span>
+          {compactDate(item.createdAt)}
+        </span>
       </div>
+      <div className="mt-4 max-w-[62ch] space-y-3">
+        {summaryText ? (
+          <p className="text-[0.95rem] leading-7 text-foreground">{summaryText}</p>
+        ) : null}
+        {item.body && !hideBodyAsRawModelOutput ? (
+          <MarkdownBlock content={item.body} className="text-[0.95rem]" />
+        ) : null}
+        {hideBodyAsRawModelOutput ? <InlineExpandable summary="Show raw model output" body={item.body ?? ""} /> : null}
+        {item.live ? (
+          <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/75 px-3 py-1.5 text-sm text-muted-foreground">
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin text-primary" />
+            Waiting for the next model step or tool result…
+          </div>
+        ) : null}
+      </div>
+      <div className="max-w-[42rem]">
+        {toolDetails.map((detail) => {
+          const tool = (detail.toolId ? toolsById.get(detail.toolId) : undefined) ?? toolsByName.get(detail.toolName);
+          return <ToolBlock key={detail.id} detail={detail} tool={tool} />;
+        })}
+        {verificationDetails.map((detail) => <VerificationBlock key={detail.id} detail={detail} />)}
+        {noteDetails.map((detail) => <NoteBlock key={detail.id} detail={detail} />)}
+      </div>
+      {item.findingIds.map((findingId) => {
+        const finding = findingsById.get(findingId);
+        return finding ? <FindingChip key={finding.id} finding={finding} /> : null;
+      })}
     </article>
   );
 }
 
-function DossierCell({ item }: { item: Extract<TranscriptItem, { kind: "dossier" }> }) {
+function CloseoutSection({
+  item,
+  turnCount,
+  toolCount,
+  observationCount,
+  findingCount
+}: {
+  item: Extract<TranscriptProjection["items"][number], { kind: "closeout" }>;
+  turnCount: number;
+  toolCount: number;
+  observationCount: number;
+  findingCount: number;
+}) {
   return (
-    <article className="flex gap-3">
-      <TimelineSpine tone="done" />
-      <div className="flex-1 pb-4">
-        <div className="relative overflow-hidden rounded-2xl border border-foreground/25 bg-gradient-to-br from-background via-card to-background shadow-[0_24px_80px_-40px_hsl(var(--foreground)/0.55)]">
-          <CornerMarks className="!border-foreground/40" />
-          <div className="relative p-6 md:p-7">
-            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-dashed border-border/60 pb-5">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.32em] text-muted-foreground">
-                  <Stamp className="h-3 w-3 text-primary" />
-                  <span className="inline-flex items-center gap-1.5">
-                    <span>evidence dossier · sealed</span>
-                    <HelpHint
-                      label="evidence dossier"
-                      hint="This is the workflow closeout card. It summarizes the outcome, findings, evidence chain, and the final state the run ended with."
-                    />
-                  </span>
-                </div>
-                <h2 className="mt-2 font-mono text-[1.5rem] font-semibold tracking-tight text-foreground">{item.stageLabel}</h2>
-                <p className="mt-1 text-[0.8125rem] text-muted-foreground">{item.outcome}</p>
-              </div>
-              <div className="flex flex-col items-end gap-2 text-right font-mono text-[0.625rem] uppercase tracking-[0.24em] text-muted-foreground">
-                <Bracket className="text-foreground">
-                  <span className="text-primary">dossier</span>
-                  <span className="mx-1 text-muted-foreground/60">·</span>
-                  <span>{item.stageIndex + 1}</span>
-                </Bracket>
-                <span>signed · {formatTimestamp(item.createdAt)}</span>
-                <span className="flex items-center gap-1.5 tabular-nums text-foreground">
-                  <Gauge className="h-3 w-3" />
-                  confidence {item.confidence.toFixed(2)}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
-              <div className="space-y-3">
-                <SectionLabel>Findings</SectionLabel>
-                {item.findings.length === 0 ? (
-                  <div className="rounded-xl border border-border/80 bg-background/70 p-4 text-sm text-muted-foreground">
-                    No findings were recorded for this stage. The dossier reflects the final structured closeout and evidence chain only.
-                  </div>
-                ) : (
-                  <ol className="space-y-3">
-                    {item.findings.map((finding, idx) => (
-                      <li key={finding.id} className="relative overflow-hidden rounded-xl border border-border/80 bg-background/70 p-4">
-                        <span aria-hidden className="absolute left-0 top-0 h-full w-0.5 bg-gradient-to-b from-primary/70 to-primary/10" />
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-[0.6875rem] tabular-nums text-muted-foreground">{String(idx + 1).padStart(2, "0")}</span>
-                            <SeverityPip severity={finding.severity} />
-                          </div>
-                          <span className="font-mono text-[0.625rem] uppercase tracking-[0.22em] text-muted-foreground">{finding.type}</span>
-                        </div>
-                        <p className="mt-2 text-[0.9375rem] font-semibold leading-6 text-foreground">{finding.title}</p>
-                        <p className="mt-1.5 text-[0.8125rem] leading-6 text-muted-foreground">{finding.impact}</p>
-                        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-dashed border-border/70 pt-3">
-                          <Quote className="h-3 w-3 text-primary" />
-                          <span className="font-mono text-[0.6875rem] text-foreground/85">{finding.recommendation}</span>
-                          <span className="ml-auto font-mono text-[0.625rem] tabular-nums text-muted-foreground">conf {finding.confidence.toFixed(2)}</span>
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </div>
-
-              <div className="space-y-5">
-                <div>
-                  <div className="mb-2 flex items-center gap-1.5">
-                    <SectionLabel>Chain of reasoning</SectionLabel>
-                    <HelpHint
-                      label="Chain of reasoning"
-                      hint="This is the condensed decision trail extracted from the run: intent, action taken, model justification, and the handoff or stopping reason."
-                    />
-                  </div>
-                  <ol className="space-y-2">
-                    {item.chain.map((step, idx) => (
-                      <li key={`${item.id}-${idx}`} className="flex items-start gap-2.5">
-                        <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-background font-mono text-[0.625rem] tabular-nums text-foreground">{idx + 1}</span>
-                        <p className="text-[0.8125rem] leading-6 text-foreground/85">{step}</p>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-                <div>
-                  <SectionLabel className="mb-2">Attached artifacts</SectionLabel>
-                  <ul className="space-y-1.5">
-                    {item.artifacts.map((artifact) => (
-                      <li key={artifact} className="flex items-center gap-2 rounded-md border border-dashed border-border/70 bg-background/50 px-2.5 py-1.5 font-mono text-[0.75rem] text-foreground/85">
-                        <Paperclip className="h-3 w-3 text-primary" />
-                        <span className="truncate">{artifact}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="rounded-xl border border-primary/30 bg-primary/5 p-3.5">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-3.5 w-3.5 text-primary" />
-                    <SectionLabel className="!text-primary/90">Verdict</SectionLabel>
-                  </div>
-                  <p className="mt-1.5 text-[0.8125rem] leading-6 text-foreground/90">
-                    {item.explicitResult ? `Explicit result: ${item.explicitResult}. ` : ""}
-                    {item.outcome}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-dashed border-border/60 pt-5">
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" size="sm" variant="outline" className="h-8 gap-1.5">
-                  <ScrollText className="h-3.5 w-3.5" />
-                  Dossier View
-                </Button>
-              </div>
-              <span className="font-mono text-[0.6rem] uppercase tracking-[0.28em] text-muted-foreground">
-                {item.agentName} · terminal artifact
-              </span>
-            </div>
-          </div>
-        </div>
+    <section className="mt-10 rounded-xl border border-border/80 bg-card px-6 py-6">
+      <div className="font-mono text-[0.62rem] uppercase tracking-[0.14em] text-success">
+        <span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-success align-middle" />
+        Run complete · sealed {compactDate(item.createdAt)}
       </div>
-    </article>
+      <h3 className="mt-3 text-xl font-medium tracking-[-0.02em] text-foreground">{item.title}</h3>
+      <p className="mt-2 max-w-[60ch] text-sm leading-6 text-muted-foreground">{item.summary}</p>
+      {item.body && item.body !== item.summary ? (
+        <p className="mt-2 max-w-[60ch] text-sm leading-6 text-foreground/90">{item.body}</p>
+      ) : null}
+      <div className="mt-6 grid grid-cols-2 gap-4 border-t border-border/70 pt-4 md:grid-cols-4">
+        {[
+          ["Turns", `${turnCount}`],
+          ["Tools", `${toolCount}`],
+          ["Observations", `${observationCount}`],
+          ["Findings", `${findingCount}`]
+        ].map(([label, value]) => (
+          <div key={label} className="border-r border-border/60 pr-4 last:border-r-0">
+            <MonoLabel>{label}</MonoLabel>
+            <p className="mt-1 text-xl font-medium tracking-[-0.02em] text-foreground">{value}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FindingsRail({
+  findings,
+  runStatus
+}: {
+  findings: TranscriptProjection["findings"];
+  runStatus: WorkflowRun["status"] | null;
+}) {
+  const shouldRender = findings.length > 0 || runStatus === "completed" || runStatus === "failed";
+  if (!shouldRender) {
+    return null;
+  }
+
+  return (
+    <aside className="space-y-3 lg:sticky lg:top-6">
+      <div className="rounded-xl border border-border/80 bg-card px-4 py-4">
+        <div className="flex items-center gap-2">
+          <MonoLabel>Findings</MonoLabel>
+          <HelpHint
+            label="Findings"
+            hint="This side rail tracks issues the workflow explicitly reported while it was running. Inline chips in the thread show where they appeared."
+          />
+        </div>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {findings.length === 0 ? "No findings reported yet." : `${findings.length} finding${findings.length === 1 ? "" : "s"} reported.`}
+        </p>
+        <p className="mt-1 font-mono text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground">
+          run status · {runStatus ?? "idle"}
+        </p>
+      </div>
+      {findings.map((finding) => (
+        <div key={finding.id} className="rounded-xl border border-border/80 bg-background/80 px-4 py-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <SeverityBadge severity={finding.severity} />
+            <span className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground">{finding.type}</span>
+          </div>
+          <p className="mt-3 text-sm font-semibold text-foreground">{finding.title}</p>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">{finding.impact}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Target className="h-3.5 w-3.5 text-primary" />
+            <span>{finding.host}</span>
+            <span className="font-mono">conf {finding.confidence.toFixed(2)}</span>
+          </div>
+          <p className="mt-3 border-t border-dashed border-border pt-3 text-sm leading-6 text-foreground/85">{finding.recommendation}</p>
+        </div>
+      ))}
+    </aside>
   );
 }
 
@@ -726,6 +585,7 @@ export function WorkflowTraceSection({
   tools,
   run,
   running,
+  liveModelOutput,
   summaryCard
 }: {
   workflow: Workflow | null;
@@ -735,6 +595,7 @@ export function WorkflowTraceSection({
   tools: AiTool[];
   run: WorkflowRun | null;
   running: boolean;
+  liveModelOutput: LiveModelOutput | null;
   summaryCard: SummaryCardData;
 }) {
   if (!workflow) {
@@ -742,70 +603,97 @@ export function WorkflowTraceSection({
   }
 
   const toolLookup = getToolLookup(tools);
-  const applicationName = applications.find((item) => item.id === workflow.applicationId)?.name
-    ?? getRunContextName(run, "applicationName")
-    ?? "Unknown application";
-  const runtimeName = workflow.runtimeId
-    ? runtimes.find((item) => item.id === workflow.runtimeId)?.name
-      ?? getRunContextName(run, "runtimeName")
-      ?? "Unknown runtime"
-    : "No runtime";
-  const transcriptItems = buildTranscriptItems({
+  const toolsById = new Map(tools.map((tool) => [tool.id, tool]));
+  const toolsByName = new Map(tools.map((tool) => [tool.name, tool]));
+  const transcript = buildWorkflowTranscript({
     workflow,
     run,
     agents,
-    toolLookup
+    toolLookup,
+    running,
+    liveModelOutput
   });
-  const fallbackStage = workflow.stages.slice().sort((left, right) => left.ord - right.ord)[0];
+  const findingsById = new Map(transcript.findings.map((finding) => [finding.id, finding]));
+  const applicationName = applications.find((item) => item.id === workflow.applicationId)?.name ?? "Unknown application";
+  const runtimeName = workflow.runtimeId
+    ? (runtimes.find((item) => item.id === workflow.runtimeId)?.name ?? "Unknown runtime")
+    : "No runtime";
+  const inheritedToolIds = getWorkflowAllowedToolIds(workflow);
+  const visibleToolNames = summaryCard.toolNames.length > 0
+    ? summaryCard.toolNames
+    : inheritedToolIds.map((toolId) => toolLookup[toolId] ?? toolId);
+
+  const systemItems = transcript.items.filter((item): item is Extract<TranscriptProjection["items"][number], { kind: "system_message" }> => item.kind === "system_message");
+  const threadItems = transcript.items.filter((item) => item.kind !== "system_message");
+  const assistantTurns = threadItems.filter((item): item is Extract<TranscriptProjection["items"][number], { kind: "assistant_turn" }> => item.kind === "assistant_turn");
+  const closeout = threadItems.find((item): item is Extract<TranscriptProjection["items"][number], { kind: "closeout" }> => item.kind === "closeout") ?? null;
+  const toolCount = assistantTurns.reduce((total, turn) => total + turn.details.filter((detail) => detail.kind === "tool_call").length, 0);
+  const observationCount = assistantTurns.reduce(
+    (total, turn) => total + turn.details.reduce((turnTotal, detail) => detail.kind === "tool_result" ? turnTotal + detail.observations.length : turnTotal, 0),
+    0
+  );
 
   return (
-    <section className="space-y-5">
-      {transcriptItems.length === 0 ? (
-        fallbackStage ? (
-          <StageHeaderCard
-            workflow={workflow}
-            run={run}
-            applicationName={applicationName}
-            runtimeName={runtimeName}
-            summaryCard={summaryCard}
-            item={{
-              kind: "stage_header",
-              id: `header-${fallbackStage.id}`,
-              stageId: fallbackStage.id,
-              stageIndex: 0,
-              stageLabel: fallbackStage.label,
-              stageObjective: fallbackStage.objective,
-              stageStatus: run?.status ?? "pending",
-              agentName: getAgentName(fallbackStage.id, run, workflow, agents),
-              createdAt: run?.startedAt ?? null
-            }}
-          />
-        ) : null
-      ) : (
-        <div className="space-y-3">
-          {transcriptItems.map((item, index) => {
-            if (item.kind === "stage_header") {
-              return (
-                <StageHeaderCard
+    <section className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.75fr)]">
+      <div className="min-w-0">
+        <div className="overflow-hidden rounded-[1.25rem] border border-border/80 bg-background px-4 shadow-[0_16px_50px_-36px_hsl(var(--foreground)/0.18)] md:px-6">
+          <RunBar workflow={workflow} run={run} />
+          <div className="mx-auto max-w-[54rem] pb-12">
+            <ThreadHeader
+              workflow={workflow}
+              applicationName={applicationName}
+              runtimeName={runtimeName}
+              toolNames={visibleToolNames}
+            />
+            <PromptSections items={systemItems} />
+            <div className="mt-2">
+              {assistantTurns.map((item, index) => (
+                <ThreadTurn
                   key={item.id}
-                  workflow={workflow}
-                  run={run}
-                  applicationName={applicationName}
-                  runtimeName={runtimeName}
-                  summaryCard={summaryCard}
                   item={item}
+                  ord={index + 1}
+                  toolsById={toolsById}
+                  toolsByName={toolsByName}
+                  findingsById={findingsById}
                 />
-              );
-            }
-
-            if (item.kind === "dossier") {
-              return <DossierCell key={item.id} item={item} />;
-            }
-
-            return <TranscriptCell key={item.id} item={item} live={running && index === transcriptItems.length - 1} />;
-          })}
+              ))}
+            </div>
+            {closeout ? (
+              <CloseoutSection
+                item={closeout}
+                turnCount={assistantTurns.length}
+                toolCount={toolCount}
+                observationCount={observationCount}
+                findingCount={transcript.findings.length}
+              />
+            ) : null}
+            <div className="sticky bottom-0 mt-10 bg-gradient-to-b from-transparent to-background px-2 pt-8">
+              <div className="flex items-center gap-3 rounded-xl border border-border/80 bg-card px-4 py-3 shadow-[0_1px_0_hsl(var(--foreground)/0.04)]">
+                {run?.status === "running" ? <LoaderCircle className="h-4 w-4 animate-spin text-primary" aria-label="Run in progress" /> : null}
+                <input
+                  disabled
+                  value=""
+                  placeholder={run?.status === "completed" || run?.status === "failed"
+                    ? "Run is sealed — replay, branch, or spawn a follow-up probe…"
+                    : "Collecting evidence, waiting for the next agent step…"}
+                  className="flex-1 bg-transparent text-sm text-muted-foreground outline-none placeholder:text-muted-foreground"
+                />
+                <span className="rounded border border-border/70 px-2 py-1 font-mono text-[0.62rem] uppercase tracking-[0.12em] text-muted-foreground">
+                  run
+                </span>
+                <button
+                  type="button"
+                  disabled
+                  className="h-7 w-7 rounded-md bg-foreground text-[0.85rem] text-background opacity-40"
+                >
+                  ↑
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      )}
+      </div>
+      <FindingsRail findings={transcript.findings} runStatus={run?.status ?? null} />
     </section>
   );
 }

@@ -82,6 +82,32 @@ const workflow: Workflow = {
   description: "Stage timeline test",
   applicationId: application.id,
   runtimeId: runtime.id,
+  agentId: agent.id,
+  objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
+  allowedToolIds: [tool.id],
+  requiredEvidenceTypes: [],
+  findingPolicy: {
+    taxonomy: "typed-core-v1",
+    allowedTypes: [
+      "service_exposure",
+      "content_discovery",
+      "missing_security_header",
+      "tls_weakness",
+      "injection_signal",
+      "auth_weakness",
+      "sensitive_data_exposure",
+      "misconfiguration",
+      "other"
+    ]
+  },
+  completionRule: {
+    requireStageResult: true,
+    requireToolCall: false,
+    allowEmptyResult: true,
+    minFindings: 0
+  },
+  resultSchemaVersion: 1,
+  handoffSchema: null,
   stages: [
     {
       id: "stage-1",
@@ -418,9 +444,9 @@ describe("WorkflowsPage", () => {
     );
 
     expect((await screen.findAllByText("Complete the Initial Recon stage using allowed tools and structured reporting.")).length).toBeGreaterThan(0);
+    expect(screen.getByText("Thread · Workflow Transcript · Hybrid Flow")).toBeInTheDocument();
     expect(screen.getAllByText(/single-agent security runner/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/claude-sonnet-4/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("HTTP Recon").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Start Run" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Reset" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Edit Workflow" })).toBeEnabled();
@@ -474,8 +500,7 @@ describe("WorkflowsPage", () => {
     );
 
     expect((await screen.findAllByText("Initial Recon failed because HTTP Recon did not complete successfully.")).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Explicit result: failure\./)).toBeInTheDocument();
-    expect(screen.getByText("evidence dossier · sealed")).toBeInTheDocument();
+    expect(screen.getByText(/Run complete · sealed/)).toBeInTheDocument();
     expect(screen.getAllByText("Homepage reachable").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Continue Run" })).not.toBeInTheDocument();
   });
@@ -521,9 +546,8 @@ describe("WorkflowsPage", () => {
       />
     );
 
-    expect(await screen.findByText("Initial Recon")).toBeInTheDocument();
+    expect(await screen.findByText("Thread · Workflow Transcript · Hybrid Flow")).toBeInTheDocument();
     expect(screen.getAllByText("Complete the Initial Recon stage using allowed tools and structured reporting.").length).toBeGreaterThan(0);
-    expect(screen.queryByText(/No workflow transcript is available yet\./)).not.toBeInTheDocument();
     expect(screen.queryByText(/finalized/)).not.toBeInTheDocument();
   });
 });

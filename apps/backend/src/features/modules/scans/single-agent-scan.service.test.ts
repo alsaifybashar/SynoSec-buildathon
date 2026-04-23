@@ -2,6 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiAgent, AiProvider, AiTool, Application, Runtime, ScanLlmConfig, SingleAgentScan } from "@synosec/contracts";
 import { SingleAgentScanService } from "./single-agent-scan.service.js";
 
+const { generateTextMock } = vi.hoisted(() => ({
+  generateTextMock: vi.fn()
+}));
+
+vi.mock("ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("ai")>();
+  return {
+    ...actual,
+    generateText: generateTextMock
+  };
+});
+
 const scanStoreState = {
   scan: null as SingleAgentScan | null,
   coverage: [] as Array<Record<string, unknown>>,
@@ -89,6 +101,20 @@ const localProvider: AiProvider & { apiKey: string | null } = {
   updatedAt: "2026-04-21T00:00:00.000Z"
 };
 
+const anthropicProvider: AiProvider & { apiKey: string | null } = {
+  id: "88e995dc-c55d-4a74-b831-b64922f25858",
+  name: "Anthropic",
+  kind: "anthropic",
+  status: "active",
+  description: "Anthropic provider",
+  baseUrl: null,
+  model: "claude-sonnet-4-6",
+  apiKeyConfigured: true,
+  apiKey: "test-key",
+  createdAt: "2026-04-21T00:00:00.000Z",
+  updatedAt: "2026-04-21T00:00:00.000Z"
+};
+
 const agent: AiAgent = {
   id: "fa1a0bfa-6b02-4948-8e1c-155f6b9a4ae7",
   name: "Single Scan Agent",
@@ -127,6 +153,7 @@ const serviceScanTool: AiTool = {
 function createService(options?: {
   agentOverride?: Partial<AiAgent>;
   toolById?: (id: string) => AiTool | null | Promise<AiTool | null>;
+  providerOverride?: AiProvider & { apiKey: string | null };
 }) {
   const runtimeAgent: AiAgent = {
     ...agent,
@@ -143,7 +170,7 @@ function createService(options?: {
       getById: async () => runtimeAgent
     } as never,
     {
-      getStoredById: async () => localProvider
+      getStoredById: async () => options?.providerOverride ?? localProvider
     } as never,
     {
       getById: async (id: string) => options?.toolById ? options.toolById(id) : null
@@ -158,6 +185,7 @@ describe("SingleAgentScanService", () => {
     scanStoreState.audits = [];
     scanStoreState.vulnerabilities = [];
     vi.restoreAllMocks();
+    generateTextMock.mockReset();
   });
 
   it("creates and completes a local single-agent scan run", async () => {
@@ -209,6 +237,67 @@ describe("SingleAgentScanService", () => {
     expect(scanStoreState.audits.some((entry) => entry["action"] === "single-agent-scan-completed")).toBe(true);
   });
 
+  it("sends the local model a structured system prompt and non-empty task prompt", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        message: {
+          content: JSON.stringify({
+            action: "submit_scan_completion",
+            completion: {
+              summary: "Completed the scan with explicit coverage bookkeeping.",
+              residualRisk: "Layers without tool support remain not covered.",
+              recommendedNextStep: "Add more layer-specific adapters before claiming full-stack coverage.",
+              stopReason: "no_further_material_progress"
+            }
+          })
+        }
+      })
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService({
+      agentOverride: {
+        toolIds: [serviceScanTool.id]
+      },
+      toolById: async (id) => (id === serviceScanTool.id ? serviceScanTool : null)
+    });
+
+    await service.runWorkflowLinkedScan({
+      runId: "70000000-0000-0000-0000-000000000010",
+      applicationId: application.id,
+      runtimeId: runtime.id,
+      agentId: agent.id,
+      scope: {
+        targets: ["localhost:8888"],
+        exclusions: [],
+        layers: ["L1", "L4", "L7"],
+        maxDepth: 2,
+        maxDurationMinutes: 5,
+        rateLimitRps: 5,
+        allowActiveExploits: false,
+        graceEnabled: true,
+        graceRoundInterval: 3,
+        cyberRangeMode: "simulation"
+      }
+    });
+
+    expect(fetchMock).toHaveBeenCalled();
+    const firstCall = fetchMock.mock.calls[0] as [unknown, RequestInit?] | undefined;
+    const firstRequestInit = firstCall?.[1];
+    const requestBody = JSON.parse(String(firstRequestInit?.body ?? "{}")) as {
+      messages?: Array<{ role: string; content: string }>;
+    };
+    expect(requestBody.messages?.[0]?.content).toContain("You are running in structured JSON action mode.");
+    expect(requestBody.messages?.[0]?.content).toContain('{"action":"call_tool","toolId":"string","input":{...},"reasoning":"string"}');
+    expect(requestBody.messages?.[0]?.content).toContain("Target application: Demo App");
+    expect(requestBody.messages?.[0]?.content).toContain("Target URL: http://localhost:8888");
+    expect(requestBody.messages?.[0]?.content).toContain("Allowed tools: seed-service-scan=Service Scan");
+    expect(requestBody.messages?.[0]?.content).toContain("Requested layers: L1, L4, L7");
+    expect(requestBody.messages?.[1]?.content).toContain("Max duration minutes: 5");
+    expect(requestBody.messages?.[1]?.content).toContain("Start with the next highest-value evidence action.");
+  });
+
   it("emits persisted workflow debug events for workflow-linked local runs", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({
       ok: true,
@@ -253,6 +342,16 @@ describe("SingleAgentScanService", () => {
     });
 
     expect(workflowEvents.some((event) => event["type"] === "system_message" && event["title"] === "Rendered system prompt")).toBe(true);
+    expect(workflowEvents.some((event) =>
+      event["type"] === "system_message"
+      && event["title"] === "Rendered system prompt"
+      && String(event["detail"]).includes(agent.systemPrompt)
+    )).toBe(true);
+    expect(workflowEvents.some((event) =>
+      event["type"] === "system_message"
+      && event["title"] === "Rendered task prompt"
+      && String(event["detail"]).includes("Start with the next highest-value evidence action.")
+    )).toBe(true);
     expect(workflowEvents.some((event) => event["type"] === "model_decision")).toBe(true);
     expect(workflowEvents.some((event) => event["type"] === "verification" && event["title"] === "Verifier accepted the scan closeout")).toBe(true);
     expect(workflowEvents.some((event) => event["type"] === "agent_summary")).toBe(true);
@@ -703,5 +802,127 @@ describe("SingleAgentScanService", () => {
       && event["title"] === "Verifier rejected the scan closeout"
       && String(event["summary"]).includes("coverage claim")
     )).toBe(true);
+  });
+
+  it("retries unsupported model actions with explicit supported-action feedback", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          message: {
+            content: JSON.stringify({
+              osilayer: "L7",
+              evidenceaction: "target/baseUrl/layer",
+              rationale: "Targeting the application layer first."
+            })
+          }
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          message: {
+            content: JSON.stringify({
+              action: "submit_scan_completion",
+              completion: {
+                summary: "Completed after retrying with a supported action.",
+                residualRisk: "Requested layers without direct evidence remain not covered.",
+                recommendedNextStep: "Use approved evidence tools before claiming broader coverage.",
+                stopReason: "no_further_material_progress"
+              }
+            })
+          }
+        })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const workflowEvents: Array<Record<string, unknown>> = [];
+    const service = createService();
+    await service.runWorkflowLinkedScan({
+      runId: "70000000-0000-0000-0000-000000000101",
+      applicationId: application.id,
+      runtimeId: runtime.id,
+      agentId: agent.id,
+      scope: {
+        targets: ["localhost:8888"],
+        exclusions: [],
+        layers: ["L1", "L2", "L3", "L4", "L5", "L6", "L7"],
+        maxDepth: 2,
+        maxDurationMinutes: 5,
+        rateLimitRps: 5,
+        allowActiveExploits: false,
+        graceEnabled: true,
+        graceRoundInterval: 3,
+        cyberRangeMode: "simulation"
+      },
+      onWorkflowEvent: async (event) => {
+        workflowEvents.push(event as Record<string, unknown>);
+      }
+    });
+
+    expect(scanStoreState.scan?.status).toBe("complete");
+    expect(workflowEvents.some((event) =>
+      event["type"] === "verification"
+      && event["title"] === "Verifier rejected the model action"
+      && String(event["summary"]).includes("Unsupported action <missing>")
+    )).toBe(true);
+
+    const secondCall = fetchMock.mock.calls[1] as [unknown, RequestInit?] | undefined;
+    const secondRequestInit = secondCall?.[1];
+    const secondRequestBody = JSON.parse(String(secondRequestInit?.body ?? "{}")) as {
+      messages?: Array<{ role: string; content: string }>;
+    };
+    expect(secondRequestBody.messages?.at(-1)?.content).toContain("Unsupported action <missing>.");
+    expect(secondRequestBody.messages?.at(-1)?.content).toContain("Supported actions:");
+    expect(secondRequestBody.messages?.at(-1)?.content).toContain("call_tool");
+    expect(secondRequestBody.messages?.at(-1)?.content).toContain("submit_scan_completion");
+  });
+
+  it("fails hosted runs loudly when the model ends without submit_scan_completion after verifier retries", async () => {
+    generateTextMock.mockResolvedValue({
+      text: "Acknowledged — revising the summary to match persisted coverage exactly.",
+      usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 }
+    });
+
+    const workflowEvents: Array<Record<string, unknown>> = [];
+    const service = createService({
+      providerOverride: anthropicProvider,
+      agentOverride: {
+        providerId: anthropicProvider.id
+      }
+    });
+
+    await expect(service.runWorkflowLinkedScan({
+      runId: "70000000-0000-0000-0000-000000000102",
+      applicationId: application.id,
+      runtimeId: runtime.id,
+      agentId: agent.id,
+      scope: {
+        targets: ["localhost:8888"],
+        exclusions: [],
+        layers: ["L1", "L2", "L3", "L4", "L5", "L6", "L7"],
+        maxDepth: 2,
+        maxDurationMinutes: 5,
+        rateLimitRps: 5,
+        allowActiveExploits: false,
+        graceEnabled: true,
+        graceRoundInterval: 3,
+        cyberRangeMode: "simulation"
+      },
+      onWorkflowEvent: async (event) => {
+        workflowEvents.push(event as Record<string, unknown>);
+      }
+    })).rejects.toThrow("Hosted model did not submit a completion payload.");
+
+    expect(workflowEvents.some((event) =>
+      event["type"] === "verification"
+      && event["status"] === "failed"
+      && event["title"] === "Verifier rejected the hosted-model closeout"
+      && String(event["detail"]).includes("Acknowledged")
+    )).toBe(true);
+    expect(workflowEvents.some((event) =>
+      event["type"] === "model_decision"
+      && event["title"] === "Agent completed hosted-model reasoning"
+    )).toBe(false);
   });
 });

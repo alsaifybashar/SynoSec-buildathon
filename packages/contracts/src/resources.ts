@@ -686,6 +686,14 @@ export const workflowRunStreamMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("trace_appended"),
     run: workflowRunSchema,
     traceEntry: workflowTraceEntrySchema
+  }),
+  z.object({
+    type: z.literal("model_output"),
+    run: workflowRunSchema,
+    source: z.enum(["local", "hosted"]),
+    text: z.string(),
+    final: z.boolean().default(false),
+    createdAt: z.string().datetime()
   })
 ]);
 export type WorkflowRunStreamMessage = z.infer<typeof workflowRunStreamMessageSchema>;
