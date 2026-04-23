@@ -5,7 +5,9 @@ declare global {
         id: {
           initialize: (options: {
             client_id: string;
-            callback: (response: { credential: string }) => void;
+            callback?: (response: { credential: string }) => void;
+            ux_mode?: "popup" | "redirect";
+            login_uri?: string;
           }) => void;
           renderButton: (
             parent: HTMLElement,

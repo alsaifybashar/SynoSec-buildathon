@@ -48,6 +48,7 @@ function createTestApp() {
   app.disable("x-powered-by");
   app.use(applySecurityHeaders);
   app.use(express.json());
+  app.use(express.urlencoded({ extended: false }));
   app.use(async (req, res, next) => {
     try {
       await attachAuthContext(req, res, config);
@@ -251,6 +252,36 @@ describe("auth integration", () => {
     );
   });
 
+  it("allows Google Identity Services redirect POSTs from accounts.google.com", async () => {
+    setAuthEnv(true);
+    const app = createTestApp();
+    const response = await request(app)
+      .post(`${apiRoutes.authGoogleLogin}?redirectTo=%2Fapplications`)
+      .set("Origin", "https://accounts.google.com")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .set("Cookie", "g_csrf_token=csrf-value")
+      .send("credential=google-id-token&g_csrf_token=csrf-value")
+      .expect(303);
+
+    expect(response.headers["location"]).toBe("/applications");
+    expect(response.headers["set-cookie"]?.join(";")).toContain("synosec_session=");
+  });
+
+  it("allows Google Identity Services redirect POSTs when the browser sends Origin null", async () => {
+    setAuthEnv(true);
+    const app = createTestApp();
+    const response = await request(app)
+      .post(`${apiRoutes.authGoogleLogin}?redirectTo=%2Fapplications`)
+      .set("Origin", "null")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .set("Cookie", "g_csrf_token=csrf-value")
+      .send("credential=google-id-token&g_csrf_token=csrf-value")
+      .expect(303);
+
+    expect(response.headers["location"]).toBe("/applications");
+    expect(response.headers["set-cookie"]?.join(";")).toContain("synosec_session=");
+  });
+
   it("revokes existing sessions immediately when the user is no longer allowlisted", async () => {
     setAuthEnv(true);
     process.env["AUTH_ALLOWED_EMAILS"] = "different@example.com";
@@ -371,6 +402,37 @@ describe("auth integration", () => {
     expect(response.headers["set-cookie"]?.join(";")).toContain("synosec_session=");
     expect(verifyGoogleIdToken).toHaveBeenCalledWith("google-id-token", "google-client-id");
     expect(authRepository.createSession).toHaveBeenCalled();
+  });
+
+  it("accepts Google redirect POSTs, creates a session, and redirects to the requested app path", async () => {
+    setAuthEnv(true);
+    const app = createTestApp();
+    const response = await request(app)
+      .post(`${apiRoutes.authGoogleLogin}?redirectTo=%2Fai-providers`)
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .set("Cookie", "g_csrf_token=csrf-value")
+      .send("credential=google-id-token&g_csrf_token=csrf-value")
+      .expect(303);
+
+    expect(response.headers["location"]).toBe("/ai-providers");
+    expect(response.headers["set-cookie"]?.join(";")).toContain("synosec_session=");
+    expect(verifyGoogleIdToken).toHaveBeenCalledWith("google-id-token", "google-client-id");
+    expect(authRepository.createSession).toHaveBeenCalled();
+  });
+
+  it("rejects Google redirect POSTs when the requested redirect path is unsafe", async () => {
+    setAuthEnv(true);
+    const app = createTestApp();
+
+    await request(app)
+      .post(`${apiRoutes.authGoogleLogin}?redirectTo=https://evil.test`)
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .set("Cookie", "g_csrf_token=csrf-value")
+      .send("credential=google-id-token&g_csrf_token=csrf-value")
+      .expect(400, {
+        code: "REQUEST_ERROR",
+        message: "redirectTo must be an absolute in-app path."
+      });
   });
 
   it("defaults auth cookies to Secure in production when AUTH_COOKIE_SECURE is unset", async () => {

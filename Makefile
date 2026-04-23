@@ -1,4 +1,4 @@
-.PHONY: help dev build test database dev-services docker-up docker-down docker-logs seed smoke-e2e smoke-seeded-sandbox free-dev-ports wait-for-postgres
+.PHONY: help dev build test database dev-services docker-up docker-down docker-logs seed smoke-e2e smoke-seeded-sandbox free-dev-ports wait-for-postgres check-docker-compose
 
 ifneq (,$(wildcard .env))
 include .env
@@ -25,8 +25,27 @@ help:
 	@printf "\033[33m  make smoke-e2e\033[0m  Run the Docker E2E smoke scan and print workflow evidence\n"
 	@printf "\033[33m  make smoke-seeded-sandbox\033[0m  Run seeded DB-backed tools through connector execute-mode sandbox\n"
 
+DOCKER_COMPOSE := $(shell \
+	if docker compose version >/dev/null 2>&1; then \
+		printf '%s' 'docker compose'; \
+	elif command -v docker-compose >/dev/null 2>&1; then \
+		printf '%s' 'docker-compose'; \
+	elif [ -f "./docker-compose" ]; then \
+		printf '%s' './docker-compose'; \
+	else \
+		printf '%s' 'docker compose'; \
+	fi)
+
+check-docker-compose:
+	@if [ "$(DOCKER_COMPOSE)" = "docker compose" ] && ! docker compose version >/dev/null 2>&1; then \
+		printf "\033[1;31mError: docker compose is not installed.\033[0m\n"; \
+		printf "Please install the Docker Compose plugin or docker-compose binary.\n"; \
+		exit 1; \
+	fi
+
 docker-up:
-	docker compose up --build -d --remove-orphans
+	@$(MAKE) check-docker-compose
+	@$(DOCKER_COMPOSE) up --build -d --remove-orphans
 	@printf "\n\033[1;32m✓ SynoSec started!\033[0m\n"
 	@printf "  Frontend: \033[36mhttp://localhost:%s\033[0m\n" "$${VITE_DEV_PORT:-5173}"
 	@printf "  Backend:  \033[36mhttp://localhost:%s\033[0m\n" "$${BACKEND_PORT:-3001}"
@@ -34,10 +53,10 @@ docker-up:
 	@printf "  Target:   \033[36mhttp://localhost:8888\033[0m\n"
 
 docker-down:
-	docker compose down --remove-orphans
+	$(DOCKER_COMPOSE) down --remove-orphans
 
 docker-logs:
-	docker compose logs -f
+	$(DOCKER_COMPOSE) logs -f
 
 dev:
 	$(MAKE) free-dev-ports
@@ -62,27 +81,29 @@ free-dev-ports:
 	done
 
 dev-services:
+	@$(MAKE) check-docker-compose
 	@set -e; \
 	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-TRUE}}" | tr '[:upper:]' '[:lower:]'); \
 	if [ "$$local_enabled" = "false" ]; then \
-		docker compose up -d postgres vulnerable-target; \
+		$(DOCKER_COMPOSE) up -d postgres vulnerable-target; \
 	else \
 		model_name=$${LLM_LOCAL_MODEL:-qwen3:1.7b}; \
-		docker compose rm -sf ollama ollama-init >/dev/null 2>&1 || true; \
-		docker compose up -d postgres vulnerable-target ollama; \
+		$(DOCKER_COMPOSE) rm -sf ollama ollama-init >/dev/null 2>&1 || true; \
+		$(DOCKER_COMPOSE) up -d postgres vulnerable-target ollama; \
 		until [ "$$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}starting{{end}}' synosec-buildathon-ollama-1 2>/dev/null)" = "healthy" ]; do \
 			sleep 1; \
 		done; \
-		if docker compose exec -T ollama ollama list | awk 'NR > 1 { print $$1 }' | grep -Fx "$$model_name" >/dev/null 2>&1; then \
+		if $(DOCKER_COMPOSE) exec -T ollama ollama list | awk 'NR > 1 { print $$1 }' | grep -Fx "$$model_name" >/dev/null 2>&1; then \
 			printf "Ollama model %s already present, skipping pull\n" "$$model_name"; \
 		else \
 			printf "Ollama model %s missing, starting background pull\n" "$$model_name"; \
-			docker compose exec -d ollama ollama pull "$$model_name" >/dev/null; \
+			$(DOCKER_COMPOSE) exec -d ollama ollama pull "$$model_name" >/dev/null; \
 		fi; \
 	fi
 
 database:
-	docker compose up -d postgres
+	@$(MAKE) check-docker-compose
+	$(DOCKER_COMPOSE) up -d postgres
 	$(MAKE) wait-for-postgres
 	DATABASE_URL=postgres://synosec:synosec@localhost:$${POSTGRES_PORT:-55432}/synosec pnpm --filter @synosec/backend prisma:generate
 	DATABASE_URL=postgres://synosec:synosec@localhost:$${POSTGRES_PORT:-55432}/synosec pnpm --filter @synosec/backend exec prisma db push --accept-data-loss
@@ -90,7 +111,7 @@ database:
 
 wait-for-postgres:
 	@set -e; \
-	container_id=$$(docker compose ps -q postgres); \
+	container_id=$$($(DOCKER_COMPOSE) ps -q postgres); \
 	if [ -z "$$container_id" ]; then \
 		printf "Postgres container not found\n" >&2; \
 		exit 1; \

@@ -40,8 +40,14 @@ The agent system is structured as a controlled analysis loop rather than an open
 5. `make dev` starts Postgres, the vulnerable target, and optionally Ollama before launching backend and frontend on the host.
 6. Backend tests now include live local-model evaluation of the seeded tool defaults, so `pnpm --filter @synosec/backend test` expects Ollama with `qwen3:1.7b` to be available when local mode is enabled.
 7. Optional app-user authentication is gated behind `AUTH_ENABLED`. When enabled, configure `AUTH_GOOGLE_CLIENT_ID`, `AUTH_ALLOWED_EMAILS`, and `AUTH_SESSION_SECRET` in `.env`.
-8. The current Google integration uses Google Identity Services in the browser, then sends the returned Google ID token to the backend to create a SynoSec session cookie.
-9. In Google Cloud Console, set the OAuth client's `Authorized JavaScript origins` to `http://localhost:5173`. A redirect URI is not used by the current login flow.
+8. The current Google integration uses Google Identity Services redirect mode. Google posts the returned ID token to `/api/auth/google`, the backend verifies it, creates the SynoSec session cookie, and redirects the browser back into the app.
+9. In Google Cloud Console, use these values:
+   Local:
+   `Authorized JavaScript origins` = `http://localhost:5173`
+   `Authorized redirect URIs` = `http://localhost:5173/api/auth/google`
+   Production:
+   `Authorized JavaScript origins` = `https://synosecai.com`
+   `Authorized redirect URIs` = `https://synosecai.com/api/auth/google`
 10. Start the full stack:
 
 ```bash
@@ -72,10 +78,12 @@ AUTH_COOKIE_NAME=synosec_session
 AUTH_COOKIE_SECURE=false
 AUTH_SESSION_TTL_HOURS=168
 AUTH_SESSION_TOUCH_INTERVAL_SECONDS=600
-FRONTEND_URL=http://localhost:5173
+FRONTEND_URL=https://synosecai.com
 ```
 
 `AUTH_ALLOWED_EMAILS` is enforced on every authenticated request, so removing an email from the allowlist invalidates access on the next session-backed call. `AUTH_SESSION_TOUCH_INTERVAL_SECONDS` throttles `lastSeenAt` writes to avoid turning normal UI traffic into a write on every request.
+
+The Google redirect URI must match exactly. Do not register or rely on query-string variants such as `http://localhost:5173/api/auth/google?redirectTo=%2Fapplications`.
 
 ## Endpoints
 
@@ -115,7 +123,17 @@ The deploy workflow now hardcodes the VPS app directory to `/opt/synosec` and bi
 
 Set `SERVER_NAME` to the apex domain only, for example `synosecai.com`. The nginx template will serve both `synosecai.com` and `www.synosecai.com`.
 
-Set `FRONTEND_URL` to the public HTTPS origin, for example `https://synosecai.com`.
+Set `FRONTEND_URL` to the public HTTPS origin: `https://synosecai.com`.
+
+For Google Cloud Console production setup, use:
+
+- `Authorized JavaScript origins`: `https://synosecai.com`
+- `Authorized redirect URIs`: `https://synosecai.com/api/auth/google`
+
+If production traffic can also land on `https://www.synosecai.com`, add both of these as well:
+
+- `Authorized JavaScript origins`: `https://www.synosecai.com`
+- `Authorized redirect URIs`: `https://www.synosecai.com/api/auth/google`
 
 Set `NGINX_CONFIG_PATH` to the exact nginx site config path allowed by sudoers, for example `/etc/nginx/sites-available/synosec`.
 

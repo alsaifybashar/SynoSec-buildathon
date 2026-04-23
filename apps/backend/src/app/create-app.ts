@@ -1,5 +1,6 @@
 import cors from "cors";
 import express, { type Express } from "express";
+import { apiRoutes } from "@synosec/contracts";
 import { loadRateLimitConfig } from "@/core/env/backend-env.js";
 import { applySecurityHeaders } from "@/core/http/security-headers.js";
 import { createRateLimitMiddleware } from "@/core/http/rate-limit.js";
@@ -14,6 +15,20 @@ import { type AiProvidersRepository } from "@/features/modules/ai-providers/ai-p
 import { type AiAgentsRepository } from "@/features/modules/ai-agents/ai-agents.repository.js";
 import { type AiToolsRepository } from "@/features/modules/ai-tools/ai-tools.repository.js";
 import { type WorkflowsRepository } from "@/features/modules/workflows/workflows.repository.js";
+
+function isAllowedRequestOrigin(origin: string, frontendUrl: string, path: string) {
+  if (origin === frontendUrl) {
+    return true;
+  }
+
+  // Google Identity Services redirect mode can send the credential POST with either
+  // the Google origin or the opaque "null" origin on top-level navigation form posts.
+  if (path === apiRoutes.authGoogleLogin && (origin === "https://accounts.google.com" || origin === "null")) {
+      return true;
+  }
+
+  return false;
+}
 
 export function createApp(options: {
   applicationsRepository: ApplicationsRepository;
@@ -31,7 +46,7 @@ export function createApp(options: {
   app.use(applySecurityHeaders);
   app.use((request, _response, next) => {
     const origin = request.headers.origin;
-    if (!origin || origin === authConfig.frontendUrl) {
+    if (!origin || isAllowedRequestOrigin(origin, authConfig.frontendUrl, request.path)) {
       next();
       return;
     }
@@ -43,6 +58,7 @@ export function createApp(options: {
     credentials: true
   }));
   app.use(express.json());
+  app.use(express.urlencoded({ extended: false }));
   app.use(async (request, response, next) => {
     try {
       await attachAuthContext(request, response, authConfig);

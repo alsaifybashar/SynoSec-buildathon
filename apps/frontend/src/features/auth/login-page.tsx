@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/ui/card";
 import { Spinner } from "@/shared/ui/spinner";
-import { loginWithGoogleIdToken } from "@/features/auth/auth-store";
 
 const googleScriptId = "google-identity-services";
 
@@ -55,18 +54,12 @@ export function LoginPage({
           return;
         }
 
+        const loginUri = new URL("/api/auth/google", window.location.origin);
+
         window.google.accounts.id.initialize({
           client_id: googleClientId,
-          callback: async (response) => {
-            try {
-              setState("submitting");
-              setMessage(null);
-              await loginWithGoogleIdToken(response.credential);
-            } catch (error) {
-              setState("error");
-              setMessage(error instanceof Error ? error.message : "Google sign-in could not be completed.");
-            }
-          }
+          ux_mode: "redirect",
+          login_uri: loginUri.toString()
         });
 
         buttonRef.current.replaceChildren();
@@ -109,11 +102,11 @@ export function LoginPage({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {(state === "loading" || state === "submitting") ? (
+          {state === "loading" ? (
             <div className="flex items-center justify-center">
               <div className="flex items-center gap-3 rounded-[4px] border border-border/70 bg-background px-4 py-3 text-sm font-medium">
                 <Spinner className="h-4 w-4" />
-                <span>{state === "submitting" ? "Completing sign-in…" : "Loading Google sign-in…"}</span>
+                <span>Loading Google sign-in…</span>
               </div>
             </div>
           ) : null}
