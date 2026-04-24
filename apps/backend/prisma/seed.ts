@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { localDemoTargetDefaults } from "@synosec/contracts";
 import { PrismaClient } from "@prisma/client";
 import {
@@ -7,6 +8,7 @@ import {
   localApplicationId,
   seededAgentId,
   seededRoleDefinitions as roleDefinitions,
+  seededSingleAgentTacticId,
   seededToolDefinitions as toolDefinitions,
   targetRuntimeId
 } from "./seed-data/ai-builder-defaults.js";
@@ -311,7 +313,7 @@ async function main() {
       workflowId: singleAgentScan.workflowId,
       status: "completed",
       currentStepIndex: 1,
-      startedAt: new Date(singleAgentScan.scan.createdAt),
+      startedAt: new Date(singleAgentScan.scan.startedAt),
       completedAt: new Date(singleAgentScan.scan.completedAt)
     }
   });
@@ -324,14 +326,11 @@ async function main() {
       runtimeId: singleAgentScan.runtimeId,
       agentId: singleAgentScan.agentId,
       scope: singleAgentScan.scan.scope,
-      llmConfig: singleAgentScan.llm,
+      llmConfig: undefined,
       status: "complete",
-      currentRound: singleAgentScan.scan.currentRound,
-      tacticsTotal: singleAgentScan.scan.tacticsTotal,
-      tacticsComplete: singleAgentScan.scan.tacticsComplete,
-      stopReason: singleAgentScan.stopReason,
-      summary: singleAgentScan.summary,
-      createdAt: new Date(singleAgentScan.scan.createdAt),
+      stopReason: undefined,
+      summary: undefined,
+      createdAt: new Date(singleAgentScan.scan.startedAt),
       completedAt: new Date(singleAgentScan.scan.completedAt)
     },
     create: {
@@ -341,31 +340,28 @@ async function main() {
       runtimeId: singleAgentScan.runtimeId,
       agentId: singleAgentScan.agentId,
       scope: singleAgentScan.scan.scope,
-      llmConfig: singleAgentScan.llm,
+      llmConfig: undefined,
       status: "complete",
-      currentRound: singleAgentScan.scan.currentRound,
-      tacticsTotal: singleAgentScan.scan.tacticsTotal,
-      tacticsComplete: singleAgentScan.scan.tacticsComplete,
-      stopReason: singleAgentScan.stopReason,
-      summary: singleAgentScan.summary,
-      createdAt: new Date(singleAgentScan.scan.createdAt),
+      stopReason: undefined,
+      summary: undefined,
+      createdAt: new Date(singleAgentScan.scan.startedAt),
       completedAt: new Date(singleAgentScan.scan.completedAt)
     }
   });
 
   await prisma.scanTactic.create({
     data: {
-      id: singleAgentScan.tactic.id,
-      scanRunId: singleAgentScan.tactic.scanId,
-      target: singleAgentScan.tactic.target,
-      layer: singleAgentScan.tactic.layer,
-      service: singleAgentScan.tactic.service,
-      port: singleAgentScan.tactic.port,
-      riskScore: singleAgentScan.tactic.riskScore,
+      id: seededSingleAgentTacticId,
+      scanRunId: singleAgentScan.id,
+      target: "localhost:8888",
+      layer: "L7",
+      service: "http",
+      port: 8888,
+      riskScore: 0.8,
       status: "complete",
       parentTacticId: null,
-      depth: singleAgentScan.tactic.depth,
-      createdAt: new Date(singleAgentScan.tactic.createdAt)
+      depth: 0,
+      createdAt: new Date(singleAgentScan.scan.startedAt)
     }
   });
 
@@ -373,7 +369,7 @@ async function main() {
     data: {
       id: singleAgentScan.vulnerability.id,
       scanRunId: singleAgentScan.vulnerability.scanId,
-      scanTacticId: singleAgentScan.tactic.id,
+      scanTacticId: seededSingleAgentTacticId,
       agentId: singleAgentScan.vulnerability.agentId,
       primaryLayer: singleAgentScan.vulnerability.primaryLayer,
       relatedLayers: [...singleAgentScan.vulnerability.relatedLayers],
@@ -420,14 +416,14 @@ async function main() {
 
   await prisma.scanAuditEntry.createMany({
     data: singleAgentScan.auditEntries.map((entry) => ({
-      id: entry.id,
+      id: randomUUID(),
       scanRunId: entry.scanId,
-      timestamp: new Date(entry.timestamp),
-      actor: entry.actor,
+      timestamp: new Date(entry.createdAt),
+      actor: entry.actorType,
       action: entry.action,
-      targetTacticId: entry.targetTacticId,
-      scopeValid: entry.scopeValid,
-      details: entry.details
+      targetTacticId: null,
+      scopeValid: true,
+      details: { detail: entry.detail }
     }))
   });
 }

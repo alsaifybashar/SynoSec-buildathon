@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
+import { Search } from "lucide-react";
 import { toast } from "sonner";
 import {
   apiRoutes,
@@ -15,13 +16,17 @@ import {
 import { fetchJson } from "@/lib/api";
 import { useResourceDetail } from "@/hooks/useResourceDetail";
 import { useResourceList } from "@/hooks/useResourceList";
-import { aiToolsResource } from "@/lib/resources";
+import { aiToolsResource, listPageSizes, type ResourceClient } from "@/lib/resources";
 import { aiToolTransfer, exportResourceRecords, importResourceRecords } from "@/lib/resource-transfer";
 import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/components/detail-page";
+import { PageHeader } from "@/components/page-header";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/components/list-page";
 import { Button } from "@/shared/ui/button";
+import { Card, CardContent } from "@/shared/ui/card";
 import { Input } from "@/shared/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
+import { cn } from "@/lib/utils";
+import { Spinner } from "@/shared/ui/spinner";
 import { Textarea } from "@/shared/ui/textarea";
 import { BashEditor } from "@/shared/ui/bash-editor";
 
@@ -170,6 +175,17 @@ function definedString(value: string | undefined) {
   return value ? { error: value } : {};
 }
 
+function riskBadgeClassName(riskTier: ToolRiskTier) {
+  switch (riskTier) {
+    case "passive":
+      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
+    case "active":
+      return "border-amber-500/30 bg-amber-500/10 text-amber-700";
+    case "controlled-exploit":
+      return "border-red-500/30 bg-red-500/10 text-red-700";
+  }
+}
+
 function describeRunStatus(result: AiToolRunResult | null) {
   if (!result) {
     return "";
@@ -248,6 +264,7 @@ export function AiToolsPage({
   onNavigateToCreate: () => void;
   onNavigateToDetail: (id: string, label?: string) => void;
 }) {
+  const [viewMode, setViewMode] = useState<"list" | "grouped">("list");
   const [tool, setTool] = useState<AiTool | null>(null);
   const [formValues, setFormValues] = useState<ToolFormValues>(createEmptyFormValues);
   const [initialValues, setInitialValues] = useState<ToolFormValues>(createEmptyFormValues);
@@ -258,8 +275,26 @@ export function AiToolsPage({
   const [runResult, setRunResult] = useState<AiToolRunResult | null>(null);
   const [runningTool, setRunningTool] = useState(false);
   const isCreateMode = toolId === "new";
-  const toolList = useResourceList(aiToolsResource);
+  const aiToolsListResource = useMemo(() => ({
+    ...aiToolsResource,
+    defaultQuery: {
+      ...aiToolsResource.defaultQuery,
+      pageSize: 50,
+      riskTier: undefined
+    }
+  }) as ResourceClient<AiTool, typeof aiToolsResource.defaultQuery & { riskTier?: string }>, []);
+  const toolList = useResourceList(aiToolsListResource);
   const toolDetail = useResourceDetail(aiToolsResource, toolId && toolId !== "new" ? toolId : null);
+
+  const groupedItems = useMemo(() => {
+    return toolList.items.reduce<Record<ToolCategory, AiTool[]>>((groups, item) => {
+      if (!groups[item.category]) {
+        groups[item.category] = [];
+      }
+      groups[item.category].push(item);
+      return groups;
+    }, {} as Record<ToolCategory, AiTool[]>);
+  }, [toolList.items]);
 
   useEffect(() => {
     if (!toolId) {
@@ -305,7 +340,15 @@ export function AiToolsPage({
     { id: "source", header: "Source", cell: (row) => <span className="text-muted-foreground">{row.source}</span> },
     { id: "category", header: "Category", cell: (row) => <span className="text-muted-foreground">{row.category}</span> },
     { id: "status", header: "Status", cell: (row) => <span className="text-muted-foreground">{statusLabels[row.status]}</span> },
-    { id: "riskTier", header: "Risk", cell: (row) => <span className="text-muted-foreground">{row.riskTier}</span> }
+    {
+      id: "riskTier",
+      header: "Risk",
+      cell: (row) => (
+        <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[0.68rem] font-medium capitalize", riskBadgeClassName(row.riskTier))}>
+          {row.riskTier}
+        </span>
+      )
+    }
   ], []);
 
   const filters = useMemo<ListPageFilter[]>(() => [
@@ -320,11 +363,25 @@ export function AiToolsPage({
       ]
     },
     {
+      id: "category",
+      label: "Filter by tool category",
+      placeholder: "Filter by category",
+      allLabel: "All categories",
+      options: categoryOptions.map((category) => ({ value: category, label: category }))
+    },
+    {
       id: "status",
       label: "Filter by tool status",
       placeholder: "Filter by status",
       allLabel: "All statuses",
       options: Object.entries(statusLabels).map(([value, label]) => ({ value, label }))
+    },
+    {
+      id: "riskTier",
+      label: "Filter by risk tier",
+      placeholder: "Filter by risk tier",
+      allLabel: "All risk tiers",
+      options: riskTierOptions.map((riskTier) => ({ value: riskTier, label: riskTier }))
     }
   ], []);
 
@@ -445,31 +502,203 @@ export function AiToolsPage({
     toolList.refetch();
   }
 
+  const viewModeToggle = (
+    <div className="flex items-center gap-2">
+      <Button type="button" variant={viewMode === "list" ? "default" : "outline"} onClick={() => setViewMode("list")}>List View</Button>
+      <Button type="button" variant={viewMode === "grouped" ? "default" : "outline"} onClick={() => setViewMode("grouped")}>Grouped View</Button>
+    </div>
+  );
+
   if (!toolId) {
+    if (viewMode === "grouped") {
+      return (
+        <div className="space-y-3 pb-6">
+          <PageHeader title="AI Tools" breadcrumbs={["Start", "AI Tools"]} />
+
+          <div className="sticky top-0 z-10 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+            <div className="flex flex-col gap-2 px-3 py-2.5 md:flex-row md:items-center md:gap-2.5">
+              <div className="relative min-w-0 flex-1 md:max-w-sm">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={toolList.query.q ?? ""}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    startTransition(() => toolList.setSearch(value));
+                  }}
+                  placeholder="search ai tools"
+                  className="h-9 pl-9 font-mono text-[0.75rem] placeholder:normal-case placeholder:text-muted-foreground/70"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 md:ml-auto md:flex-nowrap">
+                {filters.map((filter) => {
+                  const selectedValue = typeof toolList.query[filter.id] === "string"
+                    ? String(toolList.query[filter.id])
+                    : "__all__";
+
+                  return (
+                    <div key={filter.id} className="md:w-[9.375rem] md:shrink-0">
+                      <Select
+                        value={selectedValue}
+                        onValueChange={(value) => {
+                          startTransition(() => toolList.setFilter(filter.id, value === "__all__" ? undefined : value));
+                        }}
+                      >
+                        <SelectTrigger aria-label={filter.label} className="h-9 text-[0.75rem]">
+                          <SelectValue placeholder={filter.placeholder} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__all__">{filter.allLabel}</SelectItem>
+                          {filter.options.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                })}
+
+                <div aria-hidden className="hidden h-6 w-px bg-border/70 md:block" />
+                <div className="ml-auto flex items-center gap-2 md:ml-0">
+                  {viewModeToggle}
+                  <Button onClick={onNavigateToCreate} className="h-9 text-[0.75rem]">Add AI Tool</Button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {toolList.dataState.state === "loading" && !toolList.dataState.data ? (
+            <Card className="mx-3 border-border/70">
+              <CardContent className="flex min-h-32 items-center justify-center py-8">
+                <Spinner className="h-4 w-4 text-muted-foreground" />
+              </CardContent>
+            </Card>
+          ) : toolList.dataState.state === "error" ? (
+            <Card className="mx-3 border-destructive/20">
+              <CardContent className="space-y-4 p-6 text-center">
+                <p className="text-sm font-medium text-foreground">The tool list could not be loaded.</p>
+                <p className="text-sm text-muted-foreground">{toolList.dataState.message}</p>
+                <div>
+                  <Button type="button" variant="outline" onClick={toolList.refetch}>Retry</Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : toolList.items.length === 0 ? (
+            <div className="mx-6 mb-6 rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+              No AI tools have been configured yet.
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-4">
+                {Object.entries(groupedItems).map(([category, items]) => (
+                  <Card key={category} className="border-border/70">
+                    <CardContent className="space-y-4 p-4">
+                      <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-3">
+                        <div>
+                          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-foreground">{category}</h2>
+                          <p className="text-xs text-muted-foreground">{items.length} tool{items.length === 1 ? "" : "s"}</p>
+                        </div>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {items.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className="rounded-xl border border-border/70 bg-card/60 p-4 text-left transition-colors hover:border-primary/40 hover:bg-accent/20"
+                            onClick={() => onNavigateToDetail(item.id, item.name)}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-medium text-foreground">{item.name}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">{item.source} · {statusLabels[item.status]}</p>
+                              </div>
+                              <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[0.68rem] font-medium capitalize", riskBadgeClassName(item.riskTier))}>
+                                {item.riskTier}
+                              </span>
+                            </div>
+                            <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">{item.description ?? "No description provided."}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              <div className="grid gap-4 border-t border-border/70 px-4 py-4 text-[0.75rem] text-muted-foreground md:grid-cols-3 md:items-center">
+                <div className="w-full md:w-[9.375rem]">
+                  <Select
+                    value={String(toolList.query.pageSize)}
+                    onValueChange={(value) => {
+                      startTransition(() => toolList.setPageSize(Number(value)));
+                    }}
+                  >
+                    <SelectTrigger aria-label="Page size" className="h-9 text-[0.75rem]">
+                      <SelectValue placeholder="Page size" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {listPageSizes.map((pageSize) => (
+                        <SelectItem key={pageSize} value={String(pageSize)}>
+                          {pageSize} / page
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center justify-center gap-2">
+                  <Button type="button" variant="outline" className="h-9 text-[0.75rem]" onClick={() => toolList.setPage(Math.max(1, toolList.meta.page - 1))} disabled={toolList.meta.page <= 1}>
+                    Previous
+                  </Button>
+                  <span>Page {toolList.meta.page} of {toolList.meta.totalPages || 1}</span>
+                  <Button type="button" variant="outline" className="h-9 text-[0.75rem]" onClick={() => toolList.setPage(toolList.meta.page + 1)} disabled={toolList.meta.totalPages === 0 || toolList.meta.page >= toolList.meta.totalPages}>
+                    Next
+                  </Button>
+                </div>
+
+                <div className="flex items-center justify-end">
+                  <span>
+                    {toolList.meta.total === 0
+                      ? "0 results"
+                      : `${(toolList.meta.page - 1) * toolList.meta.pageSize + 1}-${Math.min(toolList.meta.page * toolList.meta.pageSize, toolList.meta.total)} of ${toolList.meta.total}`}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
+
     return (
-      <ListPage
-        title="AI Tools"
-        recordLabel="AI Tool"
-        columns={columns}
-        query={toolList.query}
-        dataState={toolList.dataState}
-        items={toolList.items}
-        meta={toolList.meta}
-        filters={filters}
-        emptyMessage="No AI tools have been configured yet."
-        onSearchChange={toolList.setSearch}
-        onFilterChange={toolList.setFilter}
-        onSortChange={toolList.setSort}
-        onPageChange={toolList.setPage}
-        onPageSizeChange={toolList.setPageSize}
-        onRetry={toolList.refetch}
-        onAddRecord={onNavigateToCreate}
-        onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
-        onImportJson={handleImportJson}
-        getRowLabel={(row) => row.name}
-        onExportRowJson={handleListExportJson}
-        onDeleteRow={handleDeleteTool}
-      />
+      <div className="space-y-3 pb-6">
+        <div className="flex items-center justify-end gap-2">{viewModeToggle}</div>
+        <ListPage
+          title="AI Tools"
+          recordLabel="AI Tool"
+          columns={columns}
+          query={toolList.query}
+          dataState={toolList.dataState}
+          items={toolList.items}
+          meta={toolList.meta}
+          filters={filters}
+          emptyMessage="No AI tools have been configured yet."
+          onSearchChange={toolList.setSearch}
+          onFilterChange={toolList.setFilter}
+          onSortChange={toolList.setSort}
+          onPageChange={toolList.setPage}
+          onPageSizeChange={toolList.setPageSize}
+          onRetry={toolList.refetch}
+          onAddRecord={onNavigateToCreate}
+          onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
+          onImportJson={handleImportJson}
+          getRowLabel={(row) => row.name}
+          onExportRowJson={handleListExportJson}
+          onDeleteRow={handleDeleteTool}
+        />
+      </div>
     );
   }
 

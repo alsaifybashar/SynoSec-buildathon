@@ -196,150 +196,263 @@ The cutoff is strict:
 
 For connector-related work, preserve local/VPS parity and keep execution broker-mediated. Do not introduce direct model-to-tool or model-to-shell access as a shortcut.
 
+## Tool Platform Architecture
 
-  ---
-  Project Overview
+The tool platform is designed so the repo can grow from a handful of demo tools to hundreds of cataloged tools without turning the scan loop, seed data, or UI into a maintenance bottleneck.
 
-  SynoSec is an AI-driven automated pentesting platform. The architecture has three key
-  layers:
+The current model has six pieces:
 
-  1. AI Agent (Claude/Ollama) — decides which tools to run based on OSI layer analysis
-  2. Tool Broker — policy engine + execution dispatcher
-  3. Tool Layer — bash scripts or native binaries that do the actual scanning
+1. A modular tool catalog in `apps/backend/src/workflow-engine/tools/catalog/`
+2. Modular seeded tool implementations in `scripts/tools/` and `apps/backend/prisma/seed-data/tools/`
+3. A runtime tool selector that pre-filters tools before they reach the model
+4. An opt-in agent-tool policy layer for automatic assignment
+5. Frontend list UX that remains usable at larger tool counts
+6. A steady-state workflow for adding new tools with minimal friction
 
-  ---
-  How Tools Are Implemented
+### Phase 1: Modular Tool Catalog
 
-  Two Types of Tools
+The canonical catalog lives under:
 
-  Type 1: Seeded Self-Contained Tools (stored in the database as bash scripts)
+- `apps/backend/src/workflow-engine/tools/catalog/types.ts`
+- `apps/backend/src/workflow-engine/tools/catalog/index.ts`
+- `apps/backend/src/workflow-engine/tools/catalog/<domain>.ts`
 
-  These run Node.js inline HTTP code — no external binaries required:
+Domains are split by capability area such as:
 
-  ┌──────────────────────────┬───────────────────────────────┬──────────────────────────┐
-  │           Tool           │         What It Does          │     Real Pentesting      │
-  │                          │                               │        Equivalent        │
-  ├──────────────────────────┼───────────────────────────────┼──────────────────────────┤
-  │                          │                               │ Initial footprinting —   │
-  │ seed-http-recon          │ Probes URL for status, title, │ httpx -silent            │
-  │                          │  tech stack via httpx         │ -status-code -title      │
-  │                          │                               │ -tech-detect             │
-  ├──────────────────────────┼───────────────────────────────┼──────────────────────────┤
-  │                          │ curl -sS -I -L to grab raw    │ Manual banner grabbing   │
-  │ seed-http-headers        │ response headers              │ to find server version   │
-  │                          │                               │ leaks                    │
-  ├──────────────────────────┼───────────────────────────────┼──────────────────────────┤
-  │                          │ BFS crawls up to 8            │ Spider phase — maps      │
-  │ seed-web-crawl           │ same-origin pages following   │ attack surface before    │
-  │                          │ href links                    │ exploitation             │
-  ├──────────────────────────┼───────────────────────────────┼──────────────────────────┤
-  │                          │                               │ Poor-man's nmap -sV —    │
-  │ seed-service-scan        │ Raw TCP socket + HEAD banner  │ confirms the service is  │
-  │                          │ grab on derived port          │ alive and extracts       │
-  │                          │                               │ banner                   │
-  ├──────────────────────────┼───────────────────────────────┼──────────────────────────┤
-  │                          │ Probes a fixed wordlist:      │ Mimics gobuster dir or   │
-  │ seed-content-discovery   │ /admin, /login, /.env,        │ ffuf with a small        │
-  │                          │ /.git/config, etc.            │ wordlist                 │
-  ├──────────────────────────┼───────────────────────────────┼──────────────────────────┤
-  │                          │ Checks unauthenticated        │ Mimics nuclei template   │
-  │ seed-vuln-audit          │ /admin, PII leaks at          │ checks + manual header   │
-  │                          │ /api/users, missing security  │ review                   │
-  │                          │ headers                       │                          │
-  ├──────────────────────────┼───────────────────────────────┼──────────────────────────┤
-  │                          │ POSTs username=' OR '1'='1 to │ Same payload as sqlmap   │
-  │ seed-sql-injection-check │  /login, detects bypass by    │ --level=1 auth bypass    │
-  │                          │ regex                         │ test                     │
-  └──────────────────────────┴───────────────────────────────┴──────────────────────────┘
+- `network.ts`
+- `web.ts`
+- `content.ts`
+- `subdomain.ts`
+- `dns.ts`
+- `password.ts`
+- `cloud.ts`
+- `kubernetes.ts`
+- `windows.ts`
+- `forensics.ts`
+- `reversing.ts`
+- `exploitation.ts`
+- `utility.ts`
 
-  Type 2: Shell Wrapper Scripts (delegate to real installed binaries)
+`tool-catalog.ts` still exposes the same public functions:
 
-  Located in scripts/tools/, these call the actual tools when available:
+- `getToolCatalog()`
+- `getToolCapabilities()`
+- `isToolCatalogEntryAvailable()`
 
-  ┌────────────────────────┬────────────┬───────────────────────────────────────────────┐
-  │         Script         │   Real     │                   Use Case                    │
-  │                        │   Binary   │                                               │
-  ├────────────────────────┼────────────┼───────────────────────────────────────────────┤
-  │ service-scan.sh        │ nmap       │ Full port/service/OS detection                │
-  ├────────────────────────┼────────────┼───────────────────────────────────────────────┤
-  │ content-discovery.sh   │ ffuf       │ High-speed directory fuzzing with custom      │
-  │                        │            │ wordlists                                     │
-  ├────────────────────────┼────────────┼───────────────────────────────────────────────┤
-  │ sql-injection-check.sh │ sqlmap     │ Automated SQL injection + DB extraction       │
-  ├────────────────────────┼────────────┼───────────────────────────────────────────────┤
-  │ vulnerability-audit.sh │ nuclei     │ Template-based CVE scanning                   │
-  ├────────────────────────┼────────────┼───────────────────────────────────────────────┤
-  │ web-crawl.sh           │ katana     │ JavaScript-aware deep web crawling            │
-  ├────────────────────────┼────────────┼───────────────────────────────────────────────┤
-  │ http-recon.sh          │ httpx      │ Bulk HTTP probing at scale                    │
-  └────────────────────────┴────────────┴───────────────────────────────────────────────┘
+Every catalog entry now includes additional metadata used by the selector and future assignment logic:
 
-  ---
-  Real Pentesting Scenario Walkthrough
+- `phase`
+- `osiLayers`
+- `tags`
 
-  Here's how a full scan maps to a real-world pentest methodology:
+Current `phase` values:
 
-  Phase 1 — RECONNAISSANCE (OSI L3/L4)
-    seed-service-scan → tcp banner grab → finds open ports
-    seed-http-recon   → httpx probe    → confirms HTTP(S) service, grabs tech stack
+- `recon`
+- `enum`
+- `vuln-scan`
+- `exploit`
+- `post`
+- `report`
+- `utility`
 
-  Phase 2 — ENUMERATION (OSI L7)
-    seed-http-headers     → curl -I      → finds Server: Apache/2.2.34 (outdated), missing
-  headers
-    seed-web-crawl        → BFS crawler  → discovers /admin, /api/users, /files, /search
-    seed-content-discovery → wordlist    → finds /.env, /.git/config, /login
+`tool-catalog.ts` also performs a duplicate ID guard at startup. Duplicate catalog IDs are treated as a hard error.
 
-  Phase 3 — VULNERABILITY IDENTIFICATION (OSI L7)
-    seed-vuln-audit → checks:
-      - /admin accessible without auth  → HIGH finding
-      - /api/users returns SSNs/cards   → CRITICAL finding
-      - Missing CSP/X-Frame-Options     → MEDIUM finding
+### Phase 2: Modular Seed Architecture
 
-  Phase 4 — EXPLOITATION (requires allowActiveExploits=true)
-    seed-sql-injection-check → POST ' OR '1'='1 → confirms auth bypass
-    [real sqlmap via sql-injection-check.sh when binary installed]
+Seeded tools are no longer defined as one large file with inline bash factories.
 
-  Phase 5 — REPORTING
-    AI agent calls report_vulnerability() for each confirmed finding
-    submit_scan_completion() with per-OSI-layer coverage claims
+The implementation is split into:
 
-  ---
-  The AI's Role
+- Shell assets in `scripts/tools/<category>/<tool>.sh`
+- Per-tool seed modules in `apps/backend/prisma/seed-data/tools/<category>/<tool>.ts`
+- An assembler in `apps/backend/prisma/seed-data/ai-builder-defaults.ts`
 
-  The AI agent (Claude or Ollama) acts as the pentester's decision loop. It:
+Each seed module exports one tool object with a lazy `bashSource` getter that reads the script from disk. Example pattern:
 
-  1. Receives a system prompt describing the target and scope
-  2. Chooses which tool to call next based on what's been discovered so far
-  3. Must justify each tool call by OSI layer (L1–L7)
-  4. Interprets tool output and decides whether to dig deeper or move on
-  5. Calls report_vulnerability() when it has sufficient confidence in a finding
-  6. Has a max of 8 tool-call steps per run
+```ts
+export const httpReconTool = {
+  id: "seed-http-recon",
+  name: "HTTP Recon",
+  get bashSource() {
+    return loadSeedToolScript(import.meta.url, "scripts/tools/web/http-recon.sh");
+  }
+} as const;
+```
 
-  The confidence engine uses Bayesian merging — if two independent tools both detect the
-  same finding, the combined confidence score rises above either alone.
+Startup fail-fast behavior:
 
-  ---
-  The Policy Engine (Safety Layer)
+- `apps/backend/src/main.ts` calls `validateSeededToolDefinitions()`
+- missing script files fail the backend immediately
+- `apps/backend/prisma/seed-data/tools/load-script.ts` resolves both source and built `dist/` layouts
 
-  Before any tool executes, authorizeToolRequest() checks:
+This means seeded tool definitions stay small and script logic lives in real `.sh` files where it is easier to inspect, test, and replace.
 
-  - Is the target in scan.scope.targets? (no scanning out-of-scope hosts)
-  - If riskTier === "controlled-exploit" (sqlmap, hydra, metasploit) → requires
-  allowActiveExploits: true explicitly set on the scan
-  - Passive tools always run; active exploit tools are gated
+### Phase 3: Tool Selector Layer
 
-  ---
-  The 62-Tool Catalog
+The critical context-limit fix lives in:
 
-  The full catalog (tool-catalog.ts) includes tools across all pentesting domains:
-  - Network: nmap, masscan, rustscan, autorecon
-  - Web: nikto, nuclei, dalfox (XSS), ffuf, gobuster, feroxbuster
-  - SQLi: sqlmap
-  - Password: hydra, hashcat, john, medusa
-  - Windows/AD: crackmapexec, enum4linux-ng, responder, evil-winrm
-  - Subdomain/OSINT: amass, subfinder, theHarvester
-  - Cloud: prowler, trivy, scout-suite
-  - Forensics/Reversing: volatility3, radare2, binwalk, exiftool
+- `apps/backend/src/workflow-engine/tools/tool-selector.ts`
 
-  GET /api/tools/capabilities tells you which of these are actually installed on the current
-   machine.
+The selector scores available tools before they are passed to the model. This prevents the single-agent scan loop from dumping every approved tool into one model call.
+
+Selector inputs:
+
+- requested OSI layers
+- current layer coverage
+- already executed tool IDs
+- current findings
+- `allowActiveExploits`
+
+Scoring signals:
+
+- layer alignment
+- phase progression
+- risk tier gate
+- recency penalty
+
+Important behavior:
+
+- `controlled-exploit` tools are hard-gated when `allowActiveExploits === false`
+- recently used tools are penalized
+- if the top slice is all one category, the selector swaps in another category for diversity
+- catalog metadata is used when available; uncataloged tools default to `phase: "utility"` and `osiLayers: ["L7"]`
+
+Integration:
+
+- Anthropic loop: select once before building the evidence tool map
+- Local loop: re-select at the start of each iteration
+- lifecycle actions are always available and are never filtered:
+  - `report_vulnerability`
+  - `update_layer_coverage`
+  - `submit_scan_completion`
+
+Main integration point:
+
+- `apps/backend/src/features/modules/scans/single-agent-scan.service.ts`
+
+### Phase 4: Smart Agent-Tool Assignment
+
+Agent-tool auto-assignment is opt-in and lives in:
+
+- `apps/backend/prisma/seed-data/agent-tool-policies.ts`
+- `apps/backend/src/features/modules/ai-agents/agent-tool-resolver.ts`
+
+This layer exists to remove manual junction-table style maintenance as the tool count grows.
+
+How it works:
+
+- If no policy exists for an agent, behavior stays exactly as before: use `agent.toolIds`
+- If a policy exists, SynoSec:
+  - loads active tools
+  - starts from `pinnedToolIds`
+  - preserves explicit `agent.toolIds`
+  - adds policy-matched tools using catalog metadata such as category, risk tier, phase, and tags
+  - deduplicates the final set
+
+Current rollout status:
+
+- `AGENT_TOOL_POLICIES` is intentionally empty by default
+- policies are activated one agent at a time by adding an entry
+
+This keeps rollout safe while enabling future “new tool automatically appears for the right agent” behavior.
+
+### Phase 5: Frontend UX for Large Tool Sets
+
+The AI tools page has been updated to remain usable when the tool inventory grows:
+
+- file: `apps/frontend/src/pages/ai-tools-page.tsx`
+
+Current list UX improvements:
+
+- category filter
+- risk tier filter
+- `list` / `grouped` view mode toggle
+- grouped-by-category rendering on the client
+- compact colored risk badges:
+  - passive = green
+  - active = amber
+  - controlled-exploit = red
+- default page size of 50 for the tools page
+
+This is intentionally page-local behavior so the shared list component does not need to know about tool-specific grouping logic.
+
+### Phase 6: Adding a New Tool
+
+The steady-state workflow for adding a tool is now:
+
+1. Add a `ToolCatalogEntry` to the correct file in `apps/backend/src/workflow-engine/tools/catalog/`
+2. Include `phase`, `osiLayers`, and `tags`
+3. Add the implementation script in `scripts/tools/<category>/<tool-name>.sh`
+4. Add the seed module in `apps/backend/prisma/seed-data/tools/<category>/<tool-name>.ts`
+5. Import it into `apps/backend/prisma/seed-data/ai-builder-defaults.ts` and add it to `seededToolDefinitions`
+6. Run the seed upsert so the tool exists in the database
+7. If a policy later covers that category/phase/tag set, the tool becomes available automatically to the relevant agents
+
+The core goal is low-friction tool authoring:
+
+- write a `.sh` script
+- add a small metadata object
+- let the catalog, seed layer, selector, and policy system do the rest
+
+## Developer Notes
+
+### Where Tool Behavior Actually Comes From
+
+There are three different layers to keep straight:
+
+- Catalog metadata:
+  `apps/backend/src/workflow-engine/tools/catalog/`
+  This is capability metadata, installation checks, selection hints, and future assignment input.
+
+- Seeded tool implementations:
+  `scripts/tools/`
+  `apps/backend/prisma/seed-data/tools/`
+  These are the concrete built-in tools that get seeded into the database.
+
+- Runtime execution config:
+  Stored on the tool record and resolved through:
+  `apps/backend/src/features/modules/ai-tools/tool-execution-config.ts`
+
+If you change tool behavior, make sure you are editing the correct layer.
+
+### Current Seeded Tool Set
+
+SynoSec comes with a comprehensive set of built-in security tools categorized by domain:
+
+- **Network**: `nmap`, `ncat`, `netcat`, `service-scan`
+- **Web**: `nikto`, `sqlmap`, `http-recon`, `http-headers`, `sql-injection-check`, `vuln-audit`
+- **Content Discovery**: `gobuster`, `dirb`, `ffuf`, `web-crawl`, `content-discovery`
+- **Subdomain Enumeration**: `amass`, `sublist3r`
+- **Exploitation**: `metasploit-framework`
+- **Password Cracking**: `hashcat`
+- **Forensics**: `steghide`
+- **Windows Enumeration**: `enum4linux`
+- **Utility**: `bash-probe`
+
+These tools are pre-configured with bash scripts in `scripts/tools/` and seeded into the database for immediate use by AI agents.
+
+### Key Backend Files
+
+- Scan loop:
+  `apps/backend/src/features/modules/scans/single-agent-scan.service.ts`
+- Tool selector:
+  `apps/backend/src/workflow-engine/tools/tool-selector.ts`
+- Tool catalog entrypoint:
+  `apps/backend/src/workflow-engine/tools/tool-catalog.ts`
+- Agent tool resolver:
+  `apps/backend/src/features/modules/ai-agents/agent-tool-resolver.ts`
+- Seed assembler:
+  `apps/backend/prisma/seed-data/ai-builder-defaults.ts`
+
+### Recommended Checks After Tool-Platform Changes
+
+Backend:
+
+- `pnpm --filter @synosec/backend exec tsc -p tsconfig.json --noEmit`
+- targeted Vitest runs for the area you changed
+
+Frontend:
+
+- `pnpm --filter @synosec/frontend exec tsc -p tsconfig.json --noEmit`
+
+If you touch seeded scripts or seed modules, also make sure startup validation still passes and that `pnpm --filter @synosec/backend build` succeeds.

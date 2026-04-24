@@ -37,6 +37,9 @@ import type { AiToolsRepository } from "@/features/modules/ai-tools/ai-tools.rep
 import type { ApplicationsRepository } from "@/features/modules/applications/applications.repository.js";
 import type { RuntimesRepository } from "@/features/modules/runtimes/runtimes.repository.js";
 import { normalizeToolInput, parseExecutionTarget, parseTarget, truncate } from "@/features/modules/workflows/workflow-execution.utils.js";
+import { selectToolsForContext, type ToolSelectorContext } from "@/workflow-engine/tools/tool-selector.js";
+import { AGENT_TOOL_POLICIES } from "../../../../prisma/seed-data/agent-tool-policies.js";
+import { resolveAgentTools } from "../ai-agents/agent-tool-resolver.js";
 
 const vulnerabilityToolInputJsonSchema = {
   type: "object",
@@ -362,9 +365,25 @@ export class SingleAgentScanService {
       createdAt
     });
 
-    const tools = (
-      await Promise.all(agent.toolIds.map(async (toolId) => this.aiToolsRepository.getById(toolId)))
-    ).filter((candidate): candidate is AiTool => Boolean(candidate));
+    const policy = AGENT_TOOL_POLICIES.find((candidate) => candidate.agentId === agent.id);
+    const tools = policy
+      ? await resolveAgentTools(
+        agent.id,
+        agent.toolIds,
+        (
+          await this.aiToolsRepository.list({
+            status: "active",
+            page: 1,
+            pageSize: 500,
+            sortBy: "name",
+            sortDirection: "asc"
+          })
+        ).items,
+        policy
+      )
+      : (
+        await Promise.all(agent.toolIds.map(async (toolId) => this.aiToolsRepository.getById(toolId)))
+      ).filter((candidate): candidate is AiTool => Boolean(candidate));
 
     const context: SingleAgentContext = {
       scan,
@@ -391,8 +410,8 @@ export class SingleAgentScanService {
   private async runLoop(context: SingleAgentContext) {
     const { request, application, runtime, agent, target, rootTacticId, scanId, provider } = context;
     const createdAt = context.scan.createdAt;
-    const systemPrompt = this.buildSystemPrompt(context, provider.kind === "local" ? "local" : "hosted");
-    const userPrompt = this.buildUserPrompt(context);
+    const systemPrompt = this.buildSystemPrompt(context, provider.kind === "local" ? "local" : "hosted", context.tools);
+    const userPrompt = this.buildUserPrompt(context, context.tools);
 
     const state: LoopState = {
       coverageByLayer: new Map(),
@@ -550,7 +569,8 @@ export class SingleAgentScanService {
 
   private async runAnthropicLoop(context: SingleAgentContext, state: LoopState) {
     const model = this.createAnthropicLanguageModel(context.provider, context.model);
-    const evidenceTools = Object.fromEntries(context.tools.map((tool) => [
+    const selectedTools = selectToolsForContext(context.tools, this.buildSelectorContext(state, context));
+    const evidenceTools = Object.fromEntries(selectedTools.map((tool) => [
       tool.id,
       createSdkTool({
         description: tool.description ?? tool.name,
@@ -561,8 +581,8 @@ export class SingleAgentScanService {
 
     const result = await generateText({
       model,
-      system: this.buildSystemPrompt(context, "hosted"),
-      prompt: this.buildUserPrompt(context),
+      system: this.buildSystemPrompt(context, "hosted", selectedTools),
+      prompt: this.buildUserPrompt(context, selectedTools),
       tools: {
         ...evidenceTools,
         report_vulnerability: createSdkTool({
@@ -630,15 +650,29 @@ export class SingleAgentScanService {
     const messages: LocalModelMessage[] = [
       {
         role: "system",
-        content: this.buildSystemPrompt(context, "local")
+        content: this.buildSystemPrompt(context, "local", context.tools)
       },
       {
         role: "user",
-        content: this.buildUserPrompt(context)
+        content: this.buildUserPrompt(context, context.tools)
       }
     ];
 
     for (let iteration = 0; iteration < this.maxSteps; iteration += 1) {
+      const selectedTools = selectToolsForContext(
+        context.tools,
+        this.buildSelectorContext(state, context),
+        { maxTools: 12 }
+      );
+      messages[0] = {
+        role: "system",
+        content: this.buildSystemPrompt(context, "local", selectedTools)
+      };
+      messages[1] = {
+        role: "user",
+        content: this.buildUserPrompt(context, selectedTools)
+      };
+
       const rawContent = await this.callLocalModel(context.provider, context.model, messages, context.llm?.apiPath);
       if (rawContent.trim()) {
         await context.onWorkflowModelOutput?.({
@@ -690,7 +724,7 @@ export class SingleAgentScanService {
 
       if (action === "call_tool") {
         const toolId = typeof actionEnvelope["toolId"] === "string" ? actionEnvelope["toolId"] : "";
-        const tool = context.tools.find((candidate) => candidate.id === toolId);
+        const tool = selectedTools.find((candidate) => candidate.id === toolId);
         if (!tool) {
           await this.emitWorkflowEvent(context, {
             type: "verification",
@@ -1156,7 +1190,20 @@ export class SingleAgentScanService {
     }
   }
 
-  private buildSystemPrompt(context: SingleAgentContext, mode: "local" | "hosted") {
+  private buildSelectorContext(state: LoopState, context: SingleAgentContext): ToolSelectorContext {
+    return {
+      requestedLayers: context.request.scope.layers,
+      currentCoverage: state.coverageByLayer,
+      executedToolIds: state.executedResults.map((result) => result.toolId),
+      findings: state.vulnerabilities.map((vulnerability) => ({
+        primaryLayer: vulnerability.primaryLayer,
+        category: vulnerability.category
+      })),
+      allowActiveExploits: context.request.scope.allowActiveExploits
+    };
+  }
+
+  private buildSystemPrompt(context: SingleAgentContext, mode: "local" | "hosted", tools: AiTool[]) {
     if (mode === "hosted") {
       return context.agent.systemPrompt;
     }
@@ -1167,7 +1214,7 @@ export class SingleAgentScanService {
       `Target application: ${context.application.name}`,
       `Target URL: ${context.target.baseUrl}`,
       context.runtime ? `Runtime: ${context.runtime.name} (${context.runtime.provider}, ${context.runtime.region})` : null,
-      `Allowed tools: ${context.tools.map((tool) => `${tool.id}=${tool.name}`).join(", ") || "none"}`,
+      `Allowed tools this turn: ${tools.map((tool) => `${tool.id}=${tool.name}`).join(", ") || "none"}`,
       `Requested layers: ${context.request.scope.layers.join(", ")}`,
       "You are running in structured JSON action mode.",
       "Return exactly one JSON object per turn.",
@@ -1188,7 +1235,7 @@ export class SingleAgentScanService {
     ].filter(Boolean).join("\n");
   }
 
-  private buildUserPrompt(context: SingleAgentContext) {
+  private buildUserPrompt(context: SingleAgentContext, tools: AiTool[]) {
     return [
       `Scan scope targets: ${context.request.scope.targets.join(", ")}`,
       `Requested layers: ${context.request.scope.layers.join(", ")}`,
@@ -1196,6 +1243,14 @@ export class SingleAgentScanService {
       `Max duration minutes: ${context.request.scope.maxDurationMinutes}`,
       `Rate limit RPS: ${context.request.scope.rateLimitRps}`,
       `Allow active exploits: ${String(context.request.scope.allowActiveExploits)}`,
+      "Available tools this turn:",
+      ...tools.map((tool) => {
+        const propertyKeys = typeof tool.inputSchema["properties"] === "object" && tool.inputSchema["properties"] !== null
+          ? Object.keys(tool.inputSchema["properties"] as Record<string, unknown>)
+          : [];
+        return `- ${tool.id}: ${tool.name} [${tool.category}/${tool.riskTier}] inputKeys=${propertyKeys.join(",") || "none"}`;
+      }),
+      "Lifecycle actions always available: report_vulnerability, update_layer_coverage, submit_scan_completion.",
       "Start with the next highest-value evidence action.",
       "If a requested layer is blocked or unsupported, record that explicitly in layer coverage.",
       "Only claim coverage that is supported by persisted tool evidence or accepted vulnerabilities.",

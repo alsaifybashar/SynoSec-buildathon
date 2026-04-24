@@ -292,7 +292,7 @@ describe("SingleAgentScanService", () => {
     expect(requestBody.messages?.[0]?.content).toContain('{"action":"call_tool","toolId":"string","input":{...},"reasoning":"string"}');
     expect(requestBody.messages?.[0]?.content).toContain("Target application: Demo App");
     expect(requestBody.messages?.[0]?.content).toContain("Target URL: http://localhost:8888");
-    expect(requestBody.messages?.[0]?.content).toContain("Allowed tools: seed-service-scan=Service Scan");
+    expect(requestBody.messages?.[0]?.content).toContain("Allowed tools this turn: seed-service-scan=Service Scan");
     expect(requestBody.messages?.[0]?.content).toContain("Requested layers: L1, L4, L7");
     expect(requestBody.messages?.[1]?.content).toContain("Max duration minutes: 5");
     expect(requestBody.messages?.[1]?.content).toContain("Start with the next highest-value evidence action.");

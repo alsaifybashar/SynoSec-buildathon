@@ -7,9 +7,12 @@ import { createAiProvidersRepositoryFromEnvironment } from "@/features/modules/a
 import { createAiAgentsRepositoryFromEnvironment } from "@/features/modules/ai-agents/create-ai-agents-repository.js";
 import { createAiToolsRepositoryFromEnvironment } from "@/features/modules/ai-tools/create-ai-tools-repository.js";
 import { createWorkflowsRepositoryFromEnvironment } from "@/features/modules/workflows/create-workflows-repository.js";
+import { validateSeededToolDefinitions } from "../prisma/seed-data/ai-builder-defaults.js";
 
 const env = loadBackendEnv();
 const port = env.backendPort;
+
+validateSeededToolDefinitions();
 
 const app = createApp({
   applicationsRepository: createApplicationsRepositoryFromEnvironment(),
