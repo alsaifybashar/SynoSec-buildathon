@@ -12,7 +12,7 @@ import {
   type WorkflowDebugEventInput,
   type WorkflowLinkedScanInput,
   type WorkflowModelOutputInput
-} from "@/features/orchestration/index.js";
+} from "@/execution-engine/single-agent/index.js";
 import type { RuntimesRepository } from "@/features/runtimes/index.js";
 
 export class SingleAgentScanService {

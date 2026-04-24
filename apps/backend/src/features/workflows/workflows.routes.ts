@@ -13,11 +13,10 @@ import {
   updateWorkflowBodySchema
 } from "@synosec/contracts";
 import { type Express } from "express";
+import type { WorkflowExecutionEngine, WorkflowRunEventStream } from "@/execution-engine/contracts.js";
 import { registerCrudRoutes } from "@/shared/http/register-crud-routes.js";
 import type { WorkflowsRepository } from "./workflows.repository.js";
 import { WorkflowRunArtifactsService } from "./workflow-run-artifacts.service.js";
-import { WorkflowExecutionService } from "./workflow-execution.service.js";
-import { WorkflowRunStream } from "./workflow-run-stream.js";
 
 function writeSseMessage(response: { write: (chunk: string) => void }, payload: unknown) {
   response.write(`data: ${JSON.stringify(payload)}\n\n`);
@@ -26,8 +25,8 @@ function writeSseMessage(response: { write: (chunk: string) => void }, payload: 
 export function registerWorkflowsRoutes(
   app: Express,
   repository: WorkflowsRepository,
-  executionService: WorkflowExecutionService,
-  workflowRunStream: WorkflowRunStream,
+  executionService: WorkflowExecutionEngine,
+  workflowRunStream: WorkflowRunEventStream,
   workflowRunArtifactsService: WorkflowRunArtifactsService
 ) {
   registerCrudRoutes(app, {
@@ -162,8 +161,8 @@ export function registerWorkflowsRoutes(
 
   app.post(`${apiRoutes.workflowRuns}/:id/step`, async (request, response, next) => {
     try {
-      const run = await executionService.stepRun(request.params.id);
-      response.json(workflowRunSchema.parse(run));
+      await executionService.stepRun(request.params.id);
+      response.status(204).end();
     } catch (error) {
       next(error);
     }

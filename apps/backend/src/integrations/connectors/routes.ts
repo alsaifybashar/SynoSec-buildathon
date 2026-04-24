@@ -6,9 +6,9 @@ import {
   type Scan
 } from "@synosec/contracts";
 import { Router, type Request, type Response } from "express";
+import { ToolBroker } from "@/execution-engine/workflow/broker/tool-broker.js";
 import { assertConnectorAuth } from "@/integrations/connectors/auth.js";
 import { connectorControlPlane } from "@/integrations/connectors/control-plane.js";
-import { ToolBroker } from "@/features/workflows/engine/broker/tool-broker.js";
 import { ensureScanRecord } from "@/features/scans/scan-records.js";
 
 function getSinglePathParam(value: string | string[] | undefined): string | null {

@@ -13,6 +13,7 @@ import type {
 } from "@synosec/contracts";
 import { workflowFindingSubmissionSchema } from "@synosec/contracts";
 import { z } from "zod";
+import type { WorkflowRunStream } from "@/execution-engine/workflow/workflow-run-stream.js";
 import { RequestError } from "@/shared/http/request-error.js";
 import { compileToolRequestFromDefinition } from "@/features/ai-tools/index.js";
 import type { AiAgentsRepository } from "@/features/ai-agents/index.js";
@@ -21,11 +22,10 @@ import type { AiToolsRepository } from "@/features/ai-tools/index.js";
 import type { ApplicationsRepository } from "@/features/applications/index.js";
 import type { RuntimesRepository } from "@/features/runtimes/index.js";
 import { createScan, getScan } from "@/features/scans/index.js";
-import { ToolBroker } from "@/features/workflows/engine/broker/tool-broker.js";
+import { ToolBroker } from "./broker/tool-broker.js";
 import { inferLayer, normalizeToolInput, parseExecutionTarget, parseTarget, truncate } from "./workflow-execution.utils.js";
-import type { WorkflowRunStream } from "./workflow-run-stream.js";
 import { WorkflowRunEventPublisher } from "./workflow-run-event-publisher.js";
-import type { WorkflowsRepository } from "./workflows.repository.js";
+import type { WorkflowsRepository } from "@/features/workflows/workflows.repository.js";
 
 type ExecutedToolResult = {
   toolId: string;
@@ -196,13 +196,17 @@ export class WorkflowExecutionService {
   }
 
   private buildTaskPrompt(input: PipelineContext) {
+    const evidenceTools = input.tools.filter((tool) => tool.executorType === "bash");
+    const builtinActions = input.tools.filter((tool) => tool.executorType === "builtin");
+
     return [
       `Workflow: ${input.workflow.name}`,
       `Objective: ${input.workflow.objective}`,
       `Application: ${input.application.name}`,
       `Target URL: ${input.target.baseUrl}`,
       input.runtime ? `Runtime: ${input.runtime.name} (${input.runtime.provider}, ${input.runtime.region})` : null,
-      `Allowed evidence tools: ${input.tools.map((tool) => `${tool.id}=${tool.name}`).join(", ") || "none"}`
+      `Allowed evidence tools: ${evidenceTools.map((tool) => `${tool.id}=${tool.name}`).join(", ") || "none"}`,
+      builtinActions.length > 0 ? `Visible built-in actions: ${builtinActions.map((tool) => `${tool.id}=${tool.name}`).join(", ")}` : null
     ].filter(Boolean).join("\n");
   }
 
@@ -363,7 +367,8 @@ export class WorkflowExecutionService {
     let terminalState: PipelineTerminalState | null = null;
     const abortController = new AbortController();
 
-    const evidenceTools = Object.fromEntries(context.tools.map((tool) => [
+    const bashTools = context.tools.filter((tool) => tool.executorType === "bash" && Boolean(tool.bashSource));
+    const evidenceTools = Object.fromEntries(bashTools.map((tool) => [
       tool.id,
       createSdkTool({
         description: tool.description ?? tool.name,

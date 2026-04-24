@@ -10,8 +10,9 @@ import { registerApplicationsRoutes, type ApplicationsRepository } from "@/featu
 import { registerRuntimesRoutes, type RuntimesRepository } from "@/features/runtimes/index.js";
 import { registerAiProvidersRoutes, type AiProvidersRepository } from "@/features/ai-providers/index.js";
 import { registerAiAgentsRoutes, type AiAgentsRepository } from "@/features/ai-agents/index.js";
-import { createToolsRouter, registerAiToolsRoutes, type AiToolsRepository } from "@/features/ai-tools/index.js";
+import { registerAiToolsRoutes, type AiToolsRepository } from "@/features/ai-tools/index.js";
 import { registerWorkflowsRoutes, type WorkflowsRepository } from "@/features/workflows/index.js";
+import { createToolsRouter } from "@/execution-engine/tools/index.js";
 import { createConnectorsRouter } from "@/integrations/connectors/routes.js";
 import { registerOrchestratorRoutes } from "@/features/orchestrator/index.js";
 import { createRouteServices } from "@/app/create-route-services.js";
@@ -41,10 +42,10 @@ export function registerRoutes(app: Express, dependencies: {
   registerWorkflowsRoutes(
     app,
     dependencies.workflowsRepository,
-    routeServices.workflowExecutionService,
-    routeServices.workflowRunStream,
+    routeServices.workflowExecutionEngine,
+    routeServices.workflowRunEventStream,
     routeServices.workflowRunArtifactsService
   );
-  registerOrchestratorRoutes(app, routeServices.orchestratorService, routeServices.orchestratorStream);
+  registerOrchestratorRoutes(app, routeServices.orchestratorExecutionEngine, routeServices.orchestratorEventStream);
   app.use(createToolsRouter());
 }

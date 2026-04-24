@@ -1,6 +1,6 @@
 import type { WorkflowRun, WorkflowTraceEvent } from "@synosec/contracts";
+import { WorkflowRunStream } from "@/execution-engine/workflow/workflow-run-stream.js";
 import type { WorkflowsRepository } from "@/features/workflows/workflows.repository.js";
-import { WorkflowRunStream } from "@/features/workflows/workflow-run-stream.js";
 
 export class WorkflowRunEventPublisher {
   constructor(

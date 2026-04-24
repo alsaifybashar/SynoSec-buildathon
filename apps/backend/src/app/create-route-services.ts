@@ -1,6 +1,6 @@
-import { OrchestratorService, OrchestratorStream } from "@/features/orchestrator/index.js";
-import { WorkflowExecutionService, WorkflowRunArtifactsService, WorkflowRunStream } from "@/features/workflows/index.js";
 import type { AppDependencies } from "@/app/create-app.js";
+import { createExecutionServices } from "@/execution-engine/create-execution-services.js";
+import { WorkflowRunArtifactsService } from "@/features/workflows/index.js";
 
 export function createRouteServices(dependencies: Pick<
   AppDependencies,
@@ -11,18 +11,7 @@ export function createRouteServices(dependencies: Pick<
   | "aiToolsRepository"
   | "workflowsRepository"
 >) {
-  const orchestratorStream = new OrchestratorStream();
-  const orchestratorService = new OrchestratorService(orchestratorStream, dependencies.aiProvidersRepository);
-  const workflowRunStream = new WorkflowRunStream();
-  const workflowExecutionService = new WorkflowExecutionService(
-    dependencies.workflowsRepository,
-    dependencies.applicationsRepository,
-    dependencies.runtimesRepository,
-    dependencies.aiAgentsRepository,
-    dependencies.aiProvidersRepository,
-    dependencies.aiToolsRepository,
-    workflowRunStream
-  );
+  const executionServices = createExecutionServices(dependencies);
   const workflowRunArtifactsService = new WorkflowRunArtifactsService(
     dependencies.workflowsRepository,
     dependencies.aiAgentsRepository,
@@ -30,10 +19,7 @@ export function createRouteServices(dependencies: Pick<
   );
 
   return {
-    orchestratorStream,
-    orchestratorService,
-    workflowRunStream,
-    workflowExecutionService,
+    ...executionServices,
     workflowRunArtifactsService
   };
 }

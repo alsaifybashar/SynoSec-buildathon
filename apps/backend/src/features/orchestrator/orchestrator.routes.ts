@@ -1,7 +1,6 @@
 import { type Express } from "express";
 import { z } from "zod";
-import { OrchestratorService } from "./orchestrator.service.js";
-import { OrchestratorStream } from "./orchestrator.stream.js";
+import type { OrchestratorEventStream, OrchestratorExecutionEngine } from "@/execution-engine/contracts.js";
 
 const createRunBodySchema = z.object({
   targetUrl: z.string().url().min(1),
@@ -14,8 +13,8 @@ function writeSse(res: { write: (chunk: string) => void }, event: unknown) {
 
 export function registerOrchestratorRoutes(
   app: Express,
-  service: OrchestratorService,
-  stream: OrchestratorStream
+  service: OrchestratorExecutionEngine,
+  stream: OrchestratorEventStream
 ) {
   // List runs
   app.get("/api/orchestrator/runs", async (_req, res, next) => {

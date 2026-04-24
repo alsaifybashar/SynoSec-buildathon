@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { WorkflowRun, WorkflowTraceEvent } from "@synosec/contracts";
 import { WorkflowExecutionService } from "./workflow-execution.service.js";
 import { WorkflowRunStream } from "./workflow-run-stream.js";
 
@@ -85,16 +86,16 @@ function createService(overrides: {
       },
       getRunById: async () => createdRuns[0] as any,
       getLatestRunByWorkflowId: async () => createdRuns[0] as any,
-      appendRunEvent: async (_runId, event, patch = {}) => ({
+      appendRunEvent: async (_runId: string, event: WorkflowTraceEvent, patch: Partial<WorkflowRun> = {}) => ({
         ...(createdRuns[0] as any),
         ...patch,
         events: [...(((createdRuns[0] as any)?.events ?? [])), event]
       }),
-      updateRunState: async (_runId, patch) => ({
+      updateRunState: async (_runId: string, patch: Partial<WorkflowRun>) => ({
         ...(createdRuns[0] as any),
         ...patch
       }),
-      updateRun: async (run) => run as any
+      updateRun: async (run: WorkflowRun) => run as any
     },
     {
       getById: async () => ({

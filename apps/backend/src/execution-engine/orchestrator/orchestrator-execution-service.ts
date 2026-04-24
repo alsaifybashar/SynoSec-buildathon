@@ -5,19 +5,19 @@ import { promisify } from "node:util";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText } from "ai";
 import type { Observation, ToolRequest, ToolRun } from "@synosec/contracts";
+import type {
+  AttackMapEdge,
+  AttackMapNode,
+  AttackPlan,
+  AttackPlanPhase,
+  OrchestratorEvent,
+  Severity
+} from "@/execution-engine/orchestrator/orchestrator-stream.js";
+import { OrchestratorStream } from "@/execution-engine/orchestrator/orchestrator-stream.js";
+import { executeScriptedTool } from "@/execution-engine/tools/script-executor.js";
 import { prisma } from "@/shared/database/prisma-client.js";
 import { RequestError } from "@/shared/http/request-error.js";
 import type { AiProvidersRepository, StoredAiProvider } from "@/features/ai-providers/index.js";
-import { executeScriptedTool } from "@/features/ai-tools/index.js";
-import {
-  type AttackMapEdge,
-  type AttackMapNode,
-  type AttackPlan,
-  type AttackPlanPhase,
-  type OrchestratorEvent,
-  type Severity,
-  OrchestratorStream
-} from "./orchestrator.stream.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -175,7 +175,7 @@ function mapRow(row: {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toJson(value: unknown): any { return JSON.parse(JSON.stringify(value)); }
 
-export class OrchestratorService {
+export class OrchestratorExecutionEngineService {
   constructor(
     private readonly stream: OrchestratorStream,
     private readonly aiProvidersRepository: AiProvidersRepository

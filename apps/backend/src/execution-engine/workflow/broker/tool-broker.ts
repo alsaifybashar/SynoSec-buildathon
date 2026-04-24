@@ -9,11 +9,11 @@ import type {
   ValidationStatus,
   WsEvent
 } from "@synosec/contracts";
-import { buildScriptCommandPreview } from "@/features/ai-tools/index.js";
+import { buildScriptCommandPreview } from "@/execution-engine/tools/script-executor.js";
 import { createAuditEntry } from "@/features/scans/index.js";
-import { confidenceEngine } from "@/features/workflows/engine/broker/confidence-engine.js";
-import { evidenceStore } from "@/features/workflows/engine/broker/evidence-store.js";
-import { authorizeToolRequest } from "@/features/workflows/engine/broker/policy.js";
+import { confidenceEngine } from "./confidence-engine.js";
+import { evidenceStore } from "./evidence-store.js";
+import { authorizeToolRequest } from "./policy.js";
 import {
   createToolExecutionTransport,
   type ToolExecutionTransport

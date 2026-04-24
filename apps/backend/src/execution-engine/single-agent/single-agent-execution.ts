@@ -31,7 +31,8 @@ import {
   selectToolsForContext,
   type ToolSelectorContext
 } from "@/features/scans/index.js";
-import { ToolBroker, normalizeToolInput, parseExecutionTarget, parseTarget, truncate } from "@/features/workflows/index.js";
+import { ToolBroker } from "@/execution-engine/workflow/broker/tool-broker.js";
+import { normalizeToolInput, parseExecutionTarget, parseTarget, truncate } from "@/execution-engine/workflow/workflow-execution.utils.js";
 import { compileToolRequestFromDefinition } from "@/features/ai-tools/index.js";
 import type { AiAgentsRepository } from "@/features/ai-agents/index.js";
 import type { AiProvidersRepository, StoredAiProvider } from "@/features/ai-providers/index.js";

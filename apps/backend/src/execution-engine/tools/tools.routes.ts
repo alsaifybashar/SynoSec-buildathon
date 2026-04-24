@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { getToolCapabilities } from "@/features/ai-tools/runtime/tool-catalog.js";
+import { getToolCapabilities } from "./tool-catalog.js";
 
 export function createToolsRouter(): Router {
   const router = Router();

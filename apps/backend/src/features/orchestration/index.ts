@@ -1,7 +1,7 @@
-export { SingleAgentExecutionFacade } from "./single-agent-execution.js";
+export { SingleAgentExecutionFacade } from "@/execution-engine/single-agent/index.js";
 export type {
   SingleAgentExecutionDependencies,
   WorkflowDebugEventInput,
   WorkflowLinkedScanInput,
   WorkflowModelOutputInput
-} from "./single-agent-execution.js";
+} from "@/execution-engine/single-agent/index.js";

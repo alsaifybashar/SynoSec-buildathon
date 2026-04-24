@@ -1,5 +1,5 @@
 import type { AiTool, OsiLayer, ScanLayerCoverage } from "@synosec/contracts";
-import { getToolCatalog, type ToolPhase } from "@/features/ai-tools/index.js";
+import { getToolCatalog, type ToolPhase } from "@/execution-engine/tools/index.js";
 
 export interface ToolSelectorContext {
   requestedLayers: OsiLayer[];
@@ -42,6 +42,7 @@ export function selectToolsForContext(
   context: ToolSelectorContext,
   options: SelectorOptions = {}
 ): AiTool[] {
+  const bashTools = allTools.filter((tool) => tool.executorType === "bash" && Boolean(tool.bashSource));
   const maxTools = Math.max(1, options.maxTools ?? 12);
   const minTools = Math.max(1, Math.min(options.minTools ?? 3, maxTools));
   const uncoveredRequestedLayers = context.requestedLayers.filter((layer) => {
@@ -51,7 +52,7 @@ export function selectToolsForContext(
   const phaseStage = inferPhaseStage(context, uncoveredRequestedLayers);
   const executedToolIds = new Set(context.executedToolIds);
 
-  const ranked = allTools
+  const ranked = bashTools
     .map((tool) => {
       const metadata = catalogMetadataById.get(tool.id) ?? defaultMetadata;
       const riskGate = getRiskGateScore(tool, context.allowActiveExploits);
