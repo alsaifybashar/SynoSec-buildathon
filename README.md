@@ -118,8 +118,6 @@ Before using the deploy workflow, define these GitHub repository variables:
 
 - `VPS_HOST`
 - `VPS_USER`
-- `SERVER_NAME`
-- `NGINX_CONFIG_PATH`
 - `FRONTEND_URL`
 
 Define these GitHub repository secrets as well:
@@ -133,11 +131,8 @@ Define these GitHub repository secrets as well:
 Most non-secret application defaults now live in `infra/deploy/env.vps.template`, so GitHub only needs the host-specific variables above plus the runtime secrets. If you need to change default model, scan, connector, auth, or public port settings for every deployment, edit that committed template instead of adding more Actions variables.
 The deploy workflow hardcodes the VPS app directory to `/opt/synosec` and binds the host loopback ports to `3030` for the frontend and `3031` for the backend.
 The deploy user must already be able to create and write `${VPS_TARGET_DIR}` without `sudo`.
-The deploy user must also be able to write `NGINX_CONFIG_PATH` directly and run `/usr/sbin/nginx -t` plus `/usr/sbin/nginx -s reload` without privilege escalation. If those permissions are missing, deploy fails immediately.
 Production deploys no longer use `sudo` or `chown`.
 Production backend startup now runs `prisma db push --force-reset` followed by `prisma db seed`, so every deploy is intentionally destructive and recreates the seeded database state from `apps/backend/prisma/schema.prisma` plus the seed scripts.
-
-Set `SERVER_NAME` to the apex domain only, for example `synosecai.com`. The nginx template will serve both `synosecai.com` and `www.synosecai.com`.
 
 Set `FRONTEND_URL` to the public HTTPS origin: `https://synosecai.com`.
 
@@ -151,9 +146,16 @@ If production traffic can also land on `https://www.synosecai.com`, add both of 
 - `Authorized JavaScript origins`: `https://www.synosecai.com`
 - `Authorized redirect URIs`: `https://www.synosecai.com/api/auth/google`
 
-Set `NGINX_CONFIG_PATH` to the exact nginx site config path the deploy user can write directly, for example `/etc/nginx/sites-available/synosec`.
+Routine GitHub Actions deploys do not modify host `nginx`. Keep the host reverse proxy as a separate operational concern and update it manually only when the public domain, TLS certificate layout, or loopback proxy ports change.
 
-The host nginx config template lives at `infra/nginx/synosec.vps.conf.template` and is installed by the deploy workflow. It redirects HTTP to HTTPS, terminates TLS on the VPS using the standard Certbot layout under `/etc/letsencrypt/live/<server_name>/`, forwards the original client scheme/host to the app, and emits `Strict-Transport-Security`.
+The canonical host nginx template lives at `infra/nginx/synosec.vps.conf.template`. It redirects HTTP to HTTPS, terminates TLS on the VPS using the standard Certbot layout under `/etc/letsencrypt/live/<server_name>/`, forwards the original client scheme and host to the app, and emits `Strict-Transport-Security`.
+
+When you need to install or refresh that host config manually:
+
+- set `SERVER_NAME` to the apex domain only, for example `synosecai.com`
+- render the template with `SERVER_NAME`, `BACKEND_PUBLIC_PORT=3031`, and `FRONTEND_PUBLIC_PORT=3030`
+- install it to your nginx site path using the privileges required on that VPS
+- run `nginx -t` and reload nginx manually
 
 Post-deploy health checks now run on the VPS origin loopback endpoints instead of the public domain, so deploy validation does not depend on Cloudflare edge behavior.
 
