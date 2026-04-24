@@ -242,9 +242,11 @@ function createSystemMessage(event: WorkflowTraceEvent): WorkflowTranscriptSyste
     id: event.id,
     ord: event.ord,
     createdAt: event.createdAt,
-    title: getPayloadString(payload, "title") ?? "System",
-    summary: getPayloadString(payload, "summary") ?? "Pipeline event",
+    title: getPayloadString(payload, "title") ?? event.title,
+    summary: getPayloadString(payload, "summary") ?? event.summary,
     body: getPayloadString(payload, "body")
+      ?? getPayloadString(payload, "fullPrompt")
+      ?? event.detail
   };
 }
 
@@ -272,6 +274,79 @@ function createAssistantTurnShell(input: {
 
 function appendText(target: string | null, next: string) {
   return target ? `${target}${next}` : next;
+}
+
+function getLegacyToolInput(payload: Record<string, unknown>) {
+  const toolInput = payload["toolInput"];
+  return isRecord(toolInput) ? JSON.stringify(toolInput, null, 2) : null;
+}
+
+function getLegacyToolOutput(payload: Record<string, unknown>, event: WorkflowTraceEvent) {
+  const output = payload["output"];
+  if (output !== undefined) {
+    return JSON.stringify(output, null, 2);
+  }
+
+  return getPayloadString(payload, "fullOutput") ?? event.detail;
+}
+
+function getLegacyVerificationTone(event: WorkflowTraceEvent) {
+  const payload = event.payload ?? {};
+  const messageKind = getPayloadString(payload, "messageKind");
+
+  if (messageKind === "accept" || payload["accepted"] === true) {
+    return "accepted" as const;
+  }
+
+  if (getPayloadString(payload, "action") !== null || /model/i.test(event.title) || /unsupported structured action/i.test(event.detail ?? "")) {
+    return "model_error" as const;
+  }
+
+  if (getPayloadString(payload, "toolId") !== null || getPayloadString(payload, "toolName") !== null) {
+    return "tool_error" as const;
+  }
+
+  if (messageKind === "challenge") {
+    return "challenge" as const;
+  }
+
+  return "challenge" as const;
+}
+
+function normalizeLegacyVerification(event: WorkflowTraceEvent) {
+  const payload = event.payload ?? {};
+  const tone = getLegacyVerificationTone(event);
+  const toolName = getPayloadString(payload, "toolName");
+
+  if (tone === "model_error") {
+    return {
+      title: "Model output rejected",
+      summary: "The model returned an unsupported structured action. Retry with one supported action before the run can continue.",
+      body: event.detail,
+      tone,
+      toolName: null
+    };
+  }
+
+  if (tone === "tool_error") {
+    return {
+      title: `${toolName ?? "Tool"} error`,
+      summary: toolName
+        ? `${toolName} did not complete cleanly. Retry the tool, switch tools, or mark the layer as blocked.`
+        : "The tool did not complete cleanly. Retry the tool, switch tools, or mark the layer as blocked.",
+      body: event.detail,
+      tone,
+      toolName
+    };
+  }
+
+  return {
+    title: event.title,
+    summary: event.summary,
+    body: event.detail,
+    tone,
+    toolName
+  };
 }
 
 export function getWorkflowAgentId(workflow: Workflow) {
@@ -392,9 +467,11 @@ export function buildWorkflowTranscript(input: {
     const body = currentTurn.body?.trim() ?? "";
     currentTurn.body = body || null;
     currentTurn.reasoning = currentTurn.reasoning?.trim() || null;
-    currentTurn.summary = body
-      ? body.split("\n").map((line) => line.trim()).find(Boolean) ?? ""
-      : currentTurn.summary;
+    currentTurn.summary = currentTurn.summary.trim() || (
+      body
+        ? body.split("\n").map((line) => line.trim()).find(Boolean) ?? ""
+        : ""
+    );
     items.push(currentTurn);
     currentTurn = null;
   };
@@ -461,6 +538,20 @@ export function buildWorkflowTranscript(input: {
       continue;
     }
 
+    if (event.type === "model_decision") {
+      flushTurn();
+      currentTurn = createAssistantTurnShell({
+        id: event.id,
+        ord: event.ord,
+        createdAt: event.createdAt,
+        agentName
+      });
+      currentTurn.summary = event.summary;
+      currentTurn.body = getPayloadString(payload, "rawModelOutput") ?? event.detail;
+      currentTurn.reasoning = getPayloadString(payload, "reasoning");
+      continue;
+    }
+
     if (traceKind === "tool_call" || traceKind === "tool_call_streaming_start") {
       currentTurn?.details.push({
         kind: "tool_call",
@@ -469,7 +560,7 @@ export function buildWorkflowTranscript(input: {
         title: `Called ${getToolName(event, input.toolLookup)}`,
         toolId: getPayloadString(payload, "toolId"),
         toolName: getToolName(event, input.toolLookup),
-        body: getPayloadString(payload, "input")
+        body: getPayloadString(payload, "input") ?? getLegacyToolInput(payload) ?? event.detail
       });
       continue;
     }
@@ -496,9 +587,9 @@ export function buildWorkflowTranscript(input: {
         title: `${getToolName(event, input.toolLookup)} returned`,
         toolId: getPayloadString(payload, "toolId"),
         toolName: getToolName(event, input.toolLookup),
-        summary: getPayloadString(payload, "summary") ?? "Tool execution completed.",
-        body: serializedOutput,
-        observations: getPayloadStringList(payload, "observations"),
+        summary: getPayloadString(payload, "summary") ?? getPayloadString(payload, "outputPreview") ?? event.summary,
+        body: serializedOutput ?? getLegacyToolOutput(payload, event),
+        observations: getPayloadStringList(payload, "observations").concat(getPayloadStringList(payload, "observationSummaries")),
         status: event.status === "pending" ? "running" : event.status
       });
       continue;
@@ -533,17 +624,42 @@ export function buildWorkflowTranscript(input: {
       continue;
     }
 
-    if (traceKind === "run_completed" || traceKind === "run_failed") {
+    if (event.type === "verification") {
+      const normalized = normalizeLegacyVerification(event);
+      currentTurn?.details.push({
+        kind: "verification",
+        id: event.id,
+        ord: event.ord,
+        title: normalized.title,
+        summary: normalized.summary,
+        body: normalized.body,
+        status: event.status === "pending" ? "running" : event.status,
+        tone: normalized.tone,
+        toolName: normalized.toolName
+      });
+      continue;
+    }
+
+    if (
+      traceKind === "run_completed"
+      || traceKind === "run_failed"
+      || event.type === "stage_completed"
+      || event.type === "stage_failed"
+    ) {
       flushTurn();
+      const terminalKind =
+        traceKind === "run_failed" || event.type === "stage_failed"
+          ? "run_failed"
+          : "run_completed";
       closeoutEvent = {
         kind: "closeout",
         id: event.id,
         ord: event.ord,
         createdAt: event.createdAt,
-        title: getPayloadString(payload, "title") ?? (traceKind === "run_failed" ? "Pipeline failed" : "Pipeline completed"),
-        summary: getPayloadString(payload, "summary") ?? (traceKind === "run_failed" ? "The pipeline failed." : "The pipeline completed."),
-        body: getPayloadString(payload, "body"),
-        status: traceKind === "run_failed" ? "failed" : "completed"
+        title: getPayloadString(payload, "title") ?? event.title ?? (terminalKind === "run_failed" ? "Pipeline failed" : "Pipeline completed"),
+        summary: getPayloadString(payload, "summary") ?? event.summary ?? (terminalKind === "run_failed" ? "The pipeline failed." : "The pipeline completed."),
+        body: getPayloadString(payload, "body") ?? event.detail,
+        status: terminalKind === "run_failed" ? "failed" : "completed"
       };
       continue;
     }

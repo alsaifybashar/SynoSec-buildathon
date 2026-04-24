@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiAgent, AiProvider, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
 import { WorkflowsPage } from "@/features/workflows/page";
@@ -385,6 +386,19 @@ function paginatedResponse<T>(key: string, items: T[]) {
   };
 }
 
+function renderWorkflowsPage() {
+  return render(
+    <MemoryRouter>
+      <WorkflowsPage
+        workflowId={workflow.id}
+        onNavigateToList={() => {}}
+        onNavigateToCreate={() => {}}
+        onNavigateToDetail={() => {}}
+      />
+    </MemoryRouter>
+  );
+}
+
 describe("WorkflowsPage", () => {
   beforeEach(() => {
     vi.stubGlobal("EventSource", class {
@@ -434,14 +448,7 @@ describe("WorkflowsPage", () => {
       throw new Error(`Unhandled fetch: ${url}`);
     }));
 
-    render(
-      <WorkflowsPage
-        workflowId={workflow.id}
-        onNavigateToList={() => {}}
-        onNavigateToCreate={() => {}}
-        onNavigateToDetail={() => {}}
-      />
-    );
+    renderWorkflowsPage();
 
     expect((await screen.findAllByText("Complete the Initial Recon stage using allowed tools and structured reporting.")).length).toBeGreaterThan(0);
     expect(screen.getByText("Thread · Workflow Transcript · Hybrid Flow")).toBeInTheDocument();
@@ -490,14 +497,7 @@ describe("WorkflowsPage", () => {
       throw new Error(`Unhandled fetch: ${url}`);
     }));
 
-    render(
-      <WorkflowsPage
-        workflowId={workflow.id}
-        onNavigateToList={() => {}}
-        onNavigateToCreate={() => {}}
-        onNavigateToDetail={() => {}}
-      />
-    );
+    renderWorkflowsPage();
 
     expect((await screen.findAllByText("Initial Recon failed because HTTP Recon did not complete successfully.")).length).toBeGreaterThan(0);
     expect(screen.getByText(/Run complete · sealed/)).toBeInTheDocument();
@@ -537,14 +537,7 @@ describe("WorkflowsPage", () => {
       throw new Error(`Unhandled fetch: ${url}`);
     }));
 
-    render(
-      <WorkflowsPage
-        workflowId={workflow.id}
-        onNavigateToList={() => {}}
-        onNavigateToCreate={() => {}}
-        onNavigateToDetail={() => {}}
-      />
-    );
+    renderWorkflowsPage();
 
     expect(await screen.findByText("Thread · Workflow Transcript · Hybrid Flow")).toBeInTheDocument();
     expect(screen.getAllByText("Complete the Initial Recon stage using allowed tools and structured reporting.").length).toBeGreaterThan(0);

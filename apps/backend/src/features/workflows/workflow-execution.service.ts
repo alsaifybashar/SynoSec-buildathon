@@ -20,7 +20,7 @@ import type { AiProvidersRepository, StoredAiProvider } from "@/features/ai-prov
 import type { AiToolsRepository } from "@/features/ai-tools/index.js";
 import type { ApplicationsRepository } from "@/features/applications/index.js";
 import type { RuntimesRepository } from "@/features/runtimes/index.js";
-import { createScan, getScan } from "@/features/scans/scan-store.js";
+import { createScan, getScan } from "@/features/scans/index.js";
 import { ToolBroker } from "@/features/workflows/engine/broker/tool-broker.js";
 import { inferLayer, normalizeToolInput, parseExecutionTarget, parseTarget, truncate } from "./workflow-execution.utils.js";
 import type { WorkflowRunStream } from "./workflow-run-stream.js";
