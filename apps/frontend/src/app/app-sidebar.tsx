@@ -158,7 +158,7 @@ function SettingsPopover({
       </button>
 
       {isOpen ? (
-        <div className="absolute bottom-0 right-0 z-20 mb-2 ml-2 w-52 translate-x-full rounded-md border border-sidebar-border/70 bg-sidebar px-3 py-3 shadow-xl">
+        <div className="absolute bottom-0 right-0 z-[80] mb-2 ml-2 w-52 translate-x-full rounded-md border border-sidebar-border/70 bg-sidebar px-3 py-3 shadow-xl">
           <div className="space-y-3">
             <div className="space-y-1.5">
               <div className="font-mono text-[0.58rem] uppercase tracking-[0.24em] text-sidebar-muted-foreground/70">
