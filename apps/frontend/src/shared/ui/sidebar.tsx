@@ -10,7 +10,7 @@ export function Sidebar({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return (
     <aside
       className={cn(
-        "sticky top-0 hidden h-screen w-[208px] shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground xl:block",
+        "sticky top-0 z-30 hidden h-screen w-[208px] shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground xl:block",
         className
       )}
       {...props}

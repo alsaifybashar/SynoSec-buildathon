@@ -114,7 +114,7 @@ export function DetailFieldGroup({
 }) {
   return (
     <section
-      className={["-mx-1 grid gap-5 border-l border-border/60 py-3 pl-6 lg:grid-cols-2", className]
+      className={["-mx-1 grid gap-5 border-l border-border/60 py-3 pl-6 pr-6 lg:grid-cols-2", className]
         .filter(Boolean)
         .join(" ")}
     >

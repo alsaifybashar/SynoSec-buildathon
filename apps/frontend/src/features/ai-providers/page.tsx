@@ -332,12 +332,12 @@ export function AiProvidersPage({
       }}
       onExportJson={!isCreateMode ? handleExportJson : undefined}
       sidebar={provider ? (
-        <div className="space-y-4 rounded-xl border border-border bg-card/70 p-4">
+        <>
           <DetailSidebarItem label="Kind">{kindLabels[provider.kind]}</DetailSidebarItem>
           <DetailSidebarItem label="Status">{statusLabels[provider.status]}</DetailSidebarItem>
           <DetailSidebarItem label="Secret">{provider.apiKeyConfigured ? "Configured" : "Not configured"}</DetailSidebarItem>
           <DetailSidebarItem label="Updated">{formatTimestamp(provider.updatedAt)}</DetailSidebarItem>
-        </div>
+        </>
       ) : undefined}
     >
       <DetailFieldGroup title="Provider Configuration" className="bg-card/70">

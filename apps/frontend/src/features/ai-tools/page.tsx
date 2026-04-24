@@ -723,11 +723,11 @@ export function AiToolsPage({
       onExportJson={!isCreateMode ? handleExportJson : undefined}
       saveLabel={isSystemTool ? "System tool" : "Save"}
       sidebar={tool ? (
-        <div className="space-y-4 rounded-xl border border-border bg-card/70 p-4">
+        <>
           <DetailSidebarItem label="Source">{tool.source}</DetailSidebarItem>
           <DetailSidebarItem label="Status">{statusLabels[tool.status]}</DetailSidebarItem>
           <DetailSidebarItem label="Updated">{formatTimestamp(tool.updatedAt)}</DetailSidebarItem>
-        </div>
+        </>
       ) : undefined}
     >
       <DetailFieldGroup title="Definition" className="bg-card/70">

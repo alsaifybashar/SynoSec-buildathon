@@ -350,12 +350,12 @@ export function AiAgentsPage({
       }}
       onExportJson={!isCreateMode ? handleExportJson : undefined}
       sidebar={agent ? (
-        <div className="space-y-4 rounded-xl border border-border bg-card/70 p-4">
+        <>
           <DetailSidebarItem label="Status">{statusLabels[agent.status]}</DetailSidebarItem>
           <DetailSidebarItem label="Provider">{providerLookup[agent.providerId] ?? "Unknown"}</DetailSidebarItem>
           <DetailSidebarItem label="Tools">{agent.toolIds.length}</DetailSidebarItem>
           <DetailSidebarItem label="Updated">{formatTimestamp(agent.updatedAt)}</DetailSidebarItem>
-        </div>
+        </>
       ) : undefined}
     >
       <DetailFieldGroup title="Agent Configuration" className="bg-card/70">

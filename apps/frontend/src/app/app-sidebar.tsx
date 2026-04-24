@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { navigationTree, type NavigationId } from "@/app/navigation";
 import { logout } from "@/features/auth/auth-store";
 import { cn } from "@/shared/lib/utils";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
+import { Button } from "@/shared/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -72,37 +72,31 @@ function ThemeSwatch({ swatch, className }: { swatch: ThemeMeta["swatch"]; class
   );
 }
 
-function ThemeSwitcher({ value, onValueChange }: { value: ThemeId; onValueChange: (theme: ThemeId) => void }) {
-  const current = themes.find((theme) => theme.id === value) ?? themes[0]!;
-
+function ThemeToggle({ value, onValueChange }: { value: ThemeId; onValueChange: (theme: ThemeId) => void }) {
   return (
-    <Select value={value} onValueChange={(nextValue) => onValueChange(nextValue as ThemeId)}>
-      <SelectTrigger
-        aria-label="Select theme"
-        className="h-7 w-auto gap-1 rounded-[3px] border-sidebar-border/60 bg-sidebar-accent/40 px-2 text-[0.7rem] font-medium leading-none text-sidebar-foreground hover:bg-sidebar-accent [&>svg]:h-[1em] [&>svg]:w-[1em] [&>svg]:text-sidebar-muted-foreground"
-      >
-        <SelectValue>
-          <span className="flex items-center gap-1">
-            <ThemeSwatch swatch={current.swatch} className="!h-3 !w-5" />
-            <span className="truncate">{current.label}</span>
-          </span>
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent align="end" className="min-w-[10rem] p-1">
-        {themes.map((theme) => (
-          <SelectItem
+    <div className="grid grid-cols-2 gap-1 rounded-md border border-sidebar-border/60 bg-sidebar-accent/30 p-1">
+      {themes.map((theme) => {
+        const isActive = theme.id === value;
+
+        return (
+          <button
             key={theme.id}
-            value={theme.id}
-            className="rounded-sm py-1.5 pl-2 pr-6 text-[0.75rem] focus:bg-accent/70"
+            type="button"
+            aria-pressed={isActive}
+            className={cn(
+              "flex items-center justify-center gap-1 rounded-sm px-1.5 py-1.5 text-[0.66rem] font-medium leading-none transition-colors",
+              isActive
+                ? "bg-sidebar text-sidebar-foreground shadow-sm ring-1 ring-sidebar-border/70"
+                : "text-sidebar-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+            )}
+            onClick={() => onValueChange(theme.id)}
           >
-            <span className="flex items-center gap-2">
-              <ThemeSwatch swatch={theme.swatch} className="!h-3 !w-5" />
-              <span className="truncate">{theme.label}</span>
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+            <ThemeSwatch swatch={theme.swatch} className="!h-2.5 !w-4.5" />
+            <span className="truncate">{theme.label}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -158,33 +152,29 @@ function SettingsPopover({
       </button>
 
       {isOpen ? (
-        <div className="absolute bottom-0 right-0 z-[80] mb-2 ml-2 w-52 translate-x-full rounded-md border border-sidebar-border/70 bg-sidebar px-3 py-3 shadow-xl">
-          <div className="space-y-3">
+        <div className="absolute bottom-0 right-0 z-[80] mb-2 ml-2 w-44 translate-x-full rounded-md border border-sidebar-border/70 bg-sidebar px-2.5 py-2.5 shadow-xl">
+          <div className="space-y-2.5">
             <div className="space-y-1.5">
-              <div className="font-mono text-[0.58rem] uppercase tracking-[0.24em] text-sidebar-muted-foreground/70">
+              <div className="font-mono text-[0.56rem] uppercase tracking-[0.24em] text-sidebar-muted-foreground/70">
                 Theme
               </div>
-              <ThemeSwitcher
-                value={theme}
-                onValueChange={(nextTheme) => {
-                  onThemeChange(nextTheme);
-                  setIsOpen(false);
-                }}
-              />
+              <ThemeToggle value={theme} onValueChange={onThemeChange} />
             </div>
 
-            <div className="border-t border-sidebar-border/50 pt-3">
-              <button
+            <div className="border-t border-sidebar-border/50 pt-2.5">
+              <Button
                 type="button"
-                className="flex w-full items-center gap-1.5 rounded-sm px-2 py-1 text-left text-[0.64rem] font-medium uppercase tracking-[0.18em] text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground [&_svg]:h-[0.95em] [&_svg]:w-[0.95em]"
+                variant="outline"
+                size="sm"
+                className="h-8 w-full justify-between border-sidebar-border/70 bg-sidebar-accent/20 px-2.5 text-[0.66rem] uppercase tracking-[0.16em] text-sidebar-foreground hover:bg-sidebar-accent/60"
                 onClick={() => {
                   setIsOpen(false);
                   onLogout();
                 }}
               >
-                <LogOut className="text-sidebar-muted-foreground" />
                 <span>Sign out</span>
-              </button>
+                <LogOut className="text-sidebar-muted-foreground" />
+              </Button>
             </div>
           </div>
         </div>
