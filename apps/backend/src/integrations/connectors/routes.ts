@@ -8,8 +8,8 @@ import {
 import { Router, type Request, type Response } from "express";
 import { assertConnectorAuth } from "@/integrations/connectors/auth.js";
 import { connectorControlPlane } from "@/integrations/connectors/control-plane.js";
-import { ToolBroker } from "@/workflow-engine/broker/tool-broker.js";
-import { createScan, getScan } from "@/platform/db/scan-store.js";
+import { ToolBroker } from "@/features/workflows/engine/broker/tool-broker.js";
+import { ensureScanRecord } from "@/features/scans/scan-records.js";
 
 function getSinglePathParam(value: string | string[] | undefined): string | null {
   if (typeof value === "string") {
@@ -116,9 +116,7 @@ export function createConnectorsRouter(): Router {
         createdAt: new Date().toISOString()
       };
 
-      if (!await getScan(scan.id)) {
-        await createScan(scan);
-      }
+      await ensureScanRecord(scan);
 
       const broker = new ToolBroker({ broadcast: () => undefined });
       const result = await broker.executeRequests({
