@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { mockWorkflow, formatTime, type MockSeverity, type MockTurn } from "./mock-data";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 const ATOM_INTERVAL_MS = 220;
 const STREAM_TICK_MS = 20;
@@ -33,6 +34,10 @@ type Atom = {
   severity?: MockSeverity;
   code?: string;
   stream?: boolean;
+  toolOutput?: string;
+  toolObservations?: string[];
+  toolStatus?: string;
+  toolDurationMs?: number;
 };
 
 const KIND_LABEL: Record<AtomKind, string> = {
@@ -54,6 +59,20 @@ const SEVERITY_LABEL: Record<MockSeverity, string> = {
   high: "High",
   medium: "Medium",
   low: "Low",
+};
+
+const KIND_ACCENT: Record<AtomKind, { label: string; border: string; dot: string; bg: string }> = {
+  "system-prompt": { label: "text-primary", border: "border-primary/30", dot: "bg-primary", bg: "" },
+  directive:      { label: "text-primary", border: "border-primary/30", dot: "bg-primary", bg: "" },
+  memory:         { label: "text-primary/80", border: "border-primary/25", dot: "bg-primary/80", bg: "" },
+  objective:      { label: "text-primary", border: "border-primary/30", dot: "bg-primary", bg: "" },
+  reasoning:      { label: "text-muted-foreground", border: "border-border", dot: "bg-muted-foreground", bg: "bg-muted/30" },
+  body:           { label: "text-foreground/70", border: "border-border", dot: "bg-foreground/50", bg: "" },
+  "tool-call":    { label: "text-warning", border: "border-warning/35", dot: "bg-warning", bg: "" },
+  "tool-output":  { label: "text-success", border: "border-success/35", dot: "bg-success", bg: "" },
+  observation:    { label: "text-success/80", border: "border-success/25", dot: "bg-success/80", bg: "" },
+  finding:        { label: "text-destructive", border: "border-destructive/40", dot: "bg-destructive", bg: "" },
+  sealed:         { label: "text-muted-foreground", border: "border-border", dot: "bg-muted-foreground", bg: "bg-muted/20" },
 };
 
 function buildAtoms(turns: MockTurn[]): Atom[] {
@@ -114,7 +133,7 @@ function buildAtoms(turns: MockTurn[]): Atom[] {
 
     for (const tool of turn.tools) {
       atoms.push({
-        key: `${turn.id}:tool:${tool.id}:call`,
+        key: `${turn.id}:tool:${tool.id}`,
         side: "left",
         kind: "tool-call",
         label: tool.name,
@@ -122,24 +141,10 @@ function buildAtoms(turns: MockTurn[]): Atom[] {
         code: tool.input,
         meta: `${tool.durationMs}ms`,
         stream: true,
-      });
-      atoms.push({
-        key: `${turn.id}:tool:${tool.id}:output`,
-        side: "left",
-        kind: "tool-output",
-        label: `${tool.name} · result`,
-        body: tool.output,
-        meta: tool.status,
-        stream: true,
-      });
-      tool.observations.forEach((obs, i) => {
-        atoms.push({
-          key: `${turn.id}:tool:${tool.id}:obs:${i}`,
-          side: "left",
-          kind: "observation",
-          label: "Observation",
-          body: obs,
-        });
+        toolOutput: tool.output,
+        toolObservations: tool.observations,
+        toolStatus: tool.status,
+        toolDurationMs: tool.durationMs,
       });
     }
 
@@ -177,11 +182,14 @@ function Bubble({
   progress: number;
   streaming: boolean;
 }) {
+  const [outputOpen, setOutputOpen] = useState(false);
   const isLeft = atom.side === "left";
   const showCode = atom.kind === "tool-call" && atom.code;
   const fullText = showCode ? (atom.code ?? "") : (atom.body ?? "");
   const shownText = atom.stream ? fullText.slice(0, progress) : fullText;
   const isStillStreaming = atom.stream === true && streaming && progress < fullText.length;
+  const isTool = atom.kind === "tool-call";
+  const toolReady = isTool && !isStillStreaming;
 
   const severityClass = atom.severity
     ? {
@@ -192,16 +200,33 @@ function Bubble({
       }[atom.severity]
     : "";
 
+  const accent = KIND_ACCENT[atom.kind];
+  const borderClass = atom.severity
+    ? atom.severity === "medium"
+      ? "border-warning/40"
+      : atom.severity === "low"
+        ? "border-primary/40"
+        : "border-destructive/45"
+    : accent.border;
+
   return (
     <div className={cn("flex w-full", isLeft ? "justify-start pr-[15%]" : "justify-end pl-[15%]")}>
-      <div className="flex min-w-0 max-w-full flex-col gap-1.5">
+      <div
+        className={cn(
+          "flex min-w-0 max-w-full flex-col gap-1.5",
+          isTool ? "w-[32rem]" : "",
+        )}
+      >
         <div
           className={cn(
             "flex items-center gap-2 px-0.5 font-mono text-[0.6rem] uppercase tracking-wider text-muted-foreground",
             isLeft ? "" : "flex-row-reverse",
           )}
         >
-          <span className="text-foreground/70">{KIND_LABEL[atom.kind]}</span>
+          <span className={cn("inline-flex items-center gap-1.5 font-semibold", accent.label)}>
+            <span className={cn("h-1 w-1 rounded-full", accent.dot)} />
+            {KIND_LABEL[atom.kind]}
+          </span>
           {atom.severity ? (
             <>
               <span className="text-border">·</span>
@@ -221,6 +246,8 @@ function Bubble({
         <div
           className={cn(
             "rounded-md border bg-card px-3.5 py-2.5",
+            borderClass,
+            accent.bg,
             isLeft ? "rounded-tl-sm" : "rounded-tr-sm",
           )}
         >
@@ -237,7 +264,86 @@ function Bubble({
               {shownText}
               {isStillStreaming ? <span className="duplex-caret">▋</span> : null}
             </pre>
-          ) : atom.body ? (
+          ) : null}
+
+          {isTool ? (
+            <div className="mt-2 flex items-center gap-2 font-mono text-[0.62rem] text-muted-foreground">
+              {isStillStreaming ? (
+                <span className="inline-flex items-center gap-1.5 text-warning">
+                  <span className="relative inline-flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-warning/50" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-warning" />
+                  </span>
+                  Running
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 text-success">
+                  <span className="inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+                  Completed
+                </span>
+              )}
+              {atom.toolDurationMs ? <span>· {atom.toolDurationMs}ms</span> : null}
+              {toolReady && atom.toolObservations && atom.toolObservations.length > 0 ? (
+                <span>· {atom.toolObservations.length} observation{atom.toolObservations.length === 1 ? "" : "s"}</span>
+              ) : null}
+              {toolReady && atom.toolOutput ? (
+                <button
+                  type="button"
+                  onClick={() => setOutputOpen((v) => !v)}
+                  aria-expanded={outputOpen}
+                  className={cn(
+                    "ml-auto inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[0.62rem] font-medium uppercase tracking-wider transition-colors",
+                    outputOpen
+                      ? "border-primary/50 bg-primary/10 text-primary hover:bg-primary/15"
+                      : "border-border bg-muted/40 text-foreground hover:bg-muted/60 hover:border-foreground/30",
+                  )}
+                >
+                  <ChevronRight
+                    className={cn(
+                      "h-3 w-3 transition-transform",
+                      outputOpen ? "rotate-90" : "",
+                    )}
+                  />
+                  {outputOpen ? "Hide output" : "Show output"}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {isTool && toolReady && outputOpen ? (
+            <div className="mt-2 space-y-2 border-t pt-2">
+              {atom.toolOutput ? (
+                <div>
+                  <div className="font-mono text-[0.58rem] uppercase tracking-wider text-muted-foreground">
+                    Output
+                  </div>
+                  <p className="mt-1 font-mono text-[0.7rem] leading-[1.55] text-foreground/85">
+                    {atom.toolOutput}
+                  </p>
+                </div>
+              ) : null}
+              {atom.toolObservations && atom.toolObservations.length > 0 ? (
+                <div>
+                  <div className="font-mono text-[0.58rem] uppercase tracking-wider text-muted-foreground">
+                    Observations
+                  </div>
+                  <ul className="mt-1 space-y-0.5">
+                    {atom.toolObservations.map((obs, i) => (
+                      <li
+                        key={i}
+                        className="grid grid-cols-[10px_1fr] gap-1.5 text-[0.76rem] leading-[1.5] text-foreground/85"
+                      >
+                        <span className="text-success">+</span>
+                        <span>{obs}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {!showCode && atom.body ? (
             <p
               className={cn(
                 atom.label ? "mt-1.5" : "",
@@ -299,11 +405,14 @@ export function DesignDuplex() {
     return () => window.clearTimeout(t);
   }, [isRunning, currentAtom, charProgress, currentFullText, total]);
 
+  const lastScrollTopRef = useRef(0);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     if (pinnedToBottom) {
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      el.scrollTop = el.scrollHeight;
+      lastScrollTopRef.current = el.scrollTop;
       setHasNewBelow(false);
     } else {
       setHasNewBelow(true);
@@ -313,34 +422,32 @@ export function DesignDuplex() {
   function handleScroll() {
     const el = containerRef.current;
     if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
-    setPinnedToBottom(atBottom);
-    if (atBottom) setHasNewBelow(false);
+    const currentTop = el.scrollTop;
+    const atBottom = el.scrollHeight - currentTop - el.clientHeight < NEAR_BOTTOM_PX;
+    const scrolledUp = currentTop < lastScrollTopRef.current - 1;
+    lastScrollTopRef.current = currentTop;
+
+    if (atBottom) {
+      setPinnedToBottom(true);
+      setHasNewBelow(false);
+    } else if (scrolledUp) {
+      setPinnedToBottom(false);
+    }
   }
 
   function jumpToLatest() {
-    containerRef.current?.scrollTo({
-      top: containerRef.current.scrollHeight,
-      behavior: "smooth",
-    });
-  }
-
-  function replay() {
-    setAtomIndex(0);
-    setCharProgress(0);
+    const el = containerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    lastScrollTopRef.current = el.scrollTop;
     setPinnedToBottom(true);
-    containerRef.current?.scrollTo({ top: 0, behavior: "auto" });
+    setHasNewBelow(false);
   }
 
   const visibleAtoms = atoms.slice(0, Math.min(atomIndex + 1, total));
-  const leftCount = visibleAtoms.filter((a) => a.side === "left").length;
-  const rightCount = visibleAtoms.filter((a) => a.side === "right").length;
-  const findingCount = visibleAtoms.filter((a) => a.kind === "finding").length;
-  const criticalCount = visibleAtoms.filter((a) => a.severity === "critical").length;
 
   const typingSide: Side | null =
     isRunning && !currentStreaming && nextAtom ? nextAtom.side : null;
-  const revealedCount = Math.min(atomIndex + 1, total);
 
   return (
     <div className="relative flex h-[calc(100vh-4rem)] min-h-0 flex-col bg-background text-foreground">
@@ -357,36 +464,6 @@ export function DesignDuplex() {
         .duplex-typing span:nth-child(2) { animation-delay: 0.15s; }
         .duplex-typing span:nth-child(3) { animation-delay: 0.3s; }
       `}</style>
-
-      <header className="flex flex-none items-center justify-between border-b px-6 py-3">
-        <div>
-          <p className="font-mono text-[0.58rem] uppercase tracking-[0.22em] text-muted-foreground">
-            Workflow · duplex trace
-          </p>
-          <h1 className="mt-1 text-[1.05rem] font-semibold leading-tight tracking-tight text-foreground">
-            {mockWorkflow.name}
-          </h1>
-          <p className="mt-0.5 font-mono text-[0.68rem] text-muted-foreground">
-            {mockWorkflow.target} · {mockWorkflow.agentName}
-          </p>
-        </div>
-        <div className="flex items-center gap-5 font-mono text-[0.64rem] text-muted-foreground">
-          <span>
-            <span className="text-foreground">{leftCount}</span> agent
-          </span>
-          <span>
-            <span className="text-foreground">{rightCount}</span> system
-          </span>
-          <span>
-            <span className="text-foreground">{findingCount}</span> findings
-          </span>
-          {criticalCount > 0 ? (
-            <span className="text-destructive">
-              <span>{criticalCount}</span> critical
-            </span>
-          ) : null}
-        </div>
-      </header>
 
       <div ref={containerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[56rem] px-6 py-8">
@@ -426,23 +503,6 @@ export function DesignDuplex() {
             ) : null}
           </div>
         </div>
-      </div>
-
-      <div className="flex flex-none items-center justify-between border-t px-6 py-2 font-mono text-[0.64rem] text-muted-foreground">
-        <div className="flex items-center gap-4">
-          <span>{isRunning ? "Streaming" : "Sealed"}</span>
-          <span>
-            {revealedCount} / {total}
-          </span>
-          <span>{pinnedToBottom ? "Following" : "Paused — scroll to resume"}</span>
-        </div>
-        <button
-          type="button"
-          onClick={replay}
-          className="rounded border px-2 py-1 text-[0.62rem] uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-        >
-          Replay
-        </button>
       </div>
 
       {hasNewBelow ? (

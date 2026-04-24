@@ -10,6 +10,7 @@ import {
   type Runtime,
   type Workflow,
   type WorkflowRun,
+  type WorkflowRunTranscriptResponse,
   type WorkflowRunStreamMessage,
   type WorkflowStatus
 } from "@synosec/contracts";
@@ -24,7 +25,7 @@ import { fetchJson } from "@/shared/lib/api";
 import { useResourceDetail } from "@/shared/hooks/use-resource-detail";
 import { useResourceList } from "@/shared/hooks/use-resource-list";
 import { exportResourceRecords, importResourceRecords } from "@/shared/lib/resource-transfer";
-import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
+import { DetailActionFade, DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -39,7 +40,7 @@ import {
   validateWorkflowForm
 } from "@/features/workflows/workflow-form";
 import { WorkflowTraceSection } from "@/features/workflows/workflow-trace-section";
-import { formatTimestamp, type RunAction, type RunStreamState } from "@/features/workflows/workflow-trace";
+import { formatTimestamp, type RunAction, type RunStreamState, type TranscriptProjection } from "@/features/workflows/workflow-trace";
 
 const statusLabels: Record<WorkflowStatus, string> = {
   draft: "Draft",
@@ -258,13 +259,15 @@ export function WorkflowsPage({
   workflowNameHint,
   onNavigateToList,
   onNavigateToCreate,
-  onNavigateToDetail
+  onNavigateToDetail,
+  onNavigateToAgent
 }: {
   workflowId?: string;
   workflowNameHint?: string;
   onNavigateToList: () => void;
   onNavigateToCreate: () => void;
   onNavigateToDetail: (id: string, label?: string) => void;
+  onNavigateToAgent?: (id: string) => void;
 }) {
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
@@ -287,6 +290,7 @@ export function WorkflowsPage({
   const [runPending, setRunPending] = useState(false);
   const [runAction, setRunAction] = useState<RunAction>(null);
   const [runStreamState, setRunStreamState] = useState<RunStreamState>("idle");
+  const [persistedTranscript, setPersistedTranscript] = useState<TranscriptProjection | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const isCreateMode = workflowId === "new";
   const workflowList = useResourceList(workflowsResource);
@@ -347,6 +351,7 @@ export function WorkflowsPage({
       setInitialValues(nextValues);
       setCurrentRun(null);
       setLiveModelOutput(null);
+      setPersistedTranscript(null);
       setRunAction(null);
       setRunStreamState("idle");
       setEditModalOpen(false);
@@ -367,6 +372,7 @@ export function WorkflowsPage({
       setInitialValues(nextValues);
       setCurrentRun(null);
       setLiveModelOutput(null);
+      setPersistedTranscript(null);
       setRunAction(null);
       setRunStreamState("idle");
       setEditModalOpen(false);
@@ -426,17 +432,6 @@ export function WorkflowsPage({
     eventSource.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data) as WorkflowRunStreamMessage;
-        if (payload.type === "model_output") {
-          setCurrentRun(payload.run);
-          setLiveModelOutput({
-            runId: payload.run.id,
-            source: payload.source,
-            text: payload.text,
-            final: payload.final,
-            createdAt: payload.createdAt
-          });
-          return;
-        }
         setCurrentRun(payload.run);
       } catch {
         setRunStreamState("disconnected");
@@ -455,11 +450,36 @@ export function WorkflowsPage({
   useEffect(() => {
     if (!currentRun) {
       setLiveModelOutput(null);
+      setPersistedTranscript(null);
       return;
     }
 
     setLiveModelOutput((existing) => existing?.runId === currentRun.id ? existing : null);
   }, [currentRun?.id]);
+
+  useEffect(() => {
+    if (!currentRun || currentRun.status === "running") {
+      setPersistedTranscript(null);
+      return;
+    }
+
+    let active = true;
+    fetchJson<WorkflowRunTranscriptResponse>(`${apiRoutes.workflowRuns}/${currentRun.id}/transcript`)
+      .then((payload) => {
+        if (active) {
+          setPersistedTranscript(payload.transcript);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setPersistedTranscript(null);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [currentRun?.id, currentRun?.status]);
 
   const applicationLookup = useMemo(() => Object.fromEntries(applications.map((item) => [item.id, item.name])), [applications]);
   const agentLookup = useMemo(() => Object.fromEntries(agents.map((item) => [item.id, item])), [agents]);
@@ -477,7 +497,7 @@ export function WorkflowsPage({
     {
       id: "agentId",
       header: "Agent",
-      cell: (row) => <span className="text-muted-foreground">{agentLookup[row.agentId ?? row.stages?.[0]?.agentId ?? ""]?.name ?? "Unknown"}</span>
+      cell: (row) => <span className="text-muted-foreground">{agentLookup[row.agentId]?.name ?? "Unknown"}</span>
     }
   ], [applicationLookup, agentLookup]);
 
@@ -571,27 +591,6 @@ export function WorkflowsPage({
     }
   }
 
-  async function handleNextStep() {
-    if (!currentRun) {
-      return;
-    }
-
-    setRunPending(true);
-    setRunAction("stepping");
-    try {
-      const run = await fetchJson<WorkflowRun>(`${apiRoutes.workflowRuns}/${currentRun.id}/step`, { method: "POST" });
-      setCurrentRun(run);
-      toast.success(run.status === "completed" ? "Workflow run completed" : "Workflow step completed");
-    } catch (error) {
-      toast.error("Failed to advance workflow run", {
-        description: error instanceof Error ? error.message : "Unknown error"
-      });
-    } finally {
-      setRunPending(false);
-      setRunAction(null);
-    }
-  }
-
   async function handleReloadRun() {
     setCurrentRun(null);
     setRunStreamState("idle");
@@ -670,10 +669,9 @@ export function WorkflowsPage({
     );
   }
 
-  const workflowStageFallback = workflow?.stages?.[0];
-  const workflowAgentId = workflow?.agentId ?? workflowStageFallback?.agentId ?? "";
-  const workflowObjective = workflow?.objective ?? workflowStageFallback?.objective ?? "Run the configured workflow against the selected target with the approved tools.";
-  const workflowAllowedToolIds = workflow?.allowedToolIds ?? workflowStageFallback?.allowedToolIds ?? [];
+  const workflowAgentId = workflow?.agentId ?? "";
+  const workflowObjective = workflow?.objective ?? "Run the configured workflow against the selected target with the approved tools.";
+  const workflowAllowedToolIds = workflow?.allowedToolIds ?? [];
   const workflowAgent = workflowAgentId ? agentLookup[workflowAgentId] : null;
   const workflowProvider = workflowAgent ? providerLookup[workflowAgent.providerId] : null;
   const effectiveModel = workflowAgent?.modelOverride ?? workflowProvider?.model ?? "Unknown model";
@@ -694,76 +692,83 @@ export function WorkflowsPage({
   return (
     <>
       <DetailPage
-      title={isCreateMode ? "New workflow" : workflow?.name ?? "Workflow detail"}
-      breadcrumbs={["Start", "Workflows", isCreateMode ? "New" : workflow?.name ?? "Detail"]}
-      isDirty={isDirty}
-      isSaving={saving}
-      onBack={onNavigateToList}
-      onSave={() => {
-        void handleSave();
-      }}
-      onDismiss={() => {
-        setFormValues(initialValues);
-        setErrors({});
-      }}
-      actions={(
-        <>
-          <Button type="button" variant="outline" onClick={onNavigateToList} className="h-9 text-[0.75rem]">
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Button>
-          {!isCreateMode ? (
-            <Button type="button" variant="outline" onClick={handleExportJson} className="h-9 text-[0.75rem]">
-              <Download className="h-4 w-4" />
-              Export JSON
+        title={isCreateMode ? "New workflow" : workflow?.name ?? "Workflow detail"}
+        breadcrumbs={["Start", "Workflows", isCreateMode ? "New" : workflow?.name ?? "Detail"]}
+        isDirty={isDirty}
+        isSaving={saving}
+        onBack={onNavigateToList}
+        onSave={() => {
+          void handleSave();
+        }}
+        onDismiss={() => {
+          setFormValues(initialValues);
+          setErrors({});
+        }}
+        actions={(
+          <>
+            <Button type="button" variant="outline" onClick={onNavigateToList} className="h-9 text-[0.75rem]">
+              <ArrowLeft className="h-4 w-4" />
+              Back
             </Button>
-          ) : null}
-          <div aria-hidden className="mx-1 hidden h-6 w-px bg-border/70 md:block" />
-          {isCreateMode ? (
-            <>
-              <Button type="button" onClick={() => void handleSave()} disabled={!isDirty || saving} className="h-9 text-[0.75rem]">
-                <Check className="h-4 w-4" />
-                Save
-              </Button>
-              <Button type="button" variant="outline" onClick={() => {
-                setFormValues(initialValues);
-                setErrors({});
-              }} disabled={!isDirty || saving} className="h-9 text-[0.75rem]">
-                <Undo2 className="h-4 w-4" />
-                Dismiss
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button type="button" onClick={handleStartRun} disabled={!workflow || runPending}>
-                <WorkflowIcon className="h-4 w-4" />
-                Start Run
-              </Button>
-              <Button type="button" variant="outline" onClick={handleReloadRun} disabled={!workflow || runPending}>
-                <RefreshCcw className="h-4 w-4" />
-                Reset
-              </Button>
-              <Button type="button" variant="outline" onClick={() => setEditModalOpen(true)} disabled={!workflow}>
-                <Pencil className="h-4 w-4" />
-                Edit Workflow
-              </Button>
-              <Button type="button" variant="outline" onClick={() => {
-                window.location.hash = `#/ai-agents/${workflowAgentId}`;
-              }} disabled={!workflow}>
-                <ExternalLink className="h-4 w-4" />
-                Edit Agent
-              </Button>
-            </>
-          )}
-        </>
-      )}
-      sidebar={workflow ? (
+            {isCreateMode ? (
+              <DetailActionFade show={isDirty} className="flex items-center gap-2">
+                <>
+                  <div aria-hidden className="mx-1 hidden h-6 w-px bg-border/70 md:block" />
+                  <Button type="button" onClick={() => void handleSave()} disabled={saving} className="h-9 text-[0.75rem]">
+                    <Check className="h-4 w-4" />
+                    Save
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => {
+                    setFormValues(initialValues);
+                    setErrors({});
+                  }} disabled={saving} className="h-9 text-[0.75rem]">
+                    <Undo2 className="h-4 w-4" />
+                    Dismiss
+                  </Button>
+                </>
+              </DetailActionFade>
+            ) : (
+              <>
+                <div aria-hidden className="mx-1 hidden h-6 w-px bg-border/70 md:block" />
+                <Button type="button" onClick={handleStartRun} disabled={!workflow || runPending}>
+                  <WorkflowIcon className="h-4 w-4" />
+                  Start Run
+                </Button>
+                <Button type="button" variant="outline" onClick={handleReloadRun} disabled={!workflow || runPending}>
+                  <RefreshCcw className="h-4 w-4" />
+                  Reset
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setEditModalOpen(true)} disabled={!workflow}>
+                  <Pencil className="h-4 w-4" />
+                  Edit Workflow
+                </Button>
+                <Button type="button" variant="outline" onClick={() => {
+                  if (workflowAgentId && onNavigateToAgent) {
+                    onNavigateToAgent(workflowAgentId);
+                  }
+                }} disabled={!workflow || !workflowAgentId || !onNavigateToAgent}>
+                  <ExternalLink className="h-4 w-4" />
+                  Edit Agent
+                </Button>
+              </>
+            )}
+            {!isCreateMode ? (
+              <div className="ml-auto">
+                <Button type="button" variant="outline" onClick={handleExportJson} className="h-9 text-[0.75rem]">
+                  <Download className="h-4 w-4" />
+                  Export JSON
+                </Button>
+              </div>
+            ) : null}
+          </>
+        )}
+        sidebar={workflow ? (
         <div className="space-y-4">
           <DetailSidebarItem label="Status">{statusLabels[workflow.status]}</DetailSidebarItem>
           <DetailSidebarItem label="Target">{applicationLookup[workflow.applicationId] ?? "Unknown"}</DetailSidebarItem>
           <DetailSidebarItem label="Agent">{workflowAgent?.name ?? "Unknown"}</DetailSidebarItem>
           <DetailSidebarItem label="Current Run">
-            {currentRun ? `${currentRun.status} · ${currentRun.trace.length} traced` : "No active run"}
+            {currentRun ? `${currentRun.status} · ${currentRun.events.length} events` : "No active run"}
           </DetailSidebarItem>
           <DetailSidebarItem label="Updated">{formatTimestamp(workflow.updatedAt)}</DetailSidebarItem>
         </div>
@@ -778,6 +783,7 @@ export function WorkflowsPage({
           run={currentRun}
           running={runPending || currentRun?.status === "running"}
           liveModelOutput={liveModelOutput && currentRun && liveModelOutput.runId === currentRun.id ? liveModelOutput : null}
+          transcript={persistedTranscript}
           summaryCard={{
             toolCount: approvedToolCount,
             toolNames: visibleToolNames

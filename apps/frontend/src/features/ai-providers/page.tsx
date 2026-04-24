@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { useMemo } from "react";
 import {
   apiRoutes,
   type AiProvider,
@@ -7,12 +6,9 @@ import {
   type AiProviderStatus,
   type CreateAiProviderBody
 } from "@synosec/contracts";
-import { fetchJson } from "@/shared/lib/api";
-import { useResourceDetail } from "@/shared/hooks/use-resource-detail";
-import { useResourceList } from "@/shared/hooks/use-resource-list";
 import { aiProvidersResource } from "@/features/ai-providers/resource";
 import { aiProviderTransfer } from "@/features/ai-providers/transfer";
-import { exportResourceRecords, importResourceRecords } from "@/shared/lib/resource-transfer";
+import { useCrudPage } from "@/shared/crud/use-crud-page";
 import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Input } from "@/shared/ui/input";
@@ -127,50 +123,30 @@ export function AiProvidersPage({
   onNavigateToCreate: () => void;
   onNavigateToDetail: (id: string, label?: string) => void;
 }) {
-  const [provider, setProvider] = useState<AiProvider | null>(null);
-  const [formValues, setFormValues] = useState<ProviderFormValues>(createEmptyFormValues);
-  const [initialValues, setInitialValues] = useState<ProviderFormValues>(createEmptyFormValues);
-  const [errors, setErrors] = useState<Partial<Record<keyof ProviderFormValues, string>>>({});
-  const [saving, setSaving] = useState(false);
-  const isCreateMode = providerId === "new";
-  const providerList = useResourceList(aiProvidersResource);
-  const providerDetail = useResourceDetail(aiProvidersResource, providerId && providerId !== "new" ? providerId : null);
+  const crud = useCrudPage({
+    recordLabel: "AI Provider",
+    titleLabel: "AI provider",
+    recordId: providerId,
+    route: apiRoutes.aiProviders,
+    resource: aiProvidersResource,
+    transfer: aiProviderTransfer,
+    createEmptyFormValues,
+    toFormValues,
+    parseRequestBody: (formValues) => {
+      const errors = validateForm(formValues);
+      if (Object.keys(errors).length > 0) {
+        return { errors };
+      }
 
-  useEffect(() => {
-    if (!providerId) {
-      return;
-    }
-
-    if (providerId === "new") {
-      const empty = createEmptyFormValues();
-      setProvider(null);
-      setFormValues(empty);
-      setInitialValues(empty);
-      setErrors({});
-      return;
-    }
-
-    if (providerDetail.state === "error") {
-      toast.error("AI provider not found", { description: providerDetail.message });
-      onNavigateToList();
-      return;
-    }
-
-    if (providerDetail.state !== "loaded") {
-      const empty = createEmptyFormValues();
-      setProvider(null);
-      setFormValues(empty);
-      setInitialValues(empty);
-      setErrors({});
-      return;
-    }
-
-    const values = toFormValues(providerDetail.item);
-    setProvider(providerDetail.item);
-    setFormValues(values);
-    setInitialValues(values);
-    setErrors({});
-  }, [onNavigateToList, providerDetail, providerId]);
+      return {
+        body: toRequestBody(formValues),
+        errors: {}
+      };
+    },
+    onNavigateToList,
+    onNavigateToDetail,
+    getItemLabel: (provider) => provider.name
+  });
 
   const columns = useMemo<ListPageColumn<AiProvider>[]>(() => [
     { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
@@ -197,117 +173,35 @@ export function AiProvidersPage({
     }
   ], []);
 
-  const isDirty = JSON.stringify(formValues) !== JSON.stringify(initialValues);
-
-  function handleFieldChange<Key extends keyof ProviderFormValues>(field: Key, value: ProviderFormValues[Key]) {
-    setFormValues((current) => ({ ...current, [field]: value }));
-    setErrors((current) => ({ ...current, [field]: undefined }));
-  }
-
-  async function handleSave() {
-    const nextErrors = validateForm(formValues);
-    if (Object.keys(nextErrors).length > 0) {
-      setErrors(nextErrors);
-      toast.error("Validation failed", { description: "Fix the highlighted fields before saving." });
-      return;
-    }
-
-    setSaving(true);
-
-    try {
-      const body = JSON.stringify(toRequestBody(formValues));
-
-      if (isCreateMode || !provider) {
-        const created = await fetchJson<AiProvider>(apiRoutes.aiProviders, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body
-        });
-        toast.success("AI provider created");
-        onNavigateToDetail(created.id, created.name);
-        return;
-      }
-
-      const updated = await fetchJson<AiProvider>(`${apiRoutes.aiProviders}/${provider.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body
-      });
-
-      const nextValues = toFormValues(updated);
-      setProvider(updated);
-      setFormValues(nextValues);
-      setInitialValues(nextValues);
-      toast.success("AI provider updated");
-    } catch (error) {
-      toast.error("AI provider request failed", {
-        description: error instanceof Error ? error.message : "Unknown error"
-      });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function handleExportJson() {
-    if (!provider) {
-      return;
-    }
-
-    exportResourceRecords(aiProviderTransfer, [provider], `ai-provider-${provider.name}`);
-  }
-
-  async function handleImportJson(file: File) {
-    try {
-      const created = await importResourceRecords(aiProviderTransfer, file);
-      toast.success(created.length === 1 ? "AI provider imported" : `${created.length} AI providers imported`);
-      providerList.refetch();
-    } catch (error) {
-      toast.error("AI provider import failed", {
-        description: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  }
-
-  function handleListExportJson(selected: AiProvider) {
-    exportResourceRecords(aiProviderTransfer, [selected], `ai-provider-${selected.name}`);
-  }
-
-  async function handleDeleteProvider(selected: AiProvider) {
-    await fetchJson<void>(`${apiRoutes.aiProviders}/${selected.id}`, {
-      method: "DELETE"
-    });
-    providerList.refetch();
-  }
-
   if (!providerId) {
     return (
       <ListPage
         title="AI Providers"
         recordLabel="AI Provider"
         columns={columns}
-        query={providerList.query}
-        dataState={providerList.dataState}
-        items={providerList.items}
-        meta={providerList.meta}
+        query={crud.list.query}
+        dataState={crud.list.dataState}
+        items={crud.list.items}
+        meta={crud.list.meta}
         filters={filters}
         emptyMessage="No AI providers have been configured yet."
-        onSearchChange={providerList.setSearch}
-        onFilterChange={providerList.setFilter}
-        onSortChange={providerList.setSort}
-        onPageChange={providerList.setPage}
-        onPageSizeChange={providerList.setPageSize}
-        onRetry={providerList.refetch}
+        onSearchChange={crud.list.setSearch}
+        onFilterChange={crud.list.setFilter}
+        onSortChange={crud.list.setSort}
+        onPageChange={crud.list.setPage}
+        onPageSizeChange={crud.list.setPageSize}
+        onRetry={crud.list.refetch}
         onAddRecord={onNavigateToCreate}
         onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
-        onImportJson={handleImportJson}
+        onImportJson={crud.importJson}
         getRowLabel={(row) => row.name}
-        onExportRowJson={handleListExportJson}
-        onDeleteRow={handleDeleteProvider}
+        onExportRowJson={crud.exportRowJson}
+        onDeleteRow={crud.deleteRow}
       />
     );
   }
 
-  if (!isCreateMode && providerDetail.state !== "loaded") {
+  if (!crud.isCreateMode && crud.detail.state !== "loaded") {
     return (
       <DetailLoadingState
         title={providerNameHint ?? "AI provider detail"}
@@ -320,32 +214,31 @@ export function AiProvidersPage({
 
   return (
     <DetailPage
-      title={isCreateMode ? "New AI provider" : provider?.name ?? "AI provider detail"}
-      breadcrumbs={["Start", "AI Providers", isCreateMode ? "New" : provider?.name ?? "Detail"]}
-      isDirty={isDirty}
-      isSaving={saving}
+      title={crud.isCreateMode ? "New AI provider" : crud.item?.name ?? "AI provider detail"}
+      breadcrumbs={["Start", "AI Providers", crud.isCreateMode ? "New" : crud.item?.name ?? "Detail"]}
+      isDirty={crud.isDirty}
+      isSaving={crud.saving}
       onBack={onNavigateToList}
-      onSave={handleSave}
-      onDismiss={() => {
-        setFormValues(initialValues);
-        setErrors({});
+      onSave={() => {
+        void crud.save();
       }}
-      onExportJson={!isCreateMode ? handleExportJson : undefined}
-      sidebar={provider ? (
+      onDismiss={crud.resetForm}
+      onExportJson={!crud.isCreateMode ? crud.exportCurrent : undefined}
+      sidebar={crud.item ? (
         <>
-          <DetailSidebarItem label="Kind">{kindLabels[provider.kind]}</DetailSidebarItem>
-          <DetailSidebarItem label="Status">{statusLabels[provider.status]}</DetailSidebarItem>
-          <DetailSidebarItem label="Secret">{provider.apiKeyConfigured ? "Configured" : "Not configured"}</DetailSidebarItem>
-          <DetailSidebarItem label="Updated">{formatTimestamp(provider.updatedAt)}</DetailSidebarItem>
+          <DetailSidebarItem label="Kind">{kindLabels[crud.item.kind]}</DetailSidebarItem>
+          <DetailSidebarItem label="Status">{statusLabels[crud.item.status]}</DetailSidebarItem>
+          <DetailSidebarItem label="Secret">{crud.item.apiKeyConfigured ? "Configured" : "Not configured"}</DetailSidebarItem>
+          <DetailSidebarItem label="Updated">{formatTimestamp(crud.item.updatedAt)}</DetailSidebarItem>
         </>
       ) : undefined}
     >
       <DetailFieldGroup title="Provider Configuration" className="bg-card/70">
-        <DetailField label="Name" required {...definedString(errors.name)}>
-          <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
+        <DetailField label="Name" required {...definedString(crud.errors.name)}>
+          <Input value={crud.formValues.name} onChange={(event) => crud.handleFieldChange("name", event.target.value)} aria-label="Name" />
         </DetailField>
         <DetailField label="Kind" required>
-          <Select value={formValues.kind} onValueChange={(value) => handleFieldChange("kind", value as AiProviderKind)}>
+          <Select value={crud.formValues.kind} onValueChange={(value) => crud.handleFieldChange("kind", value as AiProviderKind)}>
             <SelectTrigger aria-label="Kind">
               <SelectValue placeholder="Select kind" />
             </SelectTrigger>
@@ -357,7 +250,7 @@ export function AiProvidersPage({
           </Select>
         </DetailField>
         <DetailField label="Status" required>
-          <Select value={formValues.status} onValueChange={(value) => handleFieldChange("status", value as AiProviderStatus)}>
+          <Select value={crud.formValues.status} onValueChange={(value) => crud.handleFieldChange("status", value as AiProviderStatus)}>
             <SelectTrigger aria-label="Status">
               <SelectValue placeholder="Select status" />
             </SelectTrigger>
@@ -368,22 +261,22 @@ export function AiProvidersPage({
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Model" required {...definedString(errors.model)}>
-          <Input value={formValues.model} onChange={(event) => handleFieldChange("model", event.target.value)} aria-label="Model" />
+        <DetailField label="Model" required {...definedString(crud.errors.model)}>
+          <Input value={crud.formValues.model} onChange={(event) => crud.handleFieldChange("model", event.target.value)} aria-label="Model" />
         </DetailField>
-        <DetailField label="Base URL" {...definedString(errors.baseUrl)}>
-          <Input value={formValues.baseUrl} onChange={(event) => handleFieldChange("baseUrl", event.target.value)} aria-label="Base URL" />
+        <DetailField label="Base URL" {...definedString(crud.errors.baseUrl)}>
+          <Input value={crud.formValues.baseUrl} onChange={(event) => crud.handleFieldChange("baseUrl", event.target.value)} aria-label="Base URL" />
         </DetailField>
         <DetailField label="Description">
-          <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" />
+          <Input value={crud.formValues.description} onChange={(event) => crud.handleFieldChange("description", event.target.value)} aria-label="Description" />
         </DetailField>
-        <DetailField label="API Key" hint={provider?.apiKeyConfigured ? "Leave blank to keep the current secret." : "Stored as a write-only secret."}>
+        <DetailField label="API Key" hint={crud.item?.apiKeyConfigured ? "Leave blank to keep the current secret." : "Stored as a write-only secret."}>
           <Input
             type="password"
-            value={formValues.apiKey}
-            onChange={(event) => handleFieldChange("apiKey", event.target.value)}
+            value={crud.formValues.apiKey}
+            onChange={(event) => crud.handleFieldChange("apiKey", event.target.value)}
             aria-label="API Key"
-            placeholder={provider?.apiKeyConfigured ? "Configured; leave blank to keep current value" : ""}
+            placeholder={crud.item?.apiKeyConfigured ? "Configured; leave blank to keep current value" : ""}
           />
         </DetailField>
       </DetailFieldGroup>

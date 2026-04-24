@@ -343,7 +343,7 @@ describe("App", () => {
     fireEvent.click((await screen.findAllByText("Primary Anthropic"))[0]!);
 
     expect(await screen.findByRole("heading", { name: "Primary Anthropic" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/ai-providers/2ef12df8-fdf6-4ef0-89ce-01d34b4f3af7");
+    expect(window.location.pathname).toBe("/ai/providers/2ef12df8-fdf6-4ef0-89ce-01d34b4f3af7");
     expect(await screen.findByPlaceholderText("Configured; leave blank to keep current value")).toBeInTheDocument();
   });
 
@@ -355,13 +355,13 @@ describe("App", () => {
       googleClientId: "google-client-id",
       user: null
     };
-    window.history.replaceState({}, "", "/ai-providers");
+    window.history.replaceState({}, "", "/ai/providers");
 
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: "Sign in to SynoSec" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/login");
-    expect(window.location.search).toContain("redirectTo=%2Fai-providers");
+    expect(window.location.search).toContain("redirectTo=%2Fai%2Fproviders");
   });
 
   it("retries session bootstrap before loading the app", async () => {

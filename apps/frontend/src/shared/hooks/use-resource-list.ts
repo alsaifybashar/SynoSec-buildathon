@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { ListQueryState, PaginatedResource, ResourceClient } from "@/shared/lib/resource-client";
-import { parseListQueryState, updateUrlQuery } from "@/shared/lib/resource-client";
+import { parseListQueryState } from "@/shared/lib/resource-client";
 
 const MINIMUM_LOADING_MS = 300;
 const listCache = new WeakMap<object, Map<string, PaginatedResource<unknown>>>();
@@ -9,10 +10,6 @@ type ResourceListState<T> =
   | { state: "loading"; data: PaginatedResource<T> | null }
   | { state: "loaded"; data: PaginatedResource<T> }
   | { state: "error"; data: PaginatedResource<T> | null; message: string };
-
-function getUrlCacheKey() {
-  return `${window.location.pathname}${window.location.search}`;
-}
 
 function getCachedList<TItem>(client: object, key: string) {
   return (listCache.get(client)?.get(key) ?? null) as PaginatedResource<TItem> | null;
@@ -25,7 +22,10 @@ function setCachedList<TItem>(client: object, key: string, data: PaginatedResour
 }
 
 export function useResourceList<TItem, TQuery extends ListQueryState>(client: ResourceClient<TItem, TQuery>) {
-  const [query, setQuery] = useState<TQuery>(() => parseListQueryState(client.defaultQuery, window.location.search));
+  const location = useLocation();
+  const navigate = useNavigate();
+  const getUrlCacheKey = useCallback(() => `${location.pathname}${location.search}`, [location.pathname, location.search]);
+  const [query, setQuery] = useState<TQuery>(() => parseListQueryState(client.defaultQuery, location.search));
   const initialCacheKey = getUrlCacheKey();
   const initialCachedData = getCachedList<TItem>(client, initialCacheKey);
   const [dataState, setDataState] = useState<ResourceListState<TItem>>(
@@ -35,22 +35,15 @@ export function useResourceList<TItem, TQuery extends ListQueryState>(client: Re
   );
   const [reloadToken, setReloadToken] = useState(0);
   const hasLoadedRouteRef = useRef(false);
-  const lastPathnameRef = useRef(window.location.pathname);
+  const lastPathnameRef = useRef(location.pathname);
 
   useEffect(() => {
-    const handlePopState = () => {
-      setQuery(parseListQueryState(client.defaultQuery, window.location.search));
-    };
-
-    window.addEventListener("popstate", handlePopState);
-    return () => {
-      window.removeEventListener("popstate", handlePopState);
-    };
-  }, [client]);
+    setQuery(parseListQueryState(client.defaultQuery, location.search));
+  }, [client.defaultQuery, location.search]);
 
   useEffect(() => {
     let active = true;
-    const currentPathname = window.location.pathname;
+    const currentPathname = location.pathname;
     const cacheKey = getUrlCacheKey();
     const cachedData = getCachedList<TItem>(client, cacheKey);
     const shouldDelay =
@@ -88,7 +81,7 @@ export function useResourceList<TItem, TQuery extends ListQueryState>(client: Re
     return () => {
       active = false;
     };
-  }, [client, query, reloadToken]);
+  }, [client, getUrlCacheKey, location.pathname, query, reloadToken]);
 
   const updateQuery = useCallback((updater: TQuery | ((current: TQuery) => TQuery)) => {
     setQuery((current) => {
@@ -96,10 +89,34 @@ export function useResourceList<TItem, TQuery extends ListQueryState>(client: Re
         ? (updater as (current: TQuery) => TQuery)(current)
         : updater;
 
-      updateUrlQuery(nextQuery, client.defaultQuery, "replace");
+      const params = new URLSearchParams();
+
+      for (const [key, rawValue] of Object.entries(nextQuery)) {
+        if (rawValue === undefined || rawValue === "") {
+          continue;
+        }
+
+        if (rawValue === client.defaultQuery[key]) {
+          continue;
+        }
+
+        params.set(key, String(rawValue));
+      }
+
+      const nextSearch = params.toString();
+      const currentSearch = location.search.startsWith("?") ? location.search.slice(1) : location.search;
+      if (currentSearch !== nextSearch) {
+        navigate(
+          {
+            pathname: location.pathname,
+            search: nextSearch ? `?${nextSearch}` : ""
+          },
+          { replace: true }
+        );
+      }
       return nextQuery;
     });
-  }, [client.defaultQuery]);
+  }, [client.defaultQuery, location.pathname, location.search, navigate]);
 
   const setSearch = useCallback((value: string) => {
     updateQuery((current) => ({ ...current, q: value, page: 1 }));

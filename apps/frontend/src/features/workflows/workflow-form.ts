@@ -25,17 +25,15 @@ export function createEmptyFormValues(defaultApplicationId = "", defaultRuntimeI
 }
 
 export function toWorkflowFormValues(workflow: Workflow): WorkflowFormValues {
-  const fallbackStage = workflow.stages[0];
-
   return {
     name: workflow.name,
     status: workflow.status,
     description: workflow.description ?? "",
     applicationId: workflow.applicationId,
     runtimeId: workflow.runtimeId ?? "",
-    agentId: workflow.agentId ?? fallbackStage?.agentId ?? "",
-    objective: workflow.objective ?? fallbackStage?.objective ?? "",
-    allowedToolIds: workflow.allowedToolIds ?? fallbackStage?.allowedToolIds ?? []
+    agentId: workflow.agentId,
+    objective: workflow.objective,
+    allowedToolIds: workflow.allowedToolIds
   };
 }
 

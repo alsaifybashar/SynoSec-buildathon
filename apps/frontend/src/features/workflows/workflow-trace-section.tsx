@@ -587,6 +587,7 @@ export function WorkflowTraceSection({
   run,
   running,
   liveModelOutput,
+  transcript,
   summaryCard
 }: {
   workflow: Workflow | null;
@@ -597,6 +598,7 @@ export function WorkflowTraceSection({
   run: WorkflowRun | null;
   running: boolean;
   liveModelOutput?: LiveModelOutput | null;
+  transcript?: TranscriptProjection | null;
   summaryCard: SummaryCardData;
 }) {
   if (!workflow) {
@@ -606,7 +608,7 @@ export function WorkflowTraceSection({
   const toolLookup = getToolLookup(tools);
   const toolsById = new Map(tools.map((tool) => [tool.id, tool]));
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]));
-  const transcript = buildWorkflowTranscript({
+  const derivedTranscript = buildWorkflowTranscript({
     workflow,
     run,
     agents,
@@ -614,7 +616,8 @@ export function WorkflowTraceSection({
     running,
     liveModelOutput: liveModelOutput ?? null
   });
-  const findingsById = new Map(transcript.findings.map((finding) => [finding.id, finding]));
+  const effectiveTranscript = transcript ?? derivedTranscript;
+  const findingsById = new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding]));
   const applicationName = applications.find((item) => item.id === workflow.applicationId)?.name ?? "Unknown application";
   const runtimeName = workflow.runtimeId
     ? (runtimes.find((item) => item.id === workflow.runtimeId)?.name ?? "Unknown runtime")
@@ -624,8 +627,8 @@ export function WorkflowTraceSection({
     ? summaryCard.toolNames
     : inheritedToolIds.map((toolId) => toolLookup[toolId] ?? toolId);
 
-  const systemItems = transcript.items.filter((item): item is Extract<TranscriptProjection["items"][number], { kind: "system_message" }> => item.kind === "system_message");
-  const threadItems = transcript.items.filter((item) => item.kind !== "system_message");
+  const systemItems = effectiveTranscript.items.filter((item): item is Extract<TranscriptProjection["items"][number], { kind: "system_message" }> => item.kind === "system_message");
+  const threadItems = effectiveTranscript.items.filter((item) => item.kind !== "system_message");
   const assistantTurns = threadItems.filter((item): item is Extract<TranscriptProjection["items"][number], { kind: "assistant_turn" }> => item.kind === "assistant_turn");
   const closeout = threadItems.find((item): item is Extract<TranscriptProjection["items"][number], { kind: "closeout" }> => item.kind === "closeout") ?? null;
   const toolCount = assistantTurns.reduce((total, turn) => total + turn.details.filter((detail) => detail.kind === "tool_call").length, 0);
@@ -665,7 +668,7 @@ export function WorkflowTraceSection({
                 turnCount={assistantTurns.length}
                 toolCount={toolCount}
                 observationCount={observationCount}
-                findingCount={transcript.findings.length}
+                findingCount={effectiveTranscript.findings.length}
               />
             ) : null}
             <div className="sticky bottom-0 mt-10 bg-gradient-to-b from-transparent to-background px-2 pt-8">
@@ -694,7 +697,7 @@ export function WorkflowTraceSection({
           </div>
         </div>
       </div>
-      <FindingsRail findings={transcript.findings} runStatus={run?.status ?? null} />
+      <FindingsRail findings={effectiveTranscript.findings} runStatus={run?.status ?? null} />
     </section>
   );
 }

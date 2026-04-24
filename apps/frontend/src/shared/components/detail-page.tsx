@@ -1,9 +1,65 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, Check, CircleHelp, Download, Undo2 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { PageHeader } from "@/shared/components/page-header";
 import { Spinner } from "@/shared/ui/spinner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
+
+const actionFadeDurationMs = 50;
+
+export function DetailActionFade({
+  show,
+  children,
+  className
+}: {
+  show: boolean;
+  children: ReactNode;
+  className?: string;
+}) {
+  const [isRendered, setIsRendered] = useState(show);
+  const [isVisible, setIsVisible] = useState(show);
+
+  useEffect(() => {
+    let frameId: number | null = null;
+    let timeoutId: number | null = null;
+
+    if (show) {
+      setIsRendered(true);
+      frameId = window.requestAnimationFrame(() => {
+        setIsVisible(true);
+      });
+    } else {
+      setIsVisible(false);
+      timeoutId = window.setTimeout(() => {
+        setIsRendered(false);
+      }, actionFadeDurationMs);
+    }
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [show]);
+
+  if (!isRendered) {
+    return null;
+  }
+
+  const style: CSSProperties = {
+    opacity: isVisible ? 1 : 0,
+    transition: `opacity ${actionFadeDurationMs}ms ease`
+  };
+
+  return (
+    <div className={className} style={style}>
+      {children}
+    </div>
+  );
+}
 
 export function DetailPage({
   title,
@@ -60,21 +116,27 @@ export function DetailPage({
                 <ArrowLeft className="h-4 w-4" />
                 Back
               </Button>
+              <DetailActionFade show={isDirty} className="flex items-center gap-2">
+                <>
+                  <div aria-hidden className="mx-1 hidden h-6 w-px bg-border/70 md:block" />
+                  <Button type="button" onClick={() => void onSave()} disabled={isSaving} className="h-8 text-[0.72rem]">
+                    <Check className="h-4 w-4" />
+                    {saveLabel}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={onDismiss} disabled={isSaving} className="h-8 text-[0.72rem]">
+                    <Undo2 className="h-4 w-4" />
+                    Dismiss
+                  </Button>
+                </>
+              </DetailActionFade>
               {onExportJson ? (
-                <Button type="button" variant="outline" onClick={onExportJson} className="h-8 text-[0.72rem]">
-                  <Download className="h-4 w-4" />
-                  Export JSON
-                </Button>
+                <div className="ml-auto">
+                  <Button type="button" variant="outline" onClick={onExportJson} className="h-8 text-[0.72rem]">
+                    <Download className="h-4 w-4" />
+                    Export JSON
+                  </Button>
+                </div>
               ) : null}
-              <div aria-hidden className="mx-1 hidden h-6 w-px bg-border/70 md:block" />
-              <Button type="button" onClick={() => void onSave()} disabled={!isDirty || isSaving} className="h-8 text-[0.72rem]">
-                <Check className="h-4 w-4" />
-                {saveLabel}
-              </Button>
-              <Button type="button" variant="outline" onClick={onDismiss} disabled={!isDirty || isSaving} className="h-8 text-[0.72rem]">
-                <Undo2 className="h-4 w-4" />
-                Dismiss
-              </Button>
             </>
           )}
         </div>

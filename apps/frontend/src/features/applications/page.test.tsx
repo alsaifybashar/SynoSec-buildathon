@@ -1,4 +1,5 @@
 import { act, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Application } from "@synosec/contracts";
 import { ApplicationsPage } from "@/features/applications/page";
@@ -58,12 +59,14 @@ describe("ApplicationsPage", () => {
     }));
 
     const { rerender } = render(
-      <ApplicationsPage
-        applicationId="app-1"
-        onNavigateToList={() => {}}
-        onNavigateToCreate={() => {}}
-        onNavigateToDetail={() => {}}
-      />
+      <MemoryRouter initialEntries={["/applications/app-1"]}>
+        <ApplicationsPage
+          applicationId="app-1"
+          onNavigateToList={() => {}}
+          onNavigateToCreate={() => {}}
+          onNavigateToDetail={() => {}}
+        />
+      </MemoryRouter>
     );
 
     await act(async () => {
@@ -73,12 +76,14 @@ describe("ApplicationsPage", () => {
     expect(await screen.findByDisplayValue("First application")).toBeInTheDocument();
 
     rerender(
-      <ApplicationsPage
-        applicationId="app-2"
-        onNavigateToList={() => {}}
-        onNavigateToCreate={() => {}}
-        onNavigateToDetail={() => {}}
-      />
+      <MemoryRouter initialEntries={["/applications/app-2"]}>
+        <ApplicationsPage
+          applicationId="app-2"
+          onNavigateToList={() => {}}
+          onNavigateToCreate={() => {}}
+          onNavigateToDetail={() => {}}
+        />
+      </MemoryRouter>
     );
 
     expect(screen.queryByDisplayValue("First application")).not.toBeInTheDocument();

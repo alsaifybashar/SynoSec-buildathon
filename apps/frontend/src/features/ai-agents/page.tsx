@@ -8,14 +8,11 @@ import {
   type AiTool,
   type CreateAiAgentBody
 } from "@synosec/contracts";
-import { fetchJson } from "@/shared/lib/api";
-import { useResourceDetail } from "@/shared/hooks/use-resource-detail";
-import { useResourceList } from "@/shared/hooks/use-resource-list";
 import { aiAgentsResource } from "@/features/ai-agents/resource";
 import { aiProvidersResource } from "@/features/ai-providers/resource";
 import { aiToolsResource } from "@/features/ai-tools/resource";
 import { aiAgentTransfer } from "@/features/ai-agents/transfer";
-import { exportResourceRecords, importResourceRecords } from "@/shared/lib/resource-transfer";
+import { useCrudPage } from "@/shared/crud/use-crud-page";
 import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Input } from "@/shared/ui/input";
@@ -38,12 +35,12 @@ const statusLabels: Record<AiAgentStatus, string> = {
   archived: "Archived"
 };
 
-function createEmptyFormValues(): AgentFormValues {
+function createEmptyFormValues(defaultProviderId = ""): AgentFormValues {
   return {
     name: "",
     status: "draft",
     description: "",
-    providerId: "",
+    providerId: defaultProviderId,
     systemPrompt: "",
     modelOverride: "",
     toolIds: []
@@ -76,6 +73,7 @@ function toRequestBody(values: AgentFormValues): CreateAiAgentBody {
 
 function validateForm(values: AgentFormValues) {
   const errors: Partial<Record<keyof AgentFormValues, string>> = {};
+
   if (!values.name.trim()) {
     errors.name = "Name is required.";
   }
@@ -85,6 +83,7 @@ function validateForm(values: AgentFormValues) {
   if (!values.systemPrompt.trim()) {
     errors.systemPrompt = "System prompt is required.";
   }
+
   return errors;
 }
 
@@ -109,16 +108,8 @@ export function AiAgentsPage({
   onNavigateToCreate: () => void;
   onNavigateToDetail: (id: string, label?: string) => void;
 }) {
-  const [agent, setAgent] = useState<AiAgent | null>(null);
   const [providers, setProviders] = useState<AiProvider[]>([]);
   const [tools, setTools] = useState<AiTool[]>([]);
-  const [formValues, setFormValues] = useState<AgentFormValues>(createEmptyFormValues);
-  const [initialValues, setInitialValues] = useState<AgentFormValues>(createEmptyFormValues);
-  const [errors, setErrors] = useState<Partial<Record<keyof AgentFormValues, string>>>({});
-  const [saving, setSaving] = useState(false);
-  const isCreateMode = agentId === "new";
-  const agentList = useResourceList(aiAgentsResource);
-  const agentDetail = useResourceDetail(aiAgentsResource, agentId && agentId !== "new" ? agentId : null);
 
   useEffect(() => {
     let active = true;
@@ -134,10 +125,6 @@ export function AiAgentsPage({
 
         setProviders(providerResult.items);
         setTools(toolResult.items);
-        setFormValues((current) => current.providerId ? current : {
-          ...current,
-          providerId: providerResult.items[0]?.id ?? ""
-        });
       })
       .catch((error) => {
         toast.error("Failed to load agent dependencies", {
@@ -150,42 +137,38 @@ export function AiAgentsPage({
     };
   }, []);
 
+  const defaultProviderId = providers[0]?.id ?? "";
+
+  const crud = useCrudPage({
+    recordLabel: "AI Agent",
+    titleLabel: "AI agent",
+    recordId: agentId,
+    route: apiRoutes.aiAgents,
+    resource: aiAgentsResource,
+    transfer: aiAgentTransfer,
+    createEmptyFormValues: () => createEmptyFormValues(defaultProviderId),
+    toFormValues,
+    parseRequestBody: (formValues) => {
+      const errors = validateForm(formValues);
+      if (Object.keys(errors).length > 0) {
+        return { errors };
+      }
+
+      return {
+        body: toRequestBody(formValues),
+        errors: {}
+      };
+    },
+    onNavigateToList,
+    onNavigateToDetail,
+    getItemLabel: (agent) => agent.name
+  });
+
   useEffect(() => {
-    if (!agentId) {
-      return;
+    if (!agentId && !crud.formValues.providerId && defaultProviderId) {
+      crud.handleFieldChange("providerId", defaultProviderId);
     }
-
-    if (agentId === "new") {
-      const empty = createEmptyFormValues();
-      setAgent(null);
-      setFormValues((current) => ({ ...empty, providerId: current.providerId }));
-      setInitialValues((current) => ({ ...empty, providerId: current.providerId }));
-      setErrors({});
-      return;
-    }
-
-    if (agentDetail.state === "error") {
-      toast.error("AI agent not found", { description: agentDetail.message });
-      onNavigateToList();
-      return;
-    }
-
-    if (agentDetail.state !== "loaded") {
-      const empty = createEmptyFormValues();
-      const defaultProviderId = providers[0]?.id ?? "";
-      setAgent(null);
-      setFormValues({ ...empty, providerId: defaultProviderId });
-      setInitialValues({ ...empty, providerId: defaultProviderId });
-      setErrors({});
-      return;
-    }
-
-    const values = toFormValues(agentDetail.item);
-    setAgent(agentDetail.item);
-    setFormValues(values);
-    setInitialValues(values);
-    setErrors({});
-  }, [agentDetail, agentId, onNavigateToList, providers]);
+  }, [agentId, crud.formValues.providerId, crud.handleFieldChange, defaultProviderId]);
 
   const providerLookup = useMemo(() => Object.fromEntries(providers.map((provider) => [provider.id, provider.name])), [providers]);
 
@@ -206,95 +189,13 @@ export function AiAgentsPage({
     }
   ], []);
 
-  const isDirty = JSON.stringify(formValues) !== JSON.stringify(initialValues);
-
-  function handleFieldChange<Key extends keyof AgentFormValues>(field: Key, value: AgentFormValues[Key]) {
-    setFormValues((current) => ({ ...current, [field]: value }));
-    setErrors((current) => ({ ...current, [field]: undefined }));
-  }
-
   function toggleTool(toolId: string, checked: boolean) {
-    setFormValues((current) => ({
+    crud.setFormValues((current) => ({
       ...current,
       toolIds: checked
         ? Array.from(new Set([...current.toolIds, toolId]))
         : current.toolIds.filter((currentToolId) => currentToolId !== toolId)
     }));
-  }
-
-  async function handleSave() {
-    const nextErrors = validateForm(formValues);
-    if (Object.keys(nextErrors).length > 0) {
-      setErrors(nextErrors);
-      toast.error("Validation failed", { description: "Fix the highlighted fields before saving." });
-      return;
-    }
-
-    setSaving(true);
-
-    try {
-      const body = JSON.stringify(toRequestBody(formValues));
-
-      if (isCreateMode || !agent) {
-        const created = await fetchJson<AiAgent>(apiRoutes.aiAgents, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body
-        });
-        toast.success("AI agent created");
-        onNavigateToDetail(created.id, created.name);
-        return;
-      }
-
-      const updated = await fetchJson<AiAgent>(`${apiRoutes.aiAgents}/${agent.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body
-      });
-
-      const nextValues = toFormValues(updated);
-      setAgent(updated);
-      setFormValues(nextValues);
-      setInitialValues(nextValues);
-      toast.success("AI agent updated");
-    } catch (error) {
-      toast.error("AI agent request failed", {
-        description: error instanceof Error ? error.message : "Unknown error"
-      });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function handleExportJson() {
-    if (!agent) {
-      return;
-    }
-
-    exportResourceRecords(aiAgentTransfer, [agent], `ai-agent-${agent.name}`);
-  }
-
-  async function handleImportJson(file: File) {
-    try {
-      const created = await importResourceRecords(aiAgentTransfer, file);
-      toast.success(created.length === 1 ? "AI agent imported" : `${created.length} AI agents imported`);
-      agentList.refetch();
-    } catch (error) {
-      toast.error("AI agent import failed", {
-        description: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  }
-
-  function handleListExportJson(selected: AiAgent) {
-    exportResourceRecords(aiAgentTransfer, [selected], `ai-agent-${selected.name}`);
-  }
-
-  async function handleDeleteAgent(selected: AiAgent) {
-    await fetchJson<void>(`${apiRoutes.aiAgents}/${selected.id}`, {
-      method: "DELETE"
-    });
-    agentList.refetch();
   }
 
   if (!agentId) {
@@ -303,29 +204,29 @@ export function AiAgentsPage({
         title="AI Agents"
         recordLabel="AI Agent"
         columns={columns}
-        query={agentList.query}
-        dataState={agentList.dataState}
-        items={agentList.items}
-        meta={agentList.meta}
+        query={crud.list.query}
+        dataState={crud.list.dataState}
+        items={crud.list.items}
+        meta={crud.list.meta}
         filters={filters}
         emptyMessage="No AI agents have been configured yet."
-        onSearchChange={agentList.setSearch}
-        onFilterChange={agentList.setFilter}
-        onSortChange={agentList.setSort}
-        onPageChange={agentList.setPage}
-        onPageSizeChange={agentList.setPageSize}
-        onRetry={agentList.refetch}
+        onSearchChange={crud.list.setSearch}
+        onFilterChange={crud.list.setFilter}
+        onSortChange={crud.list.setSort}
+        onPageChange={crud.list.setPage}
+        onPageSizeChange={crud.list.setPageSize}
+        onRetry={crud.list.refetch}
         onAddRecord={onNavigateToCreate}
         onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
-        onImportJson={handleImportJson}
+        onImportJson={crud.importJson}
         getRowLabel={(row) => row.name}
-        onExportRowJson={handleListExportJson}
-        onDeleteRow={handleDeleteAgent}
+        onExportRowJson={crud.exportRowJson}
+        onDeleteRow={crud.deleteRow}
       />
     );
   }
 
-  if (!isCreateMode && agentDetail.state !== "loaded") {
+  if (!crud.isCreateMode && crud.detail.state !== "loaded") {
     return (
       <DetailLoadingState
         title={agentNameHint ?? "AI agent detail"}
@@ -338,32 +239,31 @@ export function AiAgentsPage({
 
   return (
     <DetailPage
-      title={isCreateMode ? "New AI agent" : agent?.name ?? "AI agent detail"}
-      breadcrumbs={["Start", "AI Agents", isCreateMode ? "New" : agent?.name ?? "Detail"]}
-      isDirty={isDirty}
-      isSaving={saving}
+      title={crud.isCreateMode ? "New AI agent" : crud.item?.name ?? "AI agent detail"}
+      breadcrumbs={["Start", "AI Agents", crud.isCreateMode ? "New" : crud.item?.name ?? "Detail"]}
+      isDirty={crud.isDirty}
+      isSaving={crud.saving}
       onBack={onNavigateToList}
-      onSave={handleSave}
-      onDismiss={() => {
-        setFormValues(initialValues);
-        setErrors({});
+      onSave={() => {
+        void crud.save();
       }}
-      onExportJson={!isCreateMode ? handleExportJson : undefined}
-      sidebar={agent ? (
+      onDismiss={crud.resetForm}
+      onExportJson={!crud.isCreateMode ? crud.exportCurrent : undefined}
+      sidebar={crud.item ? (
         <>
-          <DetailSidebarItem label="Status">{statusLabels[agent.status]}</DetailSidebarItem>
-          <DetailSidebarItem label="Provider">{providerLookup[agent.providerId] ?? "Unknown"}</DetailSidebarItem>
-          <DetailSidebarItem label="Tools">{agent.toolIds.length}</DetailSidebarItem>
-          <DetailSidebarItem label="Updated">{formatTimestamp(agent.updatedAt)}</DetailSidebarItem>
+          <DetailSidebarItem label="Status">{statusLabels[crud.item.status]}</DetailSidebarItem>
+          <DetailSidebarItem label="Provider">{providerLookup[crud.item.providerId] ?? "Unknown"}</DetailSidebarItem>
+          <DetailSidebarItem label="Tools">{crud.item.toolIds.length}</DetailSidebarItem>
+          <DetailSidebarItem label="Updated">{formatTimestamp(crud.item.updatedAt)}</DetailSidebarItem>
         </>
       ) : undefined}
     >
       <DetailFieldGroup title="Agent Configuration" className="bg-card/70">
-        <DetailField label="Name" required {...definedString(errors.name)}>
-          <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
+        <DetailField label="Name" required {...definedString(crud.errors.name)}>
+          <Input value={crud.formValues.name} onChange={(event) => crud.handleFieldChange("name", event.target.value)} aria-label="Name" />
         </DetailField>
         <DetailField label="Status" required>
-          <Select value={formValues.status} onValueChange={(value) => handleFieldChange("status", value as AiAgentStatus)}>
+          <Select value={crud.formValues.status} onValueChange={(value) => crud.handleFieldChange("status", value as AiAgentStatus)}>
             <SelectTrigger aria-label="Status">
               <SelectValue placeholder="Select status" />
             </SelectTrigger>
@@ -374,8 +274,8 @@ export function AiAgentsPage({
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Provider" required {...definedString(errors.providerId)}>
-          <Select value={formValues.providerId} onValueChange={(value) => handleFieldChange("providerId", value)}>
+        <DetailField label="Provider" required {...definedString(crud.errors.providerId)}>
+          <Select value={crud.formValues.providerId} onValueChange={(value) => crud.handleFieldChange("providerId", value)}>
             <SelectTrigger aria-label="Provider">
               <SelectValue placeholder="Select provider" />
             </SelectTrigger>
@@ -387,16 +287,16 @@ export function AiAgentsPage({
           </Select>
         </DetailField>
         <DetailField label="Model override">
-          <Input value={formValues.modelOverride} onChange={(event) => handleFieldChange("modelOverride", event.target.value)} aria-label="Model override" />
+          <Input value={crud.formValues.modelOverride} onChange={(event) => crud.handleFieldChange("modelOverride", event.target.value)} aria-label="Model override" />
         </DetailField>
         <DetailField label="Description" className="md:col-span-2">
-          <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" />
+          <Input value={crud.formValues.description} onChange={(event) => crud.handleFieldChange("description", event.target.value)} aria-label="Description" />
         </DetailField>
       </DetailFieldGroup>
 
       <DetailFieldGroup title="Runtime Prompt" className="bg-card/70">
-        <DetailField label="System prompt" required className="md:col-span-2" {...definedString(errors.systemPrompt)}>
-          <Textarea value={formValues.systemPrompt} onChange={(event) => handleFieldChange("systemPrompt", event.target.value)} aria-label="System prompt" rows={10} />
+        <DetailField label="System prompt" required className="md:col-span-2" {...definedString(crud.errors.systemPrompt)}>
+          <Textarea value={crud.formValues.systemPrompt} onChange={(event) => crud.handleFieldChange("systemPrompt", event.target.value)} aria-label="System prompt" rows={10} />
         </DetailField>
       </DetailFieldGroup>
 
@@ -407,7 +307,7 @@ export function AiAgentsPage({
               <label key={tool.id} className="flex items-start gap-3 rounded-lg border border-border px-3 py-2 text-sm">
                 <input
                   type="checkbox"
-                  checked={formValues.toolIds.includes(tool.id)}
+                  checked={crud.formValues.toolIds.includes(tool.id)}
                   onChange={(event) => toggleTool(tool.id, event.target.checked)}
                   aria-label={`Tool ${tool.name}`}
                 />

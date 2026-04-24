@@ -10,13 +10,10 @@ import {
   type RuntimeServiceType,
   type RuntimeStatus
 } from "@synosec/contracts";
-import { fetchJson } from "@/shared/lib/api";
-import { useResourceDetail } from "@/shared/hooks/use-resource-detail";
-import { useResourceList } from "@/shared/hooks/use-resource-list";
 import { applicationsResource } from "@/features/applications/resource";
 import { runtimesResource } from "@/features/runtimes/resource";
 import { runtimeTransfer } from "@/features/runtimes/transfer";
-import { exportResourceRecords, importResourceRecords } from "@/shared/lib/resource-transfer";
+import { useCrudPage } from "@/shared/crud/use-crud-page";
 import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Input } from "@/shared/ui/input";
@@ -129,7 +126,10 @@ function validateForm(values: RuntimeFormValues) {
 }
 
 function formatTimestamp(value: string | null) {
-  if (!value) return "Never";
+  if (!value) {
+    return "Never";
+  }
+
   return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
@@ -150,15 +150,7 @@ export function RuntimesPage({
   onNavigateToCreate: () => void;
   onNavigateToDetail: (id: string, label?: string) => void;
 }) {
-  const [runtime, setRuntime] = useState<Runtime | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
-  const [formValues, setFormValues] = useState<RuntimeFormValues>(createEmptyFormValues);
-  const [initialValues, setInitialValues] = useState<RuntimeFormValues>(createEmptyFormValues);
-  const [errors, setErrors] = useState<Partial<Record<keyof RuntimeFormValues, string>>>({});
-  const [saving, setSaving] = useState(false);
-  const isCreateMode = runtimeId === "new";
-  const runtimeList = useResourceList(runtimesResource);
-  const runtimeDetail = useResourceDetail(runtimesResource, runtimeId && runtimeId !== "new" ? runtimeId : null);
 
   useEffect(() => {
     let active = true;
@@ -183,43 +175,29 @@ export function RuntimesPage({
     };
   }, []);
 
-  useEffect(() => {
-    if (!runtimeId) {
-      return;
-    }
+  const crud = useCrudPage({
+    recordLabel: "Runtime",
+    recordId: runtimeId,
+    route: apiRoutes.runtimes,
+    resource: runtimesResource,
+    transfer: runtimeTransfer,
+    createEmptyFormValues,
+    toFormValues,
+    parseRequestBody: (formValues) => {
+      const errors = validateForm(formValues);
+      if (Object.keys(errors).length > 0) {
+        return { errors };
+      }
 
-    if (runtimeId === "new") {
-      const empty = createEmptyFormValues();
-      setRuntime(null);
-      setFormValues(empty);
-      setInitialValues(empty);
-      setErrors({});
-      return;
-    }
-
-    if (runtimeDetail.state === "error") {
-      toast.error("Runtime not found", {
-        description: runtimeDetail.message
-      });
-      onNavigateToList();
-      return;
-    }
-
-    if (runtimeDetail.state !== "loaded") {
-      const empty = createEmptyFormValues();
-      setRuntime(null);
-      setFormValues(empty);
-      setInitialValues(empty);
-      setErrors({});
-      return;
-    }
-
-    const values = toFormValues(runtimeDetail.item);
-    setRuntime(runtimeDetail.item);
-    setFormValues(values);
-    setInitialValues(values);
-    setErrors({});
-  }, [onNavigateToList, runtimeDetail, runtimeId]);
+      return {
+        body: toRequestBody(formValues),
+        errors: {}
+      };
+    },
+    onNavigateToList,
+    onNavigateToDetail,
+    getItemLabel: (runtime) => runtime.name
+  });
 
   const applicationLookup = useMemo(
     () => Object.fromEntries(applications.map((application) => [application.id, application.name])),
@@ -282,136 +260,35 @@ export function RuntimesPage({
     }
   ], []);
 
-  const isDirty = useMemo(() => JSON.stringify(formValues) !== JSON.stringify(initialValues), [formValues, initialValues]);
-
-  function handleFieldChange<Key extends keyof RuntimeFormValues>(key: Key, value: RuntimeFormValues[Key]) {
-    setFormValues((current) => ({
-      ...current,
-      [key]: value
-    }));
-
-    if (errors[key]) {
-      setErrors((current) => ({
-        ...current,
-        [key]: undefined
-      }));
-    }
-  }
-
-  async function handleSave() {
-    const nextErrors = validateForm(formValues);
-    if (Object.keys(nextErrors).length > 0) {
-      setErrors(nextErrors);
-      toast.error("Validation failed", {
-        description: "Fix the highlighted fields before saving."
-      });
-      return;
-    }
-
-    setSaving(true);
-
-    try {
-      const body = JSON.stringify(toRequestBody(formValues));
-
-      if (isCreateMode) {
-        const created = await fetchJson<Runtime>(apiRoutes.runtimes, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body
-        });
-        toast.success("Runtime created");
-        onNavigateToDetail(created.id, created.name);
-        return;
-      }
-
-      if (!runtime) {
-        return;
-      }
-
-      const updated = await fetchJson<Runtime>(`${apiRoutes.runtimes}/${runtime.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body
-      });
-      const nextValues = toFormValues(updated);
-      setRuntime(updated);
-      setFormValues(nextValues);
-      setInitialValues(nextValues);
-      toast.success("Runtime updated");
-    } catch (error) {
-      toast.error("Runtime request failed", {
-        description: error instanceof Error ? error.message : "Unknown error"
-      });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function handleExportJson() {
-    if (!runtime) {
-      return;
-    }
-
-    exportResourceRecords(runtimeTransfer, [runtime], `runtime-${runtime.name}`);
-  }
-
-  async function handleImportJson(file: File) {
-    try {
-      const created = await importResourceRecords(runtimeTransfer, file);
-      toast.success(created.length === 1 ? "Runtime imported" : `${created.length} runtimes imported`);
-      runtimeList.refetch();
-    } catch (error) {
-      toast.error("Runtime import failed", {
-        description: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  }
-
-  function handleListExportJson(selected: Runtime) {
-    exportResourceRecords(runtimeTransfer, [selected], `runtime-${selected.name}`);
-  }
-
-  async function handleDeleteRuntime(selected: Runtime) {
-    await fetchJson<void>(`${apiRoutes.runtimes}/${selected.id}`, {
-      method: "DELETE"
-    });
-    runtimeList.refetch();
-  }
-
-  function handleDismiss() {
-    setFormValues(initialValues);
-    setErrors({});
-  }
-
   if (!runtimeId) {
     return (
       <ListPage
         title="Runtimes"
         recordLabel="Runtime"
         columns={runtimeColumns}
-        query={runtimeList.query}
-        dataState={runtimeList.dataState}
-        items={runtimeList.items}
-        meta={runtimeList.meta}
+        query={crud.list.query}
+        dataState={crud.list.dataState}
+        items={crud.list.items}
+        meta={crud.list.meta}
         filters={runtimeFilters}
         emptyMessage="No runtimes matched the current search and filter."
-        onSearchChange={runtimeList.setSearch}
-        onFilterChange={runtimeList.setFilter}
-        onSortChange={runtimeList.setSort}
-        onPageChange={runtimeList.setPage}
-        onPageSizeChange={runtimeList.setPageSize}
-        onRetry={runtimeList.refetch}
+        onSearchChange={crud.list.setSearch}
+        onFilterChange={crud.list.setFilter}
+        onSortChange={crud.list.setSort}
+        onPageChange={crud.list.setPage}
+        onPageSizeChange={crud.list.setPageSize}
+        onRetry={crud.list.refetch}
         onAddRecord={onNavigateToCreate}
         onRowClick={(selected) => onNavigateToDetail(selected.id, selected.name)}
-        onImportJson={handleImportJson}
+        onImportJson={crud.importJson}
         getRowLabel={(selected) => selected.name}
-        onExportRowJson={handleListExportJson}
-        onDeleteRow={handleDeleteRuntime}
+        onExportRowJson={crud.exportRowJson}
+        onDeleteRow={crud.deleteRow}
       />
     );
   }
 
-  if (!isCreateMode && runtimeDetail.state !== "loaded") {
+  if (!crud.isCreateMode && crud.detail.state !== "loaded") {
     return (
       <DetailLoadingState
         title={runtimeNameHint ?? "Runtime detail"}
@@ -424,47 +301,49 @@ export function RuntimesPage({
 
   return (
     <DetailPage
-      title={isCreateMode ? "New runtime" : runtime?.name ?? "Runtime detail"}
-      breadcrumbs={["Start", "Runtimes", isCreateMode ? "New" : runtime?.name ?? "Detail"]}
-      {...(!isCreateMode && runtime ? { subtitle: runtime.id, timestamp: formatTimestamp(runtime.updatedAt) } : {})}
-      isDirty={isDirty}
-      isSaving={saving}
+      title={crud.isCreateMode ? "New runtime" : crud.item?.name ?? "Runtime detail"}
+      breadcrumbs={["Start", "Runtimes", crud.isCreateMode ? "New" : crud.item?.name ?? "Detail"]}
+      {...(!crud.isCreateMode && crud.item ? { subtitle: crud.item.id, timestamp: formatTimestamp(crud.item.updatedAt) } : {})}
+      isDirty={crud.isDirty}
+      isSaving={crud.saving}
       onBack={onNavigateToList}
-      onSave={handleSave}
-      onDismiss={handleDismiss}
-      onExportJson={!isCreateMode ? handleExportJson : undefined}
+      onSave={() => {
+        void crud.save();
+      }}
+      onDismiss={crud.resetForm}
+      onExportJson={!crud.isCreateMode ? crud.exportCurrent : undefined}
       sidebar={
-        !isCreateMode && runtime ? (
+        !crud.isCreateMode && crud.item ? (
           <>
             <DetailSidebarItem label="Status">
-              <StatusBadge label={statusLabels[runtime.status]} className={statusBadgeStyles[runtime.status]} />
+              <StatusBadge label={statusLabels[crud.item.status]} className={statusBadgeStyles[crud.item.status]} />
             </DetailSidebarItem>
             <DetailSidebarItem label="Application">
-              {applicationLookup[runtime.applicationId ?? ""] ?? "Unlinked"}
+              {applicationLookup[crud.item.applicationId ?? ""] ?? "Unlinked"}
             </DetailSidebarItem>
             <DetailSidebarItem label="Created">
-              {formatTimestamp(runtime.createdAt)}
+              {formatTimestamp(crud.item.createdAt)}
             </DetailSidebarItem>
             <DetailSidebarItem label="Updated">
-              {formatTimestamp(runtime.updatedAt)}
+              {formatTimestamp(crud.item.updatedAt)}
             </DetailSidebarItem>
           </>
         ) : undefined
       }
     >
       <DetailFieldGroup title="Identity">
-        <DetailField label="Name" required {...definedString(errors.name)}>
-          <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
+        <DetailField label="Name" required {...definedString(crud.errors.name)}>
+          <Input value={crud.formValues.name} onChange={(event) => crud.handleFieldChange("name", event.target.value)} aria-label="Name" />
         </DetailField>
 
-        <DetailField label="Region" required {...definedString(errors.region)}>
-          <Input value={formValues.region} onChange={(event) => handleFieldChange("region", event.target.value)} aria-label="Region" />
+        <DetailField label="Region" required {...definedString(crud.errors.region)}>
+          <Input value={crud.formValues.region} onChange={(event) => crud.handleFieldChange("region", event.target.value)} aria-label="Region" />
         </DetailField>
       </DetailFieldGroup>
 
       <DetailFieldGroup title="Infrastructure">
         <DetailField label="Service type" required hint="Choose the runtime's primary operational role.">
-          <Select value={formValues.serviceType} onValueChange={(value: RuntimeServiceType) => handleFieldChange("serviceType", value)}>
+          <Select value={crud.formValues.serviceType} onValueChange={(value: RuntimeServiceType) => crud.handleFieldChange("serviceType", value)}>
             <SelectTrigger aria-label="Service type" className="w-fit min-w-[10rem] max-w-[12rem]">
               <SelectValue placeholder="Select service type" />
             </SelectTrigger>
@@ -479,7 +358,7 @@ export function RuntimesPage({
         </DetailField>
 
         <DetailField label="Provider" required>
-          <Select value={formValues.provider} onValueChange={(value: RuntimeProvider) => handleFieldChange("provider", value)}>
+          <Select value={crud.formValues.provider} onValueChange={(value: RuntimeProvider) => crud.handleFieldChange("provider", value)}>
             <SelectTrigger aria-label="Provider" className="w-fit min-w-[10rem] max-w-[12rem]">
               <SelectValue placeholder="Select provider" />
             </SelectTrigger>
@@ -494,7 +373,7 @@ export function RuntimesPage({
         </DetailField>
 
         <DetailField label="Environment" required>
-          <Select value={formValues.environment} onValueChange={(value: ApplicationEnvironment) => handleFieldChange("environment", value)}>
+          <Select value={crud.formValues.environment} onValueChange={(value: ApplicationEnvironment) => crud.handleFieldChange("environment", value)}>
             <SelectTrigger aria-label="Environment" className="w-fit min-w-[10rem] max-w-[12rem]">
               <SelectValue placeholder="Select environment" />
             </SelectTrigger>
@@ -511,7 +390,7 @@ export function RuntimesPage({
 
       <DetailFieldGroup title="Status & linking">
         <DetailField label="Status" required>
-          <Select value={formValues.status} onValueChange={(value: RuntimeStatus) => handleFieldChange("status", value)}>
+          <Select value={crud.formValues.status} onValueChange={(value: RuntimeStatus) => crud.handleFieldChange("status", value)}>
             <SelectTrigger aria-label="Status" className="w-fit min-w-[10rem] max-w-[12rem]">
               <SelectValue placeholder="Select status" />
             </SelectTrigger>
@@ -526,7 +405,7 @@ export function RuntimesPage({
         </DetailField>
 
         <DetailField label="Application">
-          <Select value={formValues.applicationId || "__none__"} onValueChange={(value) => handleFieldChange("applicationId", value === "__none__" ? "" : value)}>
+          <Select value={crud.formValues.applicationId || "__none__"} onValueChange={(value) => crud.handleFieldChange("applicationId", value === "__none__" ? "" : value)}>
             <SelectTrigger aria-label="Application" className="w-fit min-w-[12rem] max-w-[16rem]">
               <SelectValue placeholder="Select application" />
             </SelectTrigger>

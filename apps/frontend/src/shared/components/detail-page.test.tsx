@@ -67,4 +67,22 @@ describe("DetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Export JSON" }));
     expect(handleExport).toHaveBeenCalledTimes(1);
   });
+
+  it("hides save and dismiss actions until the detail becomes dirty", () => {
+    render(
+      <DetailPage
+        title="Application detail"
+        breadcrumbs={["Start", "Applications", "Application detail"]}
+        isDirty={false}
+        onBack={() => {}}
+        onSave={async () => {}}
+        onDismiss={() => {}}
+      >
+        <div>Main detail form</div>
+      </DetailPage>
+    );
+
+    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
+  });
 });

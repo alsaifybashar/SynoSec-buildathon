@@ -244,6 +244,12 @@ const run: WorkflowRun = {
           type: "other",
           severity: "medium",
           confidence: 0.82,
+          evidence: [
+            {
+              sourceTool: "Web Probe",
+              quote: "HTTP/1.1 200 OK"
+            }
+          ],
           impact: "Responses are missing baseline hardening headers.",
           recommendation: "Return HSTS and frame protection headers.",
           target: {

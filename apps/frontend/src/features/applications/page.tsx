@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { useMemo } from "react";
 import {
   apiRoutes,
   type Application,
@@ -7,12 +6,9 @@ import {
   type ApplicationStatus,
   type CreateApplicationBody
 } from "@synosec/contracts";
-import { fetchJson } from "@/shared/lib/api";
-import { useResourceDetail } from "@/shared/hooks/use-resource-detail";
-import { useResourceList } from "@/shared/hooks/use-resource-list";
 import { applicationsResource } from "@/features/applications/resource";
 import { applicationTransfer } from "@/features/applications/transfer";
-import { exportResourceRecords, importResourceRecords } from "@/shared/lib/resource-transfer";
+import { useCrudPage } from "@/shared/crud/use-crud-page";
 import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Input } from "@/shared/ui/input";
@@ -58,44 +54,6 @@ function StatusBadge({ label, className }: { label: string; className: string })
   );
 }
 
-const applicationColumns: ListPageColumn<Application>[] = [
-  { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
-  { id: "baseUrl", header: "Base URL", cell: (row) => <span className="text-muted-foreground">{row.baseUrl ?? "Not set"}</span> },
-  { id: "environment", header: "Environment", cell: (row) => <StatusBadge label={environmentLabels[row.environment]} className={environmentBadgeStyles[row.environment]} /> },
-  { id: "status", header: "Status", cell: (row) => <StatusBadge label={statusLabels[row.status]} className={statusBadgeStyles[row.status]} /> },
-  {
-    id: "lastScannedAt",
-    header: "Last scanned",
-    cell: (row) => <span className="text-muted-foreground">{formatTimestamp(row.lastScannedAt)}</span>,
-    className: "text-right"
-  }
-];
-
-const applicationFilters: ListPageFilter[] = [
-  {
-    id: "status",
-    label: "Filter applications by status",
-    placeholder: "Filter by status",
-    allLabel: "All statuses",
-    options: [
-      { label: "Active", value: "active" },
-      { label: "Investigating", value: "investigating" },
-      { label: "Archived", value: "archived" }
-    ]
-  },
-  {
-    id: "environment",
-    label: "Filter applications by environment",
-    placeholder: "Filter by environment",
-    allLabel: "All environments",
-    options: [
-      { label: "Production", value: "production" },
-      { label: "Staging", value: "staging" },
-      { label: "Development", value: "development" }
-    ]
-  }
-];
-
 function createEmptyFormValues(): ApplicationFormValues {
   return {
     name: "",
@@ -126,17 +84,6 @@ function toRequestBody(values: ApplicationFormValues): CreateApplicationBody {
   };
 }
 
-function formatTimestamp(value: string | null) {
-  if (!value) {
-    return "Never";
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(new Date(value));
-}
-
 function validateForm(values: ApplicationFormValues) {
   const errors: Partial<Record<keyof ApplicationFormValues, string>> = {};
 
@@ -153,6 +100,17 @@ function validateForm(values: ApplicationFormValues) {
   }
 
   return errors;
+}
+
+function formatTimestamp(value: string | null) {
+  if (!value) {
+    return "Never";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(new Date(value));
 }
 
 function definedString(value: string | undefined) {
@@ -172,153 +130,67 @@ export function ApplicationsPage({
   onNavigateToCreate: () => void;
   onNavigateToDetail: (id: string, label?: string) => void;
 }) {
-  const [application, setApplication] = useState<Application | null>(null);
-  const [formValues, setFormValues] = useState<ApplicationFormValues>(createEmptyFormValues);
-  const [initialValues, setInitialValues] = useState<ApplicationFormValues>(createEmptyFormValues);
-  const [errors, setErrors] = useState<Partial<Record<keyof ApplicationFormValues, string>>>({});
-  const [saving, setSaving] = useState(false);
-  const isCreateMode = applicationId === "new";
-  const applicationList = useResourceList(applicationsResource);
-  const applicationDetail = useResourceDetail(applicationsResource, applicationId && applicationId !== "new" ? applicationId : null);
-
-  useEffect(() => {
-    if (!applicationId) {
-      return;
-    }
-
-    if (applicationId === "new") {
-      const empty = createEmptyFormValues();
-      setApplication(null);
-      setFormValues(empty);
-      setInitialValues(empty);
-      setErrors({});
-      return;
-    }
-
-    if (applicationDetail.state === "error") {
-      toast.error("Application not found", {
-        description: applicationDetail.message
-      });
-      onNavigateToList();
-      return;
-    }
-
-    if (applicationDetail.state !== "loaded") {
-      const empty = createEmptyFormValues();
-      setApplication(null);
-      setFormValues(empty);
-      setInitialValues(empty);
-      setErrors({});
-      return;
-    }
-
-    const values = toFormValues(applicationDetail.item);
-    setApplication(applicationDetail.item);
-    setFormValues(values);
-    setInitialValues(values);
-    setErrors({});
-  }, [applicationDetail, applicationId, onNavigateToList]);
-
-  const isDirty = useMemo(() => JSON.stringify(formValues) !== JSON.stringify(initialValues), [formValues, initialValues]);
-
-  function handleFieldChange<Key extends keyof ApplicationFormValues>(key: Key, value: ApplicationFormValues[Key]) {
-    setFormValues((current) => ({
-      ...current,
-      [key]: value
-    }));
-
-    if (errors[key]) {
-      setErrors((current) => ({
-        ...current,
-        [key]: undefined
-      }));
-    }
-  }
-
-  async function handleSave() {
-    const nextErrors = validateForm(formValues);
-    if (Object.keys(nextErrors).length > 0) {
-      setErrors(nextErrors);
-      toast.error("Validation failed", {
-        description: "Fix the highlighted fields before saving."
-      });
-      return;
-    }
-
-    setSaving(true);
-
-    try {
-      const body = JSON.stringify(toRequestBody(formValues));
-
-      if (isCreateMode) {
-        const created = await fetchJson<Application>(apiRoutes.applications, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body
-        });
-        toast.success("Application created");
-        onNavigateToDetail(created.id, created.name);
-        return;
+  const crud = useCrudPage({
+    recordLabel: "Application",
+    recordId: applicationId,
+    route: apiRoutes.applications,
+    resource: applicationsResource,
+    transfer: applicationTransfer,
+    createEmptyFormValues,
+    toFormValues,
+    parseRequestBody: (formValues) => {
+      const errors = validateForm(formValues);
+      if (Object.keys(errors).length > 0) {
+        return { errors };
       }
 
-      if (!application) {
-        return;
-      }
+      return {
+        body: toRequestBody(formValues),
+        errors: {}
+      };
+    },
+    onNavigateToList,
+    onNavigateToDetail,
+    getItemLabel: (application) => application.name
+  });
 
-      const updated = await fetchJson<Application>(`${apiRoutes.applications}/${application.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body
-      });
-      const nextValues = toFormValues(updated);
-      setApplication(updated);
-      setFormValues(nextValues);
-      setInitialValues(nextValues);
-      toast.success("Application updated");
-    } catch (error) {
-      toast.error("Application request failed", {
-        description: error instanceof Error ? error.message : "Unknown error"
-      });
-    } finally {
-      setSaving(false);
+  const applicationColumns = useMemo<ListPageColumn<Application>[]>(() => [
+    { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
+    { id: "baseUrl", header: "Base URL", cell: (row) => <span className="text-muted-foreground">{row.baseUrl ?? "Not set"}</span> },
+    { id: "environment", header: "Environment", cell: (row) => <StatusBadge label={environmentLabels[row.environment]} className={environmentBadgeStyles[row.environment]} /> },
+    { id: "status", header: "Status", cell: (row) => <StatusBadge label={statusLabels[row.status]} className={statusBadgeStyles[row.status]} /> },
+    {
+      id: "lastScannedAt",
+      header: "Last scanned",
+      cell: (row) => <span className="text-muted-foreground">{formatTimestamp(row.lastScannedAt)}</span>,
+      className: "text-right"
     }
-  }
+  ], []);
 
-  function handleDismiss() {
-    setFormValues(initialValues);
-    setErrors({});
-  }
-
-  function handleExportJson() {
-    if (!application) {
-      return;
+  const applicationFilters: ListPageFilter[] = [
+    {
+      id: "status",
+      label: "Filter applications by status",
+      placeholder: "Filter by status",
+      allLabel: "All statuses",
+      options: [
+        { label: "Active", value: "active" },
+        { label: "Investigating", value: "investigating" },
+        { label: "Archived", value: "archived" }
+      ]
+    },
+    {
+      id: "environment",
+      label: "Filter applications by environment",
+      placeholder: "Filter by environment",
+      allLabel: "All environments",
+      options: [
+        { label: "Production", value: "production" },
+        { label: "Staging", value: "staging" },
+        { label: "Development", value: "development" }
+      ]
     }
-
-    exportResourceRecords(applicationTransfer, [application], `application-${application.name}`);
-  }
-
-  async function handleImportJson(file: File) {
-    try {
-      const created = await importResourceRecords(applicationTransfer, file);
-      toast.success(created.length === 1 ? "Application imported" : `${created.length} applications imported`);
-      applicationList.refetch();
-    } catch (error) {
-      toast.error("Application import failed", {
-        description: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  }
-
-  function handleListExportJson(selected: Application) {
-    exportResourceRecords(applicationTransfer, [selected], `application-${selected.name}`);
-  }
-
-  async function handleDeleteApplication(selected: Application) {
-    await fetchJson<void>(`${apiRoutes.applications}/${selected.id}`, {
-      method: "DELETE"
-    });
-    applicationList.refetch();
-  }
+  ];
 
   if (!applicationId) {
     return (
@@ -326,29 +198,29 @@ export function ApplicationsPage({
         title="Applications"
         recordLabel="Application"
         columns={applicationColumns}
-        query={applicationList.query}
-        dataState={applicationList.dataState}
-        items={applicationList.items}
-        meta={applicationList.meta}
+        query={crud.list.query}
+        dataState={crud.list.dataState}
+        items={crud.list.items}
+        meta={crud.list.meta}
         filters={applicationFilters}
         emptyMessage="No applications matched the current search and filter."
-        onSearchChange={applicationList.setSearch}
-        onFilterChange={applicationList.setFilter}
-        onSortChange={applicationList.setSort}
-        onPageChange={applicationList.setPage}
-        onPageSizeChange={applicationList.setPageSize}
-        onRetry={applicationList.refetch}
+        onSearchChange={crud.list.setSearch}
+        onFilterChange={crud.list.setFilter}
+        onSortChange={crud.list.setSort}
+        onPageChange={crud.list.setPage}
+        onPageSizeChange={crud.list.setPageSize}
+        onRetry={crud.list.refetch}
         onAddRecord={onNavigateToCreate}
         onRowClick={(selected) => onNavigateToDetail(selected.id, selected.name)}
-        onImportJson={handleImportJson}
+        onImportJson={crud.importJson}
         getRowLabel={(selected) => selected.name}
-        onExportRowJson={handleListExportJson}
-        onDeleteRow={handleDeleteApplication}
+        onExportRowJson={crud.exportRowJson}
+        onDeleteRow={crud.deleteRow}
       />
     );
   }
 
-  if (!isCreateMode && applicationDetail.state !== "loaded") {
+  if (!crud.isCreateMode && crud.detail.state !== "loaded") {
     return (
       <DetailLoadingState
         title={applicationNameHint ?? "Application detail"}
@@ -361,58 +233,55 @@ export function ApplicationsPage({
 
   return (
     <DetailPage
-      title={isCreateMode ? "New application" : application?.name ?? "Application detail"}
-      breadcrumbs={["Start", "Applications", isCreateMode ? "New" : application?.name ?? "Detail"]}
-      isDirty={isDirty}
-      isSaving={saving}
+      title={crud.isCreateMode ? "New application" : crud.item?.name ?? "Application detail"}
+      breadcrumbs={["Start", "Applications", crud.isCreateMode ? "New" : crud.item?.name ?? "Detail"]}
+      isDirty={crud.isDirty}
+      isSaving={crud.saving}
       onBack={onNavigateToList}
-      onSave={handleSave}
-      onDismiss={handleDismiss}
-      onExportJson={!isCreateMode ? handleExportJson : undefined}
-      saveLabel={isCreateMode ? "Save" : "Save"}
+      onSave={() => {
+        void crud.save();
+      }}
+      onDismiss={crud.resetForm}
+      onExportJson={!crud.isCreateMode ? crud.exportCurrent : undefined}
       sidebar={
-        !isCreateMode && application ? (
+        !crud.isCreateMode && crud.item ? (
           <>
             <DetailSidebarItem label="Status">
-              <StatusBadge label={statusLabels[application.status]} className={statusBadgeStyles[application.status]} />
+              <StatusBadge label={statusLabels[crud.item.status]} className={statusBadgeStyles[crud.item.status]} />
             </DetailSidebarItem>
             <DetailSidebarItem label="Environment">
-              <StatusBadge label={environmentLabels[application.environment]} className={environmentBadgeStyles[application.environment]} />
+              <StatusBadge label={environmentLabels[crud.item.environment]} className={environmentBadgeStyles[crud.item.environment]} />
             </DetailSidebarItem>
             <DetailSidebarItem label="Last scanned">
-              {formatTimestamp(application.lastScannedAt)}
+              {formatTimestamp(crud.item.lastScannedAt)}
             </DetailSidebarItem>
             <DetailSidebarItem label="Created">
-              {formatTimestamp(application.createdAt)}
+              {formatTimestamp(crud.item.createdAt)}
             </DetailSidebarItem>
             <DetailSidebarItem label="Updated">
-              {formatTimestamp(application.updatedAt)}
+              {formatTimestamp(crud.item.updatedAt)}
             </DetailSidebarItem>
           </>
         ) : undefined
       }
     >
       <DetailFieldGroup title="General">
-        <DetailField
-          label="Name"
-          required
-          {...definedString(errors.name)}
-        >
-          <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
+        <DetailField label="Name" required {...definedString(crud.errors.name)}>
+          <Input value={crud.formValues.name} onChange={(event) => crud.handleFieldChange("name", event.target.value)} aria-label="Name" />
         </DetailField>
 
         <DetailField
           label="Base URL"
           hint="Optional. Include the primary absolute URL when this application exposes a reachable web surface."
-          {...definedString(errors.baseUrl)}
+          {...definedString(crud.errors.baseUrl)}
         >
-          <Input value={formValues.baseUrl} onChange={(event) => handleFieldChange("baseUrl", event.target.value)} aria-label="Base URL" />
+          <Input value={crud.formValues.baseUrl} onChange={(event) => crud.handleFieldChange("baseUrl", event.target.value)} aria-label="Base URL" />
         </DetailField>
       </DetailFieldGroup>
 
       <DetailFieldGroup title="Configuration">
         <DetailField label="Environment" required>
-          <Select value={formValues.environment} onValueChange={(value: ApplicationEnvironment) => handleFieldChange("environment", value)}>
+          <Select value={crud.formValues.environment} onValueChange={(value: ApplicationEnvironment) => crud.handleFieldChange("environment", value)}>
             <SelectTrigger aria-label="Environment" className="w-fit min-w-[10rem] max-w-[12rem]">
               <SelectValue placeholder="Select environment" />
             </SelectTrigger>
@@ -427,7 +296,7 @@ export function ApplicationsPage({
         </DetailField>
 
         <DetailField label="Status" required>
-          <Select value={formValues.status} onValueChange={(value: ApplicationStatus) => handleFieldChange("status", value)}>
+          <Select value={crud.formValues.status} onValueChange={(value: ApplicationStatus) => crud.handleFieldChange("status", value)}>
             <SelectTrigger aria-label="Status" className="w-fit min-w-[10rem] max-w-[12rem]">
               <SelectValue placeholder="Select status" />
             </SelectTrigger>
@@ -444,8 +313,8 @@ export function ApplicationsPage({
         <DetailField label="Last scanned">
           <Input
             type="datetime-local"
-            value={formValues.lastScannedAt}
-            onChange={(event) => handleFieldChange("lastScannedAt", event.target.value)}
+            value={crud.formValues.lastScannedAt}
+            onChange={(event) => crud.handleFieldChange("lastScannedAt", event.target.value)}
             aria-label="Last scanned"
           />
         </DetailField>

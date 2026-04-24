@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, LogIn, LogOut, Settings, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { navigationTree, type NavigationId } from "@/app/navigation";
+import { isNavigationItemActive, navigationTree } from "@/app/navigation";
 import { logout } from "@/features/auth/auth-store";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
@@ -29,9 +30,7 @@ type SidebarUser = {
 };
 
 type AppSidebarProps = {
-  currentSection: NavigationId;
-  navigateToSection: (section: NavigationId) => void;
-  navigateToPath: (path: string) => void;
+  pathname: string;
   theme: ThemeId;
   onThemeChange: (theme: ThemeId) => void;
   currentPathWithQuery: string;
@@ -218,19 +217,19 @@ function SidebarBrand() {
 }
 
 function SidebarNav({
-  currentSection,
-  navigateToSection
-}: Pick<AppSidebarProps, "currentSection" | "navigateToSection">) {
+  pathname
+}: Pick<AppSidebarProps, "pathname">) {
+  const navigate = useNavigate();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const groupActiveMap = useMemo(() => {
     const map: Record<string, boolean> = {};
     for (const entry of navigationTree) {
       if (entry.kind === "group") {
-        map[entry.group.id] = entry.group.items.some((item) => item.id === currentSection);
+        map[entry.group.id] = entry.group.items.some((item) => isNavigationItemActive(item, pathname));
       }
     }
     return map;
-  }, [currentSection]);
+  }, [pathname]);
 
   useEffect(() => {
     const activeGroupIds = Object.entries(groupActiveMap)
@@ -261,7 +260,7 @@ function SidebarNav({
             if (entry.kind === "item") {
               const item = entry.item;
               const Icon = item.icon;
-              const isActive = item.id === currentSection;
+              const isActive = isNavigationItemActive(item, pathname);
 
               return (
                 <SidebarMenuItem
@@ -270,7 +269,7 @@ function SidebarNav({
                     isActive &&
                       "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border))] before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-sidebar-primary before:content-['']"
                   )}
-                  onClick={() => navigateToSection(item.id)}
+                  onClick={() => navigate(item.path)}
                 >
                   <Icon
                     className={cn("transition-colors", isActive ? "text-sidebar-primary" : "text-sidebar-muted-foreground")}
@@ -306,7 +305,7 @@ function SidebarNav({
                   <div className="ml-5 grid gap-0.5 border-l border-sidebar-border/60 pl-1">
                     {group.items.map((item) => {
                       const Icon = item.icon;
-                      const isActive = item.id === currentSection;
+                      const isActive = isNavigationItemActive(item, pathname);
 
                       return (
                         <SidebarMenuItem
@@ -315,7 +314,7 @@ function SidebarNav({
                             isActive &&
                               "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border))] before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-sidebar-primary before:content-['']"
                           )}
-                          onClick={() => navigateToSection(item.id)}
+                          onClick={() => navigate(item.path)}
                         >
                           <Icon
                             className={cn("transition-colors", isActive ? "text-sidebar-primary" : "text-sidebar-muted-foreground")}
@@ -340,12 +339,13 @@ function SidebarFooter({
   onThemeChange,
   user,
   showSignIn,
-  currentPathWithQuery,
-  navigateToPath
+  currentPathWithQuery
 }: Pick<
   AppSidebarProps,
-  "theme" | "onThemeChange" | "user" | "showSignIn" | "currentPathWithQuery" | "navigateToPath"
+  "theme" | "onThemeChange" | "user" | "showSignIn" | "currentPathWithQuery"
 >) {
+  const navigate = useNavigate();
+
   return (
     <div className="mt-2 border-t border-sidebar-border/60">
       {user ? (
@@ -377,7 +377,7 @@ function SidebarFooter({
         <button
           type="button"
           className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[0.72rem] font-medium leading-none text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50 [&_svg]:h-[1em] [&_svg]:w-[1em]"
-          onClick={() => navigateToPath(`/login?redirectTo=${encodeURIComponent(currentPathWithQuery)}`)}
+          onClick={() => navigate(`/login?redirectTo=${encodeURIComponent(currentPathWithQuery)}`)}
         >
           <LogIn className="text-sidebar-muted-foreground" />
           <span>Sign in</span>
@@ -397,14 +397,13 @@ export function AppSidebar(props: AppSidebarProps) {
         <div className="flex h-full flex-col pt-5">
           <SidebarBrand />
           <div aria-hidden className="border-t border-sidebar-border/60" />
-          <SidebarNav currentSection={props.currentSection} navigateToSection={props.navigateToSection} />
+          <SidebarNav pathname={props.pathname} />
           <SidebarFooter
             theme={props.theme}
             onThemeChange={props.onThemeChange}
             user={props.user}
             showSignIn={props.showSignIn}
             currentPathWithQuery={props.currentPathWithQuery}
-            navigateToPath={props.navigateToPath}
           />
         </div>
       </Sidebar>
@@ -428,14 +427,13 @@ export function AppSidebar(props: AppSidebarProps) {
             </button>
           </div>
           <div aria-hidden className="border-t border-sidebar-border/60" />
-          <SidebarNav currentSection={props.currentSection} navigateToSection={props.navigateToSection} />
+          <SidebarNav pathname={props.pathname} />
           <SidebarFooter
             theme={props.theme}
             onThemeChange={props.onThemeChange}
             user={props.user}
             showSignIn={props.showSignIn}
             currentPathWithQuery={props.currentPathWithQuery}
-            navigateToPath={props.navigateToPath}
           />
         </div>
       </div>
