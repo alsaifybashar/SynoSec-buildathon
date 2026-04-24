@@ -17,7 +17,10 @@ interface CompileInput {
 }
 
 function interpolateArgument(template: string, input: CompileInput): string {
-  const baseUrl = `http://${input.target}${input.port ? `:${input.port}` : ""}`;
+  const configuredBaseUrl = input.toolInput?.["baseUrl"];
+  const baseUrl = typeof configuredBaseUrl === "string" && configuredBaseUrl.trim().length > 0
+    ? configuredBaseUrl
+    : `http://${input.target}${input.port ? `:${input.port}` : ""}`;
   let result = template
     .replaceAll("{target}", input.target)
     .replaceAll("{baseUrl}", baseUrl)
@@ -46,10 +49,10 @@ export function compileToolRequestFromDefinition(tool: CompilableTool, input: Co
   }
 
   const toolInput = {
-    ...(input.toolInput ?? {}),
     target: input.target,
     ...(input.port == null ? {} : { port: input.port }),
-    baseUrl: `http://${input.target}${input.port ? `:${input.port}` : ""}`
+    baseUrl: `http://${input.target}${input.port ? `:${input.port}` : ""}`,
+    ...(input.toolInput ?? {})
   };
 
   return {

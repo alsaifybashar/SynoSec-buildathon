@@ -74,6 +74,7 @@ type ReasoningEntry = {
 
 type ToolActivity = {
   phase: string;
+  toolId?: string;
   toolName: string;
   command: string;
   startedAt: string;
@@ -115,8 +116,8 @@ type OrchestratorEvent =
   | { type: "edge_added"; edge: MapEdge }
   | { type: "plan_created"; plan: AttackPlan }
   | { type: "reasoning"; phase: string; title: string; summary: string }
-  | { type: "tool_started"; phase: string; toolName: string; command: string; startedAt: string }
-  | { type: "tool_completed"; phase: string; toolName: string; command: string; startedAt: string; completedAt: string; durationMs: number; exitCode: number; outputPreview: string }
+  | { type: "tool_started"; phase: string; toolId?: string; toolName: string; command: string; startedAt: string }
+  | { type: "tool_completed"; phase: string; toolId?: string; toolName: string; command: string; startedAt: string; completedAt: string; durationMs: number; exitCode: number; outputPreview: string }
   | { type: "log"; level: string; message: string }
   | { type: "completed"; summary: string }
   | { type: "failed"; error: string };
@@ -887,6 +888,7 @@ export function AttackMapPage() {
         setToolActivity((prev) => [
           {
             phase: event.phase,
+            toolId: event.toolId,
             toolName: event.toolName,
             command: event.command,
             startedAt: event.startedAt,
@@ -900,6 +902,7 @@ export function AttackMapPage() {
         setToolActivity((prev) => [
           {
             phase: event.phase,
+            toolId: event.toolId,
             toolName: event.toolName,
             command: event.command,
             startedAt: event.startedAt,

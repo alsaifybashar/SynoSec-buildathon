@@ -181,7 +181,12 @@ export type AiToolStatus = z.infer<typeof aiToolStatusSchema>;
 export const toolExecutorTypeSchema = z.enum(["bash", "builtin"]);
 export type ToolExecutorType = z.infer<typeof toolExecutorTypeSchema>;
 
-export const toolBuiltinActionKeySchema = z.enum(["report_finding", "report_vulnerability"]);
+export const toolBuiltinActionKeySchema = z.enum([
+  "report_finding",
+  "report_vulnerability",
+  "deep_analysis",
+  "attack_chain_correlation"
+]);
 export type ToolBuiltinActionKey = z.infer<typeof toolBuiltinActionKeySchema>;
 
 export const toolSandboxProfileSchema = z.enum([

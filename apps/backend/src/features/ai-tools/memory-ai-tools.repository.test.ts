@@ -62,7 +62,13 @@ describe("MemoryAiToolsRepository", () => {
       source: "system"
     });
 
-    expect(builtinOnly.items.map((tool) => tool.id)).toEqual(["builtin-report-finding", "builtin-report-vulnerability"]);
+    expect(builtinOnly.items.map((tool) => tool.id)).toEqual([
+      "builtin-attack-chain-correlation",
+      "builtin-deep-analysis",
+      "builtin-report-finding",
+      "builtin-report-vulnerability"
+    ]);
+    expect(allTools.items.some((tool) => tool.id === "builtin-deep-analysis" && tool.source === "system")).toBe(true);
   });
 
   it("returns builtin tools by id and rejects builtin mutation", async () => {

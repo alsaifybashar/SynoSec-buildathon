@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText } from "ai";
-import type { Observation, ToolRequest, ToolRun } from "@synosec/contracts";
+import type { AiTool, Observation, ToolRun } from "@synosec/contracts";
 import type {
   AttackMapEdge,
   AttackMapNode,
@@ -15,97 +14,23 @@ import type {
 } from "@/execution-engine/orchestrator/orchestrator-stream.js";
 import { OrchestratorStream } from "@/execution-engine/orchestrator/orchestrator-stream.js";
 import { executeScriptedTool } from "@/execution-engine/tools/script-executor.js";
+import { compileToolRequestFromDefinition } from "@/features/ai-tools/tool-definition.compiler.js";
 import { prisma } from "@/shared/database/prisma-client.js";
 import { RequestError } from "@/shared/http/request-error.js";
+import type { AiToolsRepository } from "@/features/ai-tools/index.js";
 import type { AiProvidersRepository, StoredAiProvider } from "@/features/ai-providers/index.js";
 
 const execFileAsync = promisify(execFile);
 
-const suggestedToolScriptMap: Record<string, string> = {
-  // web
-  nikto: "../../../../../../scripts/tools/web/nikto-scan.sh",
-  nuclei: "../../../../../../scripts/tools/web/nuclei.sh",
-  whatweb: "../../../../../../scripts/tools/web/whatweb.sh",
-  sqlmap: "../../../../../../scripts/tools/web/sqlmap-scan.sh",
-  dalfox: "../../../../../../scripts/tools/web/dalfox.sh",
-  arjun: "../../../../../../scripts/tools/web/arjun.sh",
-  httpx: "../../../../../../scripts/tools/web/httpx.sh",
-  wpscan: "../../../../../../scripts/tools/web/wpscan.sh",
-  feroxbuster: "../../../../../../scripts/tools/web/feroxbuster.sh",
-  dirsearch: "../../../../../../scripts/tools/web/dirsearch.sh",
-  waybackurls: "../../../../../../scripts/tools/web/waybackurls.sh",
-  gau: "../../../../../../scripts/tools/web/gau.sh",
-  hakrawler: "../../../../../../scripts/tools/web/hakrawler.sh",
-  katana: "../../../../../../scripts/tools/web/katana.sh",
-  paramspider: "../../../../../../scripts/tools/web/paramspider.sh",
-  "http-headers": "../../../../../../scripts/tools/web/http-headers.sh",
-  "http-recon": "../../../../../../scripts/tools/web/http-recon.sh",
-  "vuln-audit": "../../../../../../scripts/tools/web/vuln-audit.sh",
-  "sql-injection-check": "../../../../../../scripts/tools/web/sql-injection-check.sh",
-  // content
-  gobuster: "../../../../../../scripts/tools/content/gobuster-scan.sh",
-  dirb: "../../../../../../scripts/tools/content/dirb-scan.sh",
-  ffuf: "../../../../../../scripts/tools/content/ffuf-scan.sh",
-  "content-discovery": "../../../../../../scripts/tools/content/content-discovery.sh",
-  "web-crawl": "../../../../../../scripts/tools/content/web-crawl.sh",
-  // network
-  nmap: "../../../../../../scripts/tools/network/nmap-scan.sh",
-  "nmap-scripts": "../../../../../../scripts/tools/network/nmap-scan.sh",
-  rustscan: "../../../../../../scripts/tools/network/rustscan.sh",
-  masscan: "../../../../../../scripts/tools/network/masscan.sh",
-  autorecon: "../../../../../../scripts/tools/network/autorecon.sh",
-  "service-scan": "../../../../../../scripts/tools/network/service-scan.sh",
-  netcat: "../../../../../../scripts/tools/network/netcat-probe.sh",
-  ncat: "../../../../../../scripts/tools/network/ncat-probe.sh",
-  // subdomain
-  subfinder: "../../../../../../scripts/tools/subdomain/subfinder.sh",
-  theharvester: "../../../../../../scripts/tools/subdomain/theharvester.sh",
-  dnsenum: "../../../../../../scripts/tools/subdomain/dnsenum.sh",
-  fierce: "../../../../../../scripts/tools/subdomain/fierce.sh",
-  amass: "../../../../../../scripts/tools/subdomain/amass-enum.sh",
-  sublist3r: "../../../../../../scripts/tools/subdomain/sublist3r-enum.sh",
-  // password
-  hydra: "../../../../../../scripts/tools/password/hydra.sh",
-  "john-the-ripper": "../../../../../../scripts/tools/password/john-the-ripper.sh",
-  john: "../../../../../../scripts/tools/password/john-the-ripper.sh",
-  medusa: "../../../../../../scripts/tools/password/medusa.sh",
-  hashcat: "../../../../../../scripts/tools/password/hashcat-crack.sh",
-  ophcrack: "../../../../../../scripts/tools/password/ophcrack.sh",
-  patator: "../../../../../../scripts/tools/password/patator.sh",
-  "hash-identifier": "../../../../../../scripts/tools/password/hash-identifier.sh",
-  "cipher-identifier": "../../../../../../scripts/tools/password/cipher-identifier.sh",
-  // windows
-  crackmapexec: "../../../../../../scripts/tools/windows/crackmapexec.sh",
-  "evil-winrm": "../../../../../../scripts/tools/windows/evil-winrm.sh",
-  enum4linux: "../../../../../../scripts/tools/windows/enum4linux.sh",
-  "enum4linux-ng": "../../../../../../scripts/tools/windows/enum4linux-ng.sh",
-  netexec: "../../../../../../scripts/tools/windows/netexec.sh",
-  responder: "../../../../../../scripts/tools/windows/responder.sh",
-  // exploitation
-  metasploit: "../../../../../../scripts/tools/exploitation/metasploit-framework.sh",
-  // forensics
-  binwalk: "../../../../../../scripts/tools/forensics/binwalk.sh",
-  "bulk-extractor": "../../../../../../scripts/tools/forensics/bulk-extractor.sh",
-  exiftool: "../../../../../../scripts/tools/forensics/exiftool.sh",
-  foremost: "../../../../../../scripts/tools/forensics/foremost.sh",
-  scalpel: "../../../../../../scripts/tools/forensics/scalpel.sh",
-  volatility: "../../../../../../scripts/tools/forensics/volatility.sh",
-  steghide: "../../../../../../scripts/tools/forensics/steghide-info.sh",
-  // utility
-  checksec: "../../../../../../scripts/tools/utility/checksec.sh",
-  gdb: "../../../../../../scripts/tools/utility/gdb.sh",
-  ghidra: "../../../../../../scripts/tools/utility/ghidra.sh",
-  "kube-bench": "../../../../../../scripts/tools/utility/kube-bench.sh",
-  "kube-hunter": "../../../../../../scripts/tools/utility/kube-hunter.sh",
-  objdump: "../../../../../../scripts/tools/utility/objdump.sh",
-  radare2: "../../../../../../scripts/tools/utility/radare2.sh",
-  strings: "../../../../../../scripts/tools/utility/strings.sh",
-  trivy: "../../../../../../scripts/tools/utility/trivy.sh",
-  prowler: "../../../../../../scripts/tools/utility/prowler.sh",
-  "scout-suite": "../../../../../../scripts/tools/utility/scout-suite.sh",
-  "bash-probe": "../../../../../../scripts/tools/utility/bash-probe.sh",
-  "burp-suite": "../../../../../../scripts/tools/web/burp-suite.sh",
-  "vulnerability-audit": "../../../../../../scripts/tools/vulnerability-audit.sh",
+type OrchestratorRunnableTool = AiTool & {
+  source: "custom";
+  executorType: "bash";
+  bashSource: string;
+};
+
+type ResolvedOrchestratorTool = {
+  requestedName: string;
+  tool: OrchestratorRunnableTool;
 };
 
 export type OrchestratorRunRecord = {
@@ -147,6 +72,30 @@ type DecisionEnvelope<T> = {
   data: T;
 };
 
+function normalizeToolName(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function createToolRun(runId: string, phase: AttackPlanPhase, tool: OrchestratorRunnableTool, startedAt: string, commandPreview: string, target: string): ToolRun {
+  return {
+    id: randomUUID(),
+    scanId: runId,
+    tacticId: phase.id,
+    agentId: runId,
+    toolId: tool.id,
+    tool: tool.name,
+    executorType: "bash",
+    capabilities: tool.capabilities,
+    target,
+    status: "running",
+    riskTier: tool.riskTier,
+    justification: `Attack map phase ${phase.name} requested ${tool.name}.`,
+    commandPreview,
+    dispatchMode: "local",
+    startedAt
+  };
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -178,7 +127,8 @@ function toJson(value: unknown): any { return JSON.parse(JSON.stringify(value));
 export class OrchestratorExecutionEngineService {
   constructor(
     private readonly stream: OrchestratorStream,
-    private readonly aiProvidersRepository: AiProvidersRepository
+    private readonly aiProvidersRepository: AiProvidersRepository,
+    private readonly aiToolsRepository: AiToolsRepository
   ) {}
 
   async createRun(targetUrl: string, providerId: string): Promise<OrchestratorRunRecord> {
@@ -203,6 +153,57 @@ export class OrchestratorExecutionEngineService {
       take: 50
     });
     return rows.map(mapRow);
+  }
+
+  private async listOrchestratorRunnableTools(): Promise<OrchestratorRunnableTool[]> {
+    const result = await this.aiToolsRepository.list({
+      page: 1,
+      pageSize: 100,
+      q: "",
+      sortBy: "name",
+      sortDirection: "asc"
+    });
+
+    return result.items.filter((tool): tool is OrchestratorRunnableTool => (
+      tool.source === "custom"
+      && tool.executorType === "bash"
+      && typeof tool.bashSource === "string"
+      && tool.bashSource.trim().length > 0
+    ));
+  }
+
+  private async resolvePlannedTools(phase: AttackPlanPhase): Promise<ResolvedOrchestratorTool[]> {
+    const catalog = await this.listOrchestratorRunnableTools();
+    const byNormalizedName = new Map<string, OrchestratorRunnableTool[]>();
+
+    for (const tool of catalog) {
+      const key = normalizeToolName(tool.name);
+      const current = byNormalizedName.get(key) ?? [];
+      current.push(tool);
+      byNormalizedName.set(key, current);
+    }
+
+    return [...new Set(phase.tools)].map((requestedName) => {
+      const matches = byNormalizedName.get(normalizeToolName(requestedName)) ?? [];
+      if (matches.length === 0) {
+        throw new RequestError(500, `Attack map phase "${phase.name}" selected an unknown AI tool: ${requestedName}.`, {
+          code: "ORCHESTRATOR_TOOL_UNKNOWN",
+          userFriendlyMessage: "The attack map selected an unknown AI tool."
+        });
+      }
+
+      if (matches.length > 1) {
+        throw new RequestError(500, `Attack map phase "${phase.name}" matched multiple AI tools named ${requestedName}.`, {
+          code: "ORCHESTRATOR_TOOL_NAME_AMBIGUOUS",
+          userFriendlyMessage: "The attack map selected an ambiguous AI tool name."
+        });
+      }
+
+      return {
+        requestedName,
+        tool: matches[0]!
+      };
+    });
   }
 
   startAsync(runId: string, targetUrl: string, providerId: string) {
@@ -338,7 +339,8 @@ export class OrchestratorExecutionEngineService {
     emit({ type: "phase_changed", phase: "planning", status: "running" });
     emit({ type: "log", level: "info", message: "Generating attack plan from recon data" });
 
-    const plan = await this.createPlan(targetUrl, recon, provider, modelName, emitReasoning);
+    const plannerTools = await this.listOrchestratorRunnableTools();
+    const plan = await this.createPlan(targetUrl, recon, plannerTools, provider, modelName, emitReasoning);
     await prisma.orchestratorRun.update({ where: { id: runId }, data: { plan } });
     emit({ type: "plan_created", plan });
 
@@ -592,6 +594,7 @@ export class OrchestratorExecutionEngineService {
   private async createPlan(
     targetUrl: string,
     recon: ReconResult,
+    plannerTools: OrchestratorRunnableTool[],
     provider: StoredAiProvider,
     model: string,
     emitReasoning: (phase: string, title: string, summary: string) => void
@@ -602,7 +605,14 @@ export class OrchestratorExecutionEngineService {
       serverInfo: recon.serverInfo
     }, null, 2);
 
-    const availableTools = Object.keys(suggestedToolScriptMap).join(", ");
+    if (plannerTools.length === 0) {
+      throw new RequestError(500, "Attack map orchestration requires at least one custom bash AI tool, but none are available.", {
+        code: "ORCHESTRATOR_TOOLS_UNAVAILABLE",
+        userFriendlyMessage: "No runnable AI tools are available for the attack map."
+      });
+    }
+
+    const availableTools = plannerTools.map((tool) => tool.name).join(", ");
 
     const envelope = await this.callStructuredDecisionModel<Partial<AttackPlan>>(provider, model, [
       `You are a senior penetration tester creating an attack plan for: ${targetUrl}`,
@@ -635,36 +645,13 @@ export class OrchestratorExecutionEngineService {
     emitReasoning: (phase: string, title: string, summary: string) => void
   ): Promise<{ findings: { title: string; severity: string; description: string; vector: string; rawEvidence?: string }[]; probeCommand: string; probeOutput: string }> {
     const toolAttempts = await this.executeSuggestedTools(targetUrl, phase, runId);
-    const successfulAttempts = toolAttempts.filter((attempt) => attempt.exitCode === 0);
+    const probeCommand = toolAttempts.map((attempt) => attempt.commandPreview).join("\n");
+    const probeOutput = toolAttempts
+      .map((attempt) => `[${attempt.toolName}]\n${attempt.output.trim()}`)
+      .join("\n\n")
+      .slice(0, 4000);
 
-    let probeCommand: string;
-    let probeOutput: string;
-
-    if (successfulAttempts.length === 0) {
-      const failedOutput = toolAttempts.length > 0
-        ? toolAttempts
-            .map((attempt) => `[${attempt.toolName}] exit ${attempt.exitCode}${attempt.statusReason ? `: ${attempt.statusReason}` : ""}\n${attempt.output.trim()}`)
-            .join("\n\n")
-        : "";
-      this.stream.publish(runId, {
-        type: "log", level: "warn",
-        message: `No tools succeeded for "${phase.name}"; using recon data as evidence`
-      });
-      probeCommand = "recon fallback (no tools succeeded)";
-      probeOutput = [
-        failedOutput ? `FAILED TOOL ATTEMPTS:\n${failedOutput.slice(0, 2000)}` : "",
-        `NMAP:\n${recon.rawNmap.slice(0, 2000)}`,
-        `HTTP HEADERS:\n${recon.rawCurl.slice(0, 1000)}`
-      ].filter(Boolean).join("\n\n");
-    } else {
-      probeCommand = successfulAttempts.map((attempt) => attempt.commandPreview).join("\n");
-      probeOutput = successfulAttempts
-        .map((attempt) => `[${attempt.toolName}]\n${attempt.output.trim()}`)
-        .join("\n\n")
-        .slice(0, 4000);
-    }
-
-    const allObservations = successfulAttempts.flatMap((attempt) => attempt.observations);
+    const allObservations = toolAttempts.flatMap((attempt) => attempt.observations);
     const observationSummary = allObservations.length > 0
       ? allObservations
           .slice(0, 10)
@@ -698,72 +685,37 @@ export class OrchestratorExecutionEngineService {
 
   private async executeSuggestedTools(targetUrl: string, phase: AttackPlanPhase, runId: string): Promise<SuggestedToolAttempt[]> {
     const emit = (message: string) => this.stream.publish(runId, { type: "log", level: "info", message });
-    const resolved = [...new Set(phase.tools)].map((toolName) => ({
-      toolName,
-      scriptPath: suggestedToolScriptMap[toolName.toLowerCase()] ?? null
-    }));
-    const unknown = resolved.filter((c) => !c.scriptPath).map((c) => c.toolName);
-    if (unknown.length > 0) {
-      emit(`Unknown tools (no script mapping): ${unknown.join(", ")} — skipping`);
-    }
-    const runnableTools = resolved.filter(
-      (candidate): candidate is { toolName: string; scriptPath: string } => Boolean(candidate.scriptPath)
-    );
-
-    if (runnableTools.length === 0) {
-      emit(`No runnable tools found for phase "${phase.name}" — phase will use recon fallback`);
-      return [];
-    }
+    const resolvedTools = await this.resolvePlannedTools(phase);
+    const parsedTargetUrl = new URL(targetUrl);
+    const targetHost = parsedTargetUrl.hostname;
 
     const attempts: SuggestedToolAttempt[] = [];
-    for (const candidate of runnableTools) {
-      emit(`Trying suggested tool ${candidate.toolName} for ${phase.name}`);
+    for (const { requestedName, tool } of resolvedTools) {
+      emit(`Trying AI tool ${tool.name} for ${phase.name}`);
       const startedAt = new Date().toISOString();
-      const commandPreview = `${candidate.toolName} ${targetUrl}`;
-      this.stream.publish(runId, {
-        type: "tool_started",
-        phase: phase.name,
-        toolName: candidate.toolName,
-        command: commandPreview,
-        startedAt
-      });
       try {
-        const bashSource = await readFile(new URL(candidate.scriptPath, import.meta.url), "utf8");
-        const request: ToolRequest = {
-          tool: candidate.toolName,
-          executorType: "bash",
-          capabilities: [],
-          target: new URL(targetUrl).hostname,
+        const request = compileToolRequestFromDefinition(tool, {
+          target: targetHost,
           layer: "L7",
-          riskTier: "passive",
-          justification: `Attack map phase ${phase.name} suggested ${candidate.toolName}.`,
-          sandboxProfile: "read-only-parser",
-          privilegeProfile: "read-only-network",
-          parameters: {
-            bashSource,
-            commandPreview,
-            toolInput: {
-              baseUrl: targetUrl,
-              target: new URL(targetUrl).hostname
-            }
+          justification: `Attack map phase ${phase.name} requested ${tool.name}.`,
+          toolInput: {
+            baseUrl: targetUrl,
+            target: targetHost,
+            url: targetUrl
           }
-        };
-        const toolRun: ToolRun = {
-          id: randomUUID(),
-          scanId: runId,
-          tacticId: phase.id,
-          agentId: runId,
-          tool: candidate.toolName,
-          executorType: "bash",
-          capabilities: [],
-          target: request.target,
-          status: "running",
-          riskTier: "passive",
-          justification: request.justification,
-          commandPreview: String(request.parameters["commandPreview"]),
-          dispatchMode: "local",
+        });
+        const commandPreview = typeof request.parameters["commandPreview"] === "string"
+          ? request.parameters["commandPreview"]
+          : tool.name;
+        const toolRun = createToolRun(runId, phase, tool, startedAt, commandPreview, request.target);
+        this.stream.publish(runId, {
+          type: "tool_started",
+          phase: phase.name,
+          toolId: tool.id,
+          toolName: tool.name,
+          command: commandPreview,
           startedAt
-        };
+        });
         const result = await executeScriptedTool({
           scanId: runId,
           tacticId: phase.id,
@@ -775,7 +727,8 @@ export class OrchestratorExecutionEngineService {
         this.stream.publish(runId, {
           type: "tool_completed",
           phase: phase.name,
-          toolName: candidate.toolName,
+          toolId: tool.id,
+          toolName: tool.name,
           command: result.commandPreview ?? toolRun.commandPreview,
           startedAt,
           completedAt,
@@ -784,7 +737,7 @@ export class OrchestratorExecutionEngineService {
           outputPreview: result.output.slice(0, 600)
         });
         attempts.push({
-          toolName: candidate.toolName,
+          toolName: tool.name,
           commandPreview: result.commandPreview ?? toolRun.commandPreview,
           output: result.output,
           observations: result.observations,
@@ -795,10 +748,12 @@ export class OrchestratorExecutionEngineService {
         const message = errorMessage(error);
         const completedAt = new Date().toISOString();
         const durationMs = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+        const commandPreview = `${requestedName} ${targetUrl}`;
         this.stream.publish(runId, {
           type: "tool_completed",
           phase: phase.name,
-          toolName: candidate.toolName,
+          toolId: tool.id,
+          toolName: tool.name,
           command: commandPreview,
           startedAt,
           completedAt,
@@ -808,16 +763,13 @@ export class OrchestratorExecutionEngineService {
         });
         this.stream.publish(runId, {
           type: "log",
-          level: "warn",
-          message: `Tool ${candidate.toolName} failed for "${phase.name}": ${message}`
+          level: "error",
+          message: `Tool ${tool.name} failed for "${phase.name}": ${message}`
         });
-        attempts.push({
-          toolName: candidate.toolName,
-          commandPreview,
-          output: message,
-          observations: [],
-          exitCode: 1,
-          statusReason: message
+        throw new RequestError(500, `Attack map phase "${phase.name}" failed while executing ${tool.name}: ${message}`, {
+          code: "ORCHESTRATOR_TOOL_EXECUTION_FAILED",
+          userFriendlyMessage: `Attack map execution failed for ${tool.name}.`,
+          cause: error instanceof Error ? error : undefined
         });
       }
     }

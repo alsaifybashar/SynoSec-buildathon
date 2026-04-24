@@ -193,7 +193,9 @@ function describeBuiltinAction(tool: AiTool) {
 
   const labels: Record<ToolBuiltinActionKey, string> = {
     report_finding: "Workflow built-in: persists a structured workflow finding.",
-    report_vulnerability: "Single-agent built-in: persists a structured vulnerability."
+    report_vulnerability: "Single-agent built-in: persists a structured vulnerability.",
+    deep_analysis: "Attack map built-in: performs deeper orchestrator analysis on a significant finding.",
+    attack_chain_correlation: "Attack map built-in: correlates confirmed findings into chained attack paths."
   };
 
   return labels[actionKey];

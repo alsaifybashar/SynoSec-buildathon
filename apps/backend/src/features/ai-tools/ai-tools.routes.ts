@@ -10,6 +10,7 @@ import {
 } from "@synosec/contracts";
 import { type Express } from "express";
 import { registerCrudRoutes } from "@/shared/http/register-crud-routes.js";
+import { getToolCapabilities } from "@/workflow-engine/index.js";
 import { type AiToolsRepository } from "@/features/ai-tools/ai-tools.repository.js";
 import { runAiTool } from "./ai-tool-runner.js";
 
@@ -37,6 +38,16 @@ export function registerAiToolsRoutes(app: Express, repository: AiToolsRepositor
       const input = aiToolRunBodySchema.parse(request.body);
       const result = await runAiTool(tool, input.input);
       response.json(aiToolRunResultSchema.parse(result));
+    } catch (error) {
+      next(error);
+    }
+  });
+}
+
+export function registerAiToolCapabilityRoutes(app: Express) {
+  app.get("/api/tools/capabilities", async (_request, response, next) => {
+    try {
+      response.json(await getToolCapabilities());
     } catch (error) {
       next(error);
     }

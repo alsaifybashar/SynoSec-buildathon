@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compileToolRequestFromDefinition } from "./tool-definition.compiler.js";
 
 describe("compileToolRequestFromDefinition", () => {
-  it("overrides raw tool input target fields with the normalized execution target", () => {
+  it("preserves explicit URL inputs while still injecting the normalized execution target metadata", () => {
     const request = compileToolRequestFromDefinition({
       id: "seed-service-scan",
       name: "Service Scan",
@@ -24,7 +24,7 @@ describe("compileToolRequestFromDefinition", () => {
     });
 
     expect(request.parameters["toolInput"]).toMatchObject({
-      target: "localhost",
+      target: "http://localhost:8888/",
       port: 8888,
       baseUrl: "http://localhost:8888"
     });

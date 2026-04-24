@@ -64,7 +64,7 @@ describe("runAiTool", () => {
     expect(result.port).toBe(8080);
     expect(result.output).toBe("target=scanner.test");
     expect(result.commandPreview).toContain("target=scanner.test");
-    expect(result.commandPreview).toContain("baseUrl=http://scanner.test:8080");
+    expect(result.commandPreview).toContain("baseUrl=http://scanner.test:8080/path?q=1");
   });
 
   it("rejects tool runs that omit an execution target", async () => {

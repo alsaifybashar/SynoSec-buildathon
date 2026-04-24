@@ -14,7 +14,8 @@ export function createExecutionServices(dependencies: Pick<
   const orchestratorEventStream = new OrchestratorStream();
   const orchestratorExecutionEngine = new OrchestratorExecutionEngineService(
     orchestratorEventStream,
-    dependencies.aiProvidersRepository
+    dependencies.aiProvidersRepository,
+    dependencies.aiToolsRepository
   );
 
   const workflowRunEventStream = new WorkflowRunStream();
