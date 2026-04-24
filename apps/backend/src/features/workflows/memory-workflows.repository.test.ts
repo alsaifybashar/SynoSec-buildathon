@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { MemoryAiAgentsRepository } from "@/features/ai-agents/memory-ai-agents.repository.js";
 import { MemoryWorkflowsRepository } from "./memory-workflows.repository.js";
 
 describe("MemoryWorkflowsRepository", () => {
@@ -19,22 +18,8 @@ describe("MemoryWorkflowsRepository", () => {
     const runtimesRepository = {
       getById: async () => null
     } as any;
-    const aiAgentsRepository = new MemoryAiAgentsRepository({
+    const aiAgentsRepository = {
       getById: async () => ({
-        id: "30000000-0000-0000-0000-000000000001",
-        name: "Anthropic",
-        kind: "anthropic",
-        status: "active",
-        description: null,
-        baseUrl: null,
-        model: "claude-sonnet-4-20250514",
-        apiKeyConfigured: true,
-        createdAt: "2026-04-24T10:00:00.000Z",
-        updatedAt: "2026-04-24T10:00:00.000Z"
-      })
-    } as any, {
-      getById: async () => null
-    } as any, [{
       id: "20000000-0000-0000-0000-000000000001",
       name: "Pipeline Agent",
       status: "active",
@@ -45,7 +30,8 @@ describe("MemoryWorkflowsRepository", () => {
       toolIds: ["tool:http-recon"],
       createdAt: "2026-04-24T10:00:00.000Z",
       updatedAt: "2026-04-24T10:00:00.000Z"
-    }]);
+      })
+    } as any;
     const repository = new MemoryWorkflowsRepository(
       applicationsRepository,
       runtimesRepository,
@@ -99,22 +85,8 @@ describe("MemoryWorkflowsRepository", () => {
     const runtimesRepository = {
       getById: async () => null
     } as any;
-    const aiAgentsRepository = new MemoryAiAgentsRepository({
+    const aiAgentsRepository = {
       getById: async () => ({
-        id: "30000000-0000-0000-0000-000000000001",
-        name: "Anthropic",
-        kind: "anthropic",
-        status: "active",
-        description: null,
-        baseUrl: null,
-        model: "claude-sonnet-4-20250514",
-        apiKeyConfigured: true,
-        createdAt: "2026-04-24T10:00:00.000Z",
-        updatedAt: "2026-04-24T10:00:00.000Z"
-      })
-    } as any, {
-      getById: async () => null
-    } as any, [{
       id: "20000000-0000-0000-0000-000000000001",
       name: "Pipeline Agent",
       status: "active",
@@ -125,7 +97,8 @@ describe("MemoryWorkflowsRepository", () => {
       toolIds: [],
       createdAt: "2026-04-24T10:00:00.000Z",
       updatedAt: "2026-04-24T10:00:00.000Z"
-    }]);
+      })
+    } as any;
     const repository = new MemoryWorkflowsRepository(
       applicationsRepository,
       runtimesRepository,
