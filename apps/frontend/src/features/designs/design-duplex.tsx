@@ -369,12 +369,12 @@ export function DesignDuplex() {
         </div>
         <div className="flex items-center gap-4 font-mono text-[0.62rem] text-slate-400">
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#3b82f6" }} />
-            <span className="text-slate-100">{leftCount}</span> system
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#f97316" }} />
+            <span className="text-slate-100">{leftCount}</span> agent
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#f97316" }} />
-            <span className="text-slate-100">{rightCount}</span> agent
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#3b82f6" }} />
+            <span className="text-slate-100">{rightCount}</span> system
           </span>
           <span>
             <span className="text-slate-100">{findingCount}</span> findings
@@ -401,7 +401,7 @@ export function DesignDuplex() {
                   className="flex items-center gap-2 rounded-lg border px-3 py-2 font-mono text-[0.62rem] text-slate-500"
                   style={{ background: "#0d1117", borderColor: "#1e293b" }}
                 >
-                  <span>{typingSide === "left" ? "system registering" : "agent typing"}</span>
+                  <span>{typingSide === "left" ? "agent typing" : "system registering"}</span>
                   <span className="duplex-typing inline-flex items-center gap-0.5">
                     <span>•</span>
                     <span>•</span>
