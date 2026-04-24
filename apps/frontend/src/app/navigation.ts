@@ -1,22 +1,11 @@
 import { createElement, type ComponentType, type ReactNode } from "react";
 import {
-  AlignLeft,
   AppWindow,
   Bot,
-  BrainCog,
-  Columns2,
-  ListTree,
-  MessageSquareText,
   Network,
-  Newspaper,
-  NotebookText,
-  Orbit,
   PlugZap,
   Route,
-  ScrollText,
-  Shapes,
-  Terminal,
-  Waves,
+  Target,
   Waypoints,
   Wrench,
   type LucideIcon
@@ -25,20 +14,10 @@ import { AiAgentsPage } from "@/pages/ai-agents-page";
 import { AiProvidersPage } from "@/pages/ai-providers-page";
 import { AiToolsPage } from "@/pages/ai-tools-page";
 import { ApplicationsPage } from "@/pages/applications-page";
-import { BpmnAtlasPage } from "@/pages/bpmn-atlas-page";
-import { FlowChoreographyPage } from "@/pages/flow-choreography-page";
 import { FlowStudioPage } from "@/pages/flow-studio-page";
 import { RuntimesPage } from "@/pages/runtimes-page";
-import { Workflow2Page } from "@/pages/workflow-2-page";
-import { WorkflowBiospherePage } from "@/pages/workflow-biosphere-page";
-import { WorkflowDossierPage } from "@/pages/workflow-dossier-page";
-import { WorkflowJournalPage } from "@/pages/workflow-journal-page";
-import { WorkflowLedgerPage } from "@/pages/workflow-ledger-page";
-import { WorkflowStepsPage } from "@/pages/workflow-steps-page";
-import { WorkflowTerminalPage } from "@/pages/workflow-terminal-page";
-import { WorkflowThreadPage } from "@/pages/workflow-thread-page";
-import { WorkflowTracePage } from "@/pages/workflow-trace-page";
 import { WorkflowsPage } from "@/features/workflows/workflows-page";
+import { AttackMapPage } from "@/pages/attack-map-page";
 
 export type NavigationId =
   | "runtimes"
@@ -47,18 +26,8 @@ export type NavigationId =
   | "ai-agents"
   | "ai-tools"
   | "workflows"
-  | "flow-studio"
-  | "choreography"
-  | "bpmn-atlas"
-  | "workflow-2"
-  | "workflow-dossier"
-  | "workflow-terminal"
-  | "workflow-biosphere"
-  | "workflow-thread"
-  | "workflow-trace"
-  | "workflow-ledger"
-  | "workflow-steps"
-  | "workflow-journal";
+  | "attack-map"
+  | "flow-studio";
 
 export type AppRoute = {
   section: NavigationId;
@@ -113,6 +82,16 @@ function createCrudNavigationItem(options: {
   } satisfies NavigationItem;
 }
 
+const attackMapItem: NavigationItem = {
+  id: "attack-map",
+  label: "Attack Map",
+  slug: "attack-map",
+  icon: Target,
+  render() {
+    return createElement(AttackMapPage, { key: "attack-map" });
+  }
+};
+
 const flowStudioItem: NavigationItem = {
   id: "flow-studio",
   label: "Flow Studio",
@@ -125,116 +104,6 @@ const flowStudioItem: NavigationItem = {
       onNavigateToRoot: () => context.navigateToSection("flow-studio"),
       onNavigateToFlow: (id: string) => context.navigateToPath(getDetailPath("flow-studio", id))
     });
-  }
-};
-
-const choreographyItem: NavigationItem = {
-  id: "choreography",
-  label: "Choreography",
-  slug: "choreography",
-  icon: Orbit,
-  render() {
-    return createElement(FlowChoreographyPage, { key: "choreography" });
-  }
-};
-
-const bpmnAtlasItem: NavigationItem = {
-  id: "bpmn-atlas",
-  label: "Process Atlas",
-  slug: "bpmn-atlas",
-  icon: ScrollText,
-  render() {
-    return createElement(BpmnAtlasPage, { key: "bpmn-atlas" });
-  }
-};
-
-const workflow2Item: NavigationItem = {
-  id: "workflow-2",
-  label: "Workflow 2",
-  slug: "workflow-2",
-  icon: BrainCog,
-  render() {
-    return createElement(Workflow2Page, { key: "workflow-2" });
-  }
-};
-
-const workflowDossierItem: NavigationItem = {
-  id: "workflow-dossier",
-  label: "Run · Case File",
-  slug: "workflow-dossier",
-  icon: Newspaper,
-  render() {
-    return createElement(WorkflowDossierPage, { key: "workflow-dossier" });
-  }
-};
-
-const workflowTerminalItem: NavigationItem = {
-  id: "workflow-terminal",
-  label: "Run · Sync Terminal",
-  slug: "workflow-terminal",
-  icon: Terminal,
-  render() {
-    return createElement(WorkflowTerminalPage, { key: "workflow-terminal" });
-  }
-};
-
-const workflowBiosphereItem: NavigationItem = {
-  id: "workflow-biosphere",
-  label: "Run · Biosphere",
-  slug: "workflow-biosphere",
-  icon: Waves,
-  render() {
-    return createElement(WorkflowBiospherePage, { key: "workflow-biosphere" });
-  }
-};
-
-const workflowThreadItem: NavigationItem = {
-  id: "workflow-thread",
-  label: "Chat · Thread",
-  slug: "workflow-thread",
-  icon: MessageSquareText,
-  render() {
-    return createElement(WorkflowThreadPage, { key: "workflow-thread" });
-  }
-};
-
-const workflowTraceItem: NavigationItem = {
-  id: "workflow-trace",
-  label: "Chat · Trace",
-  slug: "workflow-trace",
-  icon: AlignLeft,
-  render() {
-    return createElement(WorkflowTracePage, { key: "workflow-trace" });
-  }
-};
-
-const workflowLedgerItem: NavigationItem = {
-  id: "workflow-ledger",
-  label: "Chat · Ledger",
-  slug: "workflow-ledger",
-  icon: Columns2,
-  render() {
-    return createElement(WorkflowLedgerPage, { key: "workflow-ledger" });
-  }
-};
-
-const workflowStepsItem: NavigationItem = {
-  id: "workflow-steps",
-  label: "Chat · Steps",
-  slug: "workflow-steps",
-  icon: ListTree,
-  render() {
-    return createElement(WorkflowStepsPage, { key: "workflow-steps" });
-  }
-};
-
-const workflowJournalItem: NavigationItem = {
-  id: "workflow-journal",
-  label: "Chat · Journal",
-  slug: "workflow-journal",
-  icon: NotebookText,
-  render() {
-    return createElement(WorkflowJournalPage, { key: "workflow-journal" });
   }
 };
 
@@ -323,27 +192,10 @@ export const navigationTree: NavigationTreeEntry[] = [
     })
   },
   {
-    kind: "group",
-    group: {
-      id: "designs",
-      label: "Designs",
-      icon: Shapes,
-      items: [
-        flowStudioItem,
-        choreographyItem,
-        bpmnAtlasItem,
-        workflow2Item,
-        workflowDossierItem,
-        workflowTerminalItem,
-        workflowBiosphereItem,
-        workflowThreadItem,
-        workflowTraceItem,
-        workflowLedgerItem,
-        workflowStepsItem,
-        workflowJournalItem
-      ]
-    }
-  }
+    kind: "item",
+    item: attackMapItem
+  },
+  { kind: "item", item: flowStudioItem }
 ];
 
 export const navigationItems: NavigationItem[] = navigationTree.flatMap((entry) =>

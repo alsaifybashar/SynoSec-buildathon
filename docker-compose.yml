@@ -28,6 +28,8 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    profiles:
+      - local-llm
     ports:
       - "11434:11434"
     volumes:
@@ -40,6 +42,8 @@ services:
 
   ollama-init:
     image: ollama/ollama:latest
+    profiles:
+      - local-llm
     depends_on:
       ollama:
         condition: service_healthy
@@ -69,8 +73,6 @@ services:
         condition: service_started
       vulnerable-target:
         condition: service_started
-      ollama:
-        condition: service_healthy
     environment:
       BACKEND_PORT: ${BACKEND_PORT:-3001}
       DATABASE_URL: postgres://synosec:synosec@postgres:5432/synosec

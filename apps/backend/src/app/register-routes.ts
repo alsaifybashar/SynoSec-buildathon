@@ -20,6 +20,9 @@ import { type WorkflowsRepository } from "@/features/modules/workflows/workflows
 import { WorkflowRunStream } from "@/features/modules/workflows/workflow-run-stream.js";
 import { createToolsRouter } from "@/platform/routes/tools.js";
 import { createConnectorsRouter } from "@/integrations/connectors/routes.js";
+import { OrchestratorService } from "@/features/modules/orchestrator/orchestrator.service.js";
+import { OrchestratorStream } from "@/features/modules/orchestrator/orchestrator.stream.js";
+import { registerOrchestratorRoutes } from "@/features/modules/orchestrator/orchestrator.routes.js";
 
 export function registerRoutes(app: Express, dependencies: {
   authConfig: AuthConfig;
@@ -30,6 +33,8 @@ export function registerRoutes(app: Express, dependencies: {
   aiToolsRepository: AiToolsRepository;
   workflowsRepository: WorkflowsRepository;
 }) {
+  const orchestratorStream = new OrchestratorStream();
+  const orchestratorService = new OrchestratorService(orchestratorStream, dependencies.aiProvidersRepository);
   const workflowRunStream = new WorkflowRunStream();
   const singleAgentScanService = new SingleAgentScanService(
     dependencies.applicationsRepository,
@@ -61,5 +66,6 @@ export function registerRoutes(app: Express, dependencies: {
   registerAiAgentsRoutes(app, dependencies.aiAgentsRepository);
   registerAiToolsRoutes(app, dependencies.aiToolsRepository);
   registerWorkflowsRoutes(app, dependencies.workflowsRepository, workflowExecutionService, workflowRunStream);
+  registerOrchestratorRoutes(app, orchestratorService, orchestratorStream);
   app.use(createToolsRouter());
 }

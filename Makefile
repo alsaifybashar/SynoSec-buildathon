@@ -7,7 +7,7 @@ endif
 
 BACKEND_PORT ?= 3001
 VITE_DEV_PORT ?= 5173
-LOCAL_ENABLED ?= $(if $(LOCAL_ENABHLED),$(LOCAL_ENABHLED),TRUE)
+LOCAL_ENABLED ?= $(if $(LOCAL_ENABHLED),$(LOCAL_ENABHLED),FALSE)
 
 help:
 	@printf "\033[1;32m╔══════════════════════════════════╗\033[0m\n"
@@ -17,9 +17,9 @@ help:
 	@printf "\033[33m  make docker-down\033[0m Stop and remove containers\n"
 	@printf "\033[33m  make docker-logs\033[0m Follow all container logs\n"
 	@printf "\033[35m  make database\033[0m    Start Postgres, reset persisted app data, then generate Prisma client, push schema, and seed app data\n"
-	@printf "\033[35m  make dev-services\033[0m Start Docker-backed dev dependencies (Postgres, target, optional Ollama)\n"
+	@printf "\033[35m  make dev-services\033[0m Start Docker-backed dev dependencies (Postgres, target, optional Ollama when enabled)\n"
 	@printf "\033[36m  make test\033[0m        Run workspace tests plus seeded sandbox smoke validation\n"
-	@printf "\033[33m  make dev\033[0m         Start local dev against Docker-backed infra\n"
+	@printf "\033[33m  make dev\033[0m         Start local dev against Docker-backed infra without auto-enabling local Ollama\n"
 	@printf "\033[33m  make build\033[0m       Build all workspace packages\n"
 	@printf "\033[33m  make seed\033[0m        Seed demo data into running backend\n"
 	@printf "\033[33m  make smoke-e2e\033[0m  Run the Docker E2E smoke scan and print workflow evidence\n"
@@ -45,12 +45,21 @@ check-docker-compose:
 
 docker-up:
 	@$(MAKE) check-docker-compose
-	@$(DOCKER_COMPOSE) up --build -d --remove-orphans
+	@set -e; \
+	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-FALSE}}" | tr '[:upper:]' '[:lower:]'); \
+	if [ "$$local_enabled" = "true" ]; then \
+		$(DOCKER_COMPOSE) --profile local-llm up --build -d --remove-orphans; \
+	else \
+		$(DOCKER_COMPOSE) up --build -d --remove-orphans; \
+	fi
 	@printf "\n\033[1;32m✓ SynoSec started!\033[0m\n"
 	@printf "  Frontend: \033[36mhttp://localhost:%s\033[0m\n" "$${VITE_DEV_PORT:-5173}"
 	@printf "  Backend:  \033[36mhttp://localhost:%s\033[0m\n" "$${BACKEND_PORT:-3001}"
 	@printf "  Connector dispatch: \033[36m%s\033[0m\n" "$${TOOL_EXECUTION_MODE:-connector}"
 	@printf "  Target:   \033[36mhttp://localhost:8888\033[0m\n"
+	@if [ "$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-FALSE}}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then \
+		printf "  Local LLM: \033[36mhttp://localhost:11434\033[0m\n"; \
+	fi
 
 docker-down:
 	$(DOCKER_COMPOSE) down --remove-orphans
@@ -83,7 +92,7 @@ free-dev-ports:
 dev-services:
 	@$(MAKE) check-docker-compose
 	@set -e; \
-	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-TRUE}}" | tr '[:upper:]' '[:lower:]'); \
+	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-FALSE}}" | tr '[:upper:]' '[:lower:]'); \
 	if [ "$$local_enabled" = "false" ]; then \
 		$(DOCKER_COMPOSE) up -d postgres vulnerable-target; \
 	else \

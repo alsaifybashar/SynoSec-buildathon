@@ -1,5 +1,4 @@
 import type { OsiLayer } from "@synosec/contracts";
-import { localDemoTargetDefaults } from "@synosec/contracts";
 import { RequestError } from "../../../core/http/request-error.js";
 
 export function truncate(value: string, maxLength = 220) {
@@ -12,7 +11,24 @@ export function truncate(value: string, maxLength = 220) {
 }
 
 export function parseTarget(baseUrl: string | null | undefined) {
-  const url = new URL(baseUrl ?? localDemoTargetDefaults.hostUrl);
+  if (!baseUrl?.trim()) {
+    throw new RequestError(400, "Workflow application requires a real base URL before execution.", {
+      code: "WORKFLOW_TARGET_MISSING",
+      userFriendlyMessage: "The workflow application target URL is required."
+    });
+  }
+
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch (error) {
+    throw new RequestError(400, `Invalid workflow application base URL: ${baseUrl}.`, {
+      code: "WORKFLOW_TARGET_INVALID",
+      userFriendlyMessage: "The workflow application target URL is invalid.",
+      cause: error
+    });
+  }
+
   const port = url.port ? Number(url.port) : undefined;
 
   return {

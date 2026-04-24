@@ -1196,7 +1196,7 @@ export class WorkflowExecutionService {
       stageResult: null
     };
 
-    if (degradedTools.length > 0) {
+    if (executableTools.length === 0 && degradedTools.length > 0) {
       const validationError = `Workflow stage ${input.stage.label} has unavailable tools. ${summarizeDegradedTools(degradedTools)}`;
       return {
         selectedToolIds: [],
@@ -1359,6 +1359,9 @@ export class WorkflowExecutionService {
           `Workflow stage: ${input.stage.label}`,
           `Stage objective: ${input.stage.objective}`,
           `Allowed evidence tools: ${state.executableTools.map((tool) => `${tool.id}=${tool.name}`).join(", ") || "none"}`,
+          state.degradedTools.length > 0
+            ? `Unavailable tools: ${state.degradedTools.map((tool) => `${tool.toolId}=${tool.toolName} (${tool.reason})`).join(", ")}`
+            : "",
           `Tool input schemas: ${JSON.stringify(Object.fromEntries(state.executableTools.map((tool) => [tool.id, tool.inputSchema])))}`,
           `Allowed finding types: ${input.stage.findingPolicy.allowedTypes.join(", ")}`,
           `Required evidence types: ${input.stage.requiredEvidenceTypes.join(", ") || "none"}`,

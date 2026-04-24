@@ -4,22 +4,72 @@ import { ffufScanTool } from "./tools/content/ffuf-scan.js";
 import { gobusterScanTool } from "./tools/content/gobuster-scan.js";
 import { webCrawlTool } from "./tools/content/web-crawl.js";
 import { metasploitFrameworkTool } from "./tools/exploitation/metasploit-framework.js";
+import { binwalkTool } from "./tools/forensics/binwalk.js";
+import { bulkExtractorTool } from "./tools/forensics/bulk-extractor.js";
+import { exifToolTool } from "./tools/forensics/exiftool.js";
+import { foremostTool } from "./tools/forensics/foremost.js";
+import { scalpelTool } from "./tools/forensics/scalpel.js";
 import { steghideInfoTool } from "./tools/forensics/steghide-info.js";
-import { amassEnumTool } from "./tools/subdomain/amass-enum.js";
-import { sublist3rEnumTool } from "./tools/subdomain/sublist3r-enum.js";
-import { hashcatCrackTool } from "./tools/password/hashcat-crack.js";
+import { volatilityTool } from "./tools/forensics/volatility.js";
+import { autoreconTool } from "./tools/network/autorecon.js";
+import { masscanTool } from "./tools/network/masscan.js";
 import { ncatProbeTool } from "./tools/network/ncat-probe.js";
 import { netcatProbeTool } from "./tools/network/netcat-probe.js";
 import { nmapScanTool } from "./tools/network/nmap-scan.js";
+import { rustScanTool } from "./tools/network/rustscan.js";
 import { serviceScanTool } from "./tools/network/service-scan.js";
+import { cipherIdentifierTool } from "./tools/password/cipher-identifier.js";
+import { hashIdentifierTool } from "./tools/password/hash-identifier.js";
+import { hashcatCrackTool } from "./tools/password/hashcat-crack.js";
+import { hydraTool } from "./tools/password/hydra.js";
+import { johntheRipperTool } from "./tools/password/john-the-ripper.js";
+import { medusaTool } from "./tools/password/medusa.js";
+import { ophcrackTool } from "./tools/password/ophcrack.js";
+import { patatorTool } from "./tools/password/patator.js";
+import { amassEnumTool } from "./tools/subdomain/amass-enum.js";
+import { dNSenumTool } from "./tools/subdomain/dnsenum.js";
+import { fierceTool } from "./tools/subdomain/fierce.js";
+import { subfinderTool } from "./tools/subdomain/subfinder.js";
+import { sublist3rEnumTool } from "./tools/subdomain/sublist3r-enum.js";
+import { theHarvesterTool } from "./tools/subdomain/theharvester.js";
 import { bashProbeTool } from "./tools/utility/bash-probe.js";
+import { checksecTool } from "./tools/utility/checksec.js";
+import { gDBTool } from "./tools/utility/gdb.js";
+import { ghidraTool } from "./tools/utility/ghidra.js";
+import { kubebenchTool } from "./tools/utility/kube-bench.js";
+import { kubehunterTool } from "./tools/utility/kube-hunter.js";
+import { objdumpTool } from "./tools/utility/objdump.js";
+import { prowlerTool } from "./tools/utility/prowler.js";
+import { radare2Tool } from "./tools/utility/radare2.js";
+import { scoutSuiteTool } from "./tools/utility/scout-suite.js";
+import { stringsTool } from "./tools/utility/strings.js";
+import { trivyTool } from "./tools/utility/trivy.js";
+import { arjunTool } from "./tools/web/arjun.js";
+import { burpSuiteTool } from "./tools/web/burp-suite.js";
+import { dalfoxTool } from "./tools/web/dalfox.js";
+import { dirsearchTool } from "./tools/web/dirsearch.js";
+import { feroxbusterTool } from "./tools/web/feroxbuster.js";
+import { gauTool } from "./tools/web/gau.js";
+import { hakrawlerTool } from "./tools/web/hakrawler.js";
 import { httpHeadersTool } from "./tools/web/http-headers.js";
 import { httpReconTool } from "./tools/web/http-recon.js";
+import { hTTPxTool } from "./tools/web/httpx.js";
+import { katanaTool } from "./tools/web/katana.js";
 import { niktoScanTool } from "./tools/web/nikto-scan.js";
-import { sqlmapScanTool } from "./tools/web/sqlmap-scan.js";
+import { nucleiTool } from "./tools/web/nuclei.js";
+import { paramSpiderTool } from "./tools/web/paramspider.js";
 import { sqlInjectionCheckTool } from "./tools/web/sql-injection-check.js";
+import { sqlmapScanTool } from "./tools/web/sqlmap-scan.js";
 import { vulnAuditTool } from "./tools/web/vuln-audit.js";
+import { waybackurlsTool } from "./tools/web/waybackurls.js";
+import { whatWebTool } from "./tools/web/whatweb.js";
+import { wPScanTool } from "./tools/web/wpscan.js";
+import { crackMapExecTool } from "./tools/windows/crackmapexec.js";
+import { enum4linuxngTool } from "./tools/windows/enum4linux-ng.js";
 import { enum4linuxTool } from "./tools/windows/enum4linux.js";
+import { evilWinRMTool } from "./tools/windows/evil-winrm.js";
+import { netExecTool } from "./tools/windows/netexec.js";
+import { responderTool } from "./tools/windows/responder.js";
 
 export const localApplicationId = "5ecf4a8e-df5f-4945-a7e1-230ef43eac80";
 export const targetRuntimeId = "6fd90dd7-6f27-47d0-ab24-6328bb2f3624";
@@ -59,28 +109,78 @@ export function getSeededProviderDefinitions(env: NodeJS.ProcessEnv = process.en
 }
 
 export const seededToolDefinitions = [
-  httpReconTool,
-  httpHeadersTool,
-  niktoScanTool,
-  bashProbeTool,
-  webCrawlTool,
+  contentDiscoveryTool,
   dirbScanTool,
   ffufScanTool,
   gobusterScanTool,
+  webCrawlTool,
+  metasploitFrameworkTool,
+  binwalkTool,
+  bulkExtractorTool,
+  exifToolTool,
+  foremostTool,
+  scalpelTool,
+  steghideInfoTool,
+  volatilityTool,
+  autoreconTool,
+  masscanTool,
   ncatProbeTool,
   netcatProbeTool,
   nmapScanTool,
+  rustScanTool,
   serviceScanTool,
-  amassEnumTool,
-  sublist3rEnumTool,
-  contentDiscoveryTool,
-  enum4linuxTool,
-  vulnAuditTool,
-  sqlmapScanTool,
-  sqlInjectionCheckTool,
+  cipherIdentifierTool,
+  hashIdentifierTool,
   hashcatCrackTool,
-  metasploitFrameworkTool,
-  steghideInfoTool
+  hydraTool,
+  johntheRipperTool,
+  medusaTool,
+  ophcrackTool,
+  patatorTool,
+  amassEnumTool,
+  dNSenumTool,
+  fierceTool,
+  subfinderTool,
+  sublist3rEnumTool,
+  theHarvesterTool,
+  bashProbeTool,
+  checksecTool,
+  gDBTool,
+  ghidraTool,
+  kubebenchTool,
+  kubehunterTool,
+  objdumpTool,
+  prowlerTool,
+  radare2Tool,
+  scoutSuiteTool,
+  stringsTool,
+  trivyTool,
+  arjunTool,
+  burpSuiteTool,
+  dalfoxTool,
+  dirsearchTool,
+  feroxbusterTool,
+  gauTool,
+  hakrawlerTool,
+  httpHeadersTool,
+  httpReconTool,
+  hTTPxTool,
+  katanaTool,
+  niktoScanTool,
+  nucleiTool,
+  paramSpiderTool,
+  sqlInjectionCheckTool,
+  sqlmapScanTool,
+  vulnAuditTool,
+  waybackurlsTool,
+  whatWebTool,
+  wPScanTool,
+  crackMapExecTool,
+  enum4linuxngTool,
+  enum4linuxTool,
+  evilWinRMTool,
+  netExecTool,
+  responderTool
 ] as const;
 
 export function validateSeededToolDefinitions() {
@@ -101,21 +201,40 @@ export const seededRoleDefinitions = [
     systemPrompt:
       "You are the orchestration lead for SynoSec. Build a disciplined plan from the current target state, choose the next highest-value evidence action, stay inside approved scope, and use only the approved tools. Keep the run prompt-driven: select the OSI layer you believe the action supports, explain that choice clearly, and prefer target/baseUrl/layer tool inputs over vague url-only shapes. Canonical OSI mapping: L1 Physical, L2 Data Link, L3 Network, L4 Transport, L5 Session, L6 Presentation, L7 Application. Prefer evidence gathering before escalation, keep a concise running rationale, and stop when additional actions do not materially improve confidence or coverage.",
     toolIds: [
-      "seed-http-recon",
-      "seed-http-headers",
-      "seed-nikto-scan",
-      "seed-bash-probe",
-      "seed-web-crawl",
-      "seed-dirb-scan",
-      "seed-ffuf-scan",
-      "seed-gobuster-scan",
-      "seed-ncat-probe",
-      "seed-netcat-probe",
-      "seed-nmap-scan",
-      "seed-service-scan",
-      "seed-amass-enum",
-      "seed-sublist3r-enum",
-      "seed-content-discovery"
+      httpReconTool.id,
+      httpHeadersTool.id,
+      niktoScanTool.id,
+      bashProbeTool.id,
+      webCrawlTool.id,
+      dirbScanTool.id,
+      ffufScanTool.id,
+      gobusterScanTool.id,
+      ncatProbeTool.id,
+      netcatProbeTool.id,
+      nmapScanTool.id,
+      serviceScanTool.id,
+      amassEnumTool.id,
+      sublist3rEnumTool.id,
+      contentDiscoveryTool.id,
+      dNSenumTool.id,
+      fierceTool.id,
+      subfinderTool.id,
+      theHarvesterTool.id,
+      arjunTool.id,
+      dirsearchTool.id,
+      feroxbusterTool.id,
+      gauTool.id,
+      hakrawlerTool.id,
+      hTTPxTool.id,
+      katanaTool.id,
+      nucleiTool.id,
+      paramSpiderTool.id,
+      waybackurlsTool.id,
+      whatWebTool.id,
+      wPScanTool.id,
+      autoreconTool.id,
+      masscanTool.id,
+      rustScanTool.id
     ] as const
   },
   {
@@ -125,12 +244,12 @@ export const seededRoleDefinitions = [
     systemPrompt:
       "You are the QA analyst for SynoSec. Review evidence for consistency, verify that findings are supported, call out uncertainty, and recommend the smallest follow-up needed to confirm or reject a claim. Prefer reproducibility, precise language, and conservative confidence scoring over speculation.",
     toolIds: [
-      "seed-http-recon",
-      "seed-http-headers",
-      "seed-nikto-scan",
-      "seed-bash-probe",
-      "seed-nmap-scan",
-      "seed-vuln-audit"
+      httpReconTool.id,
+      httpHeadersTool.id,
+      niktoScanTool.id,
+      bashProbeTool.id,
+      nmapScanTool.id,
+      vulnAuditTool.id
     ] as const
   },
   {
@@ -140,28 +259,7 @@ export const seededRoleDefinitions = [
     systemPrompt:
       "You are the pen-tester for SynoSec. Use approved active techniques to validate exploitable conditions, prioritize realistic attack paths, and preserve a clean evidence trail. Stay inside scope, prefer the least invasive validation that proves impact, and clearly separate confirmed exploitation from hypothesis.",
     toolIds: [
-      "seed-http-recon",
-      "seed-http-headers",
-      "seed-nikto-scan",
-      "seed-bash-probe",
-      "seed-web-crawl",
-      "seed-dirb-scan",
-      "seed-ffuf-scan",
-      "seed-gobuster-scan",
-      "seed-ncat-probe",
-      "seed-netcat-probe",
-      "seed-nmap-scan",
-      "seed-service-scan",
-      "seed-amass-enum",
-      "seed-sublist3r-enum",
-      "seed-content-discovery",
-      "seed-enum4linux",
-      "seed-vuln-audit",
-      "seed-sqlmap-scan",
-      "seed-sql-injection-check",
-      "seed-hashcat-crack",
-      "seed-metasploit-framework",
-      "seed-steghide-info"
+      ...seededToolDefinitions.map(t => t.id)
     ] as const
   },
   {
@@ -170,7 +268,7 @@ export const seededRoleDefinitions = [
     description: "Builds clear security reports for both executive and technical audiences.",
     systemPrompt:
       "You are the reporting specialist for SynoSec. Convert findings and evidence into a crisp report with accurate severity framing, clear remediation guidance, and separate executive and technical narratives. Do not introduce unsupported claims. Focus on clarity, prioritization, and traceability back to evidence.",
-    toolIds: ["seed-http-recon", "seed-http-headers", "seed-bash-probe"] as const
+    toolIds: [httpReconTool.id, httpHeadersTool.id, bashProbeTool.id] as const
   }
 ] as const;
 
@@ -210,7 +308,7 @@ export function getSeededWorkflowDefinitions() {
           objective: "Run one evidence-backed, prompt-driven single-agent security pass across the configured OSI layers using the approved tools, record explicit layer reasoning, and submit a structured closeout.",
           allowedToolIds: [
             ...getSeededRoleDefinition("orchestrator")?.toolIds ?? [],
-            "seed-vuln-audit"
+            vulnAuditTool.id
           ],
           requiredEvidenceTypes: [],
           findingPolicy: {
@@ -285,7 +383,7 @@ export function getSeededSingleAgentScanDefinition() {
         layer: "L4" as const,
         coverageStatus: "covered" as const,
         confidenceSummary: "The agent confirmed exposed transport connectivity to the HTTP service and captured service evidence.",
-        toolRefs: ["seed-service-scan"],
+        toolRefs: [serviceScanTool.id],
         evidenceRefs: ["toolrun-seed-service-scan"],
         vulnerabilityIds: [],
         gaps: [],
@@ -296,7 +394,7 @@ export function getSeededSingleAgentScanDefinition() {
         layer: "L7" as const,
         coverageStatus: "covered" as const,
         confidenceSummary: "The agent validated multiple application-layer weaknesses with direct HTTP evidence.",
-        toolRefs: ["seed-http-recon", "seed-vuln-audit"],
+        toolRefs: [httpReconTool.id, vulnAuditTool.id],
         evidenceRefs: ["toolrun-seed-http-recon", "toolrun-seed-vuln-audit"],
         vulnerabilityIds: [seededSingleAgentVulnerabilityId],
         gaps: [],
@@ -325,7 +423,7 @@ export function getSeededSingleAgentScanDefinition() {
       },
       evidence: [
         {
-          sourceTool: "seed-vuln-audit",
+          sourceTool: vulnAuditTool.id,
           quote: "Sensitive user data exposed without authentication",
           observationRef: "audit:/api/users",
           toolRunRef: "toolrun-seed-vuln-audit"
@@ -333,7 +431,7 @@ export function getSeededSingleAgentScanDefinition() {
       ],
       technique: "seeded vulnerability audit",
       reproduction: {
-        commandPreview: "seed-vuln-audit baseUrl=http://localhost:8888",
+        commandPreview: `${vulnAuditTool.id} baseUrl=http://localhost:8888`,
         steps: [
           "Issue an HTTP GET request to /api/users on the target application.",
           "Observe that the response succeeds without authentication.",

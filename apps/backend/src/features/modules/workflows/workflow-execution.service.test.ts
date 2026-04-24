@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   AiAgent,
   AiTool,
@@ -341,6 +341,211 @@ describe("WorkflowExecutionService startRun provider support", () => {
     expect(stepped.events.some((event) =>
       event.type === "stage_contract_validation_failed"
       && event.summary.includes("missing-tool")
+    )).toBe(true);
+  });
+
+  it("continues with runnable tools when some configured stage tools are unavailable", async () => {
+    const mixedWorkflow: Workflow = {
+      ...workflow,
+      stages: workflow.stages.map((stage) => ({
+        ...stage,
+        allowedToolIds: ["missing-tool", "present-tool"],
+        completionRule: {
+          ...stage.completionRule,
+          requireToolCall: true
+        }
+      }))
+    };
+    const executableTool: AiTool = {
+      id: "present-tool",
+      name: "Present Tool",
+      status: "active",
+      source: "system",
+      description: "Runnable test tool",
+      binary: null,
+      category: "web",
+      riskTier: "passive",
+      executorType: "bash",
+      capabilities: ["http"],
+      notes: null,
+      sandboxProfile: "read-only-parser",
+      privilegeProfile: "read-only-network",
+      inputSchema: {
+        type: "object",
+        properties: {
+          target: { type: "string" }
+        }
+      },
+      outputSchema: {
+        type: "object",
+        properties: {}
+      },
+      bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\",\"observations\":[]}'",
+      timeoutMs: 5_000,
+      createdAt: "2026-04-21T00:00:00.000Z",
+      updatedAt: "2026-04-21T00:00:00.000Z",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          message: {
+            content: JSON.stringify({
+              action: "call_tool",
+              toolId: "present-tool",
+              input: {
+                target: "localhost"
+              },
+              reasoning: "Use the available runnable tool first."
+            })
+          }
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          message: {
+            content: JSON.stringify({
+              action: "submit_stage_result",
+              result: {
+                status: "completed",
+                summary: "Executed the runnable tool and completed the stage.",
+                recommendedNextStep: "Review the collected output.",
+                residualRisk: "Unavailable tools still limit evidence breadth.",
+                findingIds: []
+              },
+              reasoning: "The required tool call has completed."
+            })
+          }
+        })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService({
+      id: agent.providerId,
+      name: "Local",
+      kind: "local",
+      status: "active",
+      description: "Local provider",
+      baseUrl: "http://127.0.0.1:11434",
+      model: "qwen3:1.7b",
+      apiKeyConfigured: false,
+      apiKey: null,
+      createdAt: "2026-04-21T00:00:00.000Z",
+      updatedAt: "2026-04-21T00:00:00.000Z"
+    }, {
+      workflow: mixedWorkflow,
+      toolsById: {
+        "present-tool": executableTool
+      }
+    });
+    (service as unknown as {
+      ensureWorkflowScan: (run: WorkflowRun, target: { host: string }) => Promise<{
+        id: string;
+        scope: {
+          targets: string[];
+          exclusions: string[];
+          layers: ("L4" | "L7")[];
+          maxDepth: number;
+          maxDurationMinutes: number;
+          rateLimitRps: number;
+          allowActiveExploits: boolean;
+          graceEnabled: boolean;
+          graceRoundInterval: number;
+          cyberRangeMode: "live";
+        };
+        status: "running";
+        currentRound: number;
+        tacticsTotal: number;
+        tacticsComplete: number;
+        createdAt: string;
+      }>;
+      broker: {
+        executeRequests: typeof service["broker"]["executeRequests"];
+      };
+    }).ensureWorkflowScan = async (run: WorkflowRun, target: { host: string }) => ({
+      id: run.id,
+      scope: {
+        targets: [target.host],
+        exclusions: [],
+        layers: ["L4", "L7"],
+        maxDepth: 3,
+        maxDurationMinutes: 15,
+        rateLimitRps: 5,
+        allowActiveExploits: true,
+        graceEnabled: true,
+        graceRoundInterval: 3,
+        cyberRangeMode: "live"
+      },
+      status: "running",
+      currentRound: 0,
+      tacticsTotal: 1,
+      tacticsComplete: 0,
+      createdAt: run.startedAt
+    });
+    (service as unknown as {
+      broker: {
+        executeRequests: (input: { requests: Array<{ toolId?: string; tool: string; target: string }> }) => Promise<{
+          toolRuns: Array<{
+            id: string;
+            scanId: string;
+            tacticId: string;
+            agentId: string;
+            toolId?: string;
+            tool: string;
+            executorType: "bash";
+            capabilities: string[];
+            target: string;
+            status: "completed";
+            riskTier: "passive";
+            justification: string;
+            commandPreview: string;
+            dispatchMode: "local";
+            startedAt: string;
+            completedAt: string;
+            output: string;
+            exitCode: number;
+          }>;
+          observations: [];
+          findings: [];
+        }>;
+      };
+    }).broker.executeRequests = async (input) => ({
+      toolRuns: [{
+        id: "tool-run-1",
+        scanId: "scan-1",
+        tacticId: "tactic-1",
+        agentId: agent.id,
+        ...(input.requests[0]?.toolId ? { toolId: input.requests[0].toolId } : {}),
+        tool: input.requests[0]?.tool ?? "Present Tool",
+        executorType: "bash",
+        capabilities: [],
+        target: input.requests[0]?.target ?? "localhost",
+        status: "completed",
+        riskTier: "passive",
+        justification: "test",
+        commandPreview: "present-tool localhost",
+        dispatchMode: "local",
+        startedAt: "2026-04-21T00:00:00.000Z",
+        completedAt: "2026-04-21T00:00:01.000Z",
+        output: "ok",
+        exitCode: 0
+      }],
+      observations: [],
+      findings: []
+    });
+
+    const run = await service.startRun(mixedWorkflow.id);
+    const stepped = await service.stepRun(run.id);
+
+    expect(stepped.status).toBe("completed");
+    expect(stepped.events.some((event) =>
+      event.type === "model_decision"
+      && Array.isArray(event.payload["selectedToolIds"])
+      && event.payload["selectedToolIds"].includes("present-tool")
+    )).toBe(true);
+    expect(stepped.events.some((event) =>
+      event.type === "stage_completed"
     )).toBe(true);
   });
 

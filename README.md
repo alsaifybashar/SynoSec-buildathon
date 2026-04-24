@@ -35,26 +35,29 @@ The agent system is structured as a controlled analysis loop rather than an open
 
 1. Copy `.env.example` to `.env`.
 2. Set `ANTHROPIC_API_KEY` in `.env` if you want to use Anthropic models.
-3. `LOCAL_ENABLED=TRUE` is the default. Set `LOCAL_ENABLED=FALSE` in `.env` if you want `make dev` to skip Ollama entirely. The legacy typo `LOCAL_ENABHLED` is still accepted temporarily for compatibility.
-4. With local enabled, the Docker-backed dev path starts Ollama and pulls `qwen3:1.7b` for the local provider automatically.
-5. `make dev` starts Postgres, the vulnerable target, and optionally Ollama before launching backend and frontend on the host.
-6. Backend tests now include live local-model evaluation of the seeded tool defaults, so `pnpm --filter @synosec/backend test` expects Ollama with `qwen3:1.7b` to be available when local mode is enabled.
-7. Optional app-user authentication is gated behind `AUTH_ENABLED`. When enabled, configure `AUTH_GOOGLE_CLIENT_ID`, `AUTH_ALLOWED_EMAILS`, and `AUTH_SESSION_SECRET` in `.env`.
-8. The current Google integration uses Google Identity Services redirect mode. Google posts the returned ID token to `/api/auth/google`, the backend verifies it, creates the SynoSec session cookie, and redirects the browser back into the app.
-9. In Google Cloud Console, use these values:
+3. `LOCAL_ENABLED=FALSE` is the default. Set `LOCAL_ENABLED=TRUE` in `.env` only if you explicitly want `make dev` to bring up Ollama for the local provider. The legacy typo `LOCAL_ENABHLED` is still accepted temporarily for compatibility.
+4. With local enabled, the Docker-backed dev path starts Ollama and pulls `qwen3:1.7b` for the local provider.
+5. `make dev` starts Postgres, the vulnerable target, and only starts Ollama when local mode is explicitly enabled before launching backend and frontend on the host.
+6. Attack and scan execution should be started from the Attack Map UI, not as an automatic background action during local development startup.
+7. Backend tests now include live local-model evaluation of the seeded tool defaults, so `pnpm --filter @synosec/backend test` expects Ollama with `qwen3:1.7b` to be available when local mode is enabled.
+8. Optional app-user authentication is gated behind `AUTH_ENABLED`. When enabled, configure `AUTH_GOOGLE_CLIENT_ID`, `AUTH_ALLOWED_EMAILS`, and `AUTH_SESSION_SECRET` in `.env`.
+9. The current Google integration uses Google Identity Services redirect mode. Google posts the returned ID token to `/api/auth/google`, the backend verifies it, creates the SynoSec session cookie, and redirects the browser back into the app.
+10. In Google Cloud Console, use these values:
    Local:
    `Authorized JavaScript origins` = `http://localhost:5173`
    `Authorized redirect URIs` = `http://localhost:5173/api/auth/google`
    Production:
    `Authorized JavaScript origins` = `https://synosecai.com`
    `Authorized redirect URIs` = `https://synosecai.com/api/auth/google`
-10. Start the full stack:
+11. Start the full stack:
 
 ```bash
 make docker-up
 ```
 
-11. Run the smoke demo:
+`make docker-up` does not start Ollama unless `LOCAL_ENABLED=TRUE` is set explicitly.
+
+12. Run the smoke demo:
 
 ```bash
 make smoke-e2e

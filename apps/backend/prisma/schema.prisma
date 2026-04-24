@@ -546,3 +546,22 @@ model EscalationRouteFinding {
   @@index([scanFindingId])
   @@map("escalation_route_findings")
 }
+
+model OrchestratorRun {
+  id        String   @id @db.Uuid
+  targetUrl String   @map("target_url")
+  status    String   @default("pending")
+  phase     String   @default("pending")
+  recon     Json?
+  plan      Json?
+  mapNodes  Json?    @map("map_nodes")
+  mapEdges  Json?    @map("map_edges")
+  summary   String?
+  error     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("orchestrator_runs")
+}

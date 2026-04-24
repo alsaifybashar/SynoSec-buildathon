@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseExecutionTarget } from "./workflow-execution.utils.js";
+import { parseExecutionTarget, parseTarget } from "./workflow-execution.utils.js";
 
 const fallbackTarget = {
   baseUrl: "http://localhost:8888/",
@@ -51,6 +51,30 @@ describe("parseExecutionTarget", () => {
       target: "localhost",
       port: 8888,
       path: "/admin"
+    });
+  });
+});
+
+describe("parseTarget", () => {
+  it("rejects missing application base URLs instead of using demo defaults", () => {
+    expect(() => parseTarget(null)).toThrow(expect.objectContaining({
+      status: 400,
+      code: "WORKFLOW_TARGET_MISSING"
+    }));
+  });
+
+  it("rejects malformed application base URLs instead of using demo defaults", () => {
+    expect(() => parseTarget("http//scanner.test")).toThrow(expect.objectContaining({
+      status: 400,
+      code: "WORKFLOW_TARGET_INVALID"
+    }));
+  });
+
+  it("parses a configured application base URL", () => {
+    expect(parseTarget("https://scanner.test:8443/path")).toEqual({
+      baseUrl: "https://scanner.test:8443/path",
+      host: "scanner.test",
+      port: 8443
     });
   });
 });

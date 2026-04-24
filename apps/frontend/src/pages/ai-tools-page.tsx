@@ -7,7 +7,6 @@ import {
   type AiToolRunResult,
   type AiToolStatus,
   type CreateAiToolBody,
-  localDemoTargetDefaults,
   type ToolPrivilegeProfile,
   type ToolSandboxProfile,
   type ToolCategory,
@@ -67,7 +66,7 @@ function createEmptyFormValues(): ToolFormValues {
     source: "custom",
     description: "",
     binary: "",
-    bashSource: "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' '{\"output\":\"Replace this placeholder with a structured evidence result.\"}'\n",
+    bashSource: "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' 'Tool implementation is required before execution.' >&2\nexit 1\n",
     capabilitiesText: "",
     category: "utility",
     riskTier: "passive",
@@ -199,7 +198,6 @@ function describeRunStatus(result: AiToolRunResult | null) {
 }
 
 function createExampleRunInput(tool: AiTool) {
-  const demoUrl = new URL(localDemoTargetDefaults.hostUrl);
   const properties = tool.inputSchema["properties"];
   if (!properties || typeof properties !== "object" || Array.isArray(properties)) {
     return {};
@@ -227,15 +225,11 @@ function createExampleRunInput(tool: AiTool) {
 
     switch (schema["type"]) {
       case "string":
-        example[key] = key.toLowerCase().includes("url")
-          ? localDemoTargetDefaults.hostUrl
-          : key === "target"
-            ? demoUrl.host
-            : "";
+        example[key] = "";
         break;
       case "number":
       case "integer":
-        example[key] = key === "port" ? Number(demoUrl.port || localDemoTargetDefaults.port) : 0;
+        example[key] = 0;
         break;
       case "boolean":
         example[key] = false;

@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import {
   AiTool,
   AiToolRunResult,
-  localDemoTargetDefaults,
   type OsiLayer,
   type ToolRequest,
   type ToolRun
@@ -105,59 +104,6 @@ function validateRequiredFields(tool: AiTool, toolInput: Record<string, string |
   }
 }
 
-function createExampleInput(tool: AiTool): Record<string, string | number | boolean | string[]> {
-  const demoUrl = new URL(localDemoTargetDefaults.hostUrl);
-  const properties = tool.inputSchema["properties"];
-  if (!properties || typeof properties !== "object" || Array.isArray(properties)) {
-    return {};
-  }
-
-  const example: Record<string, string | number | boolean | string[]> = {};
-  for (const [key, rawSchema] of Object.entries(properties)) {
-    if (!rawSchema || typeof rawSchema !== "object" || Array.isArray(rawSchema)) {
-      continue;
-    }
-
-    const schema = rawSchema as Record<string, unknown>;
-    if (schema["default"] !== undefined) {
-      const value = schema["default"];
-      if (
-        typeof value === "string"
-        || typeof value === "number"
-        || typeof value === "boolean"
-        || (Array.isArray(value) && value.every((entry) => typeof entry === "string"))
-      ) {
-        example[key] = value;
-        continue;
-      }
-    }
-
-    switch (schema["type"]) {
-      case "string":
-        example[key] = key.toLowerCase().includes("url")
-          ? localDemoTargetDefaults.hostUrl
-          : key === "target"
-            ? demoUrl.host
-            : "";
-        break;
-      case "number":
-      case "integer":
-        example[key] = key === "port" ? Number(demoUrl.port || localDemoTargetDefaults.port) : 0;
-        break;
-      case "boolean":
-        example[key] = false;
-        break;
-      case "array":
-        example[key] = [];
-        break;
-      default:
-        break;
-    }
-  }
-
-  return example;
-}
-
 function createToolRun(request: ToolRequest): ToolRun {
   return {
     id: randomUUID(),
@@ -226,5 +172,3 @@ export async function runAiTool(tool: AiTool, rawInput: unknown): Promise<AiTool
     }))
   };
 }
-
-export { createExampleInput };
