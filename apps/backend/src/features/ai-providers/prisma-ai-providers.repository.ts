@@ -7,8 +7,8 @@ import type {
 } from "@synosec/contracts";
 import { PrismaClient } from "@prisma/client";
 import type { PaginatedResult } from "@/shared/pagination/paginated-result.js";
-import { mapAiProviderRow } from "../ai-providers/ai-providers.mapper.js";
-import { type AiProvidersRepository, type StoredAiProvider } from "../ai-providers/ai-providers.repository.js";
+import { mapAiProviderRow } from "@/features/ai-providers/ai-providers.mapper.js";
+import { type AiProvidersRepository, type StoredAiProvider } from "@/features/ai-providers/ai-providers.repository.js";
 
 export class PrismaAiProvidersRepository implements AiProvidersRepository {
   constructor(private readonly prisma: PrismaClient) {}

@@ -1,5 +1,5 @@
 import { prisma } from "@/shared/database/prisma-client.js";
-import { PrismaApplicationsRepository } from "../applications/prisma-applications.repository.js";
+import { PrismaApplicationsRepository } from "@/features/applications/prisma-applications.repository.js";
 
 export function createApplicationsRepositoryFromEnvironment() {
   if (!process.env["DATABASE_URL"]) {

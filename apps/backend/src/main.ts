@@ -2,7 +2,7 @@ import http from "node:http";
 import { loadBackendEnv } from "@/shared/config/backend-env.js";
 import { buildBackendDependencies } from "@/app/build-backend-dependencies.js";
 import { createApp } from "@/app/create-app.js";
-import { validateSeededToolDefinitions } from "../prisma/seed-data/ai-builder-defaults.js";
+import { validateSeededToolDefinitions } from "@/prisma/seed-data/ai-builder-defaults.js";
 
 const env = loadBackendEnv();
 const port = env.backendPort;

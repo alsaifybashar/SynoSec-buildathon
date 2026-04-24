@@ -12,8 +12,8 @@ import {
   seededToolDefinitions as toolDefinitions,
   targetRuntimeId
 } from "./seed-data/ai-builder-defaults.js";
-import "../src/core/env/load-env.js";
-import { attachExecutionConfig } from "../src/features/modules/ai-tools/tool-execution-config.js";
+import "@/shared/config/load-env.js";
+import { attachExecutionConfig } from "@/features/ai-tools/tool-execution-config.js";
 
 const prisma = new PrismaClient();
 

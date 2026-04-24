@@ -7,8 +7,8 @@ import type {
 } from "@synosec/contracts";
 import { Prisma, PrismaClient } from "@prisma/client";
 import type { PaginatedResult } from "@/shared/pagination/paginated-result.js";
-import { mapAiToolRow } from "../ai-tools/ai-tools.mapper.js";
-import { type AiToolsRepository } from "../ai-tools/ai-tools.repository.js";
+import { mapAiToolRow } from "@/features/ai-tools/ai-tools.mapper.js";
+import { type AiToolsRepository } from "@/features/ai-tools/ai-tools.repository.js";
 import { encodeCreateToolInput, encodeUpdateToolInput } from "./tool-execution-config.js";
 
 export class PrismaAiToolsRepository implements AiToolsRepository {

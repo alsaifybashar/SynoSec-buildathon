@@ -8,8 +8,8 @@ import type {
 import { PrismaClient } from "@prisma/client";
 import { RequestError } from "@/shared/http/request-error.js";
 import type { PaginatedResult } from "@/shared/pagination/paginated-result.js";
-import { mapAiAgentRow } from "../ai-agents/ai-agents.mapper.js";
-import { type AiAgentsRepository } from "../ai-agents/ai-agents.repository.js";
+import { mapAiAgentRow } from "@/features/ai-agents/ai-agents.mapper.js";
+import { type AiAgentsRepository } from "@/features/ai-agents/ai-agents.repository.js";
 
 export class PrismaAiAgentsRepository implements AiAgentsRepository {
   constructor(private readonly prisma: PrismaClient) {}

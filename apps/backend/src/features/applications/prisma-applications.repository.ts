@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import type { Application, ApplicationsListQuery, CreateApplicationBody, UpdateApplicationBody } from "@synosec/contracts";
 import type { PaginatedResult } from "@/shared/pagination/paginated-result.js";
-import { mapApplicationRow } from "../applications/applications.mapper.js";
-import { type ApplicationsRepository } from "../applications/applications.repository.js";
+import { mapApplicationRow } from "@/features/applications/applications.mapper.js";
+import { type ApplicationsRepository } from "@/features/applications/applications.repository.js";
 
 export class PrismaApplicationsRepository implements ApplicationsRepository {
   constructor(private readonly prisma: PrismaClient) {}

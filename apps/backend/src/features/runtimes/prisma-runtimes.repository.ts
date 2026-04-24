@@ -3,8 +3,8 @@ import { PrismaClient } from "@prisma/client";
 import type { CreateRuntimeBody, RuntimesListQuery, Runtime, RuntimeProvider, UpdateRuntimeBody } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
 import type { PaginatedResult } from "@/shared/pagination/paginated-result.js";
-import { mapRuntimeRow } from "../runtimes/runtimes.mapper.js";
-import { type RuntimesRepository } from "../runtimes/runtimes.repository.js";
+import { mapRuntimeRow } from "@/features/runtimes/runtimes.mapper.js";
+import { type RuntimesRepository } from "@/features/runtimes/runtimes.repository.js";
 
 function mapProvider(provider: RuntimeProvider) {
   return provider === "on-prem" ? "on_prem" : provider;

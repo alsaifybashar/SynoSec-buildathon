@@ -6,7 +6,7 @@ import type {
   UpdateAiProviderBody
 } from "@synosec/contracts";
 import { paginateItems, type PaginatedResult } from "@/shared/pagination/paginated-result.js";
-import { type AiProvidersRepository, type StoredAiProvider } from "../ai-providers/ai-providers.repository.js";
+import { type AiProvidersRepository, type StoredAiProvider } from "@/features/ai-providers/ai-providers.repository.js";
 
 export class MemoryAiProvidersRepository implements AiProvidersRepository {
   private readonly records = new Map<string, StoredAiProvider>();

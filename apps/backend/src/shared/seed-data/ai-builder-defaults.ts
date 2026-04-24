@@ -3,4 +3,4 @@ export {
   seededRoleDefinitions,
   seededToolDefinitions,
   type SeededRoleKey,
-} from "../../../prisma/seed-data/ai-builder-defaults.js";
+} from "@/prisma/seed-data/ai-builder-defaults.js";

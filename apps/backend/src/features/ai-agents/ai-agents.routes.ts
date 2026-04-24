@@ -8,7 +8,7 @@ import {
 } from "@synosec/contracts";
 import { type Express } from "express";
 import { registerCrudRoutes } from "@/shared/http/register-crud-routes.js";
-import { type AiAgentsRepository } from "../ai-agents/ai-agents.repository.js";
+import { type AiAgentsRepository } from "@/features/ai-agents/ai-agents.repository.js";
 
 export function registerAiAgentsRoutes(app: Express, repository: AiAgentsRepository) {
   registerCrudRoutes(app, {

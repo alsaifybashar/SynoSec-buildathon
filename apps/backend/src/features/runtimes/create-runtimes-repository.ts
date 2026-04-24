@@ -1,5 +1,5 @@
 import { prisma } from "@/shared/database/prisma-client.js";
-import { PrismaRuntimesRepository } from "../runtimes/prisma-runtimes.repository.js";
+import { PrismaRuntimesRepository } from "@/features/runtimes/prisma-runtimes.repository.js";
 
 export function createRuntimesRepositoryFromEnvironment() {
   if (!process.env["DATABASE_URL"]) {

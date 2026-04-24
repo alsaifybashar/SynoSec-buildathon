@@ -10,7 +10,7 @@ import {
 } from "@synosec/contracts";
 import { type Express } from "express";
 import { registerCrudRoutes } from "@/shared/http/register-crud-routes.js";
-import { type AiToolsRepository } from "../ai-tools/ai-tools.repository.js";
+import { type AiToolsRepository } from "@/features/ai-tools/ai-tools.repository.js";
 import { runAiTool } from "./ai-tool-runner.js";
 
 export function registerAiToolsRoutes(app: Express, repository: AiToolsRepository) {

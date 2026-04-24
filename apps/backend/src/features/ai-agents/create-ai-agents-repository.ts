@@ -1,5 +1,5 @@
 import { prisma } from "@/shared/database/prisma-client.js";
-import { PrismaAiAgentsRepository } from "../ai-agents/prisma-ai-agents.repository.js";
+import { PrismaAiAgentsRepository } from "@/features/ai-agents/prisma-ai-agents.repository.js";
 
 export function createAiAgentsRepositoryFromEnvironment() {
   if (!process.env["DATABASE_URL"]) {

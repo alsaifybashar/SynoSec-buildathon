@@ -6,7 +6,7 @@ import type {
   UpdateAiToolBody
 } from "@synosec/contracts";
 import { paginateItems, type PaginatedResult } from "@/shared/pagination/paginated-result.js";
-import { type AiToolsRepository } from "../ai-tools/ai-tools.repository.js";
+import { type AiToolsRepository } from "@/features/ai-tools/ai-tools.repository.js";
 import { encodeCreateToolInput, encodeUpdateToolInput, mapToolExecutionFields, stripExecutionConfig } from "./tool-execution-config.js";
 
 export class MemoryAiToolsRepository implements AiToolsRepository {

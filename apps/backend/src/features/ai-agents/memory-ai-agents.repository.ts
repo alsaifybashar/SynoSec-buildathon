@@ -9,7 +9,7 @@ import { RequestError } from "@/shared/http/request-error.js";
 import { paginateItems, type PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import type { AiProvidersRepository } from "@/features/ai-providers/index.js";
 import type { AiToolsRepository } from "@/features/ai-tools/index.js";
-import { type AiAgentsRepository } from "../ai-agents/ai-agents.repository.js";
+import { type AiAgentsRepository } from "@/features/ai-agents/ai-agents.repository.js";
 
 export class MemoryAiAgentsRepository implements AiAgentsRepository {
   private readonly records = new Map<string, AiAgent>();

@@ -8,7 +8,7 @@ import {
 } from "@synosec/contracts";
 import { type Express } from "express";
 import { registerCrudRoutes } from "@/shared/http/register-crud-routes.js";
-import { type AiProvidersRepository } from "../ai-providers/ai-providers.repository.js";
+import { type AiProvidersRepository } from "@/features/ai-providers/ai-providers.repository.js";
 
 export function registerAiProvidersRoutes(app: Express, repository: AiProvidersRepository) {
   registerCrudRoutes(app, {
