@@ -122,7 +122,7 @@ async function main() {
         update: {
           name: tool.name,
           status: "active",
-          source: "custom",
+          source: "system",
           description: tool.description,
           adapter: null,
           binary: tool.binary,
@@ -143,7 +143,7 @@ async function main() {
           id: tool.id,
           name: tool.name,
           status: "active",
-          source: "custom",
+          source: "system",
           description: tool.description,
           adapter: null,
           binary: tool.binary,

@@ -11,18 +11,22 @@ const EXECUTION_KEY = "x-synosec-runtime";
 type JsonRecord = Record<string, unknown>;
 
 interface StoredExecutionConfig {
-  executorType?: AiTool["executorType"];
-  bashSource?: AiTool["bashSource"];
+  executorType?: "bash";
+  bashSource?: string;
   sandboxProfile?: AiTool["sandboxProfile"];
   privilegeProfile?: AiTool["privilegeProfile"];
   timeoutMs?: AiTool["timeoutMs"];
   capabilities?: AiTool["capabilities"];
 }
 
-type ToolExecutionFields = Pick<
-  AiTool,
-  "executorType" | "bashSource" | "sandboxProfile" | "privilegeProfile" | "timeoutMs" | "capabilities"
->;
+type ToolExecutionFields = {
+  executorType: "bash";
+  bashSource: string;
+  sandboxProfile: AiTool["sandboxProfile"];
+  privilegeProfile: AiTool["privilegeProfile"];
+  timeoutMs: AiTool["timeoutMs"];
+  capabilities: AiTool["capabilities"];
+};
 
 type ExecutionConfigLookup = Pick<AiTool, "id" | "name" | "category" | "riskTier"> & {
   binary?: string | null;
@@ -153,7 +157,7 @@ export function stripExecutionConfig<T>(schema: T): T {
 
 export function attachExecutionConfig<T>(
   schema: T,
-  tool: Pick<AiTool, "executorType" | "bashSource" | "sandboxProfile" | "privilegeProfile" | "timeoutMs" | "capabilities">
+  tool: ToolExecutionFields
 ): T {
   const record = asJsonRecord(schema);
   const next: JsonRecord = {
@@ -247,8 +251,8 @@ export function encodeUpdateToolInput(input: UpdateAiToolBody, current: AiTool) 
     inputSchema: !shouldRewriteExecutionConfig
       ? undefined
       : attachExecutionConfig(input.inputSchema ?? current.inputSchema, {
-          executorType: input.executorType ?? current.executorType,
-          bashSource: input.bashSource ?? current.bashSource,
+          executorType: "bash",
+          bashSource: input.bashSource ?? current.bashSource ?? "",
           sandboxProfile: input.sandboxProfile ?? current.sandboxProfile,
           privilegeProfile: input.privilegeProfile ?? current.privilegeProfile,
           timeoutMs: input.timeoutMs ?? current.timeoutMs,

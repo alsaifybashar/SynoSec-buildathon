@@ -5,8 +5,9 @@ import type {
   CreateAiToolBody,
   UpdateAiToolBody
 } from "@synosec/contracts";
-import { paginateItems, type PaginatedResult } from "@/shared/pagination/paginated-result.js";
+import type { PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import { type AiToolsRepository } from "@/features/ai-tools/ai-tools.repository.js";
+import { getBuiltinAiTool, isBuiltinAiToolId, mergeAndPaginateAiTools, rejectBuiltinAiToolMutation } from "./builtin-ai-tools.js";
 import { encodeCreateToolInput, encodeUpdateToolInput, mapToolExecutionFields, stripExecutionConfig } from "./tool-execution-config.js";
 
 export class MemoryAiToolsRepository implements AiToolsRepository {
@@ -21,8 +22,7 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
   async list(query: AiToolsListQuery): Promise<PaginatedResult<AiTool>> {
     const normalizedQuery = query.q?.trim().toLowerCase();
     const sorted = [...this.records.values()]
-      .filter((tool) => !query.status || tool.status === query.status)
-      .filter((tool) => !query.source || tool.source === query.source)
+      .map((tool) => ({ ...tool, source: "custom" as const }))
       .filter((tool) => !query.category || tool.category === query.category)
       .filter((tool) => {
         if (!normalizedQuery) {
@@ -45,11 +45,17 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
         return (leftValue > rightValue ? 1 : -1) * direction;
       });
 
-    return paginateItems(sorted, query.page, query.pageSize);
+    return mergeAndPaginateAiTools(sorted, query);
   }
 
   async getById(id: string): Promise<AiTool | null> {
-    return this.records.get(id) ?? null;
+    const builtin = getBuiltinAiTool(id);
+    if (builtin) {
+      return builtin;
+    }
+
+    const tool = this.records.get(id);
+    return tool ? { ...tool, source: "custom" } : null;
   }
 
   async create(input: CreateAiToolBody): Promise<AiTool> {
@@ -78,6 +84,10 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
   }
 
   async update(id: string, input: UpdateAiToolBody): Promise<AiTool | null> {
+    if (isBuiltinAiToolId(id)) {
+      rejectBuiltinAiToolMutation(id);
+    }
+
     const current = this.records.get(id);
     if (!current) {
       return null;
@@ -99,6 +109,7 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
       ...current,
       name: encoded.name ?? current.name,
       status: encoded.status ?? current.status,
+      source: "custom",
       description: encoded.description === undefined ? current.description : encoded.description,
       binary: encoded.binary === undefined ? current.binary : encoded.binary ?? null,
       category: encoded.category ?? current.category,
@@ -115,6 +126,10 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
   }
 
   async remove(id: string): Promise<boolean> {
+    if (isBuiltinAiToolId(id)) {
+      rejectBuiltinAiToolMutation(id);
+    }
+
     const current = this.records.get(id);
     if (!current) {
       return false;

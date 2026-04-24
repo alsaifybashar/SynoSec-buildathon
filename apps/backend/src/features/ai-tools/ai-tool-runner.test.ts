@@ -89,4 +89,19 @@ describe("runAiTool", () => {
       code: "AI_TOOL_TARGET_INVALID"
     });
   });
+
+  it("rejects builtin tools in the direct tool runner", async () => {
+    await expect(runAiTool(createTool({
+      id: "builtin-report-finding",
+      name: "Report Finding",
+      source: "system",
+      executorType: "builtin",
+      builtinActionKey: "report_finding",
+      bashSource: null,
+      binary: null
+    }), {})).rejects.toMatchObject({
+      status: 400,
+      code: "AI_TOOL_BUILTIN_NOT_RUNNABLE"
+    });
+  });
 });

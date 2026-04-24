@@ -178,8 +178,11 @@ export type AiToolSource = z.infer<typeof aiToolSourceSchema>;
 export const aiToolStatusSchema = z.enum(["active", "inactive", "missing", "manual"]);
 export type AiToolStatus = z.infer<typeof aiToolStatusSchema>;
 
-export const toolExecutorTypeSchema = z.literal("bash");
+export const toolExecutorTypeSchema = z.enum(["bash", "builtin"]);
 export type ToolExecutorType = z.infer<typeof toolExecutorTypeSchema>;
+
+export const toolBuiltinActionKeySchema = z.enum(["report_finding", "report_vulnerability"]);
+export type ToolBuiltinActionKey = z.infer<typeof toolBuiltinActionKeySchema>;
 
 export const toolSandboxProfileSchema = z.enum([
   "network-recon",
@@ -204,7 +207,8 @@ export const aiToolSchema = z.object({
   description: z.string().nullable(),
   binary: z.string().nullable(),
   executorType: toolExecutorTypeSchema.default("bash"),
-  bashSource: z.string().min(1),
+  builtinActionKey: toolBuiltinActionKeySchema.nullable().optional(),
+  bashSource: z.string().min(1).nullable(),
   capabilities: z.array(z.lazy(() => toolCapabilityTagSchema)).default([]),
   category: z.lazy(() => toolCategorySchema),
   riskTier: z.lazy(() => toolRiskTierSchema),
@@ -216,6 +220,26 @@ export const aiToolSchema = z.object({
   outputSchema: z.lazy(() => jsonSchemaObjectSchema),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
+}).superRefine((value, ctx) => {
+  if (value.executorType === "bash") {
+    if (!value.bashSource?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Bash source is required for bash tools.",
+        path: ["bashSource"]
+      });
+    }
+
+    return;
+  }
+
+  if (!value.builtinActionKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Built-in action key is required for builtin tools.",
+      path: ["builtinActionKey"]
+    });
+  }
 });
 export type AiTool = z.infer<typeof aiToolSchema>;
 
@@ -269,7 +293,7 @@ const aiToolBodyBaseSchema = z.object({
   source: aiToolSourceSchema,
   description: z.string().trim().min(1),
   binary: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  executorType: toolExecutorTypeSchema.default("bash"),
+  executorType: z.literal("bash").default("bash"),
   bashSource: z.string().min(1),
   capabilities: z.array(z.lazy(() => toolCapabilityTagSchema)).default([]),
   category: z.lazy(() => toolCategorySchema),

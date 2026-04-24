@@ -8,7 +8,7 @@ import {
 } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
 import { compileToolRequestFromDefinition } from "./tool-definition.compiler.js";
-import { executeScriptedTool } from "@/features/ai-tools/runtime/script-executor.js";
+import { executeScriptedTool } from "@/execution-engine/tools/script-executor.js";
 
 function inferLayer(category: string): OsiLayer {
   if (category === "network" || category === "dns" || category === "subdomain") {
@@ -128,6 +128,13 @@ function createToolRun(request: ToolRequest): ToolRun {
 }
 
 export async function runAiTool(tool: AiTool, rawInput: unknown): Promise<AiToolRunResult> {
+  if (tool.executorType !== "bash" || !tool.bashSource) {
+    throw new RequestError(400, `${tool.name} is a built-in action and cannot be run from the AI tools runner.`, {
+      code: "AI_TOOL_BUILTIN_NOT_RUNNABLE",
+      userFriendlyMessage: "Built-in AI tools cannot be run from the tool runner."
+    });
+  }
+
   const toolInput = normalizeToolInput(rawInput);
   validateRequiredFields(tool, toolInput);
   const executionTarget = parseExecutionTarget(toolInput);

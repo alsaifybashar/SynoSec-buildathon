@@ -501,6 +501,33 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts builtin ai tools without bash source", () => {
+    const result = aiToolSchema.safeParse({
+      id: "builtin-report-finding",
+      name: "Report Finding",
+      status: "active",
+      source: "system",
+      description: "Workflow built-in action for persisting a structured finding.",
+      binary: null,
+      executorType: "builtin",
+      builtinActionKey: "report_finding",
+      bashSource: null,
+      capabilities: ["workflow-reporting"],
+      category: "utility",
+      riskTier: "passive",
+      notes: "Executed by the workflow engine.",
+      sandboxProfile: "read-only-parser",
+      privilegeProfile: "read-only-network",
+      timeoutMs: 1000,
+      inputSchema: { type: "object", properties: { title: { type: "string" } } },
+      outputSchema: { type: "object", properties: { findingId: { type: "string" } } },
+      createdAt: "2026-04-21T12:00:00.000Z",
+      updatedAt: "2026-04-21T12:00:00.000Z"
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("rejects executable ai tools without sandbox metadata", () => {
     const result = createAiToolBodySchema.safeParse({
       name: "Unsafe Custom Tool",

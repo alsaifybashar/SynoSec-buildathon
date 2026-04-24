@@ -9,6 +9,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import type { PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import { mapAiToolRow } from "@/features/ai-tools/ai-tools.mapper.js";
 import { type AiToolsRepository } from "@/features/ai-tools/ai-tools.repository.js";
+import { mergeAndPaginateAiTools, rejectBuiltinAiToolMutation, getBuiltinAiTool, isBuiltinAiToolId } from "./builtin-ai-tools.js";
 import { encodeCreateToolInput, encodeUpdateToolInput } from "./tool-execution-config.js";
 
 export class PrismaAiToolsRepository implements AiToolsRepository {
@@ -17,7 +18,6 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
   async list(query: AiToolsListQuery): Promise<PaginatedResult<AiTool>> {
     const where = {
       ...(query.status ? { status: query.status } : {}),
-      ...(query.source ? { source: query.source } : {}),
       ...(query.category ? { category: query.category } : {}),
       ...(query.q
         ? {
@@ -29,28 +29,22 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
           }
         : {})
     };
-    const orderBy = { [query.sortBy ?? "name"]: query.sortDirection };
-    const skip = (query.page - 1) * query.pageSize;
-    const [items, total] = await Promise.all([
+    const [items] = await Promise.all([
       this.prisma.aiTool.findMany({
         where,
-        orderBy,
-        skip,
-        take: query.pageSize
-      }),
-      this.prisma.aiTool.count({ where })
+        orderBy: { name: "asc" }
+      })
     ]);
 
-    return {
-      items: items.map(mapAiToolRow),
-      page: query.page,
-      pageSize: query.pageSize,
-      total,
-      totalPages: total === 0 ? 0 : Math.ceil(total / query.pageSize)
-    };
+    return mergeAndPaginateAiTools(items.map(mapAiToolRow), query);
   }
 
   async getById(id: string): Promise<AiTool | null> {
+    const builtin = getBuiltinAiTool(id);
+    if (builtin) {
+      return builtin;
+    }
+
     const tool = await this.prisma.aiTool.findUnique({ where: { id } });
     return tool ? mapAiToolRow(tool) : null;
   }
@@ -78,6 +72,10 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
   }
 
   async update(id: string, input: UpdateAiToolBody): Promise<AiTool | null> {
+    if (isBuiltinAiToolId(id)) {
+      rejectBuiltinAiToolMutation(id);
+    }
+
     const current = await this.prisma.aiTool.findUnique({ where: { id } });
     if (!current) {
       return null;
@@ -89,6 +87,7 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
       data: {
         name: encoded.name ?? current.name,
         status: encoded.status ?? current.status,
+        source: "custom",
         description: encoded.description === undefined ? current.description : encoded.description,
         adapter: current.adapter,
         binary: encoded.binary === undefined ? current.binary : encoded.binary ?? null,
@@ -104,6 +103,10 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
   }
 
   async remove(id: string): Promise<boolean> {
+    if (isBuiltinAiToolId(id)) {
+      rejectBuiltinAiToolMutation(id);
+    }
+
     const current = await this.prisma.aiTool.findUnique({ where: { id } });
     if (!current) {
       return false;
