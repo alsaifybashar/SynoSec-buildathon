@@ -7,6 +7,7 @@ import { exportResourceRecords, importResourceRecords, type ResourceTransferConf
 import type { ListQueryState, ResourceClient } from "@/shared/lib/resource-client";
 
 type ValidationErrors<TFormValues> = Partial<Record<keyof TFormValues, string>> | Record<string, string>;
+export type { ValidationErrors };
 
 type ParseBodyResult<TFormValues, TRequestBody> = {
   body?: TRequestBody;
