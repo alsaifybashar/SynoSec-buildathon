@@ -109,7 +109,7 @@ The Google redirect URI must match exactly. Do not register or rely on query-str
 GitHub Actions deploys to a VPS using `.github/workflows/deploy.yml` and the production stack in `docker-compose.vps.yml`.
 
 - Host `nginx` runs directly on the VPS and proxies traffic to Dockerized frontend and backend services bound on loopback.
-- `backend` runs the compiled API. Production schema changes must be applied through committed Prisma migrations.
+- `backend` runs the compiled API and destructively resets then re-seeds the Prisma database on startup.
 - `frontend` runs the production frontend build behind the host nginx reverse proxy.
 - `connector` stays on the private Docker network and polls the backend control plane.
 - `postgres` persists app data in a named Docker volume.
@@ -134,8 +134,8 @@ Most non-secret application defaults now live in `infra/deploy/env.vps.template`
 The deploy workflow hardcodes the VPS app directory to `/opt/synosec` and binds the host loopback ports to `3030` for the frontend and `3031` for the backend.
 The deploy user must already be able to create and write `${VPS_TARGET_DIR}` without `sudo`.
 The deploy user must also be able to write `NGINX_CONFIG_PATH` directly and run `/usr/sbin/nginx -t` plus `/usr/sbin/nginx -s reload` without privilege escalation. If those permissions are missing, deploy fails immediately.
-Production deploys no longer use `sudo`, `chown`, or `prisma db push`.
-Production startup now requires committed Prisma migrations. If `apps/backend/prisma/migrations` is missing or empty, the backend container exits instead of mutating the database schema implicitly.
+Production deploys no longer use `sudo` or `chown`.
+Production backend startup now runs `prisma db push --force-reset` followed by `prisma db seed`, so every deploy is intentionally destructive and recreates the seeded database state from `apps/backend/prisma/schema.prisma` plus the seed scripts.
 
 Set `SERVER_NAME` to the apex domain only, for example `synosecai.com`. The nginx template will serve both `synosecai.com` and `www.synosecai.com`.
 

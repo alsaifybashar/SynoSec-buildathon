@@ -40,4 +40,4 @@ COPY --from=build /workspace/apps/backend/prisma ./apps/backend/prisma
 
 EXPOSE 3001
 
-CMD ["sh", "-c", "cd apps/backend && if [ ! -d prisma/migrations ] || ! find prisma/migrations -mindepth 1 -maxdepth 1 -type d | grep -q .; then echo 'Production startup requires committed Prisma migrations. Refusing to run prisma db push in production.' >&2; exit 1; fi && pnpm exec prisma migrate deploy --schema prisma/schema.prisma && node dist/src/main.js"]
+CMD ["sh", "-c", "cd apps/backend && pnpm exec prisma db push --force-reset --schema prisma/schema.prisma && pnpm exec prisma db seed --schema prisma/schema.prisma && node dist/src/main.js"]
