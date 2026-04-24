@@ -194,6 +194,10 @@ function getPayloadString(payload: Record<string, unknown> | null | undefined, k
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+function getTraceKind(event: WorkflowTraceEvent) {
+  return getPayloadString(event.payload ?? {}, "streamPartType") ?? event.type;
+}
+
 function getPayloadStringList(payload: Record<string, unknown> | null | undefined, key: string) {
   const value = payload?.[key];
   if (!Array.isArray(value)) {
@@ -327,7 +331,10 @@ export function buildWorkflowRunReport(run: WorkflowRun | null): WorkflowRunRepo
   }
 
   const closeoutEvent = run.events
-    .filter((event) => event.type === "run_completed" || event.type === "run_failed")
+    .filter((event) => {
+      const traceKind = getTraceKind(event);
+      return traceKind === "run_completed" || traceKind === "run_failed";
+    })
     .slice()
     .sort((left, right) => right.ord - left.ord)[0] ?? null;
   const closeoutPayload = isRecord(closeoutEvent?.payload) ? closeoutEvent.payload : null;
@@ -394,14 +401,31 @@ export function buildWorkflowTranscript(input: {
 
   for (const event of orderedEvents) {
     const payload = event.payload ?? {};
+    const traceKind = getTraceKind(event);
 
     if (event.type === "system_message") {
+      if (traceKind === "start" || traceKind === "start-step") {
+        flushTurn();
+        currentTurn = createAssistantTurnShell({
+          id: event.id,
+          ord: event.ord,
+          createdAt: event.createdAt,
+          agentName
+        });
+        continue;
+      }
+
+      if (traceKind === "finish-step") {
+        flushTurn();
+        continue;
+      }
+
       flushTurn();
       items.push(createSystemMessage(event));
       continue;
     }
 
-    if (event.type === "start" || event.type === "start-step") {
+    if (traceKind === "start" || traceKind === "start-step") {
       flushTurn();
       currentTurn = createAssistantTurnShell({
         id: event.id,
@@ -412,7 +436,7 @@ export function buildWorkflowTranscript(input: {
       continue;
     }
 
-    if (!currentTurn && (event.type === "text" || event.type === "reasoning" || event.type === "tool_call" || event.type === "tool_call_delta" || event.type === "tool_call_streaming_start" || event.type === "tool_result" || event.type === "finding_reported" || event.type === "error")) {
+    if (!currentTurn && (traceKind === "text" || traceKind === "reasoning" || traceKind === "tool_call" || traceKind === "tool_call_delta" || traceKind === "tool_call_streaming_start" || traceKind === "tool_result" || event.type === "finding_reported" || traceKind === "error")) {
       currentTurn = createAssistantTurnShell({
         id: `turn:${event.id}`,
         ord: event.ord,
@@ -421,7 +445,7 @@ export function buildWorkflowTranscript(input: {
       });
     }
 
-    if (event.type === "text") {
+    if (traceKind === "text") {
       const text = getPayloadString(payload, "text");
       if (text && currentTurn) {
         currentTurn.body = appendText(currentTurn.body, text);
@@ -429,7 +453,7 @@ export function buildWorkflowTranscript(input: {
       continue;
     }
 
-    if (event.type === "reasoning") {
+    if (traceKind === "reasoning") {
       const text = getPayloadString(payload, "text");
       if (text && currentTurn) {
         currentTurn.reasoning = appendText(currentTurn.reasoning, text);
@@ -437,7 +461,7 @@ export function buildWorkflowTranscript(input: {
       continue;
     }
 
-    if (event.type === "tool_call" || event.type === "tool_call_streaming_start") {
+    if (traceKind === "tool_call" || traceKind === "tool_call_streaming_start") {
       currentTurn?.details.push({
         kind: "tool_call",
         id: event.id,
@@ -450,7 +474,7 @@ export function buildWorkflowTranscript(input: {
       continue;
     }
 
-    if (event.type === "tool_call_delta") {
+    if (traceKind === "tool_call_delta") {
       currentTurn?.details.push({
         kind: "note",
         id: event.id,
@@ -489,17 +513,17 @@ export function buildWorkflowTranscript(input: {
       continue;
     }
 
-    if (event.type === "finish-step") {
+    if (traceKind === "finish-step") {
       flushTurn();
       continue;
     }
 
-    if (event.type === "error" || event.type === "abort") {
+    if (traceKind === "error" || traceKind === "abort") {
       currentTurn?.details.push({
         kind: "verification",
         id: event.id,
         ord: event.ord,
-        title: event.type === "abort" ? "Stream aborted" : "Stream error",
+        title: traceKind === "abort" ? "Stream aborted" : "Stream error",
         summary: getPayloadString(payload, "message") ?? "The stream stopped unexpectedly.",
         body: getPayloadString(payload, "detail"),
         status: "failed",
@@ -509,17 +533,17 @@ export function buildWorkflowTranscript(input: {
       continue;
     }
 
-    if (event.type === "run_completed" || event.type === "run_failed") {
+    if (traceKind === "run_completed" || traceKind === "run_failed") {
       flushTurn();
       closeoutEvent = {
         kind: "closeout",
         id: event.id,
         ord: event.ord,
         createdAt: event.createdAt,
-        title: getPayloadString(payload, "title") ?? (event.type === "run_failed" ? "Pipeline failed" : "Pipeline completed"),
-        summary: getPayloadString(payload, "summary") ?? (event.type === "run_failed" ? "The pipeline failed." : "The pipeline completed."),
+        title: getPayloadString(payload, "title") ?? (traceKind === "run_failed" ? "Pipeline failed" : "Pipeline completed"),
+        summary: getPayloadString(payload, "summary") ?? (traceKind === "run_failed" ? "The pipeline failed." : "The pipeline completed."),
         body: getPayloadString(payload, "body"),
-        status: event.type === "run_failed" ? "failed" : "completed"
+        status: traceKind === "run_failed" ? "failed" : "completed"
       };
       continue;
     }

@@ -20,6 +20,7 @@ import type { AiProvidersRepository, StoredAiProvider } from "@/features/ai-prov
 import type { AiToolsRepository } from "@/features/ai-tools/index.js";
 import type { ApplicationsRepository } from "@/features/applications/index.js";
 import type { RuntimesRepository } from "@/features/runtimes/index.js";
+import { createScan, getScan } from "@/features/scans/scan-store.js";
 import { ToolBroker } from "@/features/workflows/engine/broker/tool-broker.js";
 import { inferLayer, normalizeToolInput, parseExecutionTarget, parseTarget, truncate } from "./workflow-execution.utils.js";
 import type { WorkflowRunStream } from "./workflow-run-stream.js";
@@ -60,6 +61,17 @@ type PipelineContext = {
   target: { baseUrl: string; host: string; port?: number };
   tools: AiTool[];
 };
+
+type PersistedWorkflowTraceType =
+  | "system_message"
+  | "model_decision"
+  | "tool_call"
+  | "tool_result"
+  | "verification"
+  | "finding_reported"
+  | "agent_summary"
+  | "stage_completed"
+  | "stage_failed";
 
 function createWorkflowScan(run: WorkflowRun, target: { host: string }): Scan {
   return {
@@ -194,6 +206,59 @@ export class WorkflowExecutionService {
     ].filter(Boolean).join("\n");
   }
 
+  private mapPersistedTraceType(type: WorkflowTraceEvent["type"]): PersistedWorkflowTraceType {
+    switch (type) {
+      case "tool_call":
+      case "tool_call_delta":
+      case "tool_call_streaming_start":
+        return "tool_call";
+      case "tool_result":
+        return "tool_result";
+      case "finding_reported":
+        return "finding_reported";
+      case "run_completed":
+        return "stage_completed";
+      case "run_failed":
+        return "stage_failed";
+      case "error":
+      case "abort":
+        return "verification";
+      case "text":
+      case "reasoning":
+        return "model_decision";
+      case "start":
+      case "start-step":
+      case "finish":
+      case "finish-step":
+        return "system_message";
+      default:
+        return type as PersistedWorkflowTraceType;
+    }
+  }
+
+  private decorateTracePayload(type: WorkflowTraceEvent["type"], payload: Record<string, unknown>) {
+    return {
+      ...payload,
+      streamPartType: type
+    };
+  }
+
+  private async ensureWorkflowScan(scan: Scan, context: PipelineContext) {
+    const existing = await getScan(scan.id);
+    if (existing) {
+      return existing;
+    }
+
+    await createScan(scan, {
+      mode: "workflow",
+      applicationId: context.application.id,
+      runtimeId: context.runtime?.id ?? null,
+      agentId: context.agent.id
+    });
+
+    return scan;
+  }
+
   private createEvent(
     run: WorkflowRun,
     workflowId: string,
@@ -212,12 +277,12 @@ export class WorkflowExecutionService {
       workflowStageId: null,
       stepIndex: run.currentStepIndex,
       ord,
-      type,
+      type: this.mapPersistedTraceType(type),
       status,
       title,
       summary,
       detail,
-      payload,
+      payload: this.decorateTracePayload(type, payload),
       createdAt: new Date().toISOString()
     };
   }
@@ -292,6 +357,7 @@ export class WorkflowExecutionService {
     }, "Rendered task prompt", "Persisted the workflow pipeline task prompt.", taskPrompt);
 
     const scan = createWorkflowScan(run, target);
+    await this.ensureWorkflowScan(scan, context);
     const executedResults: ExecutedToolResult[] = [];
     const reportedFindings = new Map<string, WorkflowReportedFinding>();
     let terminalState: PipelineTerminalState | null = null;
