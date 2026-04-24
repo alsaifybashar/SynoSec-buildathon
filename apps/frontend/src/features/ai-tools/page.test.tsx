@@ -95,4 +95,38 @@ describe("AiToolsPage", () => {
     expect(screen.getByDisplayValue(/HTTP\/1.1 200 OK/)).toBeInTheDocument();
     expect(screen.getByDisplayValue(/"exitCode": 0/)).toBeInTheDocument();
   });
+
+  it("shows source conversion metadata and allows editing for system tools", () => {
+    resourceDetailState.item = {
+      ...tool,
+      id: "builtin-report-finding",
+      name: "Report Finding",
+      source: "system",
+      executorType: "builtin",
+      builtinActionKey: "report_finding",
+      bashSource: null,
+      binary: null
+    };
+
+    render(
+      <AiToolsPage
+        toolId="tool-1"
+        onNavigateToList={vi.fn()}
+        onNavigateToCreate={vi.fn()}
+        onNavigateToDetail={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Create")).toBeInTheDocument();
+    expect(screen.getByText("Update")).toBeInTheDocument();
+    expect(screen.getByText("Delete")).toBeInTheDocument();
+    expect(screen.getByText("Built-in system actions are listed here but remain read-only.")).toBeInTheDocument();
+    expect(screen.getByText("Workflow built-in: persists a structured workflow finding.")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Report Finding")).toBeDisabled();
+    expect(screen.getByText("Allowed")).toBeInTheDocument();
+    expect(screen.getAllByText("Blocked")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Run Tool" })).not.toBeInTheDocument();
+
+    resourceDetailState.item = tool;
+  });
 });

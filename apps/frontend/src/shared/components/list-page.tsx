@@ -79,7 +79,9 @@ export function ListPage<T extends { id: string }>({
   onImportJson,
   getRowLabel,
   onExportRowJson,
-  onDeleteRow
+  onDeleteRow,
+  canExportRow,
+  canDeleteRow
 }: {
   title: string;
   recordLabel: string;
@@ -102,6 +104,8 @@ export function ListPage<T extends { id: string }>({
   getRowLabel?: (row: T) => string;
   onExportRowJson?: (row: T) => void;
   onDeleteRow?: (row: T) => void | Promise<void>;
+  canExportRow?: (row: T) => boolean;
+  canDeleteRow?: (row: T) => boolean;
 }) {
   const importInputId = useId();
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -186,10 +190,12 @@ export function ListPage<T extends { id: string }>({
 
   function renderRowActions(row: T) {
     const rowLabel = getRowLabel?.(row) ?? row.id;
+    const canExport = onExportRowJson ? (canExportRow?.(row) ?? true) : false;
+    const canDelete = onDeleteRow ? (canDeleteRow?.(row) ?? true) : false;
     const confirmingDelete = confirmDeleteId === row.id;
     const deleting = deletingId === row.id;
 
-    if (confirmingDelete && onDeleteRow) {
+    if (confirmingDelete && canDelete && onDeleteRow) {
       return (
         <div className="flex min-w-[16rem] flex-col items-end gap-2 text-right">
           <div className="inline-flex items-start gap-2 rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-left">
@@ -236,7 +242,7 @@ export function ListPage<T extends { id: string }>({
 
     return (
       <div className="flex items-center justify-end gap-2">
-        {onExportRowJson ? (
+        {canExport && onExportRowJson ? (
           <Button
             type="button"
             variant="ghost"
@@ -252,7 +258,7 @@ export function ListPage<T extends { id: string }>({
             <Download className="h-3.5 w-3.5" />
           </Button>
         ) : null}
-        {onDeleteRow ? (
+        {canDelete && onDeleteRow ? (
           <Button
             type="button"
             variant="ghost"

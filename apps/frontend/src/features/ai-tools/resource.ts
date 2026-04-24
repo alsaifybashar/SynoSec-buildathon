@@ -4,6 +4,11 @@ import { createResourceClient, type AiToolsQuery } from "@/shared/lib/resource-c
 export const aiToolsResource = createResourceClient<AiTool, AiToolsQuery, ListAiToolsResponse>({
   path: apiRoutes.aiTools,
   dataKey: "tools",
+  capabilities: {
+    canCreate: true,
+    canUpdate: (tool) => tool.source !== "system",
+    canDelete: (tool) => tool.source !== "system"
+  },
   defaultQuery: {
     page: 1,
     pageSize: 25,

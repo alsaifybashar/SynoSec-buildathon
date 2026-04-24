@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   apiRoutes,
   type AiTool,
+  type ToolBuiltinActionKey,
   type AiToolRunResult,
   type AiToolStatus,
   type CreateAiToolBody,
@@ -88,7 +89,7 @@ function toFormValues(tool: AiTool): ToolFormValues {
     source: tool.source,
     description: tool.description ?? "",
     binary: tool.binary ?? "",
-    bashSource: tool.bashSource,
+    bashSource: tool.bashSource ?? "",
     capabilitiesText: tool.capabilities.join("\n"),
     category: tool.category,
     riskTier: tool.riskTier,
@@ -170,6 +171,32 @@ function parseRequestBody(values: ToolFormValues): { body?: CreateAiToolBody; er
 
 function formatTimestamp(value: string) {
   return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function formatCrudCapability(value: boolean) {
+  return value ? "Allowed" : "Blocked";
+}
+
+function describeSourceBehavior(tool: AiTool) {
+  if (tool.source === "system") {
+    return "Built-in system actions are listed here but remain read-only.";
+  }
+
+  return "Edits remain on the custom tool record.";
+}
+
+function describeBuiltinAction(tool: AiTool) {
+  const actionKey = tool.builtinActionKey;
+  if (!actionKey) {
+    return null;
+  }
+
+  const labels: Record<ToolBuiltinActionKey, string> = {
+    report_finding: "Workflow built-in: persists a structured workflow finding.",
+    report_vulnerability: "Single-agent built-in: persists a structured vulnerability."
+  };
+
+  return labels[actionKey];
 }
 
 function definedString(value: string | undefined) {
@@ -381,7 +408,12 @@ export function AiToolsPage({
   ], []);
 
   const isDirty = JSON.stringify(formValues) !== JSON.stringify(initialValues);
-  const isSystemTool = !isCreateMode && tool?.source === "system";
+  const canCreateTool = aiToolsResource.capabilities.canCreate;
+  const canUpdateTool = !isCreateMode && tool ? aiToolsResource.capabilities.canUpdate(tool) : canCreateTool;
+  const canDeleteTool = tool ? aiToolsResource.capabilities.canDelete(tool) : false;
+  const isToolEditable = isCreateMode ? canCreateTool : canUpdateTool;
+  const isBuiltinTool = tool?.executorType === "builtin";
+  const isToolRunnable = !isCreateMode && tool?.executorType === "bash";
 
   function handleFieldChange<Key extends keyof ToolFormValues>(field: Key, value: ToolFormValues[Key]) {
     setFormValues((current) => ({ ...current, [field]: value }));
@@ -389,7 +421,7 @@ export function AiToolsPage({
   }
 
   async function handleSave() {
-    if (isSystemTool) {
+    if (!isToolEditable) {
       return;
     }
 
@@ -467,7 +499,7 @@ export function AiToolsPage({
   }
 
   function handleExportJson() {
-    if (!tool) {
+    if (!tool || tool.source === "system") {
       return;
     }
 
@@ -691,7 +723,9 @@ export function AiToolsPage({
           onImportJson={handleImportJson}
           getRowLabel={(row) => row.name}
           onExportRowJson={handleListExportJson}
+          canExportRow={(row) => row.source !== "system"}
           onDeleteRow={handleDeleteTool}
+          canDeleteRow={(row) => aiToolsResource.capabilities.canDelete(row)}
         />
       </div>
     );
@@ -712,7 +746,7 @@ export function AiToolsPage({
     <DetailPage
       title={isCreateMode ? "New AI tool" : tool?.name ?? "AI tool detail"}
       breadcrumbs={["Start", "AI Tools", isCreateMode ? "New" : tool?.name ?? "Detail"]}
-      isDirty={isSystemTool ? false : isDirty}
+      isDirty={isToolEditable ? isDirty : false}
       isSaving={saving}
       onBack={onNavigateToList}
       onSave={handleSave}
@@ -720,22 +754,28 @@ export function AiToolsPage({
         setFormValues(initialValues);
         setErrors({});
       }}
-      onExportJson={!isCreateMode ? handleExportJson : undefined}
-      saveLabel={isSystemTool ? "System tool" : "Save"}
+      onExportJson={!isCreateMode && tool?.source !== "system" ? handleExportJson : undefined}
+      saveLabel={isToolEditable ? "Save" : "Read only"}
       sidebar={tool ? (
         <>
           <DetailSidebarItem label="Source">{tool.source}</DetailSidebarItem>
+          <DetailSidebarItem label="Source behavior">{describeSourceBehavior(tool)}</DetailSidebarItem>
+          <DetailSidebarItem label="Executor">{tool.executorType}</DetailSidebarItem>
+          {tool.builtinActionKey ? <DetailSidebarItem label="Built-in key">{tool.builtinActionKey}</DetailSidebarItem> : null}
           <DetailSidebarItem label="Status">{statusLabels[tool.status]}</DetailSidebarItem>
+          <DetailSidebarItem label="Create">{formatCrudCapability(canCreateTool)}</DetailSidebarItem>
+          <DetailSidebarItem label="Update">{formatCrudCapability(canUpdateTool)}</DetailSidebarItem>
+          <DetailSidebarItem label="Delete">{formatCrudCapability(canDeleteTool)}</DetailSidebarItem>
           <DetailSidebarItem label="Updated">{formatTimestamp(tool.updatedAt)}</DetailSidebarItem>
         </>
       ) : undefined}
     >
       <DetailFieldGroup title="Definition" className="bg-card/70">
         <DetailField label="Name" required {...definedString(errors.name)}>
-          <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" disabled={Boolean(isSystemTool)} />
+          <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" disabled={!isToolEditable} />
         </DetailField>
         <DetailField label="Status">
-          <Select value={formValues.status} onValueChange={(value) => handleFieldChange("status", value as AiToolStatus)} disabled={Boolean(isSystemTool)}>
+          <Select value={formValues.status} onValueChange={(value) => handleFieldChange("status", value as AiToolStatus)} disabled={!isToolEditable}>
             <SelectTrigger aria-label="Status">
               <SelectValue placeholder="Select status" />
             </SelectTrigger>
@@ -747,7 +787,7 @@ export function AiToolsPage({
           </Select>
         </DetailField>
         <DetailField label="Category">
-          <Select value={formValues.category} onValueChange={(value) => handleFieldChange("category", value as ToolCategory)} disabled={Boolean(isSystemTool)}>
+          <Select value={formValues.category} onValueChange={(value) => handleFieldChange("category", value as ToolCategory)} disabled={!isToolEditable}>
             <SelectTrigger aria-label="Category">
               <SelectValue placeholder="Select category" />
             </SelectTrigger>
@@ -759,7 +799,7 @@ export function AiToolsPage({
           </Select>
         </DetailField>
         <DetailField label="Risk tier">
-          <Select value={formValues.riskTier} onValueChange={(value) => handleFieldChange("riskTier", value as ToolRiskTier)} disabled={Boolean(isSystemTool)}>
+          <Select value={formValues.riskTier} onValueChange={(value) => handleFieldChange("riskTier", value as ToolRiskTier)} disabled={!isToolEditable}>
             <SelectTrigger aria-label="Risk tier">
               <SelectValue placeholder="Select risk tier" />
             </SelectTrigger>
@@ -771,12 +811,22 @@ export function AiToolsPage({
           </Select>
         </DetailField>
         <DetailField label="Description" required className="md:col-span-2" {...definedString(errors.description)}>
-          <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" disabled={Boolean(isSystemTool)} />
+          <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" disabled={!isToolEditable} />
         </DetailField>
         <DetailField label="Notes" className="md:col-span-2">
-          <Input value={formValues.notes} onChange={(event) => handleFieldChange("notes", event.target.value)} aria-label="Notes" disabled={Boolean(isSystemTool)} />
+          <Input value={formValues.notes} onChange={(event) => handleFieldChange("notes", event.target.value)} aria-label="Notes" disabled={!isToolEditable} />
         </DetailField>
       </DetailFieldGroup>
+
+      {tool?.executorType === "builtin" ? (
+        <DetailFieldGroup title="Built-in Action" className="bg-card/70">
+          <DetailField label="Execution owner" className="md:col-span-2">
+            <div className="rounded-xl border border-border bg-background/40 p-4 text-sm text-foreground">
+              {describeBuiltinAction(tool) ?? "Built-in action provided by a backend execution engine."}
+            </div>
+          </DetailField>
+        </DetailFieldGroup>
+      ) : null}
 
       <DetailFieldGroup title="Evidence Contract" className="bg-card/70">
         <DetailField label="Example input" className="md:col-span-2">
@@ -789,17 +839,17 @@ export function AiToolsPage({
           />
         </DetailField>
         <DetailField label="Input schema" className="md:col-span-2" {...definedString(errors.inputSchemaText)}>
-          <Textarea value={formValues.inputSchemaText} onChange={(event) => handleFieldChange("inputSchemaText", event.target.value)} aria-label="Input schema" rows={10} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
+          <Textarea value={formValues.inputSchemaText} onChange={(event) => handleFieldChange("inputSchemaText", event.target.value)} aria-label="Input schema" rows={10} className="font-mono text-sm" disabled={!isToolEditable} />
         </DetailField>
         <DetailField label="Structured result schema" className="md:col-span-2" {...definedString(errors.outputSchemaText)}>
           <p className="mb-2 text-sm leading-6 text-muted-foreground">
             Evidence tools return a structured result envelope. `output` is required. `observations` are optional evidence records and are not persisted findings.
           </p>
-          <Textarea value={formValues.outputSchemaText} onChange={(event) => handleFieldChange("outputSchemaText", event.target.value)} aria-label="Output schema" rows={10} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
+          <Textarea value={formValues.outputSchemaText} onChange={(event) => handleFieldChange("outputSchemaText", event.target.value)} aria-label="Output schema" rows={10} className="font-mono text-sm" disabled={!isToolEditable} />
         </DetailField>
       </DetailFieldGroup>
 
-      {!isCreateMode && tool ? (
+      {isToolRunnable && tool ? (
         <DetailFieldGroup title="Test Tool" className="bg-card/70">
           <DetailField label="Input JSON" className="md:col-span-2">
             <Textarea
@@ -880,15 +930,16 @@ export function AiToolsPage({
         </DetailFieldGroup>
       ) : null}
 
-      <DetailFieldGroup title="Execution" className="bg-card/70">
+      {!isBuiltinTool ? (
+        <DetailFieldGroup title="Execution" className="bg-card/70">
         <DetailField label="Binary">
-          <Input value={formValues.binary} onChange={(event) => handleFieldChange("binary", event.target.value)} aria-label="Binary" disabled={Boolean(isSystemTool)} />
+          <Input value={formValues.binary} onChange={(event) => handleFieldChange("binary", event.target.value)} aria-label="Binary" disabled={!isToolEditable} />
         </DetailField>
         <DetailField label="Timeout (ms)" {...definedString(errors.timeoutMsText)}>
-          <Input value={formValues.timeoutMsText} onChange={(event) => handleFieldChange("timeoutMsText", event.target.value)} aria-label="Timeout milliseconds" disabled={Boolean(isSystemTool)} />
+          <Input value={formValues.timeoutMsText} onChange={(event) => handleFieldChange("timeoutMsText", event.target.value)} aria-label="Timeout milliseconds" disabled={!isToolEditable} />
         </DetailField>
         <DetailField label="Sandbox profile">
-          <Select value={formValues.sandboxProfile} onValueChange={(value) => handleFieldChange("sandboxProfile", value as ToolSandboxProfile)} disabled={Boolean(isSystemTool)}>
+          <Select value={formValues.sandboxProfile} onValueChange={(value) => handleFieldChange("sandboxProfile", value as ToolSandboxProfile)} disabled={!isToolEditable}>
             <SelectTrigger aria-label="Sandbox profile">
               <SelectValue placeholder="Select sandbox profile" />
             </SelectTrigger>
@@ -900,7 +951,7 @@ export function AiToolsPage({
           </Select>
         </DetailField>
         <DetailField label="Privilege profile">
-          <Select value={formValues.privilegeProfile} onValueChange={(value) => handleFieldChange("privilegeProfile", value as ToolPrivilegeProfile)} disabled={Boolean(isSystemTool)}>
+          <Select value={formValues.privilegeProfile} onValueChange={(value) => handleFieldChange("privilegeProfile", value as ToolPrivilegeProfile)} disabled={!isToolEditable}>
             <SelectTrigger aria-label="Privilege profile">
               <SelectValue placeholder="Select privilege profile" />
             </SelectTrigger>
@@ -912,18 +963,19 @@ export function AiToolsPage({
           </Select>
         </DetailField>
         <DetailField label="Capabilities" className="md:col-span-2">
-          <Textarea value={formValues.capabilitiesText} onChange={(event) => handleFieldChange("capabilitiesText", event.target.value)} aria-label="Capabilities" rows={4} className="font-mono text-sm" disabled={Boolean(isSystemTool)} />
+          <Textarea value={formValues.capabilitiesText} onChange={(event) => handleFieldChange("capabilitiesText", event.target.value)} aria-label="Capabilities" rows={4} className="font-mono text-sm" disabled={!isToolEditable} />
         </DetailField>
         <DetailField label="Bash source" required className="md:col-span-2" {...definedString(errors.bashSource)}>
           <BashEditor
             value={formValues.bashSource}
             onChange={(next) => handleFieldChange("bashSource", next)}
-            disabled={Boolean(isSystemTool)}
+            disabled={!isToolEditable}
             filename={formValues.name ? `${formValues.name.replace(/[^A-Za-z0-9._-]+/g, "-").toLowerCase()}.sh` : "tool.sh"}
             aria-label="Bash source"
           />
         </DetailField>
-      </DetailFieldGroup>
+        </DetailFieldGroup>
+      ) : null}
     </DetailPage>
   );
 }

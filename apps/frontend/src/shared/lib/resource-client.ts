@@ -21,8 +21,15 @@ export type PaginatedResource<T> = {
   totalPages: number;
 };
 
+export type ResourceCrudCapabilities<TItem> = {
+  canCreate: boolean;
+  canUpdate: (item: TItem) => boolean;
+  canDelete: (item: TItem) => boolean;
+};
+
 export type ResourceClient<TItem, TQuery extends ListQueryState> = {
   defaultQuery: TQuery;
+  capabilities: ResourceCrudCapabilities<TItem>;
   list: (query: TQuery) => Promise<PaginatedResource<TItem>>;
   detail: (id: string) => Promise<TItem>;
 };
@@ -183,9 +190,15 @@ export function createResourceClient<
   path: string;
   dataKey: string;
   defaultQuery: TQuery;
+  capabilities?: Partial<ResourceCrudCapabilities<TItem>>;
 }) {
   return {
     defaultQuery: options.defaultQuery,
+    capabilities: {
+      canCreate: options.capabilities?.canCreate ?? true,
+      canUpdate: options.capabilities?.canUpdate ?? (() => true),
+      canDelete: options.capabilities?.canDelete ?? (() => true)
+    },
     async list(query: TQuery) {
       const queryString = buildQueryString(query, {} as TQuery);
       const url = queryString ? `${options.path}?${queryString}` : options.path;
