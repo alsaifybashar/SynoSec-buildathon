@@ -16,7 +16,7 @@ import {
 import { fetchJson } from "@/lib/api";
 import { useResourceDetail } from "@/hooks/useResourceDetail";
 import { useResourceList } from "@/hooks/useResourceList";
-import { aiToolsResource, listPageSizes, type ResourceClient } from "@/lib/resources";
+import { aiToolsResource, listPageSizes, type ResourceClient, type AiToolsQuery } from "@/lib/resources";
 import { aiToolTransfer, exportResourceRecords, importResourceRecords } from "@/lib/resource-transfer";
 import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/components/detail-page";
 import { PageHeader } from "@/components/page-header";
@@ -275,14 +275,13 @@ export function AiToolsPage({
   const [runResult, setRunResult] = useState<AiToolRunResult | null>(null);
   const [runningTool, setRunningTool] = useState(false);
   const isCreateMode = toolId === "new";
-  const aiToolsListResource = useMemo(() => ({
+  const aiToolsListResource = useMemo<ResourceClient<AiTool, AiToolsQuery>>(() => ({
     ...aiToolsResource,
     defaultQuery: {
       ...aiToolsResource.defaultQuery,
-      pageSize: 50,
-      riskTier: undefined
+      pageSize: 50
     }
-  }) as ResourceClient<AiTool, typeof aiToolsResource.defaultQuery & { riskTier?: string }>, []);
+  }), []);
   const toolList = useResourceList(aiToolsListResource);
   const toolDetail = useResourceDetail(aiToolsResource, toolId && toolId !== "new" ? toolId : null);
 

@@ -43,7 +43,7 @@ export type ResourceClient<TItem, TQuery extends ListQueryState> = {
 };
 
 type OptionalString = string | undefined;
-type ApplicationsQuery = {
+export type ApplicationsQuery = {
   page: number;
   pageSize: number;
   q: string;
@@ -51,9 +51,10 @@ type ApplicationsQuery = {
   sortDirection: SortDirection;
   status: OptionalString;
   environment: OptionalString;
+  [key: string]: number | string | undefined;
 };
 
-type RuntimesQuery = {
+export type RuntimesQuery = {
   page: number;
   pageSize: number;
   q: string;
@@ -62,9 +63,10 @@ type RuntimesQuery = {
   status: OptionalString;
   provider: OptionalString;
   environment: OptionalString;
+  [key: string]: number | string | undefined;
 };
 
-type AiProvidersQuery = {
+export type AiProvidersQuery = {
   page: number;
   pageSize: number;
   q: string;
@@ -72,9 +74,10 @@ type AiProvidersQuery = {
   sortDirection: SortDirection;
   kind: OptionalString;
   status: OptionalString;
+  [key: string]: number | string | undefined;
 };
 
-type AiAgentsQuery = {
+export type AiAgentsQuery = {
   page: number;
   pageSize: number;
   q: string;
@@ -82,9 +85,10 @@ type AiAgentsQuery = {
   sortDirection: SortDirection;
   status: OptionalString;
   providerId: OptionalString;
+  [key: string]: number | string | undefined;
 };
 
-type AiToolsQuery = {
+export type AiToolsQuery = {
   page: number;
   pageSize: number;
   q: string;
@@ -93,9 +97,11 @@ type AiToolsQuery = {
   source: OptionalString;
   category: OptionalString;
   status: OptionalString;
+  riskTier: OptionalString;
+  [key: string]: number | string | undefined;
 };
 
-type WorkflowsQuery = {
+export type WorkflowsQuery = {
   page: number;
   pageSize: number;
   q: string;
@@ -103,6 +109,7 @@ type WorkflowsQuery = {
   sortDirection: SortDirection;
   status: OptionalString;
   applicationId: OptionalString;
+  [key: string]: number | string | undefined;
 };
 
 function buildQueryString(query: ListQueryState, defaults: ListQueryState) {
@@ -274,7 +281,8 @@ export const aiToolsResource = createResourceClient<AiTool, AiToolsQuery, ListAi
     sortDirection: "asc",
     source: undefined,
     category: undefined,
-    status: undefined
+    status: undefined,
+    riskTier: undefined
   }
 });
 
