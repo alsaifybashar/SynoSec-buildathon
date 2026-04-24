@@ -14,10 +14,10 @@ describe("getSeededWorkflowDefinitions", () => {
 
     expect(workflows).toHaveLength(1);
     expect(workflow).toBeDefined();
-    expect(workflow?.description).toContain("prompt-driven OSI security pass");
-    expect(workflow?.stages.map((stage) => stage.label)).toEqual(["OSI Security Pass"]);
-    expect(workflow?.stages[0]?.objective).toContain("prompt-driven");
-    expect(workflow?.stages[0]?.agentId).toBe(seededAgentId("local", "orchestrator"));
+    expect(workflow?.description).toContain("transparent evidence pipeline");
+    expect(workflow?.stages.map((stage) => stage.label)).toEqual(["Pipeline"]);
+    expect(workflow?.stages[0]?.objective).toContain("transparent pipeline");
+    expect(workflow?.stages[0]?.agentId).toBe(seededAgentId("anthropic", "orchestrator"));
   });
 });
 
@@ -28,7 +28,7 @@ describe("getSeededSingleAgentScanDefinition", () => {
     expect(scan.id).toBe(seededSingleAgentScanId);
     expect(scan.scan.status).toBe("complete");
     expect(scan.scan.scope.layers).toEqual(["L1", "L4", "L7"]);
-    expect(scan.agentId).toBe(seededAgentId("local", "orchestrator"));
+    expect(scan.agentId).toBe(seededAgentId("anthropic", "orchestrator"));
     expect(scan.layerCoverage.map((entry) => entry.layer)).toEqual(["L1", "L4", "L7"]);
     expect(scan.vulnerability.id).toBe(seededSingleAgentVulnerabilityId);
     expect(scan.vulnerability.primaryLayer).toBe("L7");

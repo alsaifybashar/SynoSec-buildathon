@@ -199,7 +199,7 @@ export const seededRoleDefinitions = [
     name: "Orchestrator",
     description: "Coordinates scans, chooses the next useful step, and delegates the right tool path.",
     systemPrompt:
-      "You are the orchestration lead for SynoSec. Build a disciplined plan from the current target state, choose the next highest-value evidence action, stay inside approved scope, and use only the approved tools. Keep the run prompt-driven: select the OSI layer you believe the action supports, explain that choice clearly, and prefer target/baseUrl/layer tool inputs over vague url-only shapes. Canonical OSI mapping: L1 Physical, L2 Data Link, L3 Network, L4 Transport, L5 Session, L6 Presentation, L7 Application. Prefer evidence gathering before escalation, keep a concise running rationale, and stop when additional actions do not materially improve confidence or coverage.",
+      "You are the orchestration lead for SynoSec. Execute a single transparent evidence pipeline from the current target state, choose the next highest-value evidence action, stay inside approved scope, and use only the approved tools. Keep the run prompt-driven: prefer target/baseUrl tool inputs over vague url-only shapes, register every concrete finding through report_finding, and end only through complete_run or fail_run. Canonical OSI mapping: L1 Physical, L2 Data Link, L3 Network, L4 Transport, L5 Session, L6 Presentation, L7 Application. Prefer evidence gathering before escalation, keep a concise running rationale, and stop when additional actions do not materially improve confidence or coverage.",
     toolIds: [
       httpReconTool.id,
       httpHeadersTool.id,
@@ -297,15 +297,15 @@ export function getSeededWorkflowDefinitions() {
       id: osiSingleAgentWorkflowId,
       name: "OSI Single-Agent",
       status: "active" as const,
-      description: "Seeded single-agent workflow that runs one prompt-driven OSI security pass with the single-agent security runner, approved tools, verifier challenges, and evidence-backed reporting.",
+      description: "Seeded Anthropic workflow that runs one prompt-driven transparent evidence pipeline with approved tools, native finding registration, and explicit completion control.",
       applicationId: localApplicationId,
       runtimeId: targetRuntimeId,
       stages: [
         {
           id: "6e54b520-366c-4acb-9e36-a6cfe1c07fd3",
-          label: "OSI Security Pass",
-          agentId: seededAgentId("local", "orchestrator"),
-          objective: "Run one evidence-backed, prompt-driven single-agent security pass across the configured OSI layers using the approved tools, record explicit layer reasoning, and submit a structured closeout.",
+          label: "Pipeline",
+          agentId: seededAgentId("anthropic", "orchestrator"),
+          objective: "Run one evidence-backed transparent pipeline across the configured target, use approved tools for collection, register concrete findings through report_finding, and stop only through complete_run or fail_run.",
           allowedToolIds: [
             ...getSeededRoleDefinition("orchestrator")?.toolIds ?? [],
             vulnAuditTool.id
@@ -346,7 +346,7 @@ export function getSeededSingleAgentScanDefinition() {
     mode: "single-agent" as const,
     applicationId: localApplicationId,
     runtimeId: targetRuntimeId,
-    agentId: seededAgentId("local", "orchestrator"),
+    agentId: seededAgentId("anthropic", "orchestrator"),
     scan: {
       id: seededSingleAgentScanId,
       scope: {
@@ -404,7 +404,7 @@ export function getSeededSingleAgentScanDefinition() {
     vulnerability: {
       id: seededSingleAgentVulnerabilityId,
       scanId: seededSingleAgentScanId,
-      agentId: seededAgentId("local", "orchestrator"),
+      agentId: seededAgentId("anthropic", "orchestrator"),
       primaryLayer: "L7" as const,
       relatedLayers: ["L4"] as const,
       category: "sensitive_data_exposure",
@@ -446,7 +446,7 @@ export function getSeededSingleAgentScanDefinition() {
       {
         scanId: seededSingleAgentScanId,
         actorType: "system" as const,
-        actorId: seededAgentId("local", "orchestrator"),
+        actorId: seededAgentId("anthropic", "orchestrator"),
         action: "single-agent-scan-started",
         detail: "Seeded single-agent scan execution started.",
         createdAt: "2026-04-21T10:00:00.000Z"
@@ -454,7 +454,7 @@ export function getSeededSingleAgentScanDefinition() {
       {
         scanId: seededSingleAgentScanId,
         actorType: "agent" as const,
-        actorId: seededAgentId("local", "orchestrator"),
+        actorId: seededAgentId("anthropic", "orchestrator"),
         action: "single-agent-vulnerability-reported",
         detail: "Seeded single-agent scan reported one validated vulnerability.",
         createdAt: "2026-04-21T10:03:45.000Z"
@@ -462,7 +462,7 @@ export function getSeededSingleAgentScanDefinition() {
       {
         scanId: seededSingleAgentScanId,
         actorType: "system" as const,
-        actorId: seededAgentId("local", "orchestrator"),
+        actorId: seededAgentId("anthropic", "orchestrator"),
         action: "single-agent-scan-completed",
         detail: "Seeded single-agent scan execution completed.",
         createdAt: "2026-04-21T10:04:30.000Z"
