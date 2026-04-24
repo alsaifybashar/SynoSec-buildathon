@@ -13,8 +13,8 @@ import {
   updateWorkflowBodySchema
 } from "@synosec/contracts";
 import { type Express } from "express";
-import type { WorkflowExecutionEngine, WorkflowRunEventStream } from "@/execution-engine/contracts.js";
 import { registerCrudRoutes } from "@/shared/http/register-crud-routes.js";
+import type { WorkflowExecutionEngine, WorkflowRunEventStream } from "@/workflow-engine/contracts.js";
 import type { WorkflowsRepository } from "./workflows.repository.js";
 import { WorkflowRunArtifactsService } from "./workflow-run-artifacts.service.js";
 

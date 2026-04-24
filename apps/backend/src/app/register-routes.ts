@@ -4,18 +4,21 @@ import {
   requireAuthenticatedApi,
   requireCsrfProtection,
   type AuthConfig
-} from "@/features/auth/index.js";
-import { registerHealthRoutes } from "@/features/health/index.js";
-import { registerApplicationsRoutes, type ApplicationsRepository } from "@/features/applications/index.js";
-import { registerRuntimesRoutes, type RuntimesRepository } from "@/features/runtimes/index.js";
-import { registerAiProvidersRoutes, type AiProvidersRepository } from "@/features/ai-providers/index.js";
-import { registerAiAgentsRoutes, type AiAgentsRepository } from "@/features/ai-agents/index.js";
-import { registerAiToolsRoutes, type AiToolsRepository } from "@/features/ai-tools/index.js";
-import { registerWorkflowsRoutes, type WorkflowsRepository } from "@/features/workflows/index.js";
-import { createToolsRouter } from "@/execution-engine/tools/index.js";
+} from "@/modules/auth/index.js";
+import { registerHealthRoutes } from "@/modules/health/index.js";
+import { registerApplicationsRoutes, type ApplicationsRepository } from "@/modules/applications/index.js";
+import { registerRuntimesRoutes, type RuntimesRepository } from "@/modules/runtimes/index.js";
+import { registerAiProvidersRoutes, type AiProvidersRepository } from "@/modules/ai-providers/index.js";
+import { registerAiAgentsRoutes, type AiAgentsRepository } from "@/modules/ai-agents/index.js";
+import {
+  registerAiToolCapabilityRoutes,
+  registerAiToolsRoutes,
+  type AiToolsRepository
+} from "@/modules/ai-tools/index.js";
+import { registerWorkflowsRoutes, type WorkflowsRepository } from "@/modules/workflows/index.js";
 import { createConnectorsRouter } from "@/integrations/connectors/routes.js";
-import { registerOrchestratorRoutes } from "@/features/orchestrator/index.js";
 import { createRouteServices } from "@/app/create-route-services.js";
+import { registerOrchestratorRoutes } from "@/workflow-engine/index.js";
 
 export function registerRoutes(app: Express, dependencies: {
   authConfig: AuthConfig;
@@ -39,6 +42,7 @@ export function registerRoutes(app: Express, dependencies: {
   registerAiProvidersRoutes(app, dependencies.aiProvidersRepository);
   registerAiAgentsRoutes(app, dependencies.aiAgentsRepository);
   registerAiToolsRoutes(app, dependencies.aiToolsRepository);
+  registerAiToolCapabilityRoutes(app);
   registerWorkflowsRoutes(
     app,
     dependencies.workflowsRepository,
@@ -47,5 +51,4 @@ export function registerRoutes(app: Express, dependencies: {
     routeServices.workflowRunArtifactsService
   );
   registerOrchestratorRoutes(app, routeServices.orchestratorExecutionEngine, routeServices.orchestratorEventStream);
-  app.use(createToolsRouter());
 }

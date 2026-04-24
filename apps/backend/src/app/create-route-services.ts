@@ -1,6 +1,6 @@
 import type { AppDependencies } from "@/app/create-app.js";
-import { createExecutionServices } from "@/execution-engine/create-execution-services.js";
-import { WorkflowRunArtifactsService } from "@/features/workflows/index.js";
+import { WorkflowRunArtifactsService } from "@/modules/workflows/index.js";
+import { createWorkflowEngineServices } from "@/workflow-engine/index.js";
 
 export function createRouteServices(dependencies: Pick<
   AppDependencies,
@@ -11,7 +11,7 @@ export function createRouteServices(dependencies: Pick<
   | "aiToolsRepository"
   | "workflowsRepository"
 >) {
-  const executionServices = createExecutionServices(dependencies);
+  const executionServices = createWorkflowEngineServices(dependencies);
   const workflowRunArtifactsService = new WorkflowRunArtifactsService(
     dependencies.workflowsRepository,
     dependencies.aiAgentsRepository,

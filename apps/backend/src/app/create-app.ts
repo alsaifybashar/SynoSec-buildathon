@@ -5,15 +5,15 @@ import { loadRateLimitConfig } from "@/shared/config/backend-env.js";
 import { applySecurityHeaders } from "@/shared/http/security-headers.js";
 import { createRateLimitMiddleware } from "@/shared/http/rate-limit.js";
 import { RequestError } from "@/shared/http/request-error.js";
-import { attachAuthContext, loadAuthConfig } from "@/features/auth/index.js";
+import { attachAuthContext, loadAuthConfig } from "@/modules/auth/index.js";
 import { createErrorHandler } from "@/shared/http/error-handler.js";
 import { registerRoutes } from "@/app/register-routes.js";
-import type { ApplicationsRepository } from "@/features/applications/index.js";
-import type { RuntimesRepository } from "@/features/runtimes/index.js";
-import type { AiProvidersRepository } from "@/features/ai-providers/index.js";
-import type { AiAgentsRepository } from "@/features/ai-agents/index.js";
-import type { AiToolsRepository } from "@/features/ai-tools/index.js";
-import type { WorkflowsRepository } from "@/features/workflows/index.js";
+import type { ApplicationsRepository } from "@/modules/applications/index.js";
+import type { RuntimesRepository } from "@/modules/runtimes/index.js";
+import type { AiProvidersRepository } from "@/modules/ai-providers/index.js";
+import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
+import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
+import type { WorkflowsRepository } from "@/modules/workflows/index.js";
 
 export type AppDependencies = {
   applicationsRepository: ApplicationsRepository;

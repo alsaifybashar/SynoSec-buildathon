@@ -1,1 +1,1 @@
-export { registerOrchestratorRoutes } from "./orchestrator.routes.js";
+export { registerOrchestratorRoutes } from "@/workflow-engine/index.js";
