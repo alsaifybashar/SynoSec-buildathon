@@ -4,16 +4,15 @@ import type {
   UpdateWorkflowBody,
   Workflow,
   WorkflowRun,
-  WorkflowTraceEntry,
   WorkflowTraceEvent,
   WorkflowsListQuery
 } from "@synosec/contracts";
 import { selectLatestWorkflowRun } from "@synosec/contracts";
 import { paginateItems, type PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import { RequestError } from "@/shared/http/request-error.js";
-import type { ApplicationsRepository } from "../applications/applications.repository.js";
-import type { RuntimesRepository } from "../runtimes/runtimes.repository.js";
-import type { AiAgentsRepository } from "../ai-agents/ai-agents.repository.js";
+import type { AiAgentsRepository } from "@/features/ai-agents/index.js";
+import type { ApplicationsRepository } from "@/features/applications/index.js";
+import type { RuntimesRepository } from "@/features/runtimes/index.js";
 import type { WorkflowRunStatePatch, WorkflowsRepository } from "./workflows.repository.js";
 import { normalizeWorkflowStageContract } from "./workflow-stage-contract.js";
 
@@ -69,40 +68,14 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
   }
 
   async create(input: CreateWorkflowBody): Promise<Workflow> {
-    const legacyStage = (input as CreateWorkflowBody & { stages?: Array<Record<string, unknown>> }).stages?.[0];
-    const agentId = input.agentId ?? (typeof legacyStage?.["agentId"] === "string" ? legacyStage["agentId"] : "");
-    const contractInput = legacyStage
-      ? {
-          label: typeof legacyStage["label"] === "string" ? legacyStage["label"] : "Workflow Run",
-          objective: input.objective ?? legacyStage["objective"],
-          allowedToolIds: input.allowedToolIds ?? legacyStage["allowedToolIds"],
-          requiredEvidenceTypes: input.requiredEvidenceTypes ?? legacyStage["requiredEvidenceTypes"],
-          findingPolicy: input.findingPolicy ?? legacyStage["findingPolicy"],
-          completionRule: input.completionRule ?? legacyStage["completionRule"],
-          resultSchemaVersion: input.resultSchemaVersion ?? legacyStage["resultSchemaVersion"],
-          handoffSchema: input.handoffSchema ?? legacyStage["handoffSchema"]
-        }
-      : {
-          label: "Workflow Run",
-          objective: input.objective,
-          allowedToolIds: input.allowedToolIds,
-          requiredEvidenceTypes: input.requiredEvidenceTypes,
-          findingPolicy: input.findingPolicy,
-          completionRule: input.completionRule,
-          resultSchemaVersion: input.resultSchemaVersion,
-          handoffSchema: input.handoffSchema
-        };
-
+    const agentId = input.agentId;
     await this.assertReferences(input.applicationId, input.runtimeId, [agentId]);
     const timestamp = new Date().toISOString();
-    const normalizedContract = normalizeWorkflowStageContract(contractInput);
-    const stage = {
-      id: randomUUID(),
-      label: contractInput.label,
-      agentId,
-      ord: 0,
-      ...normalizedContract
-    };
+    const normalizedContract = normalizeWorkflowStageContract({
+      label: "Pipeline",
+      objective: input.objective,
+      allowedToolIds: input.allowedToolIds
+    });
     const workflow: Workflow = {
       id: randomUUID(),
       name: input.name,
@@ -113,12 +86,18 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       agentId,
       objective: normalizedContract.objective,
       allowedToolIds: normalizedContract.allowedToolIds,
-      requiredEvidenceTypes: normalizedContract.requiredEvidenceTypes,
+      requiredEvidenceTypes: [],
       findingPolicy: normalizedContract.findingPolicy,
       completionRule: normalizedContract.completionRule,
       resultSchemaVersion: normalizedContract.resultSchemaVersion,
       handoffSchema: normalizedContract.handoffSchema,
-      stages: [stage],
+      stages: [{
+        id: randomUUID(),
+        label: "Pipeline",
+        agentId,
+        ord: 0,
+        ...normalizedContract
+      }],
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -140,14 +119,9 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     );
 
     const nextStageContract = normalizeWorkflowStageContract({
-      label: current.stages[0]?.label ?? "Workflow Run",
+      label: "Pipeline",
       objective: input.objective ?? current.objective,
-      allowedToolIds: input.allowedToolIds ?? current.allowedToolIds,
-      requiredEvidenceTypes: input.requiredEvidenceTypes ?? current.requiredEvidenceTypes,
-      findingPolicy: input.findingPolicy ?? current.findingPolicy,
-      completionRule: input.completionRule ?? current.completionRule,
-      resultSchemaVersion: input.resultSchemaVersion ?? current.resultSchemaVersion,
-      handoffSchema: input.handoffSchema === undefined ? current.handoffSchema : input.handoffSchema
+      allowedToolIds: input.allowedToolIds ?? current.allowedToolIds
     });
 
     const updated: Workflow = {
@@ -158,16 +132,16 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       applicationId: input.applicationId ?? current.applicationId,
       runtimeId: input.runtimeId === undefined ? current.runtimeId : input.runtimeId,
       agentId: input.agentId ?? current.agentId,
-      objective: input.objective ?? current.objective,
-      allowedToolIds: input.allowedToolIds ?? current.allowedToolIds,
-      requiredEvidenceTypes: input.requiredEvidenceTypes ?? current.requiredEvidenceTypes,
-      findingPolicy: input.findingPolicy ?? current.findingPolicy,
-      completionRule: input.completionRule ?? current.completionRule,
-      resultSchemaVersion: input.resultSchemaVersion ?? current.resultSchemaVersion,
-      handoffSchema: input.handoffSchema === undefined ? current.handoffSchema : input.handoffSchema,
+      objective: nextStageContract.objective,
+      allowedToolIds: nextStageContract.allowedToolIds,
+      requiredEvidenceTypes: current.requiredEvidenceTypes ?? [],
+      findingPolicy: current.findingPolicy ?? nextStageContract.findingPolicy,
+      completionRule: current.completionRule ?? nextStageContract.completionRule,
+      resultSchemaVersion: current.resultSchemaVersion ?? nextStageContract.resultSchemaVersion,
+      handoffSchema: current.handoffSchema ?? nextStageContract.handoffSchema,
       stages: [{
         id: current.stages[0]?.id ?? randomUUID(),
-        label: current.stages[0]?.label ?? "Workflow Run",
+        label: "Pipeline",
         agentId: input.agentId ?? current.agentId,
         ord: 0,
         ...nextStageContract
@@ -191,24 +165,11 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
 
     const updated: Workflow = {
       ...current,
-      stages: current.stages.map((stage) => ({
-        ...stage,
-        ...normalizeWorkflowStageContract(stage, fallbackToolIdsByAgentId[stage.agentId] ?? stage.allowedToolIds ?? [])
-      })),
+      objective: current.objective,
+      allowedToolIds: fallbackToolIdsByAgentId[current.agentId] ?? current.allowedToolIds,
+      stages: current.stages,
       updatedAt: new Date().toISOString()
     };
-
-    const primaryStage = updated.stages[0];
-    if (primaryStage) {
-      updated.agentId = primaryStage.agentId;
-      updated.objective = primaryStage.objective;
-      updated.allowedToolIds = primaryStage.allowedToolIds;
-      updated.requiredEvidenceTypes = primaryStage.requiredEvidenceTypes;
-      updated.findingPolicy = primaryStage.findingPolicy;
-      updated.completionRule = primaryStage.completionRule;
-      updated.resultSchemaVersion = primaryStage.resultSchemaVersion;
-      updated.handoffSchema = primaryStage.handoffSchema;
-    }
 
     this.workflows.set(workflowId, updated);
     return updated;
@@ -256,22 +217,6 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       ...patch,
       trace: current.trace.slice(),
       events: [...current.events, event]
-    };
-    this.runs.set(runId, updated);
-    return updated;
-  }
-
-  async appendTraceEntry(runId: string, traceEntry: WorkflowTraceEntry, patch: WorkflowRunStatePatch = {}): Promise<WorkflowRun> {
-    const current = this.runs.get(runId);
-    if (!current) {
-      throw new RequestError(404, "Workflow run not found.");
-    }
-
-    const updated: WorkflowRun = {
-      ...current,
-      ...patch,
-      trace: [...current.trace, traceEntry],
-      events: current.events.slice()
     };
     this.runs.set(runId, updated);
     return updated;

@@ -2,11 +2,11 @@ import {
   apiRoutes,
   createWorkflowBodySchema,
   listWorkflowsResponseSchema,
-  singleAgentScanCoverageResponseSchema,
-  singleAgentScanReportSchema,
-  singleAgentScanTraceResponseSchema,
-  singleAgentScanVulnerabilitiesResponseSchema,
+  workflowRunCoverageResponseSchema,
+  workflowRunFindingsResponseSchema,
+  workflowRunReportSchema,
   workflowRunStreamMessageSchema,
+  workflowRunTranscriptResponseSchema,
   workflowRunSchema,
   workflowSchema,
   workflowsListQuerySchema,
@@ -14,13 +14,8 @@ import {
 } from "@synosec/contracts";
 import { type Express } from "express";
 import { registerCrudRoutes } from "@/shared/http/register-crud-routes.js";
-import {
-  getRunCoverage,
-  getRunReport,
-  getRunTrace,
-  getRunVulnerabilities
-} from "@/features/scans/scan-results.js";
 import type { WorkflowsRepository } from "./workflows.repository.js";
+import { WorkflowRunArtifactsService } from "./workflow-run-artifacts.service.js";
 import { WorkflowExecutionService } from "./workflow-execution.service.js";
 import { WorkflowRunStream } from "./workflow-run-stream.js";
 
@@ -32,7 +27,8 @@ export function registerWorkflowsRoutes(
   app: Express,
   repository: WorkflowsRepository,
   executionService: WorkflowExecutionService,
-  workflowRunStream: WorkflowRunStream
+  workflowRunStream: WorkflowRunStream,
+  workflowRunArtifactsService: WorkflowRunArtifactsService
 ) {
   registerCrudRoutes(app, {
     resourcePath: apiRoutes.workflows,
@@ -89,18 +85,11 @@ export function registerWorkflowsRoutes(
     }
   });
 
-  app.get(`${apiRoutes.workflowRuns}/:id/vulnerabilities`, async (request, response, next) => {
+  app.get(`${apiRoutes.workflowRuns}/:id/findings`, async (request, response, next) => {
     try {
-      const run = await repository.getRunById(request.params.id);
-      if (!run) {
-        response.status(404).json({ message: "Workflow run not found." });
-        return;
-      }
-
-      response.json(singleAgentScanVulnerabilitiesResponseSchema.parse({
-        scanId: run.id,
-        vulnerabilities: await getRunVulnerabilities(run.id)
-      }));
+      response.json(workflowRunFindingsResponseSchema.parse(
+        await workflowRunArtifactsService.getFindings(request.params.id)
+      ));
     } catch (error) {
       next(error);
     }
@@ -108,33 +97,19 @@ export function registerWorkflowsRoutes(
 
   app.get(`${apiRoutes.workflowRuns}/:id/coverage`, async (request, response, next) => {
     try {
-      const run = await repository.getRunById(request.params.id);
-      if (!run) {
-        response.status(404).json({ message: "Workflow run not found." });
-        return;
-      }
-
-      response.json(singleAgentScanCoverageResponseSchema.parse({
-        scanId: run.id,
-        layers: await getRunCoverage(run.id)
-      }));
+      response.json(workflowRunCoverageResponseSchema.parse(
+        await workflowRunArtifactsService.getCoverage(request.params.id)
+      ));
     } catch (error) {
       next(error);
     }
   });
 
-  app.get(`${apiRoutes.workflowRuns}/:id/trace`, async (request, response, next) => {
+  app.get(`${apiRoutes.workflowRuns}/:id/transcript`, async (request, response, next) => {
     try {
-      const run = await repository.getRunById(request.params.id);
-      if (!run) {
-        response.status(404).json({ message: "Workflow run not found." });
-        return;
-      }
-
-      response.json(singleAgentScanTraceResponseSchema.parse({
-        scanId: run.id,
-        entries: await getRunTrace(run.id)
-      }));
+      response.json(workflowRunTranscriptResponseSchema.parse(
+        await workflowRunArtifactsService.getTranscript(request.params.id)
+      ));
     } catch (error) {
       next(error);
     }
@@ -142,19 +117,9 @@ export function registerWorkflowsRoutes(
 
   app.get(`${apiRoutes.workflowRuns}/:id/report`, async (request, response, next) => {
     try {
-      const run = await repository.getRunById(request.params.id);
-      if (!run) {
-        response.status(404).json({ message: "Workflow run not found." });
-        return;
-      }
-
-      const report = await getRunReport(run.id);
-      if (!report) {
-        response.status(404).json({ message: "Workflow run report not found." });
-        return;
-      }
-
-      response.json(singleAgentScanReportSchema.parse(report));
+      response.json(workflowRunReportSchema.parse(
+        await workflowRunArtifactsService.getReport(request.params.id)
+      ));
     } catch (error) {
       next(error);
     }

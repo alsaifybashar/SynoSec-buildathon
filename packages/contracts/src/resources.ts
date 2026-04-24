@@ -442,7 +442,7 @@ export type WorkflowFindingSubmission = z.infer<typeof workflowFindingSubmission
 export const workflowReportedFindingSchema = workflowFindingSubmissionSchema.extend({
   id: z.string().uuid(),
   workflowRunId: z.string().uuid(),
-  workflowStageId: z.string().uuid().nullable(),
+  workflowStageId: z.string().uuid().nullable().optional(),
   createdAt: z.string().datetime()
 });
 export type WorkflowReportedFinding = z.infer<typeof workflowReportedFindingSchema>;
@@ -609,15 +609,27 @@ export const workflowTraceEventTypeSchema = z.enum([
   "system_message",
   "agent_input",
   "model_decision",
+  "start",
+  "start-step",
+  "text",
+  "reasoning",
   "tool_call",
+  "tool_call_streaming_start",
+  "tool_call_delta",
   "tool_result",
   "verification",
   "finding_reported",
   "stage_result_submitted",
   "stage_contract_validation_failed",
   "agent_summary",
+  "finish-step",
+  "finish",
   "stage_completed",
-  "stage_failed"
+  "stage_failed",
+  "run_completed",
+  "run_failed",
+  "error",
+  "abort"
 ]);
 export type WorkflowTraceEventType = z.infer<typeof workflowTraceEventTypeSchema>;
 
@@ -628,14 +640,14 @@ export const workflowTraceEventSchema = z.object({
   id: z.string().uuid(),
   workflowRunId: z.string().uuid(),
   workflowId: z.string().uuid(),
-  workflowStageId: z.string().uuid().nullable(),
-  stepIndex: z.number().int().min(0),
+  workflowStageId: z.string().uuid().nullable().default(null),
+  stepIndex: z.number().int().min(0).default(0),
   ord: z.number().int().min(0),
   type: workflowTraceEventTypeSchema,
   status: workflowTraceEventStatusSchema,
-  title: z.string().min(1),
-  summary: z.string().min(1),
-  detail: z.string().nullable(),
+  title: z.string().min(1).default("Workflow event"),
+  summary: z.string().min(1).default("Workflow event"),
+  detail: z.string().nullable().default(null),
   payload: jsonSchemaObjectSchema,
   createdAt: z.string().datetime()
 });
@@ -645,8 +657,8 @@ export const workflowTraceEntrySchema = z.object({
   id: z.string().uuid(),
   workflowRunId: z.string().uuid(),
   workflowId: z.string().uuid(),
-  workflowStageId: z.string().uuid().nullable(),
-  stepIndex: z.number().int().min(0),
+  workflowStageId: z.string().uuid().nullable().default(null),
+  stepIndex: z.number().int().min(0).default(0),
   stageLabel: z.string().min(1),
   agentId: z.string().uuid(),
   agentName: z.string().min(1),
@@ -664,10 +676,10 @@ export const workflowRunSchema = z.object({
   id: z.string().uuid(),
   workflowId: z.string().uuid(),
   status: workflowRunStatusSchema,
-  currentStepIndex: z.number().int().min(0),
+  currentStepIndex: z.number().int().min(0).default(0),
   startedAt: z.string().datetime(),
   completedAt: z.string().datetime().nullable(),
-  trace: z.array(workflowTraceEntrySchema),
+  trace: z.array(workflowTraceEntrySchema).default([]),
   events: z.array(workflowTraceEventSchema).default([])
 });
 export type WorkflowRun = z.infer<typeof workflowRunSchema>;
@@ -678,22 +690,9 @@ export const workflowRunStreamMessageSchema = z.discriminatedUnion("type", [
     run: workflowRunSchema
   }),
   z.object({
-    type: z.literal("event_appended"),
+    type: z.literal("run_event"),
     run: workflowRunSchema,
     event: workflowTraceEventSchema
-  }),
-  z.object({
-    type: z.literal("trace_appended"),
-    run: workflowRunSchema,
-    traceEntry: workflowTraceEntrySchema
-  }),
-  z.object({
-    type: z.literal("model_output"),
-    run: workflowRunSchema,
-    source: z.enum(["local", "hosted"]),
-    text: z.string(),
-    final: z.boolean().default(false),
-    createdAt: z.string().datetime()
   })
 ]);
 export type WorkflowRunStreamMessage = z.infer<typeof workflowRunStreamMessageSchema>;

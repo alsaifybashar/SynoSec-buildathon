@@ -1,14 +1,13 @@
-import type { Workflow, WorkflowRun, WorkflowStage, WorkflowTraceEntry, WorkflowTraceEvent } from "@synosec/contracts";
+import type { Workflow, WorkflowRun, WorkflowTraceEvent } from "@synosec/contracts";
 import type {
   Workflow as WorkflowRow,
   WorkflowRun as WorkflowRunRow,
   WorkflowStage as WorkflowStageRow,
-  WorkflowTraceEntry as WorkflowTraceEntryRow,
   WorkflowTraceEvent as WorkflowTraceEventRow
 } from "@prisma/client";
 import { normalizeWorkflowStageContract } from "./workflow-stage-contract.js";
 
-export function mapWorkflowStageRow(row: WorkflowStageRow): WorkflowStage {
+function mapWorkflowStageRow(row: WorkflowStageRow) {
   const contract = normalizeWorkflowStageContract({
     label: row.label,
     ...(row.objective ? { objective: row.objective } : {}),
@@ -69,26 +68,6 @@ export function mapWorkflowRow(
   };
 }
 
-export function mapWorkflowTraceEntryRow(row: WorkflowTraceEntryRow): WorkflowTraceEntry {
-  return {
-    id: row.id,
-    workflowRunId: row.workflowRunId,
-    workflowId: row.workflowId,
-    workflowStageId: row.workflowStageId,
-    stepIndex: row.stepIndex,
-    stageLabel: row.stageLabel,
-    agentId: row.agentId,
-    agentName: row.agentName,
-    status: row.status,
-    selectedToolIds: Array.isArray(row.selectedToolIds) ? row.selectedToolIds.map(String) : [],
-    toolSelectionReason: row.toolSelectionReason,
-    targetSummary: row.targetSummary,
-    evidenceHighlights: Array.isArray(row.evidenceHighlights) ? row.evidenceHighlights.map(String) : [],
-    outputSummary: row.outputSummary,
-    createdAt: row.createdAt.toISOString()
-  };
-}
-
 export function mapWorkflowTraceEventRow(row: WorkflowTraceEventRow): WorkflowTraceEvent {
   return {
     id: row.id,
@@ -109,7 +88,6 @@ export function mapWorkflowTraceEventRow(row: WorkflowTraceEventRow): WorkflowTr
 
 export function mapWorkflowRunRow(
   row: WorkflowRunRow & {
-    traceEntries: WorkflowTraceEntryRow[];
     traceEvents: WorkflowTraceEventRow[];
   }
 ): WorkflowRun {
@@ -120,7 +98,7 @@ export function mapWorkflowRunRow(
     currentStepIndex: row.currentStepIndex,
     startedAt: row.startedAt.toISOString(),
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
-    trace: row.traceEntries.sort((left, right) => left.stepIndex - right.stepIndex).map(mapWorkflowTraceEntryRow),
+    trace: [],
     events: row.traceEvents.sort((left, right) => left.ord - right.ord).map(mapWorkflowTraceEventRow)
   };
 }

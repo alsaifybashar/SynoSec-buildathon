@@ -4,12 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiRoutes } from "@synosec/contracts";
 import { createApp } from "@/app/create-app.js";
 import { applySecurityHeaders } from "@/shared/http/security-headers.js";
-import { loadAuthConfig } from "@/features/auth/auth-config.js";
-import { createAuthRouter } from "@/features/auth/auth-routes.js";
+import { createAuthRouter, loadAuthConfig } from "@/features/auth/index.js";
 import { authRepository } from "@/features/auth/auth-repository.js";
 import { attachAuthContext, requireAuthenticatedApi, requireCsrfProtection } from "@/features/auth/auth-middleware.js";
 import { verifyGoogleIdToken } from "@/features/auth/google-id-token.js";
-import { registerHealthRoutes } from "@/features/health/health.routes.js";
+import { registerHealthRoutes } from "@/features/health/index.js";
 import { createConnectorsRouter } from "@/integrations/connectors/routes.js";
 import { createErrorHandler } from "@/shared/http/error-handler.js";
 

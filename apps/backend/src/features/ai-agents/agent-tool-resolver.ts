@@ -1,6 +1,5 @@
 import type { AiTool } from "@synosec/contracts";
-import { getToolCatalog } from "@/features/ai-tools/runtime/tool-catalog.js";
-import type { ToolPhase } from "@/features/ai-tools/runtime/catalog/index.js";
+import { getToolCatalog, type ToolPhase } from "@/features/ai-tools/index.js";
 import type { AgentToolPolicy } from "@/shared/seed-data/agent-tool-policies.js";
 
 type CatalogMetadata = {

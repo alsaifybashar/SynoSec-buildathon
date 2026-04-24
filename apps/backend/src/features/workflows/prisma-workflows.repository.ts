@@ -4,8 +4,6 @@ import type {
   UpdateWorkflowBody,
   Workflow,
   WorkflowRun,
-  WorkflowStage,
-  WorkflowTraceEntry,
   WorkflowTraceEvent,
   WorkflowsListQuery
 } from "@synosec/contracts";
@@ -34,44 +32,6 @@ function toWorkflowStageCreateManyInput(
     completionRule: contract.completionRule as Prisma.InputJsonValue,
     resultSchemaVersion: contract.resultSchemaVersion,
     handoffSchema: (contract.handoffSchema ?? Prisma.JsonNull) as Prisma.InputJsonValue
-  };
-}
-
-type PersistedWorkflowStageInput = {
-  id?: string;
-  label: string;
-  agentId: string;
-  objective: WorkflowStage["objective"];
-  allowedToolIds: WorkflowStage["allowedToolIds"];
-  requiredEvidenceTypes: WorkflowStage["requiredEvidenceTypes"];
-  findingPolicy: WorkflowStage["findingPolicy"];
-  completionRule: WorkflowStage["completionRule"];
-  resultSchemaVersion: WorkflowStage["resultSchemaVersion"];
-  handoffSchema: WorkflowStage["handoffSchema"];
-};
-
-function toWorkflowTraceEntryCreateInput(
-  traceEntry: WorkflowTraceEntry
-): Prisma.WorkflowTraceEntryUncheckedCreateWithoutWorkflowRunInput {
-  if (!traceEntry.workflowStageId) {
-    throw new RequestError(400, "Workflow trace entries must reference a workflow stage.");
-  }
-
-  return {
-    id: traceEntry.id,
-    workflowId: traceEntry.workflowId,
-    workflowStageId: traceEntry.workflowStageId,
-    stepIndex: traceEntry.stepIndex,
-    stageLabel: traceEntry.stageLabel,
-    agentId: traceEntry.agentId,
-    agentName: traceEntry.agentName,
-    status: traceEntry.status,
-    selectedToolIds: traceEntry.selectedToolIds,
-    toolSelectionReason: traceEntry.toolSelectionReason,
-    targetSummary: traceEntry.targetSummary,
-    evidenceHighlights: traceEntry.evidenceHighlights,
-    outputSummary: traceEntry.outputSummary,
-    createdAt: new Date(traceEntry.createdAt)
   };
 }
 
@@ -137,15 +97,10 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
         stages: {
           createMany: {
             data: [toWorkflowStageCreateManyInput({
-              label: "Workflow Run",
+              label: "Pipeline",
               agentId: input.agentId,
               objective: input.objective,
-              allowedToolIds: input.allowedToolIds,
-              requiredEvidenceTypes: input.requiredEvidenceTypes,
-              findingPolicy: input.findingPolicy,
-              completionRule: input.completionRule,
-              resultSchemaVersion: input.resultSchemaVersion,
-              handoffSchema: input.handoffSchema
+              allowedToolIds: input.allowedToolIds
             }, 0)]
           }
         }
@@ -173,27 +128,12 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
     if (!currentPrimaryStage) {
       throw new RequestError(400, "Workflow is missing its persisted execution contract.");
     }
-    const nextStage: PersistedWorkflowStageInput = {
+    const nextStage = {
       id: currentPrimaryStage.id,
-      label: currentPrimaryStage.label,
+      label: "Pipeline",
       agentId: input.agentId ?? currentPrimaryStage.agentId,
-      objective: input.objective ?? currentPrimaryStage.objective ?? `Complete the ${currentPrimaryStage.label} workflow using allowed tools and structured reporting.`,
-      allowedToolIds: input.allowedToolIds ?? (Array.isArray(currentPrimaryStage.allowedToolIds) ? currentPrimaryStage.allowedToolIds.map(String) : []),
-      requiredEvidenceTypes: input.requiredEvidenceTypes ?? (Array.isArray(currentPrimaryStage.requiredEvidenceTypes) ? currentPrimaryStage.requiredEvidenceTypes.map(String) : []),
-      findingPolicy: input.findingPolicy
-        ?? (currentPrimaryStage.findingPolicy && typeof currentPrimaryStage.findingPolicy === "object" && !Array.isArray(currentPrimaryStage.findingPolicy)
-          ? currentPrimaryStage.findingPolicy as WorkflowStage["findingPolicy"]
-          : normalizeWorkflowStageContract({ label: currentPrimaryStage.label }).findingPolicy),
-      completionRule: input.completionRule
-        ?? (currentPrimaryStage.completionRule && typeof currentPrimaryStage.completionRule === "object" && !Array.isArray(currentPrimaryStage.completionRule)
-          ? currentPrimaryStage.completionRule as WorkflowStage["completionRule"]
-          : normalizeWorkflowStageContract({ label: currentPrimaryStage.label }).completionRule),
-      resultSchemaVersion: input.resultSchemaVersion ?? currentPrimaryStage.resultSchemaVersion,
-      handoffSchema: input.handoffSchema !== undefined
-        ? input.handoffSchema
-        : currentPrimaryStage.handoffSchema && typeof currentPrimaryStage.handoffSchema === "object" && !Array.isArray(currentPrimaryStage.handoffSchema)
-          ? currentPrimaryStage.handoffSchema as WorkflowStage["handoffSchema"]
-          : null
+      objective: input.objective ?? currentPrimaryStage.objective ?? "Run the configured pipeline with the linked agent and approved tools.",
+      allowedToolIds: input.allowedToolIds ?? (Array.isArray(currentPrimaryStage.allowedToolIds) ? currentPrimaryStage.allowedToolIds.map(String) : [])
     };
 
     await this.assertReferences(
@@ -222,12 +162,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
                 agentId: nextStage.agentId,
                 ...(nextStage.id ? { id: nextStage.id } : {}),
                 objective: nextStage.objective,
-                allowedToolIds: nextStage.allowedToolIds,
-                requiredEvidenceTypes: nextStage.requiredEvidenceTypes,
-                findingPolicy: nextStage.findingPolicy,
-                completionRule: nextStage.completionRule,
-                resultSchemaVersion: nextStage.resultSchemaVersion,
-                handoffSchema: nextStage.handoffSchema
+                allowedToolIds: nextStage.allowedToolIds
               }, 0)]
             }
           }
@@ -267,30 +202,14 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
         const contract = normalizeWorkflowStageContract({
           label: stage.label,
           ...(stage.objective ? { objective: stage.objective } : {}),
-          ...(Array.isArray(stage.allowedToolIds) ? { allowedToolIds: stage.allowedToolIds.map(String) } : {}),
-          ...(Array.isArray(stage.requiredEvidenceTypes) ? { requiredEvidenceTypes: stage.requiredEvidenceTypes.map(String) } : {}),
-          ...(stage.findingPolicy && typeof stage.findingPolicy === "object" && !Array.isArray(stage.findingPolicy)
-            ? { findingPolicy: stage.findingPolicy as Record<string, unknown> }
-            : {}),
-          ...(stage.completionRule && typeof stage.completionRule === "object" && !Array.isArray(stage.completionRule)
-            ? { completionRule: stage.completionRule as Record<string, unknown> }
-            : {}),
-          resultSchemaVersion: stage.resultSchemaVersion,
-          ...(stage.handoffSchema && typeof stage.handoffSchema === "object" && !Array.isArray(stage.handoffSchema)
-            ? { handoffSchema: stage.handoffSchema as Record<string, unknown> }
-            : {})
+          ...(Array.isArray(stage.allowedToolIds) ? { allowedToolIds: stage.allowedToolIds.map(String) } : {})
         }, fallbackToolIdsByAgentId[stage.agentId] ?? []);
 
         await transaction.workflowStage.update({
           where: { id: stage.id },
           data: {
             objective: contract.objective,
-            allowedToolIds: contract.allowedToolIds as Prisma.InputJsonValue,
-            requiredEvidenceTypes: contract.requiredEvidenceTypes as Prisma.InputJsonValue,
-            findingPolicy: contract.findingPolicy as Prisma.InputJsonValue,
-            completionRule: contract.completionRule as Prisma.InputJsonValue,
-            resultSchemaVersion: contract.resultSchemaVersion,
-            handoffSchema: (contract.handoffSchema ?? Prisma.JsonNull) as Prisma.InputJsonValue
+            allowedToolIds: contract.allowedToolIds as Prisma.InputJsonValue
           }
         });
       }
@@ -316,7 +235,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
         workflowId,
         status: "running"
       },
-      include: { traceEntries: true, traceEvents: true }
+      include: { traceEvents: true }
     });
 
     return mapWorkflowRunRow(run as Parameters<typeof mapWorkflowRunRow>[0]);
@@ -325,7 +244,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
   async getRunById(runId: string): Promise<WorkflowRun | null> {
     const run = await this.prisma.workflowRun.findUnique({
       where: { id: runId },
-      include: { traceEntries: true, traceEvents: true }
+      include: { traceEvents: true }
     });
     return run ? mapWorkflowRunRow(run) : null;
   }
@@ -333,7 +252,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
   async getLatestRunByWorkflowId(workflowId: string): Promise<WorkflowRun | null> {
     const run = await this.prisma.workflowRun.findFirst({
       where: { workflowId },
-      include: { traceEntries: true, traceEvents: true },
+      include: { traceEvents: true },
       orderBy: [{ startedAt: "desc" }, { completedAt: "desc" }, { id: "desc" }]
     });
 
@@ -354,8 +273,8 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
             workflowStageId: event.workflowStageId,
             stepIndex: event.stepIndex,
             ord: event.ord,
-            type: event.type,
-            status: event.status,
+            type: event.type as never,
+            status: event.status as never,
             title: event.title,
             summary: event.summary,
             detail: event.detail,
@@ -364,24 +283,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
           }
         }
       },
-      include: { traceEntries: true, traceEvents: true }
-    });
-
-    return mapWorkflowRunRow(updated as Parameters<typeof mapWorkflowRunRow>[0]);
-  }
-
-  async appendTraceEntry(runId: string, traceEntry: WorkflowTraceEntry, patch: WorkflowRunStatePatch = {}): Promise<WorkflowRun> {
-    const updated = await this.prisma.workflowRun.update({
-      where: { id: runId },
-      data: {
-        ...(patch.status === undefined ? {} : { status: patch.status }),
-        ...(patch.currentStepIndex === undefined ? {} : { currentStepIndex: patch.currentStepIndex }),
-        ...(patch.completedAt === undefined ? {} : { completedAt: patch.completedAt ? new Date(patch.completedAt) : null }),
-        traceEntries: {
-          create: toWorkflowTraceEntryCreateInput(traceEntry)
-        }
-      },
-      include: { traceEntries: true, traceEvents: true }
+      include: { traceEvents: true }
     });
 
     return mapWorkflowRunRow(updated as Parameters<typeof mapWorkflowRunRow>[0]);
@@ -395,7 +297,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
         ...(patch.currentStepIndex === undefined ? {} : { currentStepIndex: patch.currentStepIndex }),
         ...(patch.completedAt === undefined ? {} : { completedAt: patch.completedAt ? new Date(patch.completedAt) : null })
       },
-      include: { traceEntries: true, traceEvents: true }
+      include: { traceEvents: true }
     });
 
     return mapWorkflowRunRow(updated as Parameters<typeof mapWorkflowRunRow>[0]);
@@ -403,9 +305,6 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
 
   async updateRun(run: WorkflowRun): Promise<WorkflowRun> {
     const updated = await this.prisma.$transaction(async (transaction) => {
-      await transaction.workflowTraceEntry.deleteMany({
-        where: { workflowRunId: run.id }
-      });
       await transaction.workflowTraceEvent.deleteMany({
         where: { workflowRunId: run.id }
       });
@@ -416,9 +315,6 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
           status: run.status,
           currentStepIndex: run.currentStepIndex,
           completedAt: run.completedAt ? new Date(run.completedAt) : null,
-          traceEntries: {
-            create: run.trace.map(toWorkflowTraceEntryCreateInput)
-          },
           traceEvents: {
             create: run.events.map((event) => ({
               id: event.id,
@@ -426,8 +322,8 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
               workflowStageId: event.workflowStageId,
               stepIndex: event.stepIndex,
               ord: event.ord,
-              type: event.type,
-              status: event.status,
+              type: event.type as never,
+              status: event.status as never,
               title: event.title,
               summary: event.summary,
               detail: event.detail,
@@ -436,7 +332,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
             })) as never
           }
         },
-        include: { traceEntries: true, traceEvents: true }
+        include: { traceEvents: true }
       });
     });
 

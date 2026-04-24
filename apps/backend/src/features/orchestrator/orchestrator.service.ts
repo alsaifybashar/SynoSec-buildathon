@@ -7,8 +7,8 @@ import { generateText } from "ai";
 import type { Observation, ToolRequest, ToolRun } from "@synosec/contracts";
 import { prisma } from "@/shared/database/prisma-client.js";
 import { RequestError } from "@/shared/http/request-error.js";
-import type { AiProvidersRepository, StoredAiProvider } from "@/features/ai-providers/ai-providers.repository.js";
-import { executeScriptedTool } from "@/features/ai-tools/runtime/script-executor.js";
+import type { AiProvidersRepository, StoredAiProvider } from "@/features/ai-providers/index.js";
+import { executeScriptedTool } from "@/features/ai-tools/index.js";
 import {
   type AttackMapEdge,
   type AttackMapNode,

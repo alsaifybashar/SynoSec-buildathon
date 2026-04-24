@@ -1,6 +1,5 @@
 import type { AiTool, OsiLayer, ScanLayerCoverage } from "@synosec/contracts";
-import { getToolCatalog } from "@/features/ai-tools/runtime/tool-catalog.js";
-import type { ToolPhase } from "@/features/ai-tools/runtime/catalog/index.js";
+import { getToolCatalog, type ToolPhase } from "@/features/ai-tools/index.js";
 
 export interface ToolSelectorContext {
   requestedLayers: OsiLayer[];

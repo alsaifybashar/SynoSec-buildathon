@@ -1,133 +1,71 @@
 import { describe, expect, it } from "vitest";
-import type {
-  AiAgent,
-  Application,
-  Runtime,
-  WorkflowRun
-} from "@synosec/contracts";
+import { MemoryAiAgentsRepository } from "@/features/ai-agents/memory-ai-agents.repository.js";
 import { MemoryWorkflowsRepository } from "./memory-workflows.repository.js";
 
-const application: Application = {
-  id: "11111111-1111-1111-1111-111111111111",
-  name: "App",
-  baseUrl: "https://app.test",
-  environment: "development",
-  status: "active",
-  lastScannedAt: null,
-  createdAt: "2026-04-21T00:00:00.000Z",
-  updatedAt: "2026-04-21T00:00:00.000Z"
-};
-
-const runtime: Runtime = {
-  id: "22222222-2222-2222-2222-222222222222",
-  name: "Runtime",
-  serviceType: "api",
-  provider: "docker",
-  environment: "development",
-  region: "eu-north-1",
-  status: "healthy",
-  applicationId: application.id,
-  createdAt: "2026-04-21T00:00:00.000Z",
-  updatedAt: "2026-04-21T00:00:00.000Z"
-};
-
-const agent: AiAgent = {
-  id: "33333333-3333-3333-3333-333333333333",
-  name: "Agent",
-  status: "active",
-  description: "Workflow agent",
-  providerId: "77777777-7777-7777-7777-777777777777",
-  systemPrompt: "Test agent",
-  modelOverride: null,
-  toolIds: [],
-  createdAt: "2026-04-21T00:00:00.000Z",
-  updatedAt: "2026-04-21T00:00:00.000Z"
-};
-
-function createRepository(seedRuns: WorkflowRun[] = []) {
-  return new MemoryWorkflowsRepository(
-    {
-      list: async () => ({ items: [application], page: 1, pageSize: 10, total: 1, totalPages: 1 }),
-      getById: async (id) => (id === application.id ? application : null),
-      create: async () => application,
-      update: async () => application,
-      remove: async () => true
-    },
-    {
-      list: async () => ({ items: [runtime], page: 1, pageSize: 10, total: 1, totalPages: 1 }),
-      getById: async (id) => (id === runtime.id ? runtime : null),
-      create: async () => runtime,
-      update: async () => runtime,
-      remove: async () => true
-    },
-    {
-      list: async () => ({ items: [agent], page: 1, pageSize: 10, total: 1, totalPages: 1 }),
-      getById: async (id) => (id === agent.id ? agent : null),
-      create: async () => agent,
-      update: async () => agent,
-      remove: async () => true
-    },
-    [],
-    seedRuns
-  );
-}
-
 describe("MemoryWorkflowsRepository", () => {
-  it("creates workflows with normalized stage contracts and ordinal positions", async () => {
-    const repository = createRepository();
-
-    const workflow = await repository.create({
-      name: "Workflow",
-      status: "draft",
+  it("stores workflows in the pipeline-oriented shape", async () => {
+    const applicationsRepository = {
+      getById: async () => ({
+        id: "10000000-0000-0000-0000-000000000001",
+        name: "Demo App",
+        baseUrl: "http://localhost:3000",
+        environment: "development",
+        status: "active",
+        lastScannedAt: null,
+        createdAt: "2026-04-24T10:00:00.000Z",
+        updatedAt: "2026-04-24T10:00:00.000Z"
+      })
+    } as any;
+    const runtimesRepository = {
+      getById: async () => null
+    } as any;
+    const aiAgentsRepository = new MemoryAiAgentsRepository({
+      getById: async () => ({
+        id: "30000000-0000-0000-0000-000000000001",
+        name: "Anthropic",
+        kind: "anthropic",
+        status: "active",
+        description: null,
+        baseUrl: null,
+        model: "claude-sonnet-4-20250514",
+        apiKeyConfigured: true,
+        createdAt: "2026-04-24T10:00:00.000Z",
+        updatedAt: "2026-04-24T10:00:00.000Z"
+      })
+    } as any, {
+      getById: async () => null
+    } as any, [{
+      id: "20000000-0000-0000-0000-000000000001",
+      name: "Pipeline Agent",
+      status: "active",
       description: null,
-      applicationId: application.id,
-      runtimeId: runtime.id,
-      agentId: agent.id,
-      objective: "   ",
-      allowedToolIds: ["tool-a", "tool-a", ""],
-      requiredEvidenceTypes: ["http", "http", ""],
-      findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
-      completionRule: {
-        requireStageResult: true,
-        requireToolCall: false,
-        allowEmptyResult: true,
-        minFindings: 0
-      },
-      resultSchemaVersion: 0,
-      handoffSchema: null
-    });
+      providerId: "30000000-0000-0000-0000-000000000001",
+      systemPrompt: "Work the target.",
+      modelOverride: null,
+      toolIds: ["tool:http-recon"],
+      createdAt: "2026-04-24T10:00:00.000Z",
+      updatedAt: "2026-04-24T10:00:00.000Z"
+    }]);
+    const repository = new MemoryWorkflowsRepository(
+      applicationsRepository,
+      runtimesRepository,
+      aiAgentsRepository
+    );
 
-    expect(workflow.agentId).toBe(agent.id);
-    expect(workflow.objective).toBe("Complete the Workflow Run stage using allowed tools and structured reporting.");
-    expect(workflow.allowedToolIds).toEqual(["tool-a"]);
-    expect(workflow.requiredEvidenceTypes).toEqual(["http"]);
-    expect(workflow.resultSchemaVersion).toBe(1);
-    expect(workflow.stages).toHaveLength(1);
-    expect(workflow.stages[0]).toMatchObject({
-      ord: 0,
-      label: "Workflow Run",
-      agentId: agent.id,
-      objective: "Complete the Workflow Run stage using allowed tools and structured reporting.",
-      allowedToolIds: ["tool-a"],
-      requiredEvidenceTypes: ["http"],
-      resultSchemaVersion: 1
-    });
-  });
-
-  it("rejects missing referenced records", async () => {
-    const repository = createRepository();
-
-    await expect(repository.create({
-      name: "Workflow",
-      status: "draft",
-      description: null,
-      applicationId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-      runtimeId: runtime.id,
-      agentId: agent.id,
-      objective: "Objective",
-      allowedToolIds: [],
+    const created = await repository.create({
+      name: "Pipeline Workflow",
+      status: "active",
+      description: "Runs one transparent pipeline.",
+      applicationId: "10000000-0000-0000-0000-000000000001",
+      runtimeId: null,
+      agentId: "20000000-0000-0000-0000-000000000001",
+      objective: "Collect evidence and stop through system tools.",
+      allowedToolIds: ["tool:http-recon"],
       requiredEvidenceTypes: [],
-      findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
+      findingPolicy: {
+        taxonomy: "typed-core-v1",
+        allowedTypes: ["other"]
+      },
       completionRule: {
         requireStageResult: true,
         requireToolCall: false,
@@ -136,38 +74,96 @@ describe("MemoryWorkflowsRepository", () => {
       },
       resultSchemaVersion: 1,
       handoffSchema: null
-    })).rejects.toMatchObject({
-      status: 400,
-      message: "Application not found."
     });
+
+    expect(created.agentId).toBe("20000000-0000-0000-0000-000000000001");
+    expect(created.objective).toContain("Collect evidence");
+    expect(created.allowedToolIds).toEqual(["tool:http-recon"]);
+    expect(created.stages).toHaveLength(1);
+    expect(created.stages[0]?.label).toBe("Pipeline");
   });
 
-  it("returns the latest run for a workflow", async () => {
-    const repository = createRepository([
-      {
-        id: "44444444-4444-4444-4444-444444444444",
-        workflowId: "55555555-5555-5555-5555-555555555555",
-        status: "completed",
-        currentStepIndex: 0,
-        startedAt: "2026-04-20T00:00:00.000Z",
-        completedAt: "2026-04-20T00:01:00.000Z",
-        trace: [],
-        events: []
-      },
-      {
-        id: "66666666-6666-6666-6666-666666666666",
-        workflowId: "55555555-5555-5555-5555-555555555555",
-        status: "running",
-        currentStepIndex: 1,
-        startedAt: "2026-04-21T00:00:00.000Z",
-        completedAt: null,
-        trace: [],
-        events: []
-      }
-    ]);
+  it("creates running workflow runs with an empty event stream", async () => {
+    const applicationsRepository = {
+      getById: async () => ({
+        id: "10000000-0000-0000-0000-000000000001",
+        name: "Demo App",
+        baseUrl: "http://localhost:3000",
+        environment: "development",
+        status: "active",
+        lastScannedAt: null,
+        createdAt: "2026-04-24T10:00:00.000Z",
+        updatedAt: "2026-04-24T10:00:00.000Z"
+      })
+    } as any;
+    const runtimesRepository = {
+      getById: async () => null
+    } as any;
+    const aiAgentsRepository = new MemoryAiAgentsRepository({
+      getById: async () => ({
+        id: "30000000-0000-0000-0000-000000000001",
+        name: "Anthropic",
+        kind: "anthropic",
+        status: "active",
+        description: null,
+        baseUrl: null,
+        model: "claude-sonnet-4-20250514",
+        apiKeyConfigured: true,
+        createdAt: "2026-04-24T10:00:00.000Z",
+        updatedAt: "2026-04-24T10:00:00.000Z"
+      })
+    } as any, {
+      getById: async () => null
+    } as any, [{
+      id: "20000000-0000-0000-0000-000000000001",
+      name: "Pipeline Agent",
+      status: "active",
+      description: null,
+      providerId: "30000000-0000-0000-0000-000000000001",
+      systemPrompt: "Work the target.",
+      modelOverride: null,
+      toolIds: [],
+      createdAt: "2026-04-24T10:00:00.000Z",
+      updatedAt: "2026-04-24T10:00:00.000Z"
+    }]);
+    const repository = new MemoryWorkflowsRepository(
+      applicationsRepository,
+      runtimesRepository,
+      aiAgentsRepository,
+      [{
+        id: "40000000-0000-0000-0000-000000000001",
+        name: "Pipeline Workflow",
+        status: "active",
+        description: null,
+        applicationId: "10000000-0000-0000-0000-000000000001",
+        runtimeId: null,
+        agentId: "20000000-0000-0000-0000-000000000001",
+        objective: "Collect evidence and stop through system tools.",
+        allowedToolIds: [],
+        requiredEvidenceTypes: [],
+        findingPolicy: {
+          taxonomy: "typed-core-v1",
+          allowedTypes: ["other"]
+        },
+        completionRule: {
+          requireStageResult: true,
+          requireToolCall: false,
+          allowEmptyResult: true,
+          minFindings: 0
+        },
+        resultSchemaVersion: 1,
+        handoffSchema: null,
+        stages: [],
+        createdAt: "2026-04-24T10:00:00.000Z",
+        updatedAt: "2026-04-24T10:00:00.000Z"
+      }]
+    );
 
-    const latest = await repository.getLatestRunByWorkflowId("55555555-5555-5555-5555-555555555555");
+    const run = await repository.createRun("40000000-0000-0000-0000-000000000001");
 
-    expect(latest?.id).toBe("66666666-6666-6666-6666-666666666666");
+    expect(run?.status).toBe("running");
+    expect(run?.currentStepIndex).toBe(0);
+    expect(run?.events).toEqual([]);
+    expect(run?.trace).toEqual([]);
   });
 });

@@ -3,7 +3,6 @@ import type {
   UpdateWorkflowBody,
   Workflow,
   WorkflowRun,
-  WorkflowTraceEntry,
   WorkflowTraceEvent,
   WorkflowsListQuery
 } from "@synosec/contracts";
@@ -26,7 +25,7 @@ export interface WorkflowsRepository {
   getRunById(runId: string): Promise<WorkflowRun | null>;
   getLatestRunByWorkflowId(workflowId: string): Promise<WorkflowRun | null>;
   appendRunEvent(runId: string, event: WorkflowTraceEvent, patch?: WorkflowRunStatePatch): Promise<WorkflowRun>;
-  appendTraceEntry(runId: string, traceEntry: WorkflowTraceEntry, patch?: WorkflowRunStatePatch): Promise<WorkflowRun>;
+  appendTraceEntry?(runId: string, traceEntry: WorkflowRun["trace"][number], patch?: WorkflowRunStatePatch): Promise<WorkflowRun>;
   updateRunState(runId: string, patch: WorkflowRunStatePatch): Promise<WorkflowRun>;
   updateRun(run: WorkflowRun): Promise<WorkflowRun>;
 }
