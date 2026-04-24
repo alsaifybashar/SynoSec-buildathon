@@ -450,10 +450,10 @@ describe("WorkflowsPage", () => {
 
     renderWorkflowsPage();
 
-    expect((await screen.findAllByText("Complete the Initial Recon stage using allowed tools and structured reporting.")).length).toBeGreaterThan(0);
-    expect(screen.getByText("Thread · Workflow Transcript · Hybrid Flow")).toBeInTheDocument();
+    expect(await screen.findByText("Thread · Workflow Transcript · Hybrid Flow")).toBeInTheDocument();
+    expect(screen.getByText("Stage timeline test")).toBeInTheDocument();
+    expect(screen.queryByText("Run Snapshot")).not.toBeInTheDocument();
     expect(screen.getAllByText(/single-agent security runner/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/claude-sonnet-4/i).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Start Run" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Reset" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Edit Workflow" })).toBeEnabled();
@@ -540,7 +540,8 @@ describe("WorkflowsPage", () => {
     renderWorkflowsPage();
 
     expect(await screen.findByText("Thread · Workflow Transcript · Hybrid Flow")).toBeInTheDocument();
-    expect(screen.getAllByText("Complete the Initial Recon stage using allowed tools and structured reporting.").length).toBeGreaterThan(0);
+    expect(screen.getByText("Stage timeline test")).toBeInTheDocument();
+    expect(screen.queryByText("Run Snapshot")).not.toBeInTheDocument();
     expect(screen.queryByText(/finalized/)).not.toBeInTheDocument();
   });
 });

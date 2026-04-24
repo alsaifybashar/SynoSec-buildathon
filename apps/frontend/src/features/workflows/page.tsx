@@ -289,7 +289,7 @@ export function WorkflowsPage({
   } | null>(null);
   const [runPending, setRunPending] = useState(false);
   const [runAction, setRunAction] = useState<RunAction>(null);
-  const [runStreamState, setRunStreamState] = useState<RunStreamState>("idle");
+  const [, setRunStreamState] = useState<RunStreamState>("idle");
   const [persistedTranscript, setPersistedTranscript] = useState<TranscriptProjection | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const isCreateMode = workflowId === "new";
@@ -484,7 +484,6 @@ export function WorkflowsPage({
   const applicationLookup = useMemo(() => Object.fromEntries(applications.map((item) => [item.id, item.name])), [applications]);
   const agentLookup = useMemo(() => Object.fromEntries(agents.map((item) => [item.id, item])), [agents]);
   const toolLookup = useMemo(() => Object.fromEntries(tools.map((item) => [item.id, item.name])), [tools]);
-  const providerLookup = useMemo(() => Object.fromEntries(providers.map((item) => [item.id, item])), [providers]);
   const filteredRuntimes = useMemo(
     () => runtimes.filter((runtime) => !formValues.applicationId || runtime.applicationId === formValues.applicationId),
     [formValues.applicationId, runtimes]
@@ -670,24 +669,15 @@ export function WorkflowsPage({
   }
 
   const workflowAgentId = workflow?.agentId ?? "";
-  const workflowObjective = workflow?.objective ?? "Run the configured workflow against the selected target with the approved tools.";
   const workflowAllowedToolIds = workflow?.allowedToolIds ?? [];
   const workflowAgent = workflowAgentId ? agentLookup[workflowAgentId] : null;
-  const workflowProvider = workflowAgent ? providerLookup[workflowAgent.providerId] : null;
-  const effectiveModel = workflowAgent?.modelOverride ?? workflowProvider?.model ?? "Unknown model";
   const approvedToolCount = workflow
     ? (workflowAllowedToolIds.length > 0 ? workflowAllowedToolIds.length : workflowAgent?.toolIds.length ?? 0)
     : 0;
-  const runSummaryDescription = workflowObjective;
   const visibleToolIds = workflow
     ? (workflowAllowedToolIds.length > 0 ? workflowAllowedToolIds : workflowAgent?.toolIds ?? [])
     : [];
   const visibleToolNames = visibleToolIds.map((toolId: string) => toolLookup[toolId] ?? toolId);
-  const workflowActions = [
-    "Report vulnerability",
-    "Update layer coverage",
-    "Submit scan completion"
-  ];
 
   return (
     <>
@@ -773,7 +763,20 @@ export function WorkflowsPage({
           <DetailSidebarItem label="Updated">{formatTimestamp(workflow.updatedAt)}</DetailSidebarItem>
         </div>
       ) : undefined}
-      relatedContent={!isCreateMode ? (
+      relatedContent={null}
+    >
+      {isCreateMode ? (
+        <WorkflowConfigEditor
+          formValues={formValues}
+          errors={errors}
+          applications={applications}
+          agents={agents}
+          agentLookup={agentLookup}
+          toolLookup={toolLookup}
+          filteredRuntimes={filteredRuntimes}
+          onFieldChange={handleFieldChange}
+        />
+      ) : (
         <WorkflowTraceSection
           workflow={workflow}
           applications={applications}
@@ -789,66 +792,6 @@ export function WorkflowsPage({
             toolNames: visibleToolNames
           }}
         />
-      ) : null}
-    >
-      {isCreateMode ? (
-        <WorkflowConfigEditor
-          formValues={formValues}
-          errors={errors}
-          applications={applications}
-          agents={agents}
-          agentLookup={agentLookup}
-          toolLookup={toolLookup}
-          filteredRuntimes={filteredRuntimes}
-          onFieldChange={handleFieldChange}
-        />
-      ) : (
-        <DetailFieldGroup title="Run Snapshot" className="bg-card/70">
-          <div className="space-y-3 md:col-span-2">
-            <p className="text-sm leading-6 text-foreground">{runSummaryDescription}</p>
-            <div className="flex flex-wrap gap-2">
-              {[
-                `stream · ${runStreamState}`,
-                `model · ${effectiveModel}`,
-                `target · ${workflow ? (applicationLookup[workflow.applicationId] ?? "Unknown application") : "Unknown application"}`,
-                `runtime · ${workflow?.runtimeId ? (runtimes.find((item) => item.id === workflow.runtimeId)?.name ?? "Unknown runtime") : "No runtime"}`,
-                `${approvedToolCount} tools`
-              ].map((label) => (
-                <span key={label} className="inline-flex items-center rounded-full border border-border/70 bg-background px-3 py-1 font-mono text-[0.68rem] uppercase tracking-[0.16em] text-foreground/85">
-                  {label}
-                </span>
-              ))}
-            </div>
-            <div className="rounded-xl border border-border bg-background/40 p-4">
-              <p className="text-sm font-medium text-foreground">Evidence tools</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                These are the agent-granted tools allowed to collect evidence during the run.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {visibleToolNames.length > 0 ? visibleToolNames.map((toolName) => (
-                  <span key={toolName} className="inline-flex items-center rounded-full border border-border/70 bg-card px-3 py-1 font-mono text-[0.68rem] uppercase tracking-[0.16em] text-foreground/85">
-                    {toolName}
-                  </span>
-                )) : (
-                  <span className="text-sm text-muted-foreground">No evidence tools allowed.</span>
-                )}
-              </div>
-            </div>
-            <div className="rounded-xl border border-border bg-background/40 p-4">
-              <p className="text-sm font-medium text-foreground">Built-in workflow actions</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Findings, layer coverage, and closeout are handled by the workflow engine, not by agent-managed tools.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {workflowActions.map((action) => (
-                  <span key={action} className="inline-flex items-center rounded-full border border-border/70 bg-card px-3 py-1 font-mono text-[0.68rem] uppercase tracking-[0.16em] text-foreground/85">
-                    {action}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        </DetailFieldGroup>
       )}
       </DetailPage>
       {!isCreateMode && workflow ? (
