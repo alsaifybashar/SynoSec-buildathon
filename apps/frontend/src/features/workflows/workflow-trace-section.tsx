@@ -4,7 +4,7 @@ import { AlertTriangle, Bot, CircleHelp, LoaderCircle, RotateCcw, ShieldAlert, T
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 import {
   buildWorkflowTranscript,
   getToolLookup,

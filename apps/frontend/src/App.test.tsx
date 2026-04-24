@@ -403,6 +403,7 @@ describe("App", () => {
 
     expect((await screen.findAllByText("operator@example.com")).length).toBeGreaterThan(0);
 
+    fireEvent.click((await screen.findAllByRole("button", { name: "Open settings" }))[0]!);
     fireEvent.click((await screen.findAllByRole("button", { name: "Sign out" }))[0]!);
 
     expect(await screen.findByRole("heading", { name: "Sign in to SynoSec" })).toBeInTheDocument();

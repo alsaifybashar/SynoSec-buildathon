@@ -1,23 +1,39 @@
 import { createElement, type ComponentType, type ReactNode } from "react";
 import {
+  AlignLeft,
   AppWindow,
   Bot,
+  Columns2,
+  GitCompare,
+  ListTree,
+  MessageSquareText,
   Network,
+  NotebookText,
+  Orbit,
   PlugZap,
   Route,
-  Target,
-  Waypoints,
+  ScrollText,
+  Shapes,
+  Sparkles,
   Wrench,
   type LucideIcon
 } from "lucide-react";
-import { AiAgentsPage } from "@/pages/ai-agents-page";
-import { AiProvidersPage } from "@/pages/ai-providers-page";
-import { AiToolsPage } from "@/pages/ai-tools-page";
-import { ApplicationsPage } from "@/pages/applications-page";
-import { FlowStudioPage } from "@/pages/flow-studio-page";
-import { RuntimesPage } from "@/pages/runtimes-page";
-import { WorkflowsPage } from "@/features/workflows/workflows-page";
-import { AttackMapPage } from "@/pages/attack-map-page";
+import { AiAgentsPage } from "@/features/ai-agents/page";
+import { AiProvidersPage } from "@/features/ai-providers/page";
+import { AiToolsPage } from "@/features/ai-tools/page";
+import { ApplicationsPage } from "@/features/applications/page";
+import { RuntimesPage } from "@/features/runtimes/page";
+import { AttackMapPage } from "@/features/attack-map/page";
+import { WorkflowJournalPage } from "@/features/workflow-journal/page";
+import { WorkflowLedgerPage } from "@/features/workflow-ledger/page";
+import { WorkflowStepsPage } from "@/features/workflow-steps/page";
+import { WorkflowThreadPage } from "@/features/workflow-thread/page";
+import { WorkflowTracePage } from "@/features/workflow-trace/page";
+import { WorkflowsPage } from "@/features/workflows/page";
+import { DesignStream } from "@/features/designs/design-stream";
+import { DesignDocument } from "@/features/designs/design-document";
+import { DesignDiff } from "@/features/designs/design-diff";
+import { DesignDuplex } from "@/features/designs/design-duplex";
 
 export type NavigationId =
   | "runtimes"
@@ -26,8 +42,16 @@ export type NavigationId =
   | "ai-agents"
   | "ai-tools"
   | "workflows"
+  | "workflow-thread"
+  | "workflow-trace"
+  | "workflow-ledger"
+  | "workflow-steps"
+  | "workflow-journal"
   | "attack-map"
-  | "flow-studio";
+  | "design-stream"
+  | "design-duplex"
+  | "design-document"
+  | "design-diff";
 
 export type AppRoute = {
   section: NavigationId;
@@ -82,28 +106,103 @@ function createCrudNavigationItem(options: {
   } satisfies NavigationItem;
 }
 
+const workflowThreadItem: NavigationItem = {
+  id: "workflow-thread",
+  label: "Chat · Thread",
+  slug: "workflow-thread",
+  icon: MessageSquareText,
+  render() {
+    return createElement(WorkflowThreadPage, { key: "workflow-thread" });
+  }
+};
+
+const workflowTraceItem: NavigationItem = {
+  id: "workflow-trace",
+  label: "Chat · Trace",
+  slug: "workflow-trace",
+  icon: AlignLeft,
+  render() {
+    return createElement(WorkflowTracePage, { key: "workflow-trace" });
+  }
+};
+
+const workflowLedgerItem: NavigationItem = {
+  id: "workflow-ledger",
+  label: "Chat · Ledger",
+  slug: "workflow-ledger",
+  icon: Columns2,
+  render() {
+    return createElement(WorkflowLedgerPage, { key: "workflow-ledger" });
+  }
+};
+
+const workflowStepsItem: NavigationItem = {
+  id: "workflow-steps",
+  label: "Chat · Steps",
+  slug: "workflow-steps",
+  icon: ListTree,
+  render() {
+    return createElement(WorkflowStepsPage, { key: "workflow-steps" });
+  }
+};
+
+const workflowJournalItem: NavigationItem = {
+  id: "workflow-journal",
+  label: "Chat · Journal",
+  slug: "workflow-journal",
+  icon: NotebookText,
+  render() {
+    return createElement(WorkflowJournalPage, { key: "workflow-journal" });
+  }
+};
+
 const attackMapItem: NavigationItem = {
   id: "attack-map",
   label: "Attack Map",
   slug: "attack-map",
-  icon: Target,
+  icon: Orbit,
   render() {
     return createElement(AttackMapPage, { key: "attack-map" });
   }
 };
 
-const flowStudioItem: NavigationItem = {
-  id: "flow-studio",
-  label: "Flow Studio",
-  slug: "flow-studio",
-  icon: Waypoints,
-  render(context) {
-    return createElement(FlowStudioPage, {
-      key: `flow-studio:${context.route.detailId ?? "root"}`,
-      ...(context.route.detailId ? { workflowId: context.route.detailId } : {}),
-      onNavigateToRoot: () => context.navigateToSection("flow-studio"),
-      onNavigateToFlow: (id: string) => context.navigateToPath(getDetailPath("flow-studio", id))
-    });
+const designStreamItem: NavigationItem = {
+  id: "design-stream",
+  label: "Streaming Document",
+  slug: "designs-stream",
+  icon: Sparkles,
+  render() {
+    return createElement(DesignStream, { key: "design-stream" });
+  }
+};
+
+const designDuplexItem: NavigationItem = {
+  id: "design-duplex",
+  label: "Duplex Stream",
+  slug: "designs-duplex",
+  icon: Columns2,
+  render() {
+    return createElement(DesignDuplex, { key: "design-duplex" });
+  }
+};
+
+const designDocumentItem: NavigationItem = {
+  id: "design-document",
+  label: "Live Document",
+  slug: "designs-document",
+  icon: ScrollText,
+  render() {
+    return createElement(DesignDocument, { key: "design-document" });
+  }
+};
+
+const designDiffItem: NavigationItem = {
+  id: "design-diff",
+  label: "Diff View",
+  slug: "designs-diff",
+  icon: GitCompare,
+  render() {
+    return createElement(DesignDiff, { key: "design-diff" });
   }
 };
 
@@ -195,7 +294,25 @@ export const navigationTree: NavigationTreeEntry[] = [
     kind: "item",
     item: attackMapItem
   },
-  { kind: "item", item: flowStudioItem }
+  {
+    kind: "group",
+    group: {
+      id: "designs",
+      label: "Designs",
+      icon: Shapes,
+      items: [
+        designStreamItem,
+        designDuplexItem,
+        designDocumentItem,
+        designDiffItem,
+        workflowThreadItem,
+        workflowTraceItem,
+        workflowLedgerItem,
+        workflowStepsItem,
+        workflowJournalItem
+      ]
+    }
+  }
 ];
 
 export const navigationItems: NavigationItem[] = navigationTree.flatMap((entry) =>

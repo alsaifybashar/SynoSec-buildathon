@@ -1,6 +1,6 @@
 import type { HTMLAttributes } from "react";
 import type { ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 export function SidebarProvider({ children }: { children: ReactNode }) {
   return <>{children}</>;
@@ -50,7 +50,7 @@ export function SidebarMenuItem({ className, ...props }: HTMLAttributes<HTMLButt
   return (
     <button
       className={cn(
-        "relative flex w-full items-center gap-3 rounded-none px-3 py-2 text-left text-[0.8125rem] font-medium text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+        "relative flex w-full items-center gap-2 rounded-none px-3 py-2 text-left text-[0.8125rem] font-medium leading-none text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground [&_svg]:h-[1em] [&_svg]:w-[1em] [&_svg]:shrink-0",
         className
       )}
       type="button"

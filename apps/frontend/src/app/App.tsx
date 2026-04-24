@@ -8,7 +8,7 @@ import { SidebarProvider } from "@/shared/ui/sidebar";
 import { Toaster } from "@/shared/ui/toaster";
 import { Spinner } from "@/shared/ui/spinner";
 import { AppRouter, useAppRouter } from "@/app/router";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 import { LoginPage } from "@/features/auth/login-page";
 
 type ThemeId = "synosec" | "dark";

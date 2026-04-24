@@ -1,0 +1,30 @@
+import {
+  apiRoutes,
+  createWorkflowBodySchema,
+  type CreateWorkflowBody,
+  type Workflow,
+  workflowSchema
+} from "@synosec/contracts";
+import { type ResourceTransferConfig } from "@/shared/lib/resource-transfer";
+
+export const workflowTransfer = {
+  table: "workflows",
+  route: apiRoutes.workflows,
+  itemSchema: workflowSchema,
+  createBodySchema: createWorkflowBodySchema,
+  toCreateBody: (workflow: Workflow): CreateWorkflowBody => ({
+    name: workflow.name,
+    status: workflow.status,
+    description: workflow.description,
+    applicationId: workflow.applicationId,
+    runtimeId: workflow.runtimeId,
+    agentId: workflow.agentId,
+    objective: workflow.objective,
+    allowedToolIds: workflow.allowedToolIds,
+    requiredEvidenceTypes: workflow.requiredEvidenceTypes,
+    findingPolicy: workflow.findingPolicy,
+    completionRule: workflow.completionRule,
+    resultSchemaVersion: workflow.resultSchemaVersion,
+    handoffSchema: workflow.handoffSchema
+  })
+} satisfies ResourceTransferConfig<Workflow, CreateWorkflowBody>;

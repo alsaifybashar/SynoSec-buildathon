@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, LogIn, LogOut, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, LogIn, LogOut, Settings, X } from "lucide-react";
 import { toast } from "sonner";
 import { navigationTree, type NavigationId } from "@/app/navigation";
 import { logout } from "@/features/auth/auth-store";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
 import {
   Sidebar,
@@ -79,10 +79,10 @@ function ThemeSwitcher({ value, onValueChange }: { value: ThemeId; onValueChange
     <Select value={value} onValueChange={(nextValue) => onValueChange(nextValue as ThemeId)}>
       <SelectTrigger
         aria-label="Select theme"
-        className="h-7 w-auto gap-1.5 rounded-[3px] border-sidebar-border/60 bg-sidebar-accent/40 px-2 text-[0.7rem] font-medium text-sidebar-foreground hover:bg-sidebar-accent [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-sidebar-muted-foreground"
+        className="h-7 w-auto gap-1 rounded-[3px] border-sidebar-border/60 bg-sidebar-accent/40 px-2 text-[0.7rem] font-medium leading-none text-sidebar-foreground hover:bg-sidebar-accent [&>svg]:h-[1em] [&>svg]:w-[1em] [&>svg]:text-sidebar-muted-foreground"
       >
         <SelectValue>
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1">
             <ThemeSwatch swatch={current.swatch} className="!h-3 !w-5" />
             <span className="truncate">{current.label}</span>
           </span>
@@ -103,6 +103,93 @@ function ThemeSwitcher({ value, onValueChange }: { value: ThemeId; onValueChange
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+function SettingsPopover({
+  theme,
+  onThemeChange,
+  onLogout
+}: {
+  theme: ThemeId;
+  onThemeChange: (theme: ThemeId) => void;
+  onLogout: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        aria-label="Open settings"
+        aria-expanded={isOpen}
+        title="Settings"
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-sidebar-border/60 bg-sidebar-accent/40 text-[0.75rem] leading-none text-sidebar-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-foreground [&_svg]:h-[1em] [&_svg]:w-[1em]"
+        onClick={() => setIsOpen((current) => !current)}
+      >
+        <Settings />
+      </button>
+
+      {isOpen ? (
+        <div className="absolute bottom-0 right-0 z-20 mb-2 ml-2 w-52 translate-x-full rounded-md border border-sidebar-border/70 bg-sidebar px-3 py-3 shadow-xl">
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <div className="font-mono text-[0.58rem] uppercase tracking-[0.24em] text-sidebar-muted-foreground/70">
+                Theme
+              </div>
+              <ThemeSwitcher
+                value={theme}
+                onValueChange={(nextTheme) => {
+                  onThemeChange(nextTheme);
+                  setIsOpen(false);
+                }}
+              />
+            </div>
+
+            <div className="border-t border-sidebar-border/50 pt-3">
+              <button
+                type="button"
+                className="flex w-full items-center gap-1.5 rounded-sm px-2 py-1 text-left text-[0.64rem] font-medium uppercase tracking-[0.18em] text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground [&_svg]:h-[0.95em] [&_svg]:w-[0.95em]"
+                onClick={() => {
+                  setIsOpen(false);
+                  onLogout();
+                }}
+              >
+                <LogOut className="text-sidebar-muted-foreground" />
+                <span>Sign out</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -196,10 +283,7 @@ function SidebarNav({
                   onClick={() => navigateToSection(item.id)}
                 >
                   <Icon
-                    className={cn(
-                      "h-4 w-4 shrink-0 transition-colors",
-                      isActive ? "text-sidebar-primary" : "text-sidebar-muted-foreground"
-                    )}
+                    className={cn("transition-colors", isActive ? "text-sidebar-primary" : "text-sidebar-muted-foreground")}
                   />
                   <SidebarMenuText>{item.label}</SidebarMenuText>
                 </SidebarMenuItem>
@@ -218,10 +302,7 @@ function SidebarNav({
                   onClick={() => setExpandedGroups((prev) => ({ ...prev, [group.id]: !isExpanded }))}
                 >
                   <GroupIcon
-                    className={cn(
-                      "h-4 w-4 shrink-0 transition-colors",
-                      hasActiveChild ? "text-sidebar-primary" : "text-sidebar-muted-foreground"
-                    )}
+                    className={cn("transition-colors", hasActiveChild ? "text-sidebar-primary" : "text-sidebar-muted-foreground")}
                   />
                   <SidebarMenuText>{group.label}</SidebarMenuText>
                   <ChevronRight
@@ -247,10 +328,7 @@ function SidebarNav({
                           onClick={() => navigateToSection(item.id)}
                         >
                           <Icon
-                            className={cn(
-                              "h-4 w-4 shrink-0 transition-colors",
-                              isActive ? "text-sidebar-primary" : "text-sidebar-muted-foreground"
-                            )}
+                            className={cn("transition-colors", isActive ? "text-sidebar-primary" : "text-sidebar-muted-foreground")}
                           />
                           <SidebarMenuText>{item.label}</SidebarMenuText>
                         </SidebarMenuItem>
@@ -280,13 +358,6 @@ function SidebarFooter({
 >) {
   return (
     <div className="mt-2 border-t border-sidebar-border/60">
-      <div className="flex items-center justify-between gap-2 border-b border-sidebar-border/40 px-3 py-1.5">
-        <span className="font-mono text-[0.58rem] uppercase tracking-[0.26em] text-sidebar-muted-foreground/70">
-          theme
-        </span>
-        <ThemeSwitcher value={theme} onValueChange={onThemeChange} />
-      </div>
-
       {user ? (
         <div className="flex items-center gap-2 px-3 py-2">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent/60 font-mono text-[0.625rem] font-semibold text-sidebar-foreground">
@@ -300,29 +371,25 @@ function SidebarFooter({
               {user.email}
             </p>
           </div>
-          <button
-            type="button"
-            aria-label="Sign out"
-            title="Sign out"
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-sidebar-border/60 bg-sidebar-accent/40 text-sidebar-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-foreground"
-            onClick={() => {
+          <SettingsPopover
+            theme={theme}
+            onThemeChange={onThemeChange}
+            onLogout={() => {
               void logout().catch((error) => {
                 toast.error("Sign out failed", {
                   description: error instanceof Error ? error.message : "Unable to sign out."
                 });
               });
             }}
-          >
-            <LogOut className="h-3 w-3" />
-          </button>
+          />
         </div>
       ) : showSignIn ? (
         <button
           type="button"
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.72rem] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"
+          className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[0.72rem] font-medium leading-none text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50 [&_svg]:h-[1em] [&_svg]:w-[1em]"
           onClick={() => navigateToPath(`/login?redirectTo=${encodeURIComponent(currentPathWithQuery)}`)}
         >
-          <LogIn className="h-3.5 w-3.5 text-sidebar-muted-foreground" />
+          <LogIn className="text-sidebar-muted-foreground" />
           <span>Sign in</span>
           <span className="ml-auto font-mono text-[0.58rem] uppercase tracking-[0.22em] text-sidebar-muted-foreground/70">
             google
