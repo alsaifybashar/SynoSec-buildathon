@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import type { AiAgent, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
-import { AlertTriangle, ChevronRight, CircleHelp, LoaderCircle, Radio, Target } from "lucide-react";
+import { AlertTriangle, CircleHelp, LoaderCircle, Radio, Target } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/shared/lib/utils";
 import {
@@ -11,8 +11,6 @@ import {
   type LiveModelOutput,
   type TranscriptProjection
 } from "@/features/workflows/workflow-trace";
-
-const NEAR_BOTTOM_PX = 140;
 
 type SummaryCardData = {
   toolCount: number;
@@ -113,18 +111,18 @@ const KIND_LABEL: Record<DuplexAtomKind, string> = {
   error: "Run error"
 };
 
-const KIND_ACCENT: Record<DuplexAtomKind, { label: string; border: string; dot: string; bg: string }> = {
-  objective: { label: "text-primary", border: "border-primary/30", dot: "bg-primary", bg: "" },
-  "system-prompt": { label: "text-primary", border: "border-primary/30", dot: "bg-primary", bg: "" },
-  system: { label: "text-foreground/75", border: "border-border", dot: "bg-foreground/60", bg: "bg-muted/20" },
-  reasoning: { label: "text-muted-foreground", border: "border-border", dot: "bg-muted-foreground", bg: "bg-muted/30" },
-  body: { label: "text-foreground/70", border: "border-border", dot: "bg-foreground/50", bg: "" },
-  "tool-call": { label: "text-warning", border: "border-warning/35", dot: "bg-warning", bg: "" },
-  "tool-output": { label: "text-success", border: "border-success/35", dot: "bg-success", bg: "" },
-  verification: { label: "text-primary", border: "border-primary/25", dot: "bg-primary", bg: "bg-primary/5" },
-  finding: { label: "text-destructive", border: "border-destructive/40", dot: "bg-destructive", bg: "" },
-  sealed: { label: "text-success", border: "border-success/30", dot: "bg-success", bg: "bg-success/5" },
-  error: { label: "text-destructive", border: "border-destructive/40", dot: "bg-destructive", bg: "bg-destructive/5" }
+const KIND_ACCENT: Record<DuplexAtomKind, { label: string; dot: string }> = {
+  objective: { label: "text-primary", dot: "bg-primary" },
+  "system-prompt": { label: "text-primary", dot: "bg-primary" },
+  system: { label: "text-foreground/75", dot: "bg-foreground/60" },
+  reasoning: { label: "text-muted-foreground", dot: "bg-muted-foreground" },
+  body: { label: "text-foreground/70", dot: "bg-foreground/50" },
+  "tool-call": { label: "text-warning", dot: "bg-warning" },
+  "tool-output": { label: "text-success", dot: "bg-success" },
+  verification: { label: "text-primary", dot: "bg-primary" },
+  finding: { label: "text-destructive", dot: "bg-destructive" },
+  sealed: { label: "text-success", dot: "bg-success" },
+  error: { label: "text-destructive", dot: "bg-destructive" }
 };
 
 function compactDate(value: string | null | undefined) {
@@ -349,31 +347,22 @@ function buildDuplexAtoms(input: {
   return atoms;
 }
 
-function DuplexBubble({ atom }: { atom: DuplexAtom }) {
-  const [expanded, setExpanded] = useState(false);
-  const [inputOpen, setInputOpen] = useState(false);
-  const [outputOpen, setOutputOpen] = useState(false);
+function formatToolLine(atom: DuplexAtom) {
+  const verb = atom.status ? "Called" : "Calling";
+  return `${verb} ${atom.label}`;
+}
+
+function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; showFullDetails: boolean }) {
   const isLeft = atom.side === "left";
   const accent = KIND_ACCENT[atom.kind];
   const isTool = atom.kind === "tool-call" || atom.kind === "tool-output";
-  const borderClass = atom.severity
-    ? atom.severity === "critical" || atom.severity === "high"
-      ? "border-destructive/45"
-      : atom.severity === "medium"
-        ? "border-warning/40"
-        : "border-primary/40"
-    : accent.border;
+  const isSystemTone = atom.kind === "objective" || atom.kind === "system-prompt" || atom.kind === "system" || atom.kind === "verification";
+  const isErrorTone = atom.kind === "error";
+  const labelText = isTool ? formatToolLine(atom) : atom.label;
 
   return (
-    <div className={cn("flex w-full", isLeft ? "justify-start pr-[8%]" : "justify-end pl-[8%]")}>
-      <div
-        className={cn(
-          "flex min-w-0 max-w-full flex-col gap-1.5",
-          atom.kind === "tool-call" || atom.kind === "tool-output"
-            ? "w-full max-w-[48rem]"
-            : "w-full max-w-[52rem]"
-        )}
-      >
+    <div className={cn("flex w-full", isLeft ? "justify-start pr-[6%]" : "justify-end pl-[6%]")}>
+      <article className={cn("w-full max-w-[52rem] space-y-1.5", isTool ? "max-w-[48rem]" : "")}>
         <div
           className={cn(
             "flex items-center gap-2 px-0.5 font-mono text-[0.6rem] uppercase tracking-wider text-muted-foreground",
@@ -397,109 +386,51 @@ function DuplexBubble({ atom }: { atom: DuplexAtom }) {
             </>
           ) : null}
         </div>
-        <div className={cn("rounded-md border bg-card px-3.5 py-2.5", borderClass, accent.bg, isLeft ? "rounded-tl-sm" : "rounded-tr-sm")}>
-          <div className="text-[0.82rem] font-medium leading-tight text-foreground">{atom.label}</div>
-          {atom.title ? <div className="mt-0.5 text-[0.72rem] text-muted-foreground">{atom.title}</div> : null}
+        <div className={cn("space-y-1", isTool ? "pl-4" : "")}>
+          <p
+            className={cn(
+              "whitespace-pre-wrap leading-[1.65] text-foreground/90",
+              isTool
+                ? "text-[0.78rem] text-muted-foreground"
+                : isSystemTone
+                  ? "text-[0.86rem] font-normal text-foreground/70"
+                  : "text-[0.96rem] font-normal text-foreground",
+              isErrorTone ? "text-destructive" : ""
+            )}
+          >
+            <span className={cn("font-medium", isSystemTone ? "font-normal text-foreground/65" : "text-foreground")}>{labelText}</span>
+            {atom.title ? <span className="text-muted-foreground"> · {atom.title}</span> : null}
+          </p>
 
-          {atom.summaryText ? (
-            <p className="mt-1.5 text-[0.8rem] leading-[1.55] text-foreground/85">{atom.summaryText}</p>
+          {atom.summaryText && !showFullDetails ? (
+            <p className="whitespace-pre-wrap text-[0.78rem] leading-[1.6] text-muted-foreground">
+              {atom.summaryText}
+            </p>
           ) : null}
 
-          {atom.code && isTool ? (
-            <div className="mt-2">
-              <button
-                type="button"
-                onClick={() => setInputOpen((value) => !value)}
-                aria-expanded={inputOpen}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[0.62rem] uppercase tracking-wider transition-colors",
-                  inputOpen
-                    ? "border-primary/50 bg-primary/10 text-primary hover:bg-primary/15"
-                    : "border-border bg-muted/40 text-foreground hover:border-foreground/30 hover:bg-muted/60"
-                )}
-              >
-                <ChevronRight className={cn("h-3 w-3 transition-transform", inputOpen ? "rotate-90" : "")} />
-                {inputOpen ? "Hide input" : "Show input"}
-              </button>
-              {inputOpen ? (
-                <pre className="mt-2 overflow-x-auto rounded-sm border bg-muted/40 px-2.5 py-1.5 font-mono text-[0.7rem] leading-5 text-foreground/85">
-                  {atom.code}
-                </pre>
-              ) : null}
-            </div>
-          ) : atom.code ? (
-            <pre className="mt-2 overflow-x-auto rounded-sm border bg-muted/40 px-2.5 py-1.5 font-mono text-[0.7rem] leading-5 text-foreground/85">
+          {atom.body && (!isTool || showFullDetails) ? (
+            <p
+              className={cn(
+                "whitespace-pre-wrap leading-[1.7]",
+                isSystemTone
+                  ? "text-[0.86rem] font-light text-foreground/68"
+                  : "text-[0.92rem] text-foreground/88"
+              )}
+            >
+              {atom.body}
+            </p>
+          ) : null}
+
+          {showFullDetails && atom.code ? (
+            <pre className="overflow-x-auto rounded-sm border border-border/70 bg-muted/35 px-2.5 py-1.5 font-mono text-[0.7rem] leading-5 text-foreground/85">
               {atom.code}
             </pre>
           ) : null}
 
-          {atom.body ? (
-            atom.expandableBody ? (
-              <div className="mt-2">
-                <button
-                  type="button"
-                  onClick={() => setExpanded((value) => !value)}
-                  aria-expanded={expanded}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[0.62rem] uppercase tracking-wider transition-colors",
-                    expanded
-                      ? "border-primary/50 bg-primary/10 text-primary hover:bg-primary/15"
-                      : "border-border bg-muted/40 text-foreground hover:border-foreground/30 hover:bg-muted/60"
-                  )}
-                >
-                  <ChevronRight className={cn("h-3 w-3 transition-transform", expanded ? "rotate-90" : "")} />
-                  {expanded ? "Hide detail" : "Show detail"}
-                </button>
-                {expanded ? (
-                  <p className="mt-2 whitespace-pre-wrap text-[0.8rem] leading-[1.55] text-foreground/85">
-                    {atom.body}
-                  </p>
-                ) : null}
-              </div>
-            ) : isTool ? (
-              <div className="mt-2">
-                <button
-                  type="button"
-                  onClick={() => setOutputOpen((value) => !value)}
-                  aria-expanded={outputOpen}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[0.62rem] uppercase tracking-wider transition-colors",
-                    outputOpen
-                      ? "border-primary/50 bg-primary/10 text-primary hover:bg-primary/15"
-                      : "border-border bg-muted/40 text-foreground hover:border-foreground/30 hover:bg-muted/60"
-                  )}
-                >
-                  <ChevronRight className={cn("h-3 w-3 transition-transform", outputOpen ? "rotate-90" : "")} />
-                  {outputOpen ? "Hide output" : "Show output"}
-                </button>
-                {outputOpen ? (
-                  <div className="mt-2">
-                    <p className="whitespace-pre-wrap text-[0.8rem] leading-[1.55] text-foreground/85">{atom.body}</p>
-                    {atom.observations && atom.observations.length > 0 ? (
-                      <div className="mt-3 border-t border-border/70 pt-2">
-                        <div className="font-mono text-[0.58rem] uppercase tracking-wider text-muted-foreground">Observations</div>
-                        <ul className="mt-1 space-y-0.5">
-                          {atom.observations.map((observation) => (
-                            <li key={observation} className="grid grid-cols-[10px_1fr] gap-1.5 text-[0.76rem] leading-[1.5] text-foreground/85">
-                              <span className="text-success">+</span>
-                              <span>{observation}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <p className="mt-1.5 whitespace-pre-wrap text-[0.8rem] leading-[1.55] text-foreground/85">{atom.body}</p>
-            )
-          ) : null}
-
-          {atom.observations && atom.observations.length > 0 && !isTool ? (
-            <div className="mt-3 border-t border-border/70 pt-2">
+          {showFullDetails && atom.observations && atom.observations.length > 0 ? (
+            <div className="space-y-1.5 pt-1">
               <div className="font-mono text-[0.58rem] uppercase tracking-wider text-muted-foreground">Observations</div>
-              <ul className="mt-1 space-y-0.5">
+              <ul className="space-y-0.5">
                 {atom.observations.map((observation) => (
                   <li key={observation} className="grid grid-cols-[10px_1fr] gap-1.5 text-[0.76rem] leading-[1.5] text-foreground/85">
                     <span className="text-success">+</span>
@@ -510,7 +441,7 @@ function DuplexBubble({ atom }: { atom: DuplexAtom }) {
             </div>
           ) : null}
         </div>
-      </div>
+      </article>
     </div>
   );
 }
@@ -623,6 +554,7 @@ export function WorkflowTraceSection({
   liveModelOutput,
   transcript,
   summaryCard,
+  showFullDetails = false,
   latestRunError,
   transcriptError,
   streamError
@@ -637,14 +569,11 @@ export function WorkflowTraceSection({
   liveModelOutput?: LiveModelOutput | null;
   transcript?: TranscriptProjection | null;
   summaryCard: SummaryCardData;
+  showFullDetails?: boolean;
   latestRunError?: string | null;
   transcriptError?: string | null;
   streamError?: string | null;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const lastScrollTopRef = useRef(0);
-  const [pinnedToBottom, setPinnedToBottom] = useState(true);
-  const [hasNewBelow, setHasNewBelow] = useState(false);
   const errorMessages = [latestRunError, transcriptError, streamError].filter((value): value is string => Boolean(value));
   const toolLookup = useMemo(() => getToolLookup(tools), [tools]);
   const derivedTranscript = useMemo<TranscriptProjection>(() => {
@@ -703,57 +632,8 @@ export function WorkflowTraceSection({
       agent,
       findingsById,
       errors: errorMessages
-    });
+    }).filter((atom) => atom.kind !== "finding");
   }, [workflow, run, effectiveTranscript, agent, findingsById, errorMessages]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) {
-      return;
-    }
-
-    if (pinnedToBottom) {
-      el.scrollTop = el.scrollHeight;
-      lastScrollTopRef.current = el.scrollTop;
-      setHasNewBelow(false);
-    } else {
-      setHasNewBelow(true);
-    }
-  }, [atoms, pinnedToBottom]);
-
-  function handleScroll() {
-    const el = containerRef.current;
-    if (!el) {
-      return;
-    }
-
-    const currentTop = el.scrollTop;
-    const atBottom = el.scrollHeight - currentTop - el.clientHeight < NEAR_BOTTOM_PX;
-    const scrolledUp = currentTop < lastScrollTopRef.current - 1;
-    lastScrollTopRef.current = currentTop;
-
-    if (atBottom) {
-      setPinnedToBottom(true);
-      setHasNewBelow(false);
-      return;
-    }
-
-    if (scrolledUp) {
-      setPinnedToBottom(false);
-    }
-  }
-
-  function jumpToLatest() {
-    const el = containerRef.current;
-    if (!el) {
-      return;
-    }
-
-    el.scrollTop = el.scrollHeight;
-    lastScrollTopRef.current = el.scrollTop;
-    setPinnedToBottom(true);
-    setHasNewBelow(false);
-  }
 
   if (!workflow) {
     return null;
@@ -763,12 +643,12 @@ export function WorkflowTraceSection({
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.75fr)]">
       <div className="min-w-0">
         <div className="space-y-4">
-          <div ref={containerRef} onScroll={handleScroll} className="relative max-h-[calc(100vh-13rem)] min-h-[38rem] overflow-y-auto">
+          <div className="relative min-h-[38rem]">
             <div className="mx-auto w-full max-w-[56rem] px-6 py-8">
-              <div className="space-y-3.5">
+              <div className="space-y-5">
                 {atoms.map((atom) => (
-                  <div key={atom.key} className="duplex-bubble">
-                    <DuplexBubble atom={atom} />
+                  <div key={atom.key} className="duplex-entry">
+                    <InlineTranscriptEntry atom={atom} showFullDetails={showFullDetails} />
                   </div>
                 ))}
 
@@ -789,16 +669,6 @@ export function WorkflowTraceSection({
                 ) : null}
               </div>
             </div>
-
-            {hasNewBelow ? (
-              <button
-                type="button"
-                onClick={jumpToLatest}
-                className="absolute bottom-20 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border bg-background/95 px-3 py-1.5 font-mono text-[0.64rem] text-foreground shadow-sm backdrop-blur transition hover:bg-muted/40"
-              >
-                New messages
-              </button>
-            ) : null}
           </div>
 
           {errorMessages.length > 0 ? (
@@ -819,7 +689,7 @@ export function WorkflowTraceSection({
           from { opacity: 0; transform: translateY(2px); }
           to { opacity: 1; transform: none; }
         }
-        .duplex-bubble { animation: duplex-in 260ms ease-out both; }
+        .duplex-entry { animation: duplex-in 260ms ease-out both; }
         @keyframes duplex-dot { 0%, 80%, 100% { opacity: 0.25 } 40% { opacity: 1 } }
         .duplex-typing span { animation: duplex-dot 1.1s infinite; }
         .duplex-typing span:nth-child(2) { animation-delay: 0.15s; }

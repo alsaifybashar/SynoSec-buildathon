@@ -293,6 +293,7 @@ export function WorkflowsPage({
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [showFullDetails, setShowFullDetails] = useState(false);
   const isCreateMode = workflowId === "new";
   const workflowList = useResourceList(workflowsResource);
   const workflowDetail = useResourceDetail(workflowsResource, workflowId && workflowId !== "new" ? workflowId : null);
@@ -748,6 +749,9 @@ export function WorkflowsPage({
                   <WorkflowIcon className="h-4 w-4" />
                   Start Run
                 </Button>
+                <Button type="button" variant="outline" onClick={() => setShowFullDetails((value) => !value)} disabled={!workflow}>
+                  {showFullDetails ? "Hide Full Details" : "Show Full Details"}
+                </Button>
                 <Button type="button" variant="outline" onClick={() => setEditModalOpen(true)} disabled={!workflow}>
                   <Pencil className="h-4 w-4" />
                   Edit Workflow
@@ -801,6 +805,7 @@ export function WorkflowsPage({
             toolCount: approvedToolCount,
             toolNames: visibleToolNames
           }}
+          showFullDetails={showFullDetails}
           latestRunError={latestRunError}
           transcriptError={transcriptError}
           streamError={streamError}

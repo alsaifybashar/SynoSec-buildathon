@@ -549,7 +549,7 @@ const failedToolRun: WorkflowRun = {
 };
 
 describe("WorkflowTraceSection", () => {
-  it("renders the Duplex workflow thread with atomized system context and tool blocks", () => {
+  it("renders the Duplex workflow thread as inline reading flow with compact tool subtitles", () => {
     const { container } = render(
       <WorkflowTraceSection
         workflow={workflow}
@@ -563,19 +563,43 @@ describe("WorkflowTraceSection", () => {
           toolCount: 1,
           toolNames: [tools[0]!.name]
         }}
+        showFullDetails={false}
       />
     );
 
     expect(screen.queryByText("Thread · Workflow Transcript · Duplex Flow")).not.toBeInTheDocument();
     expect(screen.getByText("Rendered system prompt")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Show detail" }).length).toBeGreaterThan(0);
     expect(screen.getByText("Probe the exposed web surface first.")).toBeInTheDocument();
-    expect(screen.getAllByText("Web Probe", { exact: false }).length).toBeGreaterThan(0);
+    expect(screen.getByText("Called Web Probe")).toBeInTheDocument();
     expect(screen.getByText("Evidence checkpoint after Web Probe")).toBeInTheDocument();
     expect(screen.getAllByText("Missing security headers").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Findings").length).toBeGreaterThan(0);
     expect(screen.getByText("Run sealed")).toBeInTheDocument();
-    expect(container.querySelector(".duplex-bubble")).toBeTruthy();
+    expect(screen.queryByText("{\"url\":\"http://localhost:8888\"}")).not.toBeInTheDocument();
+    expect(container.querySelector(".duplex-entry")).toBeTruthy();
+  });
+
+  it("reveals raw payloads and verbose details when full details mode is enabled", () => {
+    render(
+      <WorkflowTraceSection
+        workflow={workflow}
+        applications={applications}
+        runtimes={runtimes}
+        agents={agents}
+        tools={tools}
+        run={run}
+        running={false}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails
+      />
+    );
+
+    expect(screen.getAllByText(/http:\/\/localhost:8888/).length).toBeGreaterThan(0);
+    expect(screen.getByText("HTTP/1.1 200 OK")).toBeInTheDocument();
+    expect(screen.getByText("Observations")).toBeInTheDocument();
   });
 
   it("keeps the Duplex workflow thread visible while the workflow run is still active", () => {
@@ -592,6 +616,7 @@ describe("WorkflowTraceSection", () => {
           toolCount: 1,
           toolNames: [tools[0]!.name]
         }}
+        showFullDetails={false}
       />
     );
 
@@ -615,6 +640,7 @@ describe("WorkflowTraceSection", () => {
           toolCount: 1,
           toolNames: [tools[0]!.name]
         }}
+        showFullDetails={false}
       />
     );
 
@@ -634,6 +660,7 @@ describe("WorkflowTraceSection", () => {
           toolCount: 1,
           toolNames: [tools[0]!.name]
         }}
+        showFullDetails={false}
       />
     );
 
@@ -656,6 +683,7 @@ describe("WorkflowTraceSection", () => {
           toolCount: 1,
           toolNames: [tools[0]!.name]
         }}
+        showFullDetails={false}
       />
     );
 

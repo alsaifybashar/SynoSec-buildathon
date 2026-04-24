@@ -439,16 +439,19 @@ describe("WorkflowsPage", () => {
 
     renderWorkflowsPage();
 
-    expect(await screen.findByText("Thread · Workflow Transcript · Duplex Flow")).toBeInTheDocument();
-    expect(screen.getByText("Stage timeline test")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Start Run" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Show Full Details" })).toBeEnabled();
     expect(screen.queryByText("Run Snapshot")).not.toBeInTheDocument();
     expect(screen.getAllByText(/single-agent security runner/i).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Start Run" })).toBeEnabled();
+    expect(screen.getAllByText(/HTTP Recon/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText("200 OK\nServer: demo")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show Full Details" }));
+    expect(await screen.findByRole("button", { name: "Hide Full Details" })).toBeInTheDocument();
+    expect(screen.getByText(/Server: demo/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Reset" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit Workflow" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Continue Run" })).not.toBeInTheDocument();
     expect(screen.getAllByText("Local Vulnerable Target").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/local runtime/i).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Edit Workflow" }));
     expect(await screen.findByText("Workflow Edit")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Evidence Workflow")).toBeInTheDocument();
@@ -527,9 +530,7 @@ describe("WorkflowsPage", () => {
 
     renderWorkflowsPage();
 
-    expect(await screen.findByText("Thread · Workflow Transcript · Duplex Flow")).toBeInTheDocument();
-    expect(screen.getByText("Stage timeline test")).toBeInTheDocument();
-    expect(screen.getByText("No run yet")).toBeInTheDocument();
+    expect(await screen.findByText("No run yet")).toBeInTheDocument();
     expect(screen.getByText("Start the first Duplex session")).toBeInTheDocument();
     expect(screen.queryByText("Run sealed")).not.toBeInTheDocument();
   });
