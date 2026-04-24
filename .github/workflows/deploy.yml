@@ -115,8 +115,8 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             set -euo pipefail
-            sudo mkdir -p "${{ env.VPS_TARGET_DIR }}"
-            sudo chown "$USER:$USER" "${{ env.VPS_TARGET_DIR }}"
+            sudo -n mkdir -p "${{ env.VPS_TARGET_DIR }}"
+            sudo -n chown "$USER:$USER" "${{ env.VPS_TARGET_DIR }}"
 
       - name: Copy project to VPS
         uses: appleboy/scp-action@v0.1.7
@@ -169,9 +169,9 @@ jobs:
               -e 's|__BACKEND_PUBLIC_PORT__|${{ env.BACKEND_PUBLIC_PORT }}|g' \
               -e 's|__FRONTEND_PUBLIC_PORT__|${{ env.FRONTEND_PUBLIC_PORT }}|g' \
               infra/nginx/synosec.vps.conf.template > /tmp/synosec-nginx.conf
-            sudo /usr/bin/install -m 0644 /tmp/synosec-nginx.conf "${{ vars.NGINX_CONFIG_PATH }}"
-            sudo /usr/sbin/nginx -t
-            sudo /bin/systemctl reload nginx
+            sudo -n /usr/bin/install -m 0644 /tmp/synosec-nginx.conf "${{ vars.NGINX_CONFIG_PATH }}"
+            sudo -n /usr/sbin/nginx -t
+            sudo -n /bin/systemctl reload nginx
             docker image prune -f
 
       - name: Purge Cloudflare cache
