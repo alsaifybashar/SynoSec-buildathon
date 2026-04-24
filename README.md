@@ -109,7 +109,7 @@ The Google redirect URI must match exactly. Do not register or rely on query-str
 GitHub Actions deploys to a VPS using `.github/workflows/deploy.yml` and the production stack in `docker-compose.vps.yml`.
 
 - Host `nginx` runs directly on the VPS and proxies traffic to Dockerized frontend and backend services bound on loopback.
-- `backend` runs the compiled API and pushes the Prisma schema on startup.
+- `backend` runs the compiled API. Production schema changes must be applied through committed Prisma migrations.
 - `frontend` runs the production frontend build behind the host nginx reverse proxy.
 - `connector` stays on the private Docker network and polls the backend control plane.
 - `postgres` persists app data in a named Docker volume.
@@ -131,8 +131,11 @@ Define these GitHub repository secrets as well:
 - `AUTH_SESSION_SECRET`
 
 Most non-secret application defaults now live in `infra/deploy/env.vps.template`, so GitHub only needs the host-specific variables above plus the runtime secrets. If you need to change default model, scan, connector, auth, or public port settings for every deployment, edit that committed template instead of adding more Actions variables.
-The deploy workflow now hardcodes the VPS app directory to `/opt/synosec` and binds the host loopback ports to `3030` for the frontend and `3031` for the backend.
-The deploy user must have passwordless `sudo` for `install`, `find`, and `rm` against that path, because the workflow prepares and clears `/opt/synosec` before uploading each release.
+The deploy workflow hardcodes the VPS app directory to `/opt/synosec` and binds the host loopback ports to `3030` for the frontend and `3031` for the backend.
+The deploy user must already be able to create and write `${VPS_TARGET_DIR}` without `sudo`.
+The deploy user must also be able to write `NGINX_CONFIG_PATH` directly and run `/usr/sbin/nginx -t` plus `/usr/sbin/nginx -s reload` without privilege escalation. If those permissions are missing, deploy fails immediately.
+Production deploys no longer use `sudo`, `chown`, or `prisma db push`.
+Production startup now requires committed Prisma migrations. If `apps/backend/prisma/migrations` is missing or empty, the backend container exits instead of mutating the database schema implicitly.
 
 Set `SERVER_NAME` to the apex domain only, for example `synosecai.com`. The nginx template will serve both `synosecai.com` and `www.synosecai.com`.
 
@@ -148,7 +151,7 @@ If production traffic can also land on `https://www.synosecai.com`, add both of 
 - `Authorized JavaScript origins`: `https://www.synosecai.com`
 - `Authorized redirect URIs`: `https://www.synosecai.com/api/auth/google`
 
-Set `NGINX_CONFIG_PATH` to the exact nginx site config path allowed by sudoers, for example `/etc/nginx/sites-available/synosec`.
+Set `NGINX_CONFIG_PATH` to the exact nginx site config path the deploy user can write directly, for example `/etc/nginx/sites-available/synosec`.
 
 The host nginx config template lives at `infra/nginx/synosec.vps.conf.template` and is installed by the deploy workflow. It redirects HTTP to HTTPS, terminates TLS on the VPS using the standard Certbot layout under `/etc/letsencrypt/live/<server_name>/`, forwards the original client scheme/host to the app, and emits `Strict-Transport-Security`.
 
