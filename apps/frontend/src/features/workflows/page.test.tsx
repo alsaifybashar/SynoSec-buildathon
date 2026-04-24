@@ -365,17 +365,6 @@ const failedRun: WorkflowRun = {
   ]
 };
 
-const unevidencedCompletedRun: WorkflowRun = {
-  id: "run-3",
-  workflowId: workflow.id,
-  status: "completed",
-  currentStepIndex: 2,
-  startedAt: "2026-04-21T00:00:00.000Z",
-  completedAt: "2026-04-21T00:00:04.500Z",
-  trace: [],
-  events: []
-};
-
 function paginatedResponse<T>(key: string, items: T[]) {
   return {
     [key]: items,
@@ -416,7 +405,7 @@ describe("WorkflowsPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the compact workflow trace layout and edit controls", async () => {
+  it("renders the Duplex workflow detail layout and edit controls", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -450,12 +439,12 @@ describe("WorkflowsPage", () => {
 
     renderWorkflowsPage();
 
-    expect(await screen.findByText("Thread · Workflow Transcript · Hybrid Flow")).toBeInTheDocument();
+    expect(await screen.findByText("Thread · Workflow Transcript · Duplex Flow")).toBeInTheDocument();
     expect(screen.getByText("Stage timeline test")).toBeInTheDocument();
     expect(screen.queryByText("Run Snapshot")).not.toBeInTheDocument();
     expect(screen.getAllByText(/single-agent security runner/i).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Start Run" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Reset" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Reset" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit Workflow" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Continue Run" })).not.toBeInTheDocument();
     expect(screen.getAllByText("Local Vulnerable Target").length).toBeGreaterThan(0);
@@ -499,13 +488,12 @@ describe("WorkflowsPage", () => {
 
     renderWorkflowsPage();
 
-    expect((await screen.findAllByText("Initial Recon failed because HTTP Recon did not complete successfully.")).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Run complete · sealed/)).toBeInTheDocument();
-    expect(screen.getAllByText("Homepage reachable").length).toBeGreaterThan(0);
+    expect(await screen.findByText("Initial Recon failed")).toBeInTheDocument();
+    expect(screen.getAllByText(/http recon/i).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Continue Run" })).not.toBeInTheDocument();
   });
 
-  it("does not show unevidenced completed runs as finalized", async () => {
+  it("shows the empty Duplex shell when no latest run exists yet", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -531,7 +519,7 @@ describe("WorkflowsPage", () => {
         return new Response(JSON.stringify(workflow));
       }
       if (url === `/api/workflows/${workflow.id}/runs/latest`) {
-        return new Response(JSON.stringify(unevidencedCompletedRun));
+        return new Response(JSON.stringify({ message: "Workflow run not found." }), { status: 404, headers: { "Content-Type": "application/json" } });
       }
 
       throw new Error(`Unhandled fetch: ${url}`);
@@ -539,9 +527,10 @@ describe("WorkflowsPage", () => {
 
     renderWorkflowsPage();
 
-    expect(await screen.findByText("Thread · Workflow Transcript · Hybrid Flow")).toBeInTheDocument();
+    expect(await screen.findByText("Thread · Workflow Transcript · Duplex Flow")).toBeInTheDocument();
     expect(screen.getByText("Stage timeline test")).toBeInTheDocument();
-    expect(screen.queryByText("Run Snapshot")).not.toBeInTheDocument();
-    expect(screen.queryByText(/finalized/)).not.toBeInTheDocument();
+    expect(screen.getByText("No run yet")).toBeInTheDocument();
+    expect(screen.getByText("Start the first Duplex session")).toBeInTheDocument();
+    expect(screen.queryByText("Run sealed")).not.toBeInTheDocument();
   });
 });

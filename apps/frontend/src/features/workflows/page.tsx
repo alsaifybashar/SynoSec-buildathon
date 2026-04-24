@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, Download, ExternalLink, Pencil, RefreshCcw, Undo2, Workflow as WorkflowIcon } from "lucide-react";
+import { ArrowLeft, Check, Download, ExternalLink, Pencil, Undo2, Workflow as WorkflowIcon } from "lucide-react";
 import { toast } from "sonner";
 import {
   apiRoutes,
@@ -25,7 +25,7 @@ import { fetchJson } from "@/shared/lib/api";
 import { useResourceDetail } from "@/shared/hooks/use-resource-detail";
 import { useResourceList } from "@/shared/hooks/use-resource-list";
 import { exportResourceRecords, importResourceRecords } from "@/shared/lib/resource-transfer";
-import { DetailActionFade, DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
+import { DetailActionFade, DetailField, DetailFieldGroup, DetailLoadingState, DetailPage } from "@/shared/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -40,7 +40,7 @@ import {
   validateWorkflowForm
 } from "@/features/workflows/workflow-form";
 import { WorkflowTraceSection } from "@/features/workflows/workflow-trace-section";
-import { formatTimestamp, type RunAction, type RunStreamState, type TranscriptProjection } from "@/features/workflows/workflow-trace";
+import { type RunStreamState, type TranscriptProjection } from "@/features/workflows/workflow-trace";
 
 const statusLabels: Record<WorkflowStatus, string> = {
   draft: "Draft",
@@ -114,9 +114,8 @@ function WorkflowConfigEditor({
   const inheritedToolIds = selectedAgent?.toolIds ?? [];
   const effectiveToolIds = formValues.allowedToolIds.length > 0 ? formValues.allowedToolIds : inheritedToolIds;
   const workflowActions = [
-    "Report vulnerability",
-    "Update layer coverage",
-    "Submit scan completion"
+    "Complete run",
+    "Fail run"
   ];
 
   return (
@@ -196,11 +195,11 @@ function WorkflowConfigEditor({
             <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
               <p className="text-xs font-medium text-foreground">
                 {formValues.allowedToolIds.length === 0
-                  ? "Mode: inherit all agent evidence tools"
-                  : `Mode: restricted to ${formValues.allowedToolIds.length} selected evidence tool${formValues.allowedToolIds.length === 1 ? "" : "s"}`}
+                  ? "Mode: inherit all agent tools"
+                  : `Mode: restricted to ${formValues.allowedToolIds.length} selected tool${formValues.allowedToolIds.length === 1 ? "" : "s"}`}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Click an evidence tool to allow it for this workflow. If none are selected, the workflow uses every evidence tool granted on the agent.
+                Click a tool to allow it for this workflow. If none are selected, the workflow uses every granted tool on the agent, including visible built-in reporting actions.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -229,15 +228,15 @@ function WorkflowConfigEditor({
                     </span>
                   </Button>
                 );
-              }) : <p className="text-sm text-muted-foreground">No evidence tools are assigned to this agent.</p>}
+              }) : <p className="text-sm text-muted-foreground">No tools are assigned to this agent.</p>}
             </div>
             <p className="text-sm text-foreground">
-              Effective evidence tools for this workflow: {effectiveToolIds.length > 0 ? effectiveToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ") : "None"}
+              Effective tools for this workflow: {effectiveToolIds.length > 0 ? effectiveToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ") : "None"}
             </p>
             <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
               <p className="text-xs font-medium text-foreground">Built-in workflow actions</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                These are provided by the workflow engine and are not agent-managed tools.
+                These lifecycle actions are always provided by the workflow engine and are not agent-managed AI tools.
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {workflowActions.map((action) => (
@@ -288,9 +287,11 @@ export function WorkflowsPage({
     createdAt: string;
   } | null>(null);
   const [runPending, setRunPending] = useState(false);
-  const [runAction, setRunAction] = useState<RunAction>(null);
   const [, setRunStreamState] = useState<RunStreamState>("idle");
   const [persistedTranscript, setPersistedTranscript] = useState<TranscriptProjection | null>(null);
+  const [latestRunError, setLatestRunError] = useState<string | null>(null);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const isCreateMode = workflowId === "new";
   const workflowList = useResourceList(workflowsResource);
@@ -352,8 +353,10 @@ export function WorkflowsPage({
       setCurrentRun(null);
       setLiveModelOutput(null);
       setPersistedTranscript(null);
-      setRunAction(null);
       setRunStreamState("idle");
+      setLatestRunError(null);
+      setTranscriptError(null);
+      setStreamError(null);
       setEditModalOpen(false);
       setErrors({});
       return;
@@ -373,8 +376,10 @@ export function WorkflowsPage({
       setCurrentRun(null);
       setLiveModelOutput(null);
       setPersistedTranscript(null);
-      setRunAction(null);
       setRunStreamState("idle");
+      setLatestRunError(null);
+      setTranscriptError(null);
+      setStreamError(null);
       setEditModalOpen(false);
       setErrors({});
       return;
@@ -384,8 +389,10 @@ export function WorkflowsPage({
     setWorkflow(workflowDetail.item);
     setFormValues(nextValues);
     setInitialValues(nextValues);
-    setRunAction(null);
     setRunStreamState("idle");
+    setLatestRunError(null);
+    setTranscriptError(null);
+    setStreamError(null);
     setEditModalOpen(false);
     setErrors({});
   }, [workflowDetail, workflowId, onNavigateToList, applications, agents]);
@@ -394,6 +401,7 @@ export function WorkflowsPage({
     if (!workflow || isCreateMode) {
       setCurrentRun(null);
       setLiveModelOutput(null);
+      setLatestRunError(null);
       return;
     }
 
@@ -403,11 +411,21 @@ export function WorkflowsPage({
       .then((run) => {
         if (active) {
           setCurrentRun(run);
+          setLatestRunError(null);
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (active) {
           setCurrentRun(null);
+          if (typeof error === "object" && error !== null && "status" in error && error.status === 404) {
+            setLatestRunError(null);
+            return;
+          }
+          const message = error instanceof Error ? error.message : "Unable to load the latest workflow run right now.";
+          setLatestRunError(message);
+          toast.error("Failed to load latest workflow run", {
+            description: message
+          });
         }
       });
 
@@ -419,6 +437,7 @@ export function WorkflowsPage({
   useEffect(() => {
     if (!currentRun || currentRun.status !== "running") {
       setRunStreamState("idle");
+      setStreamError(null);
       return;
     }
 
@@ -427,19 +446,23 @@ export function WorkflowsPage({
 
     eventSource.onopen = () => {
       setRunStreamState("connected");
+      setStreamError(null);
     };
 
     eventSource.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data) as WorkflowRunStreamMessage;
         setCurrentRun(payload.run);
+        setStreamError(null);
       } catch {
         setRunStreamState("disconnected");
+        setStreamError("Received an invalid workflow stream event.");
       }
     };
 
     eventSource.onerror = () => {
       setRunStreamState("disconnected");
+      setStreamError("Live workflow stream disconnected. Reload the page or start a fresh run if updates stop.");
     };
 
     return () => {
@@ -451,6 +474,7 @@ export function WorkflowsPage({
     if (!currentRun) {
       setLiveModelOutput(null);
       setPersistedTranscript(null);
+      setTranscriptError(null);
       return;
     }
 
@@ -460,6 +484,7 @@ export function WorkflowsPage({
   useEffect(() => {
     if (!currentRun || currentRun.status === "running") {
       setPersistedTranscript(null);
+      setTranscriptError(null);
       return;
     }
 
@@ -468,11 +493,17 @@ export function WorkflowsPage({
       .then((payload) => {
         if (active) {
           setPersistedTranscript(payload.transcript);
+          setTranscriptError(null);
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (active) {
           setPersistedTranscript(null);
+          const message = error instanceof Error ? error.message : "Unable to load the finalized workflow transcript right now.";
+          setTranscriptError(message);
+          toast.error("Failed to load workflow transcript", {
+            description: message
+          });
         }
       });
 
@@ -575,7 +606,9 @@ export function WorkflowsPage({
     }
 
     setRunPending(true);
-    setRunAction("starting");
+    setLatestRunError(null);
+    setTranscriptError(null);
+    setStreamError(null);
     try {
       const run = await fetchJson<WorkflowRun>(`${apiRoutes.workflows}/${workflow.id}/runs`, { method: "POST" });
       setCurrentRun(run);
@@ -586,16 +619,7 @@ export function WorkflowsPage({
       });
     } finally {
       setRunPending(false);
-      setRunAction(null);
     }
-  }
-
-  async function handleReloadRun() {
-    setCurrentRun(null);
-    setRunStreamState("idle");
-    setRunAction(null);
-    setRunPending(false);
-    toast.success("Workflow run reset");
   }
 
   function handleExportJson() {
@@ -724,10 +748,6 @@ export function WorkflowsPage({
                   <WorkflowIcon className="h-4 w-4" />
                   Start Run
                 </Button>
-                <Button type="button" variant="outline" onClick={handleReloadRun} disabled={!workflow || runPending}>
-                  <RefreshCcw className="h-4 w-4" />
-                  Reset
-                </Button>
                 <Button type="button" variant="outline" onClick={() => setEditModalOpen(true)} disabled={!workflow}>
                   <Pencil className="h-4 w-4" />
                   Edit Workflow
@@ -752,17 +772,7 @@ export function WorkflowsPage({
             ) : null}
           </>
         )}
-        sidebar={workflow ? (
-        <div className="space-y-4">
-          <DetailSidebarItem label="Status">{statusLabels[workflow.status]}</DetailSidebarItem>
-          <DetailSidebarItem label="Target">{applicationLookup[workflow.applicationId] ?? "Unknown"}</DetailSidebarItem>
-          <DetailSidebarItem label="Agent">{workflowAgent?.name ?? "Unknown"}</DetailSidebarItem>
-          <DetailSidebarItem label="Current Run">
-            {currentRun ? `${currentRun.status} · ${currentRun.events.length} events` : "No active run"}
-          </DetailSidebarItem>
-          <DetailSidebarItem label="Updated">{formatTimestamp(workflow.updatedAt)}</DetailSidebarItem>
-        </div>
-      ) : undefined}
+        sidebar={isCreateMode ? undefined : null}
       relatedContent={null}
     >
       {isCreateMode ? (
@@ -791,6 +801,9 @@ export function WorkflowsPage({
             toolCount: approvedToolCount,
             toolNames: visibleToolNames
           }}
+          latestRunError={latestRunError}
+          transcriptError={transcriptError}
+          streamError={streamError}
         />
       )}
       </DetailPage>

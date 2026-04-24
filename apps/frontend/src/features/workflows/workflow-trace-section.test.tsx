@@ -549,7 +549,7 @@ const failedToolRun: WorkflowRun = {
 };
 
 describe("WorkflowTraceSection", () => {
-  it("renders the workflow thread with compact system context and inline tool blocks", () => {
+  it("renders the Duplex workflow thread with atomized system context and tool blocks", () => {
     const { container } = render(
       <WorkflowTraceSection
         workflow={workflow}
@@ -566,24 +566,19 @@ describe("WorkflowTraceSection", () => {
       />
     );
 
-    expect(screen.getByText("Thread · Workflow Transcript · Hybrid Flow")).toBeInTheDocument();
-    expect(screen.getByText("Run 60000000")).toBeInTheDocument();
+    expect(screen.queryByText("Thread · Workflow Transcript · Duplex Flow")).not.toBeInTheDocument();
     expect(screen.getByText("Rendered system prompt")).toBeInTheDocument();
-    expect(screen.getByText("Show Rendered system prompt")).toBeInTheDocument();
-    expect(screen.queryByText("Probe the exposed web surface first.")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Show detail" }).length).toBeGreaterThan(0);
+    expect(screen.getByText("Probe the exposed web surface first.")).toBeInTheDocument();
     expect(screen.getAllByText("Web Probe", { exact: false }).length).toBeGreaterThan(0);
-    expect(screen.queryByText("View structured action")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Show tool command").length).toBeGreaterThan(0);
-    expect(screen.getByText("Show tool response")).toBeInTheDocument();
     expect(screen.getByText("Evidence checkpoint after Web Probe")).toBeInTheDocument();
-    expect(screen.queryByText("Tool Call")).not.toBeInTheDocument();
     expect(screen.getAllByText("Missing security headers").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Findings").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Run complete · sealed/)).toBeInTheDocument();
-    expect(container.querySelector("details")).toBeTruthy();
+    expect(screen.getByText("Run sealed")).toBeInTheDocument();
+    expect(container.querySelector(".duplex-bubble")).toBeTruthy();
   });
 
-  it("keeps the workflow thread visible while the workflow run is still active", () => {
+  it("keeps the Duplex workflow thread visible while the workflow run is still active", () => {
     render(
       <WorkflowTraceSection
         workflow={workflow}
@@ -600,15 +595,13 @@ describe("WorkflowTraceSection", () => {
       />
     );
 
-    expect(screen.getByText("Thread · Workflow Transcript · Hybrid Flow")).toBeInTheDocument();
+    expect(screen.queryByText("Thread · Workflow Transcript · Duplex Flow")).not.toBeInTheDocument();
     expect(screen.getByText("Rendered system prompt")).toBeInTheDocument();
-    expect(screen.getByText("Show Rendered system prompt")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Collecting evidence, waiting for the next agent step…")).toBeInTheDocument();
-    expect(screen.getByLabelText("Run in progress")).toBeInTheDocument();
+    expect(screen.getAllByText("Agent typing").length).toBeGreaterThan(0);
     expect(screen.queryByText("No findings reported yet.")).not.toBeInTheDocument();
   });
 
-  it("renders standardized model and tool error blocks with retry guidance", () => {
+  it("renders standardized model and tool error atoms with retry guidance", () => {
     const { rerender } = render(
       <WorkflowTraceSection
         workflow={workflow}
@@ -625,11 +618,8 @@ describe("WorkflowTraceSection", () => {
       />
     );
 
-    expect(screen.getByText("Model Error")).toBeInTheDocument();
     expect(screen.getByText("Model output rejected")).toBeInTheDocument();
-    expect(screen.getByText(/The model returned an unsupported structured action/)).toBeInTheDocument();
-    expect(screen.getByText(/supported actions · call_tool, report_vulnerability/)).toBeInTheDocument();
-    expect(screen.getByText("Show raw model output")).toBeInTheDocument();
+    expect(screen.getByText(/The agent must emit one of the supported structured actions/)).toBeInTheDocument();
 
     rerender(
       <WorkflowTraceSection
@@ -647,10 +637,29 @@ describe("WorkflowTraceSection", () => {
       />
     );
 
-    expect(screen.getByText("Tool Error")).toBeInTheDocument();
     expect(screen.getByText("Web Probe error")).toBeInTheDocument();
-    expect(screen.getByText(/Web Probe did not complete cleanly/)).toBeInTheDocument();
-    expect(screen.getByText(/retry policy · retry the tool, switch tools, or mark the layer as blocked/)).toBeInTheDocument();
-    expect(screen.getByLabelText("Tool error")).toBeInTheDocument();
+    expect(screen.getByText(/Tool status: failed/)).toBeInTheDocument();
+    expect(screen.getAllByText("failed").length).toBeGreaterThan(0);
+  });
+
+  it("renders the Duplex empty state when no run exists yet", () => {
+    render(
+      <WorkflowTraceSection
+        workflow={workflow}
+        applications={applications}
+        runtimes={runtimes}
+        agents={agents}
+        tools={tools}
+        run={null}
+        running={false}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+      />
+    );
+
+    expect(screen.getByText("No run yet")).toBeInTheDocument();
+    expect(screen.getByText("Start the first Duplex session")).toBeInTheDocument();
   });
 });
