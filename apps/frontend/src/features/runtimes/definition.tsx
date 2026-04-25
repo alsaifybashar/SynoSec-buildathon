@@ -259,7 +259,7 @@ export const runtimesDefinition: CrudFeatureDefinition<
         <DetailSidebarItem label="Status">
           <StatusBadge label={statusLabels[item.status]} className={statusBadgeStyles[item.status]} />
         </DetailSidebarItem>
-        <DetailSidebarItem label="Application">
+        <DetailSidebarItem label="Application" hint="The parent application currently linked to this runtime record.">
           {context.applicationLookup[item.applicationId ?? ""] ?? "Unlinked"}
         </DetailSidebarItem>
         <DetailSidebarItem label="Created">
@@ -273,11 +273,11 @@ export const runtimesDefinition: CrudFeatureDefinition<
     renderContent: ({ formValues, errors, context, handleFieldChange }) => (
       <>
         <DetailFieldGroup title="Identity">
-          <DetailField label="Name" required {...definedString(errors["name"] as string | undefined)}>
+          <DetailField label="Name" required hint="Human-readable runtime name used in workflow targeting and inventory views." {...definedString(errors["name"] as string | undefined)}>
             <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
           </DetailField>
 
-          <DetailField label="Region" required {...definedString(errors["region"] as string | undefined)}>
+          <DetailField label="Region" required hint="Cloud region, datacenter, or locality string that helps operators distinguish deployment location." {...definedString(errors["region"] as string | undefined)}>
             <Input value={formValues.region} onChange={(event) => handleFieldChange("region", event.target.value)} aria-label="Region" />
           </DetailField>
         </DetailFieldGroup>
@@ -298,7 +298,7 @@ export const runtimesDefinition: CrudFeatureDefinition<
             </Select>
           </DetailField>
 
-          <DetailField label="Provider" required>
+          <DetailField label="Provider" required hint="Infrastructure platform or hosting context that owns this runtime.">
             <Select value={formValues.provider} onValueChange={(value: RuntimeProvider) => handleFieldChange("provider", value)}>
               <SelectTrigger aria-label="Provider" className="w-fit min-w-[10rem] max-w-[12rem]">
                 <SelectValue placeholder="Select provider" />
@@ -313,7 +313,7 @@ export const runtimesDefinition: CrudFeatureDefinition<
             </Select>
           </DetailField>
 
-          <DetailField label="Environment" required>
+          <DetailField label="Environment" required hint="Execution tier for this runtime. Keep this aligned with the application surface being assessed.">
             <Select value={formValues.environment} onValueChange={(value: ApplicationEnvironment) => handleFieldChange("environment", value)}>
               <SelectTrigger aria-label="Environment" className="w-fit min-w-[10rem] max-w-[12rem]">
                 <SelectValue placeholder="Select environment" />
@@ -330,7 +330,7 @@ export const runtimesDefinition: CrudFeatureDefinition<
         </DetailFieldGroup>
 
         <DetailFieldGroup title="Status & linking">
-          <DetailField label="Status" required>
+          <DetailField label="Status" required hint="Operational state of the runtime inventory record, not live health telemetry.">
             <Select value={formValues.status} onValueChange={(value: RuntimeStatus) => handleFieldChange("status", value)}>
               <SelectTrigger aria-label="Status" className="w-fit min-w-[10rem] max-w-[12rem]">
                 <SelectValue placeholder="Select status" />
@@ -345,7 +345,7 @@ export const runtimesDefinition: CrudFeatureDefinition<
             </Select>
           </DetailField>
 
-          <DetailField label="Application">
+          <DetailField label="Application" hint="Optional link back to the application this runtime belongs to.">
             <Select value={formValues.applicationId || "__none__"} onValueChange={(value) => handleFieldChange("applicationId", value === "__none__" ? "" : value)}>
               <SelectTrigger aria-label="Application" className="w-fit min-w-[12rem] max-w-[16rem]">
                 <SelectValue placeholder="Select application" />

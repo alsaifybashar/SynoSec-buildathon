@@ -369,6 +369,8 @@ describe("WorkflowDetailPage", () => {
 
     expect(await screen.findByRole("button", { name: "Start Run" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Show Full Details" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Show guidance for Status" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Current Run" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show Full Details" }));
     expect(await screen.findByRole("button", { name: "Hide Full Details" })).toBeInTheDocument();
     expect(screen.getByText(/Server: demo/)).toBeInTheDocument();

@@ -145,12 +145,9 @@ export function DetailPage({
       {sidebar ? (
         <div className="m-3 grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
           <div className="space-y-2 px-1">{children}</div>
-          <aside className="self-start rounded-md border border-border/60 bg-card/40 p-5">
-            <p className="mb-4 font-mono text-[0.625rem] font-medium uppercase tracking-[0.3em] text-muted-foreground">
-              Metadata
-            </p>
-            <div className="space-y-4">{sidebar}</div>
-          </aside>
+          <DetailMetadataPanel className="self-start">
+            {sidebar}
+          </DetailMetadataPanel>
         </div>
       ) : (
         <div className="m-3 px-1">{children}</div>
@@ -190,24 +187,67 @@ export function DetailFieldGroup({
   );
 }
 
+export function DetailMetadataPanel({
+  title = "Metadata",
+  hint,
+  className,
+  children
+}: {
+  title?: string;
+  hint?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <aside className={["rounded-md border border-border/60 bg-card/40 p-5", className].filter(Boolean).join(" ")}>
+      <div className="mb-4 flex items-center gap-1.5 font-mono text-[0.625rem] font-medium uppercase tracking-[0.3em] text-muted-foreground">
+        <span>{title}</span>
+        {hint ? (
+          <TooltipProvider delayDuration={150}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DetailHintTrigger label={title} />
+              </TooltipTrigger>
+              <TooltipContent>{hint}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : null}
+      </div>
+      <div className="space-y-4">{children}</div>
+    </aside>
+  );
+}
+
 export function DetailSidebarItem({
   label,
+  hint,
   children
 }: {
   label: string;
+  hint?: string;
   children: ReactNode;
 }) {
   return (
     <div className="space-y-1">
-      <p className="font-mono text-[0.6rem] font-medium uppercase tracking-[0.3em] text-muted-foreground">
-        {label}
-      </p>
+      <div className="flex items-center gap-1.5 font-mono text-[0.6rem] font-medium uppercase tracking-[0.3em] text-muted-foreground">
+        <span>{label}</span>
+        {hint ? (
+          <TooltipProvider delayDuration={150}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DetailHintTrigger label={label} />
+              </TooltipTrigger>
+              <TooltipContent>{hint}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : null}
+      </div>
       <div className="text-xs text-foreground">{children}</div>
     </div>
   );
 }
 
-const DetailHintTrigger = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { label: string }>(function DetailHintTrigger(
+export const DetailHintTrigger = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { label: string }>(function DetailHintTrigger(
   { label, className, ...props },
   ref
 ) {

@@ -54,7 +54,7 @@ export function WorkflowConfigEditor({
   return (
     <>
       <DetailFieldGroup title="Workflow Configuration" className="bg-card/70">
-        <DetailField label="Name" required {...definedFieldError(errors["name"])}>
+        <DetailField label="Name" required hint="Operator-facing workflow name shown in the run launcher and reports." {...definedFieldError(errors["name"])}>
           <Input value={formValues.name} onChange={(event) => onFieldChange("name", event.target.value)} aria-label="Name" />
         </DetailField>
         <DetailField label="Execution kind" hint={workflowFieldHints.executionKind}>
@@ -69,7 +69,7 @@ export function WorkflowConfigEditor({
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Application" required {...definedFieldError(errors["applicationId"])}>
+        <DetailField label="Application" required hint="Primary application context used to resolve targets and related runtimes." {...definedFieldError(errors["applicationId"])}>
           <Select value={formValues.applicationId} onValueChange={(value) => onFieldChange("applicationId", value)}>
             <SelectTrigger aria-label="Application">
               <SelectValue placeholder="Select application" />
@@ -94,7 +94,7 @@ export function WorkflowConfigEditor({
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Description" className="md:col-span-2">
+        <DetailField label="Description" hint="Optional internal summary of what this workflow is intended to do." className="md:col-span-2">
           <Textarea value={formValues.description} onChange={(event) => onFieldChange("description", event.target.value)} aria-label="Description" rows={4} />
         </DetailField>
       </DetailFieldGroup>
@@ -117,7 +117,7 @@ export function WorkflowConfigEditor({
         </DetailField>
         <DetailField label="Agent prompt" hint={workflowFieldHints.agentPrompt} className="md:col-span-2">
           <div className="space-y-2 rounded-xl border border-border bg-background/40 p-4">
-            <p className="text-sm leading-6 text-foreground">{selectedAgent?.systemPrompt ?? "Select an agent to inspect its prompt."}</p>
+            <p className="text-xs leading-6 text-foreground">{selectedAgent?.systemPrompt ?? "Select an agent to inspect its prompt."}</p>
             <p className="text-xs text-muted-foreground">
               Prompt and base tool grants are owned by the linked agent and edited from the AI Agents page.
             </p>

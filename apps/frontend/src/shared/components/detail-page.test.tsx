@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { DetailField, DetailPage } from "@/shared/components/detail-page";
+import { DetailField, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
 
 describe("DetailPage", () => {
   it("renders related content below the main detail content", () => {
@@ -95,5 +95,24 @@ describe("DetailPage", () => {
 
     fireEvent.focus(screen.getByRole("button", { name: "Show guidance for Runtime" }));
     expect(await screen.findByRole("tooltip")).toHaveTextContent("Helpful runtime guidance.");
+  });
+
+  it("shows a sidebar hint when guidance is provided", async () => {
+    render(
+      <DetailPage
+        title="Application detail"
+        breadcrumbs={["Start", "Applications", "Application detail"]}
+        isDirty={false}
+        onBack={() => {}}
+        onSave={async () => {}}
+        onDismiss={() => {}}
+        sidebar={<DetailSidebarItem label="Status" hint="Helpful status guidance.">Active</DetailSidebarItem>}
+      >
+        <div>Main detail form</div>
+      </DetailPage>
+    );
+
+    fireEvent.focus(screen.getByRole("button", { name: "Show guidance for Status" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Helpful status guidance.");
   });
 });

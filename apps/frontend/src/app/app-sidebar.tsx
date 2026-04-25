@@ -10,6 +10,7 @@ import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
+  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuText,
@@ -332,13 +333,28 @@ function SidebarNav({
     );
   }
 
+  function renderBottomEntry(entry: (typeof navigationTree)[number]) {
+    if (entry.kind === "item") {
+      return renderEntry(entry);
+    }
+
+    return (
+      <SidebarGroup key={entry.group.id} className="space-y-1.5">
+        <SidebarGroupLabel>{entry.group.label}</SidebarGroupLabel>
+        <SidebarMenu>
+          {entry.group.items.map((item) => renderEntry({ kind: "item", item }))}
+        </SidebarMenu>
+      </SidebarGroup>
+    );
+  }
+
   return (
     <SidebarContent className="mt-4 flex-1 justify-between">
       <SidebarGroup>
         <SidebarMenu>{topEntries.map(renderEntry)}</SidebarMenu>
       </SidebarGroup>
       <SidebarGroup>
-        <SidebarMenu>{bottomEntries.map(renderEntry)}</SidebarMenu>
+        {bottomEntries.map(renderBottomEntry)}
       </SidebarGroup>
     </SidebarContent>
   );

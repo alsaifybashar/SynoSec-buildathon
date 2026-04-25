@@ -178,10 +178,10 @@ export const applicationsDefinition: CrudFeatureDefinition<
         <DetailSidebarItem label="Status">
           <StatusBadge label={statusLabels[item.status]} className={statusBadgeStyles[item.status]} />
         </DetailSidebarItem>
-        <DetailSidebarItem label="Environment">
+        <DetailSidebarItem label="Environment" hint="The deployment tier this application record represents.">
           <StatusBadge label={environmentLabels[item.environment]} className={environmentBadgeStyles[item.environment]} />
         </DetailSidebarItem>
-        <DetailSidebarItem label="Last scanned">
+        <DetailSidebarItem label="Last scanned" hint="The most recent scan timestamp recorded on this application.">
           {formatTimestamp(item.lastScannedAt)}
         </DetailSidebarItem>
         <DetailSidebarItem label="Created">
@@ -195,7 +195,7 @@ export const applicationsDefinition: CrudFeatureDefinition<
     renderContent: ({ item, formValues, errors, handleFieldChange }) => (
       <>
         <DetailFieldGroup title="General">
-          <DetailField label="Name" required {...definedString(errors["name"] as string | undefined)}>
+          <DetailField label="Name" required hint="Operator-facing label used across workflow and runtime selectors." {...definedString(errors["name"] as string | undefined)}>
             <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
           </DetailField>
 
@@ -209,7 +209,7 @@ export const applicationsDefinition: CrudFeatureDefinition<
         </DetailFieldGroup>
 
         <DetailFieldGroup title="Configuration">
-          <DetailField label="Environment" required>
+          <DetailField label="Environment" required hint="Use the environment that best matches the target surface operators are allowed to assess.">
             <Select value={formValues.environment} onValueChange={(value: ApplicationEnvironment) => handleFieldChange("environment", value)}>
               <SelectTrigger aria-label="Environment" className="w-fit min-w-[10rem] max-w-[12rem]">
                 <SelectValue placeholder="Select environment" />
@@ -224,7 +224,7 @@ export const applicationsDefinition: CrudFeatureDefinition<
             </Select>
           </DetailField>
 
-          <DetailField label="Last scanned">
+          <DetailField label="Last scanned" hint="Manual scan bookkeeping only. This value does not trigger or schedule scans by itself.">
             <Input
               type="datetime-local"
               value={formValues.lastScannedAt}
@@ -235,7 +235,7 @@ export const applicationsDefinition: CrudFeatureDefinition<
         </DetailFieldGroup>
 
         <DetailFieldGroup title="Policy Surface">
-          <DetailField label="Registered targets" className="md:col-span-2">
+          <DetailField label="Registered targets" hint="Targets linked to this application and exposed to workflows when choosing a scan destination." className="md:col-span-2">
             <div className="space-y-2 rounded-xl border border-border bg-background/40 p-4 text-sm text-muted-foreground">
               {item?.targetAssets?.length
                 ? item.targetAssets.map((asset) => (

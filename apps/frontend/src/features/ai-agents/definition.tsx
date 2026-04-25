@@ -198,9 +198,9 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
     createTitle: "New AI agent",
     renderSidebar: ({ item, context }) => (
       <>
-        <DetailSidebarItem label="Status">{statusLabels[item.status]}</DetailSidebarItem>
-        <DetailSidebarItem label="Provider">{context.providerLookup[item.providerId] ?? "Unknown"}</DetailSidebarItem>
-        <DetailSidebarItem label="Tools">{item.toolIds.length}</DetailSidebarItem>
+        <DetailSidebarItem label="Status" hint="Lifecycle state of the agent definition in SynoSec.">{statusLabels[item.status]}</DetailSidebarItem>
+        <DetailSidebarItem label="Provider" hint="The model provider this agent uses by default for workflow execution.">{context.providerLookup[item.providerId] ?? "Unknown"}</DetailSidebarItem>
+        <DetailSidebarItem label="Tools" hint="Count of agent-managed AI tools currently granted to this agent.">{item.toolIds.length}</DetailSidebarItem>
         <DetailSidebarItem label="Updated">{formatTimestamp(item.updatedAt)}</DetailSidebarItem>
       </>
     ),
@@ -217,10 +217,10 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
       return (
         <>
           <DetailFieldGroup title="Agent Configuration" className="bg-card/70">
-            <DetailField label="Name" required {...definedString(errors["name"] as string | undefined)}>
+            <DetailField label="Name" required hint="Operator-facing agent name shown when wiring workflows." {...definedString(errors["name"] as string | undefined)}>
               <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
             </DetailField>
-            <DetailField label="Provider" required {...definedString(errors["providerId"] as string | undefined)}>
+            <DetailField label="Provider" required hint="Base provider used for model execution unless the workflow routes elsewhere." {...definedString(errors["providerId"] as string | undefined)}>
               <Select value={formValues.providerId} onValueChange={(value) => handleFieldChange("providerId", value)}>
                 <SelectTrigger aria-label="Provider">
                   <SelectValue placeholder="Select provider" />
@@ -232,22 +232,22 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
                 </SelectContent>
               </Select>
             </DetailField>
-            <DetailField label="Model override">
+            <DetailField label="Model override" hint="Optional model identifier that overrides the provider default for this agent only.">
               <Input value={formValues.modelOverride} onChange={(event) => handleFieldChange("modelOverride", event.target.value)} aria-label="Model override" />
             </DetailField>
-            <DetailField label="Description" className="md:col-span-2">
+            <DetailField label="Description" hint="Optional summary of the agent's role or specialization." className="md:col-span-2">
               <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" />
             </DetailField>
           </DetailFieldGroup>
 
           <DetailFieldGroup title="Runtime Prompt" className="bg-card/70">
-            <DetailField label="System prompt" required className="md:col-span-2" {...definedString(errors["systemPrompt"] as string | undefined)}>
+            <DetailField label="System prompt" required hint="Standing instructions always sent with runs that use this agent." className="md:col-span-2" {...definedString(errors["systemPrompt"] as string | undefined)}>
               <Textarea value={formValues.systemPrompt} onChange={(event) => handleFieldChange("systemPrompt", event.target.value)} aria-label="System prompt" rows={10} />
             </DetailField>
           </DetailFieldGroup>
 
           <DetailFieldGroup title="Tools" className="bg-card/70">
-            <DetailField label="Available tools" className="md:col-span-2">
+            <DetailField label="Available tools" hint="These tool grants define which AI tools the agent may call during workflow execution." className="md:col-span-2">
               <div className="grid gap-2 md:grid-cols-2">
                 {context.tools.map((tool) => (
                   <label key={tool.id} className="flex items-start gap-3 rounded-lg border border-border px-3 py-2 text-sm">

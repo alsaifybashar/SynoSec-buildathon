@@ -159,18 +159,18 @@ export const aiProvidersDefinition: CrudFeatureDefinition<
     createTitle: "New AI provider",
     renderSidebar: ({ item }) => (
       <>
-        <DetailSidebarItem label="Kind">{kindLabels[item.kind]}</DetailSidebarItem>
-        <DetailSidebarItem label="Status">{statusLabels[item.status]}</DetailSidebarItem>
-        <DetailSidebarItem label="Secret">{item.apiKeyConfigured ? "Configured" : "Not configured"}</DetailSidebarItem>
+        <DetailSidebarItem label="Kind" hint="Provider integration family. This controls which connection fields are relevant.">{kindLabels[item.kind]}</DetailSidebarItem>
+        <DetailSidebarItem label="Status" hint="Availability state of the provider configuration in SynoSec.">{statusLabels[item.status]}</DetailSidebarItem>
+        <DetailSidebarItem label="Secret" hint="Only whether a credential exists is exposed here. The secret value itself is never returned.">{item.apiKeyConfigured ? "Configured" : "Not configured"}</DetailSidebarItem>
         <DetailSidebarItem label="Updated">{formatTimestamp(item.updatedAt)}</DetailSidebarItem>
       </>
     ),
     renderContent: ({ item, formValues, errors, handleFieldChange }) => (
       <DetailFieldGroup title="Provider Configuration" className="bg-card/70">
-        <DetailField label="Name" required {...definedString(errors["name"] as string | undefined)}>
+        <DetailField label="Name" required hint="Operator-facing name used when assigning providers to AI agents." {...definedString(errors["name"] as string | undefined)}>
           <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
         </DetailField>
-        <DetailField label="Kind" required>
+        <DetailField label="Kind" required hint="Local providers require a base URL. Hosted providers use platform-managed endpoints.">
           <Select value={formValues.kind} onValueChange={(value) => handleFieldChange("kind", value as AiProviderKind)}>
             <SelectTrigger aria-label="Kind">
               <SelectValue placeholder="Select kind" />
@@ -182,13 +182,13 @@ export const aiProvidersDefinition: CrudFeatureDefinition<
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Model" required {...definedString(errors["model"] as string | undefined)}>
+        <DetailField label="Model" required hint="Default model identifier used unless an agent overrides it." {...definedString(errors["model"] as string | undefined)}>
           <Input value={formValues.model} onChange={(event) => handleFieldChange("model", event.target.value)} aria-label="Model" />
         </DetailField>
-        <DetailField label="Base URL" {...definedString(errors["baseUrl"] as string | undefined)}>
+        <DetailField label="Base URL" hint="Only used for local providers. Leave empty for hosted integrations." {...definedString(errors["baseUrl"] as string | undefined)}>
           <Input value={formValues.baseUrl} onChange={(event) => handleFieldChange("baseUrl", event.target.value)} aria-label="Base URL" />
         </DetailField>
-        <DetailField label="Description">
+        <DetailField label="Description" hint="Optional internal notes describing what this provider configuration is for.">
           <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" />
         </DetailField>
         <DetailField label="API Key" hint={item?.apiKeyConfigured ? "Leave blank to keep the current secret." : "Stored as a write-only secret."}>
