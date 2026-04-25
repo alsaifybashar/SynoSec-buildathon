@@ -10,11 +10,15 @@ import {
 } from "@synosec/contracts";
 import { type Express } from "express";
 import { registerCrudRoutes } from "@/shared/http/register-crud-routes.js";
-import { getToolCapabilities } from "@/engine/index.js";
 import { type AiToolsRepository } from "@/modules/ai-tools/ai-tools.repository.js";
 import { runAiTool } from "./ai-tool-runner.js";
+import { createToolRuntime, type ToolRuntime } from "./tool-runtime.js";
 
-export function registerAiToolsRoutes(app: Express, repository: AiToolsRepository) {
+export function registerAiToolsRoutes(
+  app: Express,
+  repository: AiToolsRepository,
+  toolRuntime: ToolRuntime = createToolRuntime(repository)
+) {
   registerCrudRoutes(app, {
     resourcePath: apiRoutes.aiTools,
     repository,
@@ -29,14 +33,8 @@ export function registerAiToolsRoutes(app: Express, repository: AiToolsRepositor
 
   app.post(`${apiRoutes.aiTools}/:id/run`, async (request, response, next) => {
     try {
-      const tool = await repository.getById(request.params.id);
-      if (!tool) {
-        response.status(404).json({ message: "AI tool not found." });
-        return;
-      }
-
       const input = aiToolRunBodySchema.parse(request.body);
-      const result = await runAiTool(tool, input.input);
+      const result = await runAiTool(toolRuntime, request.params.id, input.input);
       response.json(aiToolRunResultSchema.parse(result));
     } catch (error) {
       next(error);
@@ -44,10 +42,13 @@ export function registerAiToolsRoutes(app: Express, repository: AiToolsRepositor
   });
 }
 
-export function registerAiToolCapabilityRoutes(app: Express) {
+export function registerAiToolCapabilityRoutes(
+  app: Express,
+  toolRuntime: Pick<ToolRuntime, "listCapabilities">
+) {
   app.get("/api/tools/capabilities", async (_request, response, next) => {
     try {
-      response.json(await getToolCapabilities());
+      response.json(await toolRuntime.listCapabilities());
     } catch (error) {
       next(error);
     }

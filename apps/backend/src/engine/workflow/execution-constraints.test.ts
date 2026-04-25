@@ -90,6 +90,22 @@ const incompatibleTool: AiTool = {
   }
 };
 
+const passiveSingleTargetProbe: AiTool = {
+  ...compatibleTool,
+  id: "seed-family-http-surface",
+  name: "HTTP Surface",
+  capabilities: ["semantic-family", "http-surface", "passive"],
+  constraintProfile: {
+    enforced: true,
+    targetKinds: ["host", "domain", "url"],
+    networkBehavior: "outbound-read",
+    mutationClass: "none",
+    supportsHostAllowlist: true,
+    supportsPathExclusions: false,
+    supportsRateLimit: false
+  }
+};
+
 const request: ToolRequest = {
   toolId: compatibleTool.id,
   tool: compatibleTool.name,
@@ -160,6 +176,17 @@ describe("execution constraints", () => {
 
     expect(decision.allowed).toBe(false);
     expect(decision.reason).toContain("not constraint-compatible");
+  });
+
+  it("allows passive single-target probes on constrained targets without path or throttle adapters", () => {
+    const constraintSet = resolveEffectiveExecutionConstraints(target, 5);
+    const decision = authorizeToolAgainstConstraints(constraintSet, passiveSingleTargetProbe, {
+      ...request,
+      toolId: passiveSingleTargetProbe.id,
+      tool: passiveSingleTargetProbe.name
+    });
+
+    expect(decision.allowed).toBe(true);
   });
 
   it("allows local targets only when a bypass constraint is bound", () => {

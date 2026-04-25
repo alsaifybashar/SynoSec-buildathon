@@ -22,29 +22,24 @@ import type {
 } from "@/engine/orchestrator/orchestrator-stream.js";
 import { OrchestratorStream } from "@/engine/orchestrator/orchestrator-stream.js";
 import { executeScriptedTool } from "@/engine/tools/script-executor.js";
-import { compileToolRequestFromDefinition } from "@/modules/ai-tools/tool-definition.compiler.js";
 import { ExecutionReportsService } from "@/modules/execution-reports/index.js";
 import { prisma } from "@/shared/database/prisma-client.js";
 import { RequestError } from "@/shared/http/request-error.js";
-import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
+import type { AiToolsRepository, ResolvedAiTool, ToolRuntime } from "@/modules/ai-tools/index.js";
 import type { AiProvidersRepository, StoredAiProvider } from "@/modules/ai-providers/index.js";
+import { AttackMapRunLauncher } from "./attack-map-run-launcher.js";
 
 const execFileAsync = promisify(execFile);
 
-type OrchestratorRunnableTool = AiTool & {
-  source: "custom";
-  executorType: "bash";
-  bashSource: string;
-};
-
 type ResolvedOrchestratorTool = {
   requestedName: string;
-  tool: OrchestratorRunnableTool;
+  tool: ResolvedAiTool;
 };
 
 export type OrchestratorRunRecord = {
   id: string;
   targetUrl: string;
+  providerId: string;
   status: string;
   phase: string;
   recon: unknown;
@@ -113,7 +108,7 @@ function normalizeToolName(value: string) {
   return value.trim().toLowerCase();
 }
 
-function createToolRun(runId: string, phase: AttackPlanPhase, tool: OrchestratorRunnableTool, startedAt: string, commandPreview: string, target: string): ToolRun {
+function createToolRun(runId: string, phase: AttackPlanPhase, tool: AiTool, startedAt: string, commandPreview: string, target: string): ToolRun {
   return {
     id: randomUUID(),
     scanId: runId,
@@ -195,6 +190,7 @@ function extractJsonObject(text: string, errorPrefix: string): string {
 function mapRow(row: {
   id: string;
   targetUrl: string;
+  providerId: string;
   status: string;
   phase: string;
   recon: unknown;
@@ -231,12 +227,17 @@ function mapRow(row: {
 function toJson(value: unknown): any { return JSON.parse(JSON.stringify(value)); }
 
 export class OrchestratorExecutionEngineService {
+  private readonly launcher: AttackMapRunLauncher;
+
   constructor(
     private readonly stream: OrchestratorStream,
     private readonly aiProvidersRepository: AiProvidersRepository,
     private readonly aiToolsRepository: AiToolsRepository,
+    private readonly toolRuntime: ToolRuntime,
     private readonly executionReportsService: ExecutionReportsService = new ExecutionReportsService()
-  ) {}
+  ) {
+    this.launcher = new AttackMapRunLauncher(this, this);
+  }
 
   async createRun(targetUrl: string, providerId: string): Promise<OrchestratorRunRecord> {
     const provider = await this.aiProvidersRepository.getStoredById(providerId);
@@ -244,7 +245,7 @@ export class OrchestratorExecutionEngineService {
 
     const id = randomUUID();
     const row = await prisma.orchestratorRun.create({
-      data: { id, targetUrl, status: "pending", phase: "pending", mapNodes: [], mapEdges: [], findings: [], toolActivity: [] }
+      data: { id, targetUrl, providerId, status: "pending", phase: "pending", mapNodes: [], mapEdges: [], findings: [], toolActivity: [] }
     });
     return mapRow(row);
   }
@@ -262,7 +263,7 @@ export class OrchestratorExecutionEngineService {
     return rows.map(mapRow);
   }
 
-  private async listOrchestratorRunnableTools(): Promise<OrchestratorRunnableTool[]> {
+  private async listOrchestratorRunnableTools(): Promise<ResolvedAiTool[]> {
     const result = await this.aiToolsRepository.list({
       page: 1,
       pageSize: 100,
@@ -271,20 +272,22 @@ export class OrchestratorExecutionEngineService {
       sortDirection: "asc"
     });
 
-    return result.items.filter((tool): tool is OrchestratorRunnableTool => (
-      tool.source === "custom"
-      && tool.executorType === "bash"
-      && typeof tool.bashSource === "string"
-      && tool.bashSource.trim().length > 0
-    ));
+    const resolvedTools = await Promise.all(result.items.map(async (tool) => this.toolRuntime.get(tool.id)));
+    return resolvedTools.filter((tool): tool is ResolvedAiTool => {
+      if (!tool) {
+        return false;
+      }
+
+      return tool.tool.source === "custom" && tool.runtime !== null;
+    });
   }
 
   private async resolvePlannedTools(phase: AttackPlanPhase): Promise<ResolvedOrchestratorTool[]> {
     const catalog = await this.listOrchestratorRunnableTools();
-    const byNormalizedName = new Map<string, OrchestratorRunnableTool[]>();
+    const byNormalizedName = new Map<string, ResolvedAiTool[]>();
 
     for (const tool of catalog) {
-      const key = normalizeToolName(tool.name);
+      const key = normalizeToolName(tool.tool.name);
       const current = byNormalizedName.get(key) ?? [];
       current.push(tool);
       byNormalizedName.set(key, current);
@@ -313,10 +316,25 @@ export class OrchestratorExecutionEngineService {
     });
   }
 
-  startAsync(runId: string, targetUrl: string, providerId: string) {
-    void this.execute(runId, targetUrl, providerId).catch((error) => {
+  startAsync(runId: string) {
+    this.launcher.start(runId);
+  }
+
+  async runAttackMapRun(runId: string): Promise<void> {
+    const run = await this.getRun(runId);
+    if (!run) {
+      throw new RequestError(404, "Orchestrator run not found.");
+    }
+
+    await this.executeWithFailureHandling(run.id, run.targetUrl, run.providerId);
+  }
+
+  private async executeWithFailureHandling(runId: string, targetUrl: string, providerId: string) {
+    try {
+      await this.execute(runId, targetUrl, providerId);
+    } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      void (async () => {
+      await (async () => {
         await prisma.orchestratorRun.update({
           where: { id: runId },
           data: { status: "failed", error: message }
@@ -327,7 +345,7 @@ export class OrchestratorExecutionEngineService {
         console.error("Failed to persist attack-map failure report.", reportError);
         this.stream.publish(runId, { type: "failed", error: message });
       });
-    });
+    }
   }
 
   private async execute(runId: string, targetUrl: string, providerId: string) {
@@ -862,7 +880,7 @@ export class OrchestratorExecutionEngineService {
   private async createPlan(
     targetUrl: string,
     recon: ReconResult,
-    plannerTools: Array<Pick<AiTool, "name" | "description">>,
+    plannerTools: ResolvedAiTool[],
     provider: StoredAiProvider,
     model: string,
     emitReasoning: (phase: string, title: string, summary: string) => void
@@ -880,7 +898,7 @@ export class OrchestratorExecutionEngineService {
       });
     }
 
-    const availableTools = plannerTools.map((tool) => tool.name).join(", ");
+    const availableTools = plannerTools.map((tool) => tool.tool.name).join(", ");
 
     const envelope = await this.callStructuredDecisionModel<Partial<AttackPlan>>(provider, model, [
       `You are a senior penetration tester creating an attack plan for: ${targetUrl}`,
@@ -910,7 +928,7 @@ export class OrchestratorExecutionEngineService {
     phaseFindings: { title: string; severity: string; description: string; vector: string; rawEvidence?: string }[],
     confirmedFindings: { title: string; severity: string; description: string; vector: string }[],
     recon: ReconResult,
-    plannerTools: Array<Pick<AiTool, "name" | "description">>,
+    plannerTools: ResolvedAiTool[],
     provider: StoredAiProvider,
     model: string,
     emitReasoning: (phase: string, title: string, summary: string) => void
@@ -922,8 +940,8 @@ export class OrchestratorExecutionEngineService {
       });
     }
 
-    const availableToolNames = new Set(plannerTools.map((tool) => normalizeToolName(tool.name)));
-    const availableTools = plannerTools.map((tool) => tool.name).join(", ");
+    const availableToolNames = new Set(plannerTools.map((tool) => normalizeToolName(tool.tool.name)));
+    const availableTools = plannerTools.map((tool) => tool.tool.name).join(", ");
     const currentPlanSummary = currentPlan.phases.map((phase) => ({
       id: phase.id,
       name: phase.name,
@@ -1120,14 +1138,14 @@ export class OrchestratorExecutionEngineService {
 
     const attempts: SuggestedToolAttempt[] = [];
     for (const { requestedName, tool } of resolvedTools) {
-      emit(`Trying AI tool ${tool.name} for ${phase.name}`);
+      emit(`Trying AI tool ${tool.tool.name} for ${phase.name}`);
       const startedAt = new Date().toISOString();
       let activityId: string | null = null;
       try {
-        const request = compileToolRequestFromDefinition(tool, {
+        const request = await this.toolRuntime.compile(tool.tool.id, {
           target: targetHost,
           layer: "L7",
-          justification: `Attack map phase ${phase.name} requested ${tool.name}.`,
+          justification: `Attack map phase ${phase.name} requested ${tool.tool.name}.`,
           toolInput: {
             baseUrl: targetUrl,
             target: targetHost,
@@ -1136,16 +1154,16 @@ export class OrchestratorExecutionEngineService {
         });
         const commandPreview = typeof request.parameters["commandPreview"] === "string"
           ? request.parameters["commandPreview"]
-          : tool.name;
-        const toolRun = createToolRun(runId, phase, tool, startedAt, commandPreview, request.target);
+          : tool.tool.name;
+        const toolRun = createToolRun(runId, phase, tool.tool, startedAt, commandPreview, request.target);
         activityId = randomUUID();
         await recordToolActivity(executionReportToolActivitySchema.parse({
           id: activityId,
           executionId: runId,
           executionKind: "attack-map",
           phase: phase.name,
-          toolId: tool.id,
-          toolName: tool.name,
+          toolId: tool.tool.id,
+          toolName: tool.tool.name,
           command: commandPreview,
           status: "running",
           outputPreview: null,
@@ -1156,8 +1174,8 @@ export class OrchestratorExecutionEngineService {
         this.stream.publish(runId, {
           type: "tool_started",
           phase: phase.name,
-          toolId: tool.id,
-          toolName: tool.name,
+          toolId: tool.tool.id,
+          toolName: tool.tool.name,
           command: commandPreview,
           startedAt
         });
@@ -1172,8 +1190,8 @@ export class OrchestratorExecutionEngineService {
         this.stream.publish(runId, {
           type: "tool_completed",
           phase: phase.name,
-          toolId: tool.id,
-          toolName: tool.name,
+          toolId: tool.tool.id,
+          toolName: tool.tool.name,
           command: result.commandPreview ?? toolRun.commandPreview,
           startedAt,
           completedAt,
@@ -1188,9 +1206,9 @@ export class OrchestratorExecutionEngineService {
           completedAt
         });
         attempts.push({
-          toolId: tool.id,
+          toolId: tool.tool.id,
           toolRunId: toolRun.id,
-          toolName: tool.name,
+          toolName: tool.tool.name,
           commandPreview: result.commandPreview ?? toolRun.commandPreview,
           output: result.output,
           observations: result.observations,
@@ -1217,8 +1235,8 @@ export class OrchestratorExecutionEngineService {
             executionId: runId,
             executionKind: "attack-map",
             phase: phase.name,
-            toolId: tool.id,
-            toolName: tool.name,
+            toolId: tool.tool.id,
+            toolName: tool.tool.name,
             command: commandPreview,
             status: "failed",
             outputPreview: message.slice(0, 600),
@@ -1230,8 +1248,8 @@ export class OrchestratorExecutionEngineService {
         this.stream.publish(runId, {
           type: "tool_completed",
           phase: phase.name,
-          toolId: tool.id,
-          toolName: tool.name,
+          toolId: tool.tool.id,
+          toolName: tool.tool.name,
           command: commandPreview,
           startedAt,
           completedAt,
@@ -1242,11 +1260,11 @@ export class OrchestratorExecutionEngineService {
         this.stream.publish(runId, {
           type: "log",
           level: "error",
-          message: `Tool ${tool.name} failed for "${phase.name}": ${message}`
+          message: `Tool ${tool.tool.name} failed for "${phase.name}": ${message}`
         });
-        throw new RequestError(500, `Attack map phase "${phase.name}" failed while executing ${tool.name}: ${message}`, {
+        throw new RequestError(500, `Attack map phase "${phase.name}" failed while executing ${tool.tool.name}: ${message}`, {
           code: "ORCHESTRATOR_TOOL_EXECUTION_FAILED",
-          userFriendlyMessage: `Attack map execution failed for ${tool.name}.`,
+          userFriendlyMessage: `Attack map execution failed for ${tool.tool.name}.`,
           cause: error instanceof Error ? error : undefined
         });
       }

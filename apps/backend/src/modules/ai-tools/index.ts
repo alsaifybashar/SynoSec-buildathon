@@ -4,3 +4,6 @@ export { registerAiToolsRoutes } from "./ai-tools.routes.js";
 export type { AiToolsRepository } from "./ai-tools.repository.js";
 export { createAiToolsRepositoryFromEnvironment } from "./create-ai-tools-repository.js";
 export { compileToolRequestFromDefinition } from "./tool-definition.compiler.js";
+export type { CompileInput } from "./tool-definition.compiler.js";
+export { createToolRuntime, ToolRuntime } from "./tool-runtime.js";
+export type { ResolvedAiTool } from "./tool-runtime.js";

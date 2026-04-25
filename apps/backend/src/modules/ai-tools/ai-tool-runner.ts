@@ -1,14 +1,13 @@
 import { randomUUID } from "node:crypto";
 import {
-  AiTool,
   AiToolRunResult,
   type OsiLayer,
   type ToolRequest,
   type ToolRun
 } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
-import { compileToolRequestFromDefinition } from "./tool-definition.compiler.js";
 import { executeScriptedTool } from "@/engine/tools/script-executor.js";
+import type { ToolRuntime } from "./tool-runtime.js";
 
 function inferLayer(category: string): OsiLayer {
   if (category === "topology") {
@@ -98,9 +97,12 @@ function parseExecutionTarget(toolInput: Record<string, string | number | boolea
   });
 }
 
-function validateRequiredFields(tool: AiTool, toolInput: Record<string, string | number | boolean | string[]>) {
-  const requiredFields = Array.isArray(tool.inputSchema["required"])
-    ? tool.inputSchema["required"].filter((value): value is string => typeof value === "string")
+function validateRequiredFields(
+  inputSchema: Record<string, unknown>,
+  toolInput: Record<string, string | number | boolean | string[]>
+) {
+  const requiredFields = Array.isArray(inputSchema["required"])
+    ? inputSchema["required"].filter((value): value is string => typeof value === "string")
     : [];
 
   const missing = requiredFields.filter((field) => {
@@ -142,18 +144,27 @@ function createToolRun(request: ToolRequest): ToolRun {
   };
 }
 
-export async function runAiTool(tool: AiTool, rawInput: unknown): Promise<AiToolRunResult> {
-  if (tool.executorType !== "bash" || !tool.bashSource) {
-    throw new RequestError(400, `${tool.name} is a built-in action and cannot be run from the AI tools runner.`, {
+export async function runAiTool(toolRuntime: ToolRuntime, toolId: string, rawInput: unknown): Promise<AiToolRunResult> {
+  const resolved = await toolRuntime.get(toolId);
+  if (!resolved) {
+    throw new RequestError(404, `AI tool not found: ${toolId}.`, {
+      code: "AI_TOOL_NOT_FOUND",
+      userFriendlyMessage: "The selected AI tool was not found."
+    });
+  }
+
+  if (!resolved.runtime) {
+    throw new RequestError(400, `${resolved.tool.name} is a built-in action and cannot be run from the AI tools runner.`, {
       code: "AI_TOOL_BUILTIN_NOT_RUNNABLE",
       userFriendlyMessage: "Built-in AI tools cannot be run from the tool runner."
     });
   }
 
+  const { tool } = resolved;
   const toolInput = normalizeToolInput(rawInput);
-  validateRequiredFields(tool, toolInput);
+  validateRequiredFields(tool.inputSchema, toolInput);
   const executionTarget = parseExecutionTarget(toolInput);
-  const request = compileToolRequestFromDefinition(tool, {
+  const request = await toolRuntime.compile(tool.id, {
     target: executionTarget.target,
     ...(executionTarget.port == null ? {} : { port: executionTarget.port }),
     layer: inferLayer(tool.category),

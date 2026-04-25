@@ -2,6 +2,8 @@ import http from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AiTool } from "@synosec/contracts";
 import { runAiTool } from "./ai-tool-runner.js";
+import { MemoryAiToolsRepository } from "./memory-ai-tools.repository.js";
+import { createToolRuntime } from "./tool-runtime.js";
 import { seededToolDefinitions } from "@/shared/seed-data/ai-builder-defaults.js";
 
 let server: http.Server;
@@ -25,6 +27,10 @@ function createSeededTool(id: string): AiTool {
     createdAt: "2026-04-21T00:00:00.000Z",
     updatedAt: "2026-04-21T00:00:00.000Z"
   };
+}
+
+function createRuntime(tool: AiTool) {
+  return createToolRuntime(new MemoryAiToolsRepository([tool]));
 }
 
 beforeAll(async () => {
@@ -128,7 +134,8 @@ afterAll(async () => {
 
 describe("seeded bash tool implementations", () => {
   it("service scan reports the open test port", async () => {
-    const result = await runAiTool(createSeededTool("seed-service-scan"), {
+    const tool = createSeededTool("seed-service-scan");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
       target: "127.0.0.1",
       port,
       baseUrl
@@ -147,7 +154,8 @@ describe("seeded bash tool implementations", () => {
   });
 
   it("content discovery returns reachable seeded paths", async () => {
-    const result = await runAiTool(createSeededTool("seed-content-discovery"), {
+    const tool = createSeededTool("seed-content-discovery");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
       target: "127.0.0.1",
       baseUrl
     });
@@ -163,7 +171,8 @@ describe("seeded bash tool implementations", () => {
   });
 
   it("web crawl follows in-scope links from the start page", async () => {
-    const result = await runAiTool(createSeededTool("seed-web-crawl"), {
+    const tool = createSeededTool("seed-web-crawl");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
       target: "127.0.0.1",
       baseUrl
     });
@@ -181,7 +190,8 @@ describe("seeded bash tool implementations", () => {
   });
 
   it("vulnerability audit confirms seeded exposure signals", async () => {
-    const result = await runAiTool(createSeededTool("seed-vuln-audit"), {
+    const tool = createSeededTool("seed-vuln-audit");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
       target: "127.0.0.1",
       baseUrl
     });
@@ -199,7 +209,8 @@ describe("seeded bash tool implementations", () => {
   });
 
   it("sql injection check confirms a bypass signal on /login", async () => {
-    const result = await runAiTool(createSeededTool("seed-sql-injection-check"), {
+    const tool = createSeededTool("seed-sql-injection-check");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
       target: "127.0.0.1",
       baseUrl
     });

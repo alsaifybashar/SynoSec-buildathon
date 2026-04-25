@@ -43,7 +43,7 @@ export function registerOrchestratorRoutes(
     try {
       const body = createRunBodySchema.parse(req.body);
       const run = await service.createRun(body.targetUrl, body.providerId);
-      service.startAsync(run.id, body.targetUrl, body.providerId);
+      service.startAsync(run.id);
       res.status(201).json(run);
     } catch (error) {
       next(error);

@@ -32,7 +32,7 @@ import type { WorkflowExecutionEngine } from "@/engine/contracts.js";
 import { createScan, getScan } from "@/engine/scans/index.js";
 import { type AttackMapNode, type AttackPlanPhase, type OrchestratorExecutionEngineService } from "@/engine/orchestrator/index.js";
 import { RequestError } from "@/shared/http/request-error.js";
-import { compileToolRequestFromDefinition } from "@/modules/ai-tools/index.js";
+import { type ToolRuntime } from "@/modules/ai-tools/index.js";
 import { derivePrivilegeProfile, deriveSandboxProfile } from "@/modules/ai-tools/tool-execution-config.js";
 import type { ExecutionReportsService } from "@/modules/execution-reports/index.js";
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
@@ -64,6 +64,7 @@ export interface WorkflowRuntimePorts {
   aiAgentsRepository: AiAgentsRepository;
   aiProvidersRepository: AiProvidersRepository;
   aiToolsRepository: AiToolsRepository;
+  toolRuntime: ToolRuntime;
   workflowRunStream: WorkflowRunStream;
   orchestratorExecutionEngine: OrchestratorExecutionEngineService;
   executionReportsService: ExecutionReportsService;
@@ -168,29 +169,10 @@ export class WorkflowRuntimeService implements WorkflowRuntime {
     this.attackMapHandler = new AttackMapWorkflowKindHandler(this);
   }
 
-  async startRun(workflowId: string, input: StartWorkflowRunBody = {}): Promise<WorkflowRun> {
+  async launchWorkflowRun(workflowId: string, input: StartWorkflowRunBody = {}): Promise<WorkflowRun> {
     void input;
 
-    const workflow = await this.ports.workflowsRepository.getById(workflowId);
-    if (!workflow) {
-      throw new RequestError(404, "Workflow not found.");
-    }
-
-    const targetRecord = await this.ports.targetsRepository.getById(workflow.targetId);
-    if (!targetRecord) {
-      throw new RequestError(400, "Workflow target not found.");
-    }
-
-    const constraintSet = resolveEffectiveExecutionConstraints(targetRecord, 5);
-    const orderedStages = this.getOrderedStages(workflow);
-    for (const stage of orderedStages) {
-      await this.loadStageDependencies(
-        stage,
-        targetRecord,
-        constraintSet,
-        workflow.executionKind === "attack-map" ? "attack-map" : "workflow"
-      );
-    }
+    await this.prepareWorkflowStart(workflowId);
 
     const run = await this.ports.workflowsRepository.createRun(workflowId);
     if (!run) {
@@ -198,23 +180,26 @@ export class WorkflowRuntimeService implements WorkflowRuntime {
     }
 
     this.publishSnapshot(run);
+    return run;
+  }
 
-    const context: RuntimeStartContext = {
-      workflow,
-      run,
-      targetRecord,
-      constraintSet
-    };
+  async startRun(workflowId: string, input: StartWorkflowRunBody = {}): Promise<WorkflowRun> {
+    const run = await this.launchWorkflowRun(workflowId, input);
+    void this.runWorkflowRun(run.id);
+    return run;
+  }
 
-    const handler = workflow.executionKind === "attack-map"
+  async runWorkflowRun(runId: string): Promise<void> {
+    const context = await this.loadRuntimeStartContextForRun(runId);
+    const handler = context.workflow.executionKind === "attack-map"
       ? this.attackMapHandler
       : this.workflowHandler;
 
-    void handler.execute(context).catch(async (error) => {
-      await this.failWorkflowRunAfterUnhandledError(run.id, workflow.id, error);
-    });
-
-    return run;
+    try {
+      await handler.execute(context);
+    } catch (error) {
+      await this.failWorkflowRunAfterUnhandledError(context.run.id, context.workflow.id, error);
+    }
   }
 
   async stepRun(_runId: string): Promise<void> {
@@ -261,6 +246,50 @@ export class WorkflowRuntimeService implements WorkflowRuntime {
       throw new RequestError(404, "Workflow run report not found.");
     }
     return report;
+  }
+
+  private async prepareWorkflowStart(workflowId: string) {
+    const workflow = await this.ports.workflowsRepository.getById(workflowId);
+    if (!workflow) {
+      throw new RequestError(404, "Workflow not found.");
+    }
+
+    const targetRecord = await this.ports.targetsRepository.getById(workflow.targetId);
+    if (!targetRecord) {
+      throw new RequestError(400, "Workflow target not found.");
+    }
+
+    const constraintSet = resolveEffectiveExecutionConstraints(targetRecord, 5);
+    const orderedStages = this.getOrderedStages(workflow);
+    for (const stage of orderedStages) {
+      await this.loadStageDependencies(
+        stage,
+        targetRecord,
+        constraintSet,
+        workflow.executionKind === "attack-map" ? "attack-map" : "workflow"
+      );
+    }
+
+    return {
+      workflow,
+      targetRecord,
+      constraintSet
+    };
+  }
+
+  private async loadRuntimeStartContextForRun(runId: string): Promise<RuntimeStartContext> {
+    const { run, workflow } = await this.loadRunContext(runId);
+    const targetRecord = await this.ports.targetsRepository.getById(workflow.targetId);
+    if (!targetRecord) {
+      throw new RequestError(400, "Workflow target not found.");
+    }
+
+    return {
+      workflow,
+      run,
+      targetRecord,
+      constraintSet: resolveEffectiveExecutionConstraints(targetRecord, 5)
+    };
   }
 
   getOrderedStages(workflow: Workflow): WorkflowStage[] {
@@ -510,7 +539,7 @@ export class WorkflowRuntimeService implements WorkflowRuntime {
         execute: async (rawInput) => {
           const toolInput = normalizeToolInput(rawInput);
           const executionTarget = parseExecutionTarget(toolInput, target);
-          const request = compileToolRequestFromDefinition(tool, {
+          const request = await this.ports.toolRuntime.compile(tool.id, {
             target: executionTarget.target,
             ...(executionTarget.port === undefined ? {} : { port: executionTarget.port }),
             layer: inferLayer(tool.category),

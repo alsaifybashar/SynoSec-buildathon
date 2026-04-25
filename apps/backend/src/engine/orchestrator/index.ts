@@ -7,6 +7,7 @@ export {
   type Severity
 } from "./orchestrator-stream.js";
 export { OrchestratorStream } from "./orchestrator-stream.js";
+export { AttackMapRunLauncher } from "./attack-map-run-launcher.js";
 export {
   OrchestratorExecutionEngineService,
   type OrchestratorRunRecord,

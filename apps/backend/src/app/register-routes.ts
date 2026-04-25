@@ -42,8 +42,8 @@ export function registerRoutes(app: Express, dependencies: {
   registerExecutionConstraintsRoutes(app, dependencies.executionConstraintsRepository);
   registerAiProvidersRoutes(app, dependencies.aiProvidersRepository);
   registerAiAgentsRoutes(app, dependencies.aiAgentsRepository);
-  registerAiToolsRoutes(app, dependencies.aiToolsRepository);
-  registerAiToolCapabilityRoutes(app);
+  registerAiToolsRoutes(app, dependencies.aiToolsRepository, routeServices.toolRuntime);
+  registerAiToolCapabilityRoutes(app, routeServices.toolRuntime);
   registerExecutionReportsRoutes(app, routeServices.executionReportsService);
   registerWorkflowsRoutes(
     app,

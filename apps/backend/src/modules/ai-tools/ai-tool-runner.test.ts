@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { AiTool } from "@synosec/contracts";
 import { runAiTool } from "./ai-tool-runner.js";
+import { MemoryAiToolsRepository } from "./memory-ai-tools.repository.js";
+import { createToolRuntime } from "./tool-runtime.js";
 
 function createTool(overrides: Partial<AiTool> = {}): AiTool {
   return {
@@ -36,9 +38,14 @@ function createTool(overrides: Partial<AiTool> = {}): AiTool {
   };
 }
 
+function createRuntime(tool: AiTool) {
+  return createToolRuntime(new MemoryAiToolsRepository([tool]));
+}
+
 describe("runAiTool", () => {
   it("rejects missing required inputs before executing the tool", async () => {
-    await expect(runAiTool(createTool(), { target: "example.com" })).rejects.toMatchObject({
+    const tool = createTool();
+    await expect(runAiTool(createRuntime(tool), tool.id, { target: "example.com" })).rejects.toMatchObject({
       status: 400,
       code: "AI_TOOL_INPUT_MISSING"
     });
@@ -54,7 +61,7 @@ describe("runAiTool", () => {
       ].join("\n")
     });
 
-    const result = await runAiTool(tool, { baseUrl: "http://scanner.test:8080/path?q=1" });
+    const result = await runAiTool(createRuntime(tool), tool.id, { baseUrl: "http://scanner.test:8080/path?q=1" });
 
     expect(result.target).toBe("scanner.test");
     expect(result.port).toBe(8080);
@@ -64,21 +71,24 @@ describe("runAiTool", () => {
   });
 
   it("rejects tool runs that omit an execution target", async () => {
-    await expect(runAiTool(createTool({
+    const tool = createTool({
       inputSchema: {
         type: "object",
         properties: {},
         required: []
       },
       bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"localhost\"}'"
-    }), {})).rejects.toMatchObject({
+    });
+
+    await expect(runAiTool(createRuntime(tool), tool.id, {})).rejects.toMatchObject({
       status: 400,
       code: "AI_TOOL_TARGET_MISSING"
     });
   });
 
   it("rejects malformed execution URLs instead of falling back", async () => {
-    await expect(runAiTool(createTool(), {
+    const tool = createTool();
+    await expect(runAiTool(createRuntime(tool), tool.id, {
       baseUrl: "http//scanner.test"
     })).rejects.toMatchObject({
       status: 400,
@@ -87,14 +97,16 @@ describe("runAiTool", () => {
   });
 
   it("rejects builtin tools in the direct tool runner", async () => {
-    await expect(runAiTool(createTool({
+    const tool = createTool({
       id: "builtin-report-finding",
       name: "Report Finding",
       source: "system",
       executorType: "builtin",
       builtinActionKey: "report_finding",
       bashSource: null
-    }), {})).rejects.toMatchObject({
+    });
+
+    await expect(runAiTool(createRuntime(tool), tool.id, {})).rejects.toMatchObject({
       status: 400,
       code: "AI_TOOL_BUILTIN_NOT_RUNNABLE"
     });

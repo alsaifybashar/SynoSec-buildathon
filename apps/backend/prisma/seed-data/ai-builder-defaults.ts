@@ -151,7 +151,24 @@ function withConstraintProfile<
     "seed-ffuf-scan",
     "seed-arjun",
     "seed-nuclei",
-    "seed-paramspider"
+    "seed-paramspider",
+    "seed-family-http-surface",
+    "seed-family-web-crawl",
+    "seed-family-content-discovery",
+    "seed-family-vulnerability-validation"
+  ]);
+  const contentEnumerationIds = new Set([
+    "seed-web-crawl",
+    "seed-katana",
+    "seed-content-discovery",
+    "seed-dirsearch",
+    "seed-feroxbuster",
+    "seed-gobuster-scan",
+    "seed-ffuf-scan",
+    "seed-arjun",
+    "seed-paramspider",
+    "seed-family-web-crawl",
+    "seed-family-content-discovery"
   ]);
 
   const readOnlyWebCategories = new Set(["topology", "auth", "web", "content", "dns", "subdomain", "network", "cloud", "kubernetes", "utility"]);
@@ -166,7 +183,7 @@ function withConstraintProfile<
       networkBehavior: tool.riskTier === "passive" ? "outbound-read" : "outbound-active",
       mutationClass: tool.riskTier === "controlled-exploit"
         ? "exploit"
-        : pathExclusionCompatibleIds.has(tool.id)
+        : contentEnumerationIds.has(tool.id)
           ? "content-enumeration"
           : tool.riskTier === "active"
             ? "active-validation"

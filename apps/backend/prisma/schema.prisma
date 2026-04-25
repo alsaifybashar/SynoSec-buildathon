@@ -606,6 +606,7 @@ model EscalationRouteFinding {
 model OrchestratorRun {
   id        String   @id @db.Uuid
   targetUrl String   @map("target_url")
+  providerId String  @map("provider_id") @db.Uuid
   status    String   @default("pending")
   phase     String   @default("pending")
   recon     Json?

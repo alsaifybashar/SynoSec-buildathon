@@ -1,6 +1,7 @@
 export { WorkflowExecutionService as WorkflowExecutionEngineService } from "./workflow-execution.service.js";
 export { WorkflowRunEventPublisher } from "./workflow-run-event-publisher.js";
 export { WorkflowRunStream } from "./workflow-run-stream.js";
+export { WorkflowRunLauncher } from "./workflow-run-launcher.js";
 export {
   WorkflowRuntimeService,
   type WorkflowArtifactReader,

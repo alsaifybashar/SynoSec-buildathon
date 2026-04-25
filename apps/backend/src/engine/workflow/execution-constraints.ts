@@ -261,14 +261,19 @@ export function authorizeToolAgainstConstraints(
     };
   }
 
-  if ((constraints.requirePathExclusionSupport || constraints.excludedPaths.length > 0) && !profile.supportsPathExclusions) {
+  const touchesScopedPaths = (
+    profile.targetKinds.includes("url")
+    && (profile.mutationClass === "content-enumeration" || profile.mutationClass === "active-validation")
+  );
+  if (touchesScopedPaths && (constraints.requirePathExclusionSupport || constraints.excludedPaths.length > 0) && !profile.supportsPathExclusions) {
     return {
       allowed: false,
       reason: `Tool ${tool.name} cannot enforce required path exclusions for this target.`
     };
   }
 
-  if ((constraints.requireRateLimitSupport || constraints.rateLimitRps > 0) && !profile.supportsRateLimit) {
+  const requiresRequestThrottling = profile.mutationClass !== "none" || tool.riskTier !== "passive";
+  if (requiresRequestThrottling && (constraints.requireRateLimitSupport || constraints.rateLimitRps > 0) && !profile.supportsRateLimit) {
     return {
       allowed: false,
       reason: `Tool ${tool.name} cannot enforce the required request throttling policy.`

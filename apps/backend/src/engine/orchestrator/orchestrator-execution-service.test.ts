@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { AiTool, ToolRequest } from "@synosec/contracts";
 import { MemoryAiToolsRepository } from "@/modules/ai-tools/memory-ai-tools.repository.js";
+import { createToolRuntime } from "@/modules/ai-tools/tool-runtime.js";
 import { OrchestratorExecutionEngineService } from "./orchestrator-execution-service.js";
 import { OrchestratorStream, type AttackPlanPhase } from "./orchestrator-stream.js";
 
@@ -33,10 +34,12 @@ function createTool(overrides: Partial<AiTool> = {}): AiTool {
 }
 
 function createService(tools: AiTool[]) {
+  const repository = new MemoryAiToolsRepository(tools);
   return new OrchestratorExecutionEngineService(
     new OrchestratorStream(),
     { getStoredById: async () => null } as never,
-    new MemoryAiToolsRepository(tools)
+    repository,
+    createToolRuntime(repository)
   );
 }
 

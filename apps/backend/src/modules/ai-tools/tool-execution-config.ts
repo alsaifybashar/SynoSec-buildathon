@@ -23,7 +23,7 @@ interface StoredExecutionConfig {
   constraintProfile?: AiTool["constraintProfile"];
 }
 
-type ToolExecutionFields = {
+export type ToolExecutionFields = {
   executorType: "bash";
   bashSource: string;
   sandboxProfile: ToolSandboxProfile;
@@ -134,25 +134,12 @@ export function deriveCapabilities(category: AiTool["category"]) {
   return [...(categoryCapabilities[category] ?? [`${category}-tool`])];
 }
 
-function createLegacyFallbackBashSource(tool: ExecutionConfigLookup) {
-  const detail = `The AI tool "${tool.name}" is missing runtime execution config and must be updated before it can run.`;
-
-  return [
-    "#!/usr/bin/env bash",
-    "set -euo pipefail",
-    `detail=${JSON.stringify(detail)}`,
-    "node -e '",
-    "  const detail = process.argv[1];",
-    "  console.log(JSON.stringify({",
-    "    output: detail,",
-    "    statusReason: \"Missing runtime execution config\"",
-    "  }));",
-    "' \"$detail\""
-  ].join("\n");
+function getSeededExecutionConfig(toolId: string) {
+  return seededToolDefinitions.find((candidate) => candidate.id === toolId) ?? null;
 }
 
 function resolveFallbackExecutionConfig(tool: ExecutionConfigLookup): ToolExecutionFields {
-  const seeded = seededToolDefinitions.find((candidate) => candidate.id === tool.id);
+  const seeded = getSeededExecutionConfig(tool.id);
   if (seeded) {
     return {
       executorType: seeded.executorType,
@@ -165,22 +152,10 @@ function resolveFallbackExecutionConfig(tool: ExecutionConfigLookup): ToolExecut
     };
   }
 
-  return {
-    executorType: "bash",
-    bashSource: createLegacyFallbackBashSource(tool),
-    ...deriveExecutionPolicy(tool.riskTier),
-    timeoutMs: 30000,
-    capabilities: tool.capabilities?.length ? [...tool.capabilities] : deriveCapabilities(tool.category),
-    constraintProfile: {
-      enforced: false,
-      targetKinds: [],
-      networkBehavior: "outbound-active",
-      mutationClass: tool.riskTier === "controlled-exploit" ? "exploit" : tool.riskTier === "active" ? "active-validation" : "none",
-      supportsHostAllowlist: false,
-      supportsPathExclusions: false,
-      supportsRateLimit: false
-    }
-  };
+  throw new RequestError(500, `The AI tool "${tool.name}" is missing required execution settings.`, {
+    code: "AI_TOOL_EXECUTION_CONFIG_MISSING",
+    userFriendlyMessage: "This AI tool is missing required execution settings."
+  });
 }
 
 export function stripExecutionConfig<T>(schema: T): T {
@@ -245,7 +220,20 @@ export function mapToolExecutionFields(
 
 export function resolveToolExecutionFields(tool: ExecutionConfigLookup, inputSchema: unknown): ToolExecutionFields {
   try {
-    return mapToolExecutionFields(tool, inputSchema);
+    const mapped = mapToolExecutionFields(tool, inputSchema);
+    if (mapped.constraintProfile) {
+      return mapped;
+    }
+
+    const seeded = getSeededExecutionConfig(tool.id);
+    if (!seeded?.constraintProfile) {
+      return mapped;
+    }
+
+    return {
+      ...mapped,
+      constraintProfile: seeded.constraintProfile
+    };
   } catch (error) {
     if (error instanceof RequestError && error.code === "AI_TOOL_EXECUTION_CONFIG_MISSING") {
       return resolveFallbackExecutionConfig(tool);

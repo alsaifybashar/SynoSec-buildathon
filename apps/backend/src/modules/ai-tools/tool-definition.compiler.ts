@@ -2,14 +2,14 @@ import type { AiTool, OsiLayer, ToolRequest } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
 import { derivePrivilegeProfile, deriveSandboxProfile } from "./tool-execution-config.js";
 
-type CompilableTool = Pick<
+export type CompilableTool = Pick<
   AiTool,
   "id" | "name" | "executorType" | "bashSource" | "riskTier" | "timeoutMs"
 > & {
   capabilities: readonly string[];
 };
 
-interface CompileInput {
+export interface CompileInput {
   target: string;
   layer: OsiLayer;
   justification: string;

@@ -17,7 +17,7 @@ export type OrchestratorExecutionEngine = {
   createRun(targetUrl: string, providerId: string): Promise<OrchestratorRunRecord>;
   getRun(id: string): Promise<OrchestratorRunRecord | null>;
   listRuns(): Promise<OrchestratorRunRecord[]>;
-  startAsync(runId: string, targetUrl: string, providerId: string): void;
+  startAsync(runId: string): void;
 };
 
 export type OrchestratorEventStream = RunStream<OrchestratorEvent>;

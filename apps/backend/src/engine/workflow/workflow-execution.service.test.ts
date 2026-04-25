@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Workflow, WorkflowRun, WorkflowTraceEvent } from "@synosec/contracts";
+import type { ExecutionConstraint, Target, Workflow, WorkflowRun, WorkflowTraceEvent } from "@synosec/contracts";
+import { createToolRuntime } from "@/modules/ai-tools/tool-runtime.js";
 import { WorkflowExecutionService } from "./workflow-execution.service.js";
 import { WorkflowRunStream } from "./workflow-run-stream.js";
 
@@ -63,8 +64,29 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
   };
 }
 
+function makeTarget(overrides: Partial<Target> = {}): Target {
+  return {
+    id: "20000000-0000-0000-0000-000000000001",
+    name: "Demo Target",
+    kind: "url",
+    status: "active",
+    baseUrl: "http://localhost:3000",
+    hostname: "localhost",
+    ipAddress: "127.0.0.1",
+    cidr: null,
+    provider: "local",
+    ownershipStatus: "verified",
+    metadata: null,
+    constraintBindings: [],
+    createdAt: "2026-04-24T10:00:00.000Z",
+    updatedAt: "2026-04-24T10:00:00.000Z",
+    ...overrides
+  };
+}
+
 function createService(overrides: {
   workflow?: Workflow | null;
+  target?: Target;
   agentsById?: Record<string, Record<string, unknown>>;
   provider?: Record<string, unknown> | null;
   workflowRunStream?: WorkflowRunStream;
@@ -72,6 +94,7 @@ function createService(overrides: {
   aiToolById?: Record<string, Record<string, unknown>>;
 } = {}) {
   const workflow = overrides.workflow ?? makeWorkflow();
+  const target = overrides.target ?? makeTarget();
   const agentsById = overrides.agentsById ?? {
     "30000000-0000-0000-0000-000000000001": {
       id: "30000000-0000-0000-0000-000000000001",
@@ -104,6 +127,10 @@ function createService(overrides: {
   const executionReportsService = {
     createForWorkflowRun: vi.fn(async () => undefined)
   };
+  const aiToolsRepository = {
+    getById: async (id: string) => overrides.aiToolById?.[id] ?? null,
+    list: async () => ({ items: [], page: 1, pageSize: 1000, total: 0, totalPages: 0 })
+  } as any;
 
   const service = new WorkflowExecutionService({
     workflowsRepository: {
@@ -155,21 +182,7 @@ function createService(overrides: {
       updateRun: async (run: WorkflowRun) => run
     },
     targetsRepository: {
-      getById: async () => ({
-        id: "20000000-0000-0000-0000-000000000001",
-        name: "Demo Target",
-        kind: "url",
-        status: "active",
-        baseUrl: "http://localhost:3000",
-        hostname: "localhost",
-        ipAddress: "127.0.0.1",
-        cidr: null,
-        provider: "local",
-        ownershipStatus: "verified",
-        metadata: null,
-        createdAt: "2026-04-24T10:00:00.000Z",
-        updatedAt: "2026-04-24T10:00:00.000Z"
-      }),
+      getById: async () => target,
       list: async () => ({ items: [], page: 1, pageSize: 25, total: 0, totalPages: 0 }),
       create: async () => { throw new Error("not implemented"); },
       update: async () => { throw new Error("not implemented"); },
@@ -181,9 +194,8 @@ function createService(overrides: {
     aiProvidersRepository: {
       getStoredById: async () => provider as any
     } as any,
-    aiToolsRepository: {
-      getById: async (id: string) => overrides.aiToolById?.[id] ?? null
-    } as any,
+    aiToolsRepository,
+    toolRuntime: createToolRuntime(aiToolsRepository),
     workflowRunStream,
     orchestratorExecutionEngine: (overrides.orchestrator ?? {}) as any,
     executionReportsService: executionReportsService as any
@@ -226,6 +238,117 @@ describe("WorkflowExecutionService", () => {
       message: "Workflow pipeline execution requires an Anthropic provider."
     });
     expect(createdRuns).toHaveLength(0);
+  });
+
+  it("starts a constrained portfolio-style workflow when passive family probes remain policy-compatible", async () => {
+    const cloudflareConstraint: ExecutionConstraint = {
+      id: "seed-constraint-cloudflare-v1",
+      name: "Cloudflare Owned Asset Policy",
+      kind: "provider_policy",
+      provider: "cloudflare",
+      version: 1,
+      description: null,
+      bypassForLocalTargets: false,
+      denyProviderOwnedTargets: true,
+      requireVerifiedOwnership: true,
+      allowActiveExploit: false,
+      requireRateLimitSupport: true,
+      rateLimitRps: 3,
+      requireHostAllowlistSupport: true,
+      requirePathExclusionSupport: true,
+      documentationUrls: [],
+      excludedPaths: ["/cdn-cgi/"],
+      createdAt: "2026-04-25T00:00:00.000Z",
+      updatedAt: "2026-04-25T00:00:00.000Z"
+    };
+    const workflow = makeWorkflow({
+      targetId: "20000000-0000-0000-0000-000000000009",
+      stages: [
+        {
+          id: "70000000-0000-0000-0000-000000000009",
+          label: "Portfolio Assessment",
+          agentId: "30000000-0000-0000-0000-000000000001",
+          ord: 0,
+          objective: "Assess the target with family tools.",
+          allowedToolIds: ["seed-family-http-surface"],
+          requiredEvidenceTypes: [],
+          findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
+          completionRule: {
+            requireStageResult: true,
+            requireToolCall: false,
+            allowEmptyResult: true,
+            minFindings: 0
+          },
+          resultSchemaVersion: 1,
+          handoffSchema: null
+        }
+      ]
+    });
+    const { service } = createService({
+      workflow,
+      target: makeTarget({
+        id: workflow.targetId,
+        name: "Constrained Portfolio",
+        baseUrl: "https://portfolio.example.com",
+        hostname: "portfolio.example.com",
+        ipAddress: null,
+        provider: "cloudflare",
+        constraintBindings: [
+          {
+            constraintId: cloudflareConstraint.id,
+            createdAt: "2026-04-25T00:00:00.000Z",
+            constraint: cloudflareConstraint
+          }
+        ]
+      }),
+      aiToolById: {
+        "seed-family-http-surface": {
+          id: "seed-family-http-surface",
+          name: "HTTP Surface",
+          status: "active",
+          source: "system",
+          description: "Passive HTTP probe",
+          builtinActionKey: null,
+          category: "web",
+          riskTier: "passive",
+          executorType: "bash",
+          bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
+          capabilities: ["semantic-family", "http-surface", "passive"],
+          timeoutMs: 120000,
+          constraintProfile: {
+            enforced: true,
+            targetKinds: ["host", "domain", "url"],
+            networkBehavior: "outbound-read",
+            mutationClass: "none",
+            supportsHostAllowlist: true,
+            supportsPathExclusions: false,
+            supportsRateLimit: false
+          },
+          inputSchema: {
+            type: "object",
+            properties: {
+              target: { type: "string" },
+              baseUrl: { type: "string" }
+            },
+            required: ["baseUrl"]
+          },
+          outputSchema: {
+            type: "object",
+            properties: {
+              output: { type: "string" }
+            },
+            required: ["output"]
+          },
+          createdAt: "2026-04-25T00:00:00.000Z",
+          updatedAt: "2026-04-25T00:00:00.000Z"
+        }
+      }
+    });
+
+    await expect(service.startRun(workflow.id)).resolves.toMatchObject({
+      workflowId: workflow.id,
+      status: "running"
+    });
   });
 
   it("dispatches attack-map workflows through the attack-map handler and preserves tool activity ordering", async () => {
