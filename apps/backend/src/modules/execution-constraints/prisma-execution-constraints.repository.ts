@@ -5,7 +5,7 @@ import type {
   ExecutionConstraintsListQuery,
   UpdateExecutionConstraintBody
 } from "@synosec/contracts";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import type { PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import { mapExecutionConstraintRow } from "./execution-constraints.mapper.js";
 import type { ExecutionConstraintsRepository } from "./execution-constraints.repository.js";
@@ -62,7 +62,14 @@ export class PrismaExecutionConstraintsRepository implements ExecutionConstraint
         provider: input.provider,
         version: input.version,
         description: input.description,
-        ruleSpec: input.ruleSpec as Prisma.InputJsonValue
+        denyProviderOwnedTargets: input.denyProviderOwnedTargets,
+        requireVerifiedOwnership: input.requireVerifiedOwnership,
+        allowActiveExploit: input.allowActiveExploit,
+        requireRateLimitSupport: input.requireRateLimitSupport,
+        rateLimitRps: input.rateLimitRps,
+        requireHostAllowlistSupport: input.requireHostAllowlistSupport,
+        requirePathExclusionSupport: input.requirePathExclusionSupport,
+        excludedPaths: input.excludedPaths
       }
     });
 
@@ -83,7 +90,14 @@ export class PrismaExecutionConstraintsRepository implements ExecutionConstraint
         provider: input.provider === undefined ? current.provider : input.provider,
         version: input.version ?? current.version,
         description: input.description === undefined ? current.description : input.description,
-        ruleSpec: (input.ruleSpec ?? current.ruleSpec) as Prisma.InputJsonValue
+        denyProviderOwnedTargets: input.denyProviderOwnedTargets ?? current.denyProviderOwnedTargets,
+        requireVerifiedOwnership: input.requireVerifiedOwnership ?? current.requireVerifiedOwnership,
+        allowActiveExploit: input.allowActiveExploit ?? current.allowActiveExploit,
+        requireRateLimitSupport: input.requireRateLimitSupport ?? current.requireRateLimitSupport,
+        rateLimitRps: input.rateLimitRps === undefined ? current.rateLimitRps : input.rateLimitRps,
+        requireHostAllowlistSupport: input.requireHostAllowlistSupport ?? current.requireHostAllowlistSupport,
+        requirePathExclusionSupport: input.requirePathExclusionSupport ?? current.requirePathExclusionSupport,
+        excludedPaths: input.excludedPaths ?? current.excludedPaths
       }
     });
 

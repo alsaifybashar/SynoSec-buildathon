@@ -19,7 +19,14 @@ type ConstraintFormValues = {
   provider: string;
   version: string;
   description: string;
-  ruleSpec: string;
+  denyProviderOwnedTargets: boolean;
+  requireVerifiedOwnership: boolean;
+  allowActiveExploit: boolean;
+  requireRateLimitSupport: boolean;
+  rateLimitRps: string;
+  requireHostAllowlistSupport: boolean;
+  requirePathExclusionSupport: boolean;
+  excludedPaths: string;
 };
 
 const kindLabels: Record<ExecutionConstraintKind, string> = {
@@ -35,7 +42,14 @@ function createEmptyFormValues(): ConstraintFormValues {
     provider: "",
     version: "1",
     description: "",
-    ruleSpec: "{\n  \"excludedPaths\": [],\n  \"requireRateLimitSupport\": false\n}"
+    denyProviderOwnedTargets: false,
+    requireVerifiedOwnership: false,
+    allowActiveExploit: false,
+    requireRateLimitSupport: false,
+    rateLimitRps: "",
+    requireHostAllowlistSupport: false,
+    requirePathExclusionSupport: false,
+    excludedPaths: ""
   };
 }
 
@@ -46,8 +60,24 @@ function toFormValues(constraint: ExecutionConstraint): ConstraintFormValues {
     provider: constraint.provider ?? "",
     version: String(constraint.version),
     description: constraint.description ?? "",
-    ruleSpec: JSON.stringify(constraint.ruleSpec, null, 2)
+    denyProviderOwnedTargets: constraint.denyProviderOwnedTargets,
+    requireVerifiedOwnership: constraint.requireVerifiedOwnership,
+    allowActiveExploit: constraint.allowActiveExploit,
+    requireRateLimitSupport: constraint.requireRateLimitSupport,
+    rateLimitRps: constraint.rateLimitRps == null ? "" : String(constraint.rateLimitRps),
+    requireHostAllowlistSupport: constraint.requireHostAllowlistSupport,
+    requirePathExclusionSupport: constraint.requirePathExclusionSupport,
+    excludedPaths: constraint.excludedPaths.join("\n")
   };
+}
+
+function parseExcludedPaths(value: string) {
+  return Array.from(new Set(
+    value
+      .split("\n")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+  ));
 }
 
 function toRequestBody(values: ConstraintFormValues): CreateExecutionConstraintBody {
@@ -57,7 +87,14 @@ function toRequestBody(values: ConstraintFormValues): CreateExecutionConstraintB
     provider: values.provider.trim() || null,
     version: Number(values.version),
     description: values.description.trim() || null,
-    ruleSpec: JSON.parse(values.ruleSpec)
+    denyProviderOwnedTargets: values.denyProviderOwnedTargets,
+    requireVerifiedOwnership: values.requireVerifiedOwnership,
+    allowActiveExploit: values.allowActiveExploit,
+    requireRateLimitSupport: values.requireRateLimitSupport,
+    rateLimitRps: values.rateLimitRps.trim() ? Number(values.rateLimitRps) : null,
+    requireHostAllowlistSupport: values.requireHostAllowlistSupport,
+    requirePathExclusionSupport: values.requirePathExclusionSupport,
+    excludedPaths: parseExcludedPaths(values.excludedPaths)
   };
 }
 
@@ -69,14 +106,14 @@ function validateForm(values: ConstraintFormValues) {
   if (!values.version.trim() || Number.isNaN(Number(values.version)) || Number(values.version) < 1) {
     errors.version = "Version must be a positive integer.";
   }
-  try {
-    const parsed = JSON.parse(values.ruleSpec);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      errors.ruleSpec = "Rule spec must be a JSON object.";
+
+  if (values.rateLimitRps.trim()) {
+    const parsedRateLimit = Number(values.rateLimitRps);
+    if (!Number.isInteger(parsedRateLimit) || parsedRateLimit < 1) {
+      errors.rateLimitRps = "Throttle must be a positive integer when set.";
     }
-  } catch {
-    errors.ruleSpec = "Rule spec must be valid JSON.";
   }
+
   return errors;
 }
 
@@ -86,6 +123,22 @@ function formatTimestamp(value: string) {
 
 function definedString(value: string | undefined) {
   return value ? { error: value } : {};
+}
+
+function renderToggleField(
+  label: string,
+  checked: boolean,
+  onChange: (checked: boolean) => void,
+  hint?: string
+) {
+  return (
+    <DetailField label={label} {...(hint ? { hint } : {})}>
+      <label className="flex items-center gap-3 rounded-[4px] border border-border px-3 py-2 text-sm text-foreground">
+        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} aria-label={label} />
+        <span>{checked ? "Enabled" : "Disabled"}</span>
+      </label>
+    </DetailField>
+  );
 }
 
 export const executionConstraintsDefinition: CrudFeatureDefinition<
@@ -172,9 +225,70 @@ export const executionConstraintsDefinition: CrudFeatureDefinition<
           </DetailField>
         </DetailFieldGroup>
 
-        <DetailFieldGroup title="Rule Spec">
-          <DetailField label="Rule JSON" required hint="Stored as the constraint evaluation payload consumed by the broker." {...definedString(errors["ruleSpec"] as string | undefined)}>
-            <Textarea value={formValues.ruleSpec} onChange={(event) => handleFieldChange("ruleSpec", event.target.value)} aria-label="Rule JSON" rows={18} className="font-mono text-xs" />
+        <DetailFieldGroup title="Policy Checklist">
+          {renderToggleField(
+            "Deny provider-owned targets",
+            formValues.denyProviderOwnedTargets,
+            (checked) => handleFieldChange("denyProviderOwnedTargets", checked),
+            "Blocks testing against provider-owned destinations such as Cloudflare-owned domains."
+          )}
+          {renderToggleField(
+            "Require verified ownership",
+            formValues.requireVerifiedOwnership,
+            (checked) => handleFieldChange("requireVerifiedOwnership", checked),
+            "Only allow runs against targets marked as ownership-verified."
+          )}
+          {renderToggleField(
+            "Allow active exploit",
+            formValues.allowActiveExploit,
+            (checked) => handleFieldChange("allowActiveExploit", checked),
+            "Controlled exploit tools remain blocked unless this is explicitly enabled."
+          )}
+          {renderToggleField(
+            "Require rate-limit support",
+            formValues.requireRateLimitSupport,
+            (checked) => handleFieldChange("requireRateLimitSupport", checked),
+            "Deny tools that cannot consume an enforced request throttle."
+          )}
+          <DetailField
+            label="Throttle (req/s)"
+            hint="Optional hard cap applied to compatible tools. Leaving this blank means no explicit throttle is defined on the constraint."
+            {...definedString(errors["rateLimitRps"] as string | undefined)}
+          >
+            <Input
+              type="number"
+              min="1"
+              value={formValues.rateLimitRps}
+              onChange={(event) => handleFieldChange("rateLimitRps", event.target.value)}
+              aria-label="Throttle requests per second"
+              placeholder="5"
+            />
+          </DetailField>
+          {renderToggleField(
+            "Require host allowlist support",
+            formValues.requireHostAllowlistSupport,
+            (checked) => handleFieldChange("requireHostAllowlistSupport", checked),
+            "Deny tools that cannot stay pinned to the selected host."
+          )}
+          {renderToggleField(
+            "Require path exclusion support",
+            formValues.requirePathExclusionSupport,
+            (checked) => handleFieldChange("requirePathExclusionSupport", checked),
+            "Deny tools that cannot exclude prohibited paths."
+          )}
+          <DetailField
+            label="Excluded paths"
+            hint="One path per line. These will be injected into compatible tools."
+            className="md:col-span-2"
+          >
+            <Textarea
+              value={formValues.excludedPaths}
+              onChange={(event) => handleFieldChange("excludedPaths", event.target.value)}
+              aria-label="Excluded paths"
+              rows={10}
+              className="font-mono text-xs"
+              placeholder="/cdn-cgi/"
+            />
           </DetailField>
         </DetailFieldGroup>
       </>

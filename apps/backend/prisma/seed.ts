@@ -112,12 +112,14 @@ async function main() {
       provider: "cloudflare",
       version: 1,
       description: "Restricts testing to customer-owned assets behind Cloudflare and enforces Cloudflare-specific scan exclusions and throttling.",
-      ruleSpec: {
-        excludedPaths: ["/cdn-cgi/"],
-        requireRateLimitSupport: true,
-        denyCloudflareOwnedTargets: true,
-        allowActiveExploit: false
-      }
+      denyProviderOwnedTargets: true,
+      requireVerifiedOwnership: true,
+      allowActiveExploit: false,
+      requireRateLimitSupport: true,
+      rateLimitRps: 5,
+      requireHostAllowlistSupport: true,
+      requirePathExclusionSupport: true,
+      excludedPaths: ["/cdn-cgi/"]
     },
     create: {
       id: cloudflareConstraintId,

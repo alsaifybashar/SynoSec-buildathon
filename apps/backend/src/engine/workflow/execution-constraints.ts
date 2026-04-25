@@ -15,8 +15,12 @@ type NormalizedTarget = {
 
 type ConstraintRuleSet = {
   excludedPaths: string[];
+  requireVerifiedOwnership: boolean;
   requireRateLimitSupport: boolean;
-  denyCloudflareOwnedTargets: boolean;
+  rateLimitRps: number | null;
+  requireHostAllowlistSupport: boolean;
+  requirePathExclusionSupport: boolean;
+  denyProviderOwnedTargets: boolean;
   allowActiveExploit: boolean;
 };
 
@@ -31,6 +35,9 @@ export type EffectiveExecutionConstraintSet = {
   normalizedTarget: NormalizedTarget;
   localhostException: boolean;
   excludedPaths: string[];
+  requireRateLimitSupport: boolean;
+  requireHostAllowlistSupport: boolean;
+  requirePathExclusionSupport: boolean;
   rateLimitRps: number;
   allowActiveExploit: boolean;
   constraints: ExecutionConstraint[];
@@ -150,20 +157,24 @@ export function resolveTargetAsset(application: Application, requestedTargetAsse
 }
 
 function loadConstraintRuleSet(constraint: ExecutionConstraint): ConstraintRuleSet {
-  const rawRuleSpec = constraint.ruleSpec;
-  const record = isRecord(rawRuleSpec) ? rawRuleSpec : {};
   return {
-    excludedPaths: Array.isArray(record["excludedPaths"])
-      ? record["excludedPaths"].filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-      : [],
-    requireRateLimitSupport: record["requireRateLimitSupport"] === true,
-    denyCloudflareOwnedTargets: record["denyCloudflareOwnedTargets"] === true,
-    allowActiveExploit: record["allowActiveExploit"] === true
+    excludedPaths: constraint.excludedPaths,
+    requireVerifiedOwnership: constraint.requireVerifiedOwnership,
+    requireRateLimitSupport: constraint.requireRateLimitSupport,
+    rateLimitRps: constraint.rateLimitRps,
+    requireHostAllowlistSupport: constraint.requireHostAllowlistSupport,
+    requirePathExclusionSupport: constraint.requirePathExclusionSupport,
+    denyProviderOwnedTargets: constraint.denyProviderOwnedTargets,
+    allowActiveExploit: constraint.allowActiveExploit
   };
 }
 
-function isCloudflareOwnedTarget(host: string) {
-  return host === "cloudflare.com" || host.endsWith(".cloudflare.com");
+function isProviderOwnedTarget(constraint: ExecutionConstraint, host: string) {
+  if (constraint.provider === "cloudflare") {
+    return host === "cloudflare.com" || host.endsWith(".cloudflare.com");
+  }
+
+  return false;
 }
 
 export function resolveEffectiveExecutionConstraints(application: Application, targetAsset: TargetAsset, rateLimitRps: number): EffectiveExecutionConstraintSet {
@@ -180,39 +191,57 @@ export function resolveEffectiveExecutionConstraints(application: Application, t
       normalizedTarget,
       localhostException: true,
       excludedPaths: [],
+      requireRateLimitSupport: false,
+      requireHostAllowlistSupport: false,
+      requirePathExclusionSupport: false,
       rateLimitRps,
       allowActiveExploit: true,
       constraints: []
     };
   }
 
-  if (targetAsset.ownershipStatus !== "verified") {
+  const aggregate = constraints.reduce<ConstraintRuleSet>((accumulator, constraint) => {
+    const rules = loadConstraintRuleSet(constraint);
+    return {
+      excludedPaths: [...new Set([...accumulator.excludedPaths, ...rules.excludedPaths])],
+      requireVerifiedOwnership: accumulator.requireVerifiedOwnership || rules.requireVerifiedOwnership,
+      requireRateLimitSupport: accumulator.requireRateLimitSupport || rules.requireRateLimitSupport,
+      rateLimitRps: rules.rateLimitRps == null
+        ? accumulator.rateLimitRps
+        : accumulator.rateLimitRps == null
+          ? rules.rateLimitRps
+          : Math.min(accumulator.rateLimitRps, rules.rateLimitRps),
+      requireHostAllowlistSupport: accumulator.requireHostAllowlistSupport || rules.requireHostAllowlistSupport,
+      requirePathExclusionSupport: accumulator.requirePathExclusionSupport || rules.requirePathExclusionSupport,
+      denyProviderOwnedTargets: accumulator.denyProviderOwnedTargets || rules.denyProviderOwnedTargets,
+      allowActiveExploit: accumulator.allowActiveExploit || rules.allowActiveExploit
+    };
+  }, {
+    excludedPaths: [],
+    requireVerifiedOwnership: false,
+    requireRateLimitSupport: false,
+    rateLimitRps: null,
+    requireHostAllowlistSupport: false,
+    requirePathExclusionSupport: false,
+    denyProviderOwnedTargets: false,
+    allowActiveExploit: false
+  });
+
+  if (aggregate.requireVerifiedOwnership && targetAsset.ownershipStatus !== "verified") {
     throw new RequestError(400, `Target asset ${targetAsset.label} is not ownership-verified.`, {
       code: "WORKFLOW_TARGET_UNVERIFIED",
       userFriendlyMessage: "Workflow runs require a verified owned target."
     });
   }
 
-  const aggregate = constraints.reduce<ConstraintRuleSet>((accumulator, constraint) => {
-    const rules = loadConstraintRuleSet(constraint);
-    return {
-      excludedPaths: [...new Set([...accumulator.excludedPaths, ...rules.excludedPaths])],
-      requireRateLimitSupport: accumulator.requireRateLimitSupport || rules.requireRateLimitSupport,
-      denyCloudflareOwnedTargets: accumulator.denyCloudflareOwnedTargets || rules.denyCloudflareOwnedTargets,
-      allowActiveExploit: accumulator.allowActiveExploit || rules.allowActiveExploit
-    };
-  }, {
-    excludedPaths: [],
-    requireRateLimitSupport: false,
-    denyCloudflareOwnedTargets: false,
-    allowActiveExploit: false
-  });
-
-  if (aggregate.denyCloudflareOwnedTargets && isCloudflareOwnedTarget(normalizedTarget.host)) {
-    throw new RequestError(400, `Target ${normalizedTarget.host} is Cloudflare-owned and outside customer-run scope.`, {
-      code: "WORKFLOW_TARGET_PROVIDER_DENIED",
-      userFriendlyMessage: "That target is provider-owned and not allowed for customer-run testing."
-    });
+  if (aggregate.denyProviderOwnedTargets) {
+    const denyingConstraint = constraints.find((constraint) => isProviderOwnedTarget(constraint, normalizedTarget.host));
+    if (denyingConstraint) {
+      throw new RequestError(400, `Target ${normalizedTarget.host} is provider-owned and outside customer-run scope for ${denyingConstraint.provider ?? denyingConstraint.name}.`, {
+        code: "WORKFLOW_TARGET_PROVIDER_DENIED",
+        userFriendlyMessage: "That target is provider-owned and not allowed for customer-run testing."
+      });
+    }
   }
 
   return {
@@ -220,7 +249,14 @@ export function resolveEffectiveExecutionConstraints(application: Application, t
     normalizedTarget,
     localhostException: false,
     excludedPaths: aggregate.excludedPaths,
-    rateLimitRps,
+    requireRateLimitSupport: aggregate.requireRateLimitSupport,
+    requireHostAllowlistSupport: aggregate.requireHostAllowlistSupport,
+    requirePathExclusionSupport: aggregate.requirePathExclusionSupport,
+    rateLimitRps: aggregate.rateLimitRps == null
+      ? rateLimitRps
+      : rateLimitRps > 0
+        ? Math.min(rateLimitRps, aggregate.rateLimitRps)
+        : aggregate.rateLimitRps,
     allowActiveExploit: aggregate.allowActiveExploit,
     constraints
   };
@@ -250,21 +286,21 @@ export function authorizeToolAgainstConstraints(
     };
   }
 
-  if (constraints.excludedPaths.length > 0 && !profile.supportsPathExclusions) {
+  if ((constraints.requirePathExclusionSupport || constraints.excludedPaths.length > 0) && !profile.supportsPathExclusions) {
     return {
       allowed: false,
       reason: `Tool ${tool.name} cannot enforce required path exclusions for this target.`
     };
   }
 
-  if (constraints.rateLimitRps > 0 && !profile.supportsRateLimit) {
+  if ((constraints.requireRateLimitSupport || constraints.rateLimitRps > 0) && !profile.supportsRateLimit) {
     return {
       allowed: false,
       reason: `Tool ${tool.name} cannot enforce the required request throttling policy.`
     };
   }
 
-  if (!profile.supportsHostAllowlist) {
+  if (constraints.requireHostAllowlistSupport && !profile.supportsHostAllowlist) {
     return {
       allowed: false,
       reason: `Tool ${tool.name} cannot enforce host allowlisting for a constrained target.`
@@ -300,6 +336,7 @@ export function applyConstraintInputs(
         target: constraints.normalizedTarget.host,
         ...(constraints.normalizedTarget.baseUrl ? { baseUrl: constraints.normalizedTarget.baseUrl } : {}),
         ...(constraints.normalizedTarget.port ? { port: constraints.normalizedTarget.port } : {}),
+        ...(constraints.requireHostAllowlistSupport ? { allowedHosts: [constraints.normalizedTarget.host] } : {}),
         ...(constraints.excludedPaths.length > 0 ? { excludedPaths: constraints.excludedPaths } : {}),
         ...(constraints.rateLimitRps > 0 ? { rateLimitRps: constraints.rateLimitRps } : {})
       }

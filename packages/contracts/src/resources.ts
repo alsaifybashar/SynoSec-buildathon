@@ -62,6 +62,20 @@ const targetAssetBodyBaseSchema = targetAssetBodyObjectSchema.superRefine((value
 export const targetAssetBodySchema = targetAssetBodyBaseSchema;
 export type TargetAssetBody = z.infer<typeof targetAssetBodySchema>;
 
+const excludedPathsSchema = z.array(z.string().trim().min(1)).transform((paths) => {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const path of paths) {
+    if (!seen.has(path)) {
+      seen.add(path);
+      normalized.push(path);
+    }
+  }
+
+  return normalized;
+});
+
 export const executionConstraintSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -69,7 +83,14 @@ export const executionConstraintSchema = z.object({
   provider: z.string().min(1).nullable(),
   version: z.number().int().min(1),
   description: z.string().nullable(),
-  ruleSpec: jsonSchemaObjectSchema,
+  denyProviderOwnedTargets: z.boolean(),
+  requireVerifiedOwnership: z.boolean(),
+  allowActiveExploit: z.boolean(),
+  requireRateLimitSupport: z.boolean(),
+  rateLimitRps: z.number().int().min(1).nullable(),
+  requireHostAllowlistSupport: z.boolean(),
+  requirePathExclusionSupport: z.boolean(),
+  excludedPaths: excludedPathsSchema,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 });

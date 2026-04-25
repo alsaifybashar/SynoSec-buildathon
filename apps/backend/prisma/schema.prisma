@@ -197,16 +197,23 @@ model TargetAsset {
 }
 
 model ExecutionConstraint {
-  id           String                   @id
-  name         String
-  kind         ExecutionConstraintKind
-  provider     String?
-  version      Int                      @default(1)
-  description  String?
-  ruleSpec     Json                     @map("rule_spec")
-  createdAt    DateTime                 @default(now()) @map("created_at")
-  updatedAt    DateTime                 @updatedAt @map("updated_at")
-  bindings     ApplicationConstraintBinding[]
+  id                          String                   @id
+  name                        String
+  kind                        ExecutionConstraintKind
+  provider                    String?
+  version                     Int                      @default(1)
+  description                 String?
+  denyProviderOwnedTargets    Boolean                  @default(false) @map("deny_provider_owned_targets")
+  requireVerifiedOwnership    Boolean                  @default(false) @map("require_verified_ownership")
+  allowActiveExploit          Boolean                  @default(false) @map("allow_active_exploit")
+  requireRateLimitSupport     Boolean                  @default(false) @map("require_rate_limit_support")
+  rateLimitRps                Int?                     @map("rate_limit_rps")
+  requireHostAllowlistSupport Boolean                  @default(false) @map("require_host_allowlist_support")
+  requirePathExclusionSupport Boolean                  @default(false) @map("require_path_exclusion_support")
+  excludedPaths               String[]                 @default([]) @map("excluded_paths")
+  createdAt                   DateTime                 @default(now()) @map("created_at")
+  updatedAt                   DateTime                 @updatedAt @map("updated_at")
+  bindings                    ApplicationConstraintBinding[]
 
   @@index([kind, provider])
   @@map("execution_constraints")

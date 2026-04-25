@@ -41,7 +41,14 @@ function mapConstraintBindingRow(row: ApplicationConstraintBinding & {
         provider: row.constraint.provider,
         version: row.constraint.version,
         description: row.constraint.description,
-        ruleSpec: row.constraint.ruleSpec as Record<string, unknown>,
+        denyProviderOwnedTargets: row.constraint.denyProviderOwnedTargets,
+        requireVerifiedOwnership: row.constraint.requireVerifiedOwnership,
+        allowActiveExploit: row.constraint.allowActiveExploit,
+        requireRateLimitSupport: row.constraint.requireRateLimitSupport,
+        rateLimitRps: row.constraint.rateLimitRps,
+        requireHostAllowlistSupport: row.constraint.requireHostAllowlistSupport,
+        requirePathExclusionSupport: row.constraint.requirePathExclusionSupport,
+        excludedPaths: row.constraint.excludedPaths,
         createdAt: row.constraint.createdAt.toISOString(),
         updatedAt: row.constraint.updatedAt.toISOString()
       }

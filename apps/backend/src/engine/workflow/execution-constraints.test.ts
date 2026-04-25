@@ -43,12 +43,14 @@ const application: Application = {
         provider: "cloudflare",
         version: 1,
         description: null,
-        ruleSpec: {
-          excludedPaths: ["/cdn-cgi/"],
-          requireRateLimitSupport: true,
-          denyCloudflareOwnedTargets: true,
-          allowActiveExploit: false
-        },
+        denyProviderOwnedTargets: true,
+        requireVerifiedOwnership: true,
+        allowActiveExploit: false,
+        requireRateLimitSupport: true,
+        rateLimitRps: 3,
+        requireHostAllowlistSupport: true,
+        requirePathExclusionSupport: true,
+        excludedPaths: ["/cdn-cgi/"],
         createdAt: "2026-04-25T00:00:00.000Z",
         updatedAt: "2026-04-25T00:00:00.000Z"
       }
@@ -137,7 +139,8 @@ describe("execution constraints", () => {
     const scoped = applyConstraintInputs(request, constraintSet);
     const toolInput = scoped.parameters["toolInput"] as Record<string, unknown>;
     expect(toolInput["excludedPaths"]).toEqual(["/cdn-cgi/"]);
-    expect(toolInput["rateLimitRps"]).toBe(5);
+    expect(toolInput["rateLimitRps"]).toBe(3);
+    expect(toolInput["allowedHosts"]).toEqual(["app.example.com"]);
   });
 
   it("fails closed for tools that cannot enforce the active constraints", () => {

@@ -9,7 +9,14 @@ export function mapExecutionConstraintRow(row: PrismaExecutionConstraint): Execu
     provider: row.provider,
     version: row.version,
     description: row.description,
-    ruleSpec: row.ruleSpec as Record<string, unknown>,
+    denyProviderOwnedTargets: row.denyProviderOwnedTargets,
+    requireVerifiedOwnership: row.requireVerifiedOwnership,
+    allowActiveExploit: row.allowActiveExploit,
+    requireRateLimitSupport: row.requireRateLimitSupport,
+    rateLimitRps: row.rateLimitRps,
+    requireHostAllowlistSupport: row.requireHostAllowlistSupport,
+    requirePathExclusionSupport: row.requirePathExclusionSupport,
+    excludedPaths: row.excludedPaths,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()
   };
