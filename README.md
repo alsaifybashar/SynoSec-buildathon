@@ -17,41 +17,6 @@ The core objective is to answer four questions for a target system:
 3. Which OSI layers were covered, partially covered, or not covered?
 4. Which findings can be combined into higher-impact escalation routes?
 
-## Sophistication Roadmap Implementation
-
-All pillars of the sophistication roadmap have been implemented to enhance trust, coverage, and scale.
-
-### Stage 1: Trust Engine
-
-The trust engine reduces false positives by enforcing rigorous validation before findings are accepted.
-
-- **Stage 1a -- Evidence Verifier (workflow-execution.utils.ts)**: verifyFindingEvidence() inspects every finding before persistence. It checks evidence quotes for technical indicators like IPs, HTTP status codes, headers, and SQL patterns. Pure speculation is rejected; vague evidence is demoted to suspected status.
-- **Stage 1b -- Active Replay (replay-scheduler.ts)**: When a finding reaches single_source status, the broker automatically schedules a replay of the exact tool and arguments. Confirmed replays promote findings to cross_validated status, while contradictions result in a demotion to suspected.
-- **Stage 1c -- Tiered Finding Badges (workflow-trace-section.tsx)**: Findings are displayed with validation tier badges: Tool-backed (green), Suspected (amber), or Unverified (gray).
-
-### Stage 2: Advanced Vulnerability Coverage
-
-Coverage has been extended beyond basic web vulnerabilities to include infrastructure and authentication layers.
-
-- **Stage 2a -- Real Tool Wrappers**: Placeholder scripts have been replaced with real execution wrappers for nuclei, sqlmap, ffuf, katana, and nmap, allowing for structured tool runs and observations.
-- **Stage 2b -- Network Trust Boundary Analysis**: Topology is a first-class tool category for L3/L4/L6 modeling. Tools like Network Segment Map, Service Fingerprint, and TLS Audit build network models to unlock coverage in lower OSI layers.
-- **Stage 2c -- Session and Auth Layer Tools**: New L5 tools include JWT Analyzer for offline token inspection and Auth Flow Probe for testing rate limiting and user enumeration on authentication endpoints.
-- **Stage 2d -- MITRE ATT&CK Tagging**: Findings are automatically enriched with CWE IDs, MITRE ATT&CK IDs, and tactic tags using a local enrichment mapper.
-
-### Stage 3: Enterprise Scale
-
-The platform now supports multi-host environment modeling and lateral movement analysis.
-
-- **Stage 3 -- Enterprise Environment Graphs**: Scans support named environments with host, subnet, and service nodes. The orchestrator generates environment graphs and coordinates multi-host plans. Explicit lateral_movement edges link credential or session findings across compatible authentication surfaces.
-
-### Stage 4: AI-Native Sophistication
-
-AI agents have been upgraded for adversarial verification and adaptive planning.
-
-- **Stage 4a -- Adversarial Verifier (orchestrator-execution-service.ts)**: adversarialVerifyFinding() challenges derived findings by attempting to find reasons for rejection. Findings that fail this adversarial check are dropped.
-- **Stage 4b -- Adaptive Attack Plan (orchestrator-execution-service.ts)**: The orchestrator re-enters planning after each phase, allowing the model to skip unnecessary steps or add new phases based on confirmed evidence.
-- **Stage 4c -- Cross-Scan Pattern Learning (pattern-learning.ts)**: Execution reports and verifier outcomes are aggregated into learning snapshots. The tool selector uses these patterns to promote historically reliable tools and penalize noisy combinations.
-
 ## System Architecture
 
 SynoSec is organized as a distributed control plane with local or connector-based execution. The backend coordinates agents, providers, tool policies, tool execution, scan state, and attack-map persistence. The frontend presents workflow traces, tool results, coverage, and graph relationships.
@@ -79,6 +44,8 @@ flowchart LR
     Backend --> AttackMap[Attack map and escalation routes]
     AttackMap --> Frontend
 ```
+
+
 
 ### Main Components
 
@@ -114,7 +81,7 @@ The current execution path is the attack-map orchestrator.
 
 ### Attack-Map Orchestrator
 
-The attack-map path focuses on graph construction and relationship analysis. It performs initial reconnaissance, asks the model to build an attack plan, executes mapped tools for each phase, extracts findings, adapts the remaining plan from confirmed evidence, performs deep analysis from confirmed findings, and then correlates multi-finding attack chains.
+The attack-map path focuses on graph construction and relationship analysis. It performs initial reconnaissance, asks the model to build an attack plan, executes mapped tools for each phase, extracts findings, performs deep analysis from confirmed findings, and then correlates multi-finding attack chains.
 
 ```mermaid
 sequenceDiagram
@@ -138,8 +105,6 @@ sequenceDiagram
         API->>LLM: Analyze evidence for findings
         LLM-->>API: Structured findings
         API->>Graph: Add finding nodes and discovery edges
-        API->>LLM: Adapt remaining plan from confirmed findings
-        LLM-->>API: Skipped phases and added phases
         API->>LLM: Deep analysis from confirmed finding
         LLM-->>API: Adjacent or deeper findings
         API->>Graph: Add derived nodes and edges
@@ -174,6 +139,8 @@ Graph reasoning is used in three ways:
 - Expansion: Confirmed findings become new reasoning anchors for deeper or adjacent checks, such as privilege escalation, lateral movement, or exposed secrets.
 - Correlation: Multiple findings are evaluated together to identify escalation routes that have higher impact than any individual finding.
 
+The resulting attack map is not only a visualization layer. It is the working memory of the scan: a reviewable model of what was observed, what was inferred, and what relationships were established.
+
 ## Evidence and Validation Model
 
 SynoSec separates raw tool execution from security conclusions. Tool output is converted into observations. Observations can become findings. Findings can become structured vulnerabilities or graph nodes. Chain analysis links findings only when there is a plausible enabling relationship.
@@ -190,32 +157,94 @@ flowchart LR
     Route --> AttackMap[Attack map]
 ```
 
+Important validation properties:
+
+- Tool requests are authorized by policy before execution.
+- Tool runs record status, exit code, output, command preview, dispatch mode, and failure reason.
+- Observations include a source tool, target, evidence, technique, confidence, and severity.
+- Vulnerability submissions require evidence, impact, recommendation, target metadata, confidence, and validation status.
+- Layer coverage records include tool references, evidence references, vulnerability references, and explicit gaps.
+- Corroborating observations are aggregated by the confidence engine using `1 - (1 - A)(1 - B)`, which increases confidence when independent evidence supports the same hypothesis.
+
+## Tool Selection and Execution
+
+Tools are defined with category, risk tier, execution phase, OSI-layer metadata, tags, input schema, and script implementation. The selector ranks tools from the approved agent set using:
+
+- Layer alignment with requested but uncovered OSI layers.
+- Phase progression from early reconnaissance to late validation.
+- Risk gating for passive, active, and controlled-exploit tools.
+- Recency penalties so the loop does not repeatedly choose the same tool without new justification.
+- Category diversity so selected tools do not collapse into one narrow class.
+
+The broker then compiles the tool definition into a concrete request, checks policy, dispatches it locally or through a connector, stores the result, and emits workflow events. Tool failures are recorded with original failure context so operators can inspect what failed instead of receiving an artificial success.
+
 ## OSI-Layer Coverage
 
-SynoSec models security coverage across L1 through L7:
+SynoSec models security coverage across `L1` through `L7`:
 
 | Layer | Name | Example evidence in SynoSec |
 | --- | --- | --- |
-| L1 | Physical | Simulated host-level leakage or mounted host artifacts in cyber range scenarios |
-| L2 | Data Link | Docker bridge or local-link exposure checks in controlled environments |
-| L3 | Network | Reachable hosts, segmentation gaps, ICMP behavior, network mapping |
-| L4 | Transport | Open ports, exposed services, plaintext transport, unexpected listeners |
-| L5 | Session | Token expiry, replay, session fixation, cookie or JWT lifecycle issues |
-| L6 | Presentation | Encoding, content type handling, weak cryptographic presentation, parser issues |
-| L7 | Application | Authentication bypass, injection, BOLA, XSS, exposed admin routes, sensitive data exposure |
+| `L1` | Physical | Simulated host-level leakage or mounted host artifacts in cyber range scenarios |
+| `L2` | Data Link | Docker bridge or local-link exposure checks in controlled environments |
+| `L3` | Network | Reachable hosts, segmentation gaps, ICMP behavior, network mapping |
+| `L4` | Transport | Open ports, exposed services, plaintext transport, unexpected listeners |
+| `L5` | Session | Token expiry, replay, session fixation, cookie or JWT lifecycle issues |
+| `L6` | Presentation | Encoding, content type handling, weak cryptographic presentation, parser issues |
+| `L7` | Application | Authentication bypass, injection, BOLA, XSS, exposed admin routes, sensitive data exposure |
+
+Coverage is recorded as `covered`, `partially_covered`, or `not_covered`. A layer can remain partially covered when a tool produced useful evidence but the agent still reports gaps, uncertainty, blocked checks, or missing validation.
 
 ## Cyber Range Evaluation
 
-The repository includes a safe target under demos/vulnerable-app. It is an intentionally vulnerable Express application that exposes realistic web weaknesses for controlled testing:
+The repository includes a safe target under `demos/vulnerable-app`. It is an intentionally vulnerable Express application that exposes realistic web weaknesses for controlled testing:
 
-- SQL injection simulation in /login.
-- Unauthenticated administrator panel at /admin.
+- SQL injection simulation in `/login`.
+- Unauthenticated administrator panel at `/admin`.
 - Verbose debug output and internal service hints.
 - Missing security headers.
 - Exposed framework and server headers.
-- Sensitive user data from /api/users.
-- Directory listing simulation at /files.
-- Reflected XSS simulation at /search.
+- Sensitive user data from `/api/users`.
+- Directory listing simulation at `/files`.
+- Reflected XSS simulation at `/search`.
+
+The cyber range exists to evaluate whether the agents can move from reconnaissance to evidence-backed conclusions without touching a real third-party system.
+
+```mermaid
+flowchart TD
+    Compose[Docker Compose] --> Backend[SynoSec backend]
+    Compose --> Frontend[SynoSec frontend]
+    Compose --> Connector[Optional connector]
+    Compose --> Range[Vulnerable target]
+
+    Backend --> Range
+    Connector --> Range
+    Backend --> Smoke[Smoke and evaluation flow]
+    Smoke --> Evidence[Expected evidence: ports, headers, routes, findings]
+    Evidence --> Coverage[Layer coverage and gaps]
+    Evidence --> Map[Attack map and chain correlation]
+```
+
+Evaluation focuses on:
+
+- Discovery accuracy: Whether open ports, services, headers, and known paths are detected.
+- Evidence quality: Whether findings cite concrete output rather than unsupported model claims.
+- Coverage quality: Whether each requested layer has an explicit status and gap statement.
+- Graph quality: Whether related findings are connected into plausible discovery or chain relationships.
+- Failure transparency: Whether failed tools and incomplete checks remain visible in traces and reports.
+
+## Data Flow
+
+At runtime, a typical vulnerability discovery pass follows this path:
+
+1. The analyst defines an application, runtime, agent, target scope, requested OSI layers, and exploit allowance.
+2. The backend creates a scan and root tactic node.
+3. The tool selector ranks approved tools for the current layer coverage and scan phase.
+4. The agent requests a tool or the orchestrator executes a planned phase.
+5. The broker authorizes the request and dispatches it locally or through a connector.
+6. Tool output is persisted as a tool run and normalized into observations.
+7. The agent or orchestrator analyzes the evidence and submits vulnerabilities, coverage updates, or graph findings.
+8. Confirmed findings are used as anchors for deeper reasoning and chain correlation.
+9. Reports, traces, coverage, and the attack map are exposed to the frontend.
 
 ## Getting Started
 
@@ -223,7 +252,7 @@ The repository includes a safe target under demos/vulnerable-app. It is an inten
 
 - Docker and Docker Compose
 - Node.js 20 or newer
-- pnpm
+- `pnpm`
 - Optional Anthropic API key for hosted high-reasoning agents
 - Optional local model runtime for local-provider execution
 
@@ -241,14 +270,18 @@ pnpm install
 make dev
 ```
 
+Local development starts Postgres, the vulnerable target, and the host-mode backend and frontend. Attack-map and scan execution should be started from the UI rather than as an automatic background action during development startup.
+
+To use local inference, configure the local provider settings in `.env` and ensure the configured base URL is reachable by the backend. When `LOCAL_ENABLED=TRUE`, the Docker-backed development path can start Ollama and prepare the configured local model.
+
 ### Endpoints
 
 | Service | Default URL |
 | --- | --- |
-| Frontend | http://localhost:5173 |
-| Backend API | http://localhost:3001 |
-| Vulnerable target | http://localhost:8888 |
-| Ollama, when enabled | http://localhost:11434 |
+| Frontend | `http://localhost:5173` |
+| Backend API | `http://localhost:3001` |
+| Vulnerable target | `http://localhost:8888` |
+| Ollama, when enabled | `http://localhost:11434` |
 
 ### Common Commands
 
@@ -260,6 +293,91 @@ make smoke-seeded-sandbox     # Run the seeded connector sandbox smoke validatio
 make test                     # Run workspace tests
 pnpm build                    # Build all workspace packages
 ```
+
+To fully stop local development services and free the default ports:
+
+```bash
+make docker-down
+make free-dev-ports
+```
+
+### Authentication
+
+Optional app-user authentication is controlled by `AUTH_ENABLED`. When it is enabled, configure the Google client ID, allowed emails, session secret, cookie settings, and frontend URL in `.env`. Google Identity Services redirect mode posts the returned ID token to `/api/auth/google`; the backend verifies the token, creates the SynoSec session cookie, and redirects the browser back into the application.
+
+`AUTH_ALLOWED_EMAILS` is enforced on authenticated requests, so removing an address from the allowlist prevents continued access on the next session-backed call.
+
+### Connector Execution
+
+The connector path lets SynoSec execute broker-approved tool jobs from another network position. This is useful for VPS deployments, segmented test networks, or cyber range layouts where the backend should not execute probes directly.
+
+Key settings:
+
+- `TOOL_EXECUTION_MODE=connector` routes broker-approved tool runs through the connector control plane.
+- `CONNECTOR_RUN_MODE` supports dry-run, simulation, and execution modes and now defaults to `execute` in the repo-managed dev and production stacks.
+- Connectors now self-report installed binaries, and the backend derives exact supported seeded tool IDs before dispatch instead of relying on loose capability overlap.
+- `POST /api/connectors/test-dispatch` can validate broker-to-connector dispatch without starting a full scan.
+
+### Production Deployment
+
+The production stack is defined in `docker-compose.vps.yml` and is intended to run behind host-level nginx. The VPS deployment model uses Dockerized backend, frontend, connector, and Postgres services, with nginx terminating TLS and forwarding traffic to loopback-bound frontend and backend ports.
+
+GitHub Actions deploys to a VPS using `.github/workflows/deploy.yml` and the production stack in `docker-compose.vps.yml`.
+
+- Host `nginx` runs directly on the VPS and proxies traffic to Dockerized frontend and backend services bound on loopback.
+- `backend` runs the compiled API and destructively resets then re-seeds the Prisma database on startup.
+- `frontend` runs the production frontend build behind the host nginx reverse proxy.
+- `connector` stays on the private Docker network and polls the backend control plane.
+- `postgres` persists app data in a named Docker volume.
+
+Before using the deploy workflow, define these GitHub repository variables:
+
+- `VPS_HOST`
+- `VPS_USER`
+- `FRONTEND_URL`
+
+Define these GitHub repository secrets as well:
+
+- `VPS_SSH_KEY`
+- `POSTGRES_PASSWORD`
+- `ANTHROPIC_API_KEY`
+- `CONNECTOR_SHARED_TOKEN`
+- `AUTH_SESSION_SECRET`
+
+Most non-secret application defaults now live in `infra/deploy/env.vps.template`, so GitHub only needs the host-specific variables above plus the runtime secrets. If you need to change default model, scan, connector, auth, or public port settings for every deployment, edit that committed template instead of adding more Actions variables.
+The deploy workflow hardcodes the VPS app directory to `/opt/synosec` and binds the host loopback ports to `3030` for the frontend and `3031` for the backend.
+The deploy user must already be able to create and write `${VPS_TARGET_DIR}` without `sudo`.
+Production deploys no longer use `sudo` or `chown`.
+Production backend startup now runs `prisma db push --force-reset` followed by `prisma db seed`, so every deploy is intentionally destructive and recreates the seeded database state from `apps/backend/prisma/schema.prisma` plus the seed scripts.
+
+Set `FRONTEND_URL` to the public HTTPS origin: `https://synosecai.com`.
+
+For Google Cloud Console production setup, use:
+
+- `Authorized JavaScript origins`: `https://synosecai.com`
+- `Authorized redirect URIs`: `https://synosecai.com/api/auth/google`
+
+If production traffic can also land on `https://www.synosecai.com`, add both of these as well:
+
+- `Authorized JavaScript origins`: `https://www.synosecai.com`
+- `Authorized redirect URIs`: `https://www.synosecai.com/api/auth/google`
+
+Routine GitHub Actions deploys do not modify host `nginx`. Keep the host reverse proxy as a separate operational concern and update it manually only when the public domain, TLS certificate layout, or loopback proxy ports change.
+
+The canonical host nginx template lives at `infra/nginx/synosec.vps.conf.template`. It redirects HTTP to HTTPS, terminates TLS on the VPS using the standard Certbot layout under `/etc/letsencrypt/live/<server_name>/`, forwards the original client scheme and host to the app, and emits `Strict-Transport-Security`.
+
+When you need to install or refresh that host config manually:
+
+- set `SERVER_NAME` to the apex domain only, for example `synosecai.com`
+- render the template with `SERVER_NAME`, `BACKEND_PUBLIC_PORT=3031`, and `FRONTEND_PUBLIC_PORT=3030`
+- install it to your nginx site path using the privileges required on that VPS
+- run `nginx -t` and reload nginx manually
+
+Post-deploy health checks now run on the VPS origin loopback endpoints instead of the public domain, so deploy validation does not depend on Cloudflare edge behavior.
+
+## Connector testing
+
+The Docker stack now runs the same connector shape you can later deploy on a VPS.
 
 ## Repository Structure
 
@@ -278,26 +396,285 @@ docs/
   *.md           Requirements, decisions, terminology, and feature notes
 ```
 
-## Tool Platform Architecture
+## Feature and Design Documentation
 
-The tool platform is designed so the repo can grow from a handful of demo tools to hundreds of cataloged tools without turning the scan loop, seed data, or UI into a maintenance bottleneck.
+Additional project notes live under `docs/`:
 
-### Phase 1: Modular Tool Catalog
-
-The canonical catalog lives under apps/backend/src/workflow-engine/tools/catalog/. Every entry includes metadata for phase, osiLayers, and tags.
-
-### Phase 2: Modular Seed Architecture
-
-Seeded tools are split into shell assets in scripts/tools/ and per-tool seed modules in apps/backend/prisma/seed-data/tools/.
-
-### Phase 3: Tool Selector Layer
-
-The tool selector scores available tools based on layer alignment, phase progression, risk tier, and recency, preventing the model from being overwhelmed by too many tools in a single call.
-
-### Phase 4: Smart Agent-Tool Assignment
-
-Agent-tool auto-assignment is opt-in and uses policies to automatically add policy-matched tools to agents based on catalog metadata.
+- `docs/features.md`: Active feature inventory and extension guidance.
+- `docs/requirements.md`: Security-stack and coverage requirements.
+- `docs/defensive-loop-contract.md`: Defensive-loop behavior and contracts.
+- `docs/strategy-flow-terminology.md`: Naming conventions for strategy maps, tactics, and escalation routes.
+- `docs/vulnerable-app-specification.md`: Cyber range concept and intended vulnerability coverage.
 
 ## Security and Usage Boundaries
 
 SynoSec is for authorized security assessment and controlled cyber range evaluation. Do not point active or controlled-exploit tools at systems you do not own or have explicit permission to test. The demo vulnerable application is deliberately insecure and should only run in an isolated development or evaluation environment.
+
+## Contributing Tools
+
+New tool integrations should be added as auditable, policy-aware capabilities:
+
+1. Define the tool metadata and OSI-layer mapping in the catalog or seed data.
+2. Implement the script under `scripts/tools`.
+3. Ensure the tool returns structured observations where possible.
+4. Add or update tests for compilation, selection, and execution behavior.
+5. Verify behavior against the cyber range before relying on it for demonstrations.
+
+## Tool Platform Architecture
+
+The tool platform is designed so the repo can grow from a handful of demo tools to hundreds of cataloged tools without turning the scan loop, seed data, or UI into a maintenance bottleneck.
+
+The current model has six pieces:
+
+1. A modular tool catalog in `apps/backend/src/workflow-engine/tools/catalog/`
+2. Modular seeded tool implementations in `scripts/tools/` and `apps/backend/prisma/seed-data/tools/`
+3. A runtime tool selector that pre-filters tools before they reach the model
+4. An opt-in agent-tool policy layer for automatic assignment
+5. Frontend list UX that remains usable at larger tool counts
+6. A steady-state workflow for adding new tools with minimal friction
+
+### Phase 1: Modular Tool Catalog
+
+The canonical catalog lives under:
+
+- `apps/backend/src/workflow-engine/tools/catalog/types.ts`
+- `apps/backend/src/workflow-engine/tools/catalog/index.ts`
+- `apps/backend/src/workflow-engine/tools/catalog/<domain>.ts`
+
+Domains are split by capability area such as:
+
+- `network.ts`
+- `web.ts`
+- `content.ts`
+- `subdomain.ts`
+- `dns.ts`
+- `password.ts`
+- `cloud.ts`
+- `kubernetes.ts`
+- `windows.ts`
+- `forensics.ts`
+- `reversing.ts`
+- `exploitation.ts`
+- `utility.ts`
+
+`tool-catalog.ts` still exposes the same public functions:
+
+- `getToolCatalog()`
+- `getToolCapabilities()`
+- `isToolCatalogEntryAvailable()`
+
+Every catalog entry now includes additional metadata used by the selector and future assignment logic:
+
+- `phase`
+- `osiLayers`
+- `tags`
+
+Current `phase` values:
+
+- `recon`
+- `enum`
+- `vuln-scan`
+- `exploit`
+- `post`
+- `report`
+- `utility`
+
+`tool-catalog.ts` also performs a duplicate ID guard at startup. Duplicate catalog IDs are treated as a hard error.
+
+### Phase 2: Modular Seed Architecture
+
+Seeded tools are no longer defined as one large file with inline bash factories.
+
+The implementation is split into:
+
+- Shell assets in `scripts/tools/<category>/<tool>.sh`
+- Per-tool seed modules in `apps/backend/prisma/seed-data/tools/<category>/<tool>.ts`
+- An assembler in `apps/backend/prisma/seed-data/ai-builder-defaults.ts`
+
+Each seed module exports one tool object with a lazy `bashSource` getter that reads the script from disk. Example pattern:
+
+```ts
+export const httpReconTool = {
+  id: "seed-http-recon",
+  name: "HTTP Recon",
+  get bashSource() {
+    return loadSeedToolScript(import.meta.url, "scripts/tools/web/http-recon.sh");
+  }
+} as const;
+```
+
+Startup fail-fast behavior:
+
+- `apps/backend/src/main.ts` calls `validateSeededToolDefinitions()`
+- missing script files fail the backend immediately
+- `apps/backend/prisma/seed-data/tools/load-script.ts` resolves both source and built `dist/` layouts
+
+This means seeded tool definitions stay small and script logic lives in real `.sh` files where it is easier to inspect, test, and replace.
+
+### Phase 3: Tool Selector Layer
+
+The critical context-limit fix lives in:
+
+- `apps/backend/src/workflow-engine/tools/tool-selector.ts`
+
+The selector scores available tools before they are passed to the model. This prevents the workflow pipeline from dumping every approved tool into one model call.
+
+Selector inputs:
+
+- requested OSI layers
+- current layer coverage
+- already executed tool IDs
+- current findings
+- `allowActiveExploits`
+
+Scoring signals:
+
+- layer alignment
+- phase progression
+- risk tier gate
+- recency penalty
+
+Important behavior:
+
+- `controlled-exploit` tools are hard-gated when `allowActiveExploits === false`
+- recently used tools are penalized
+- if the top slice is all one category, the selector swaps in another category for diversity
+- catalog metadata is used when available; uncataloged tools default to `phase: "utility"` and `osiLayers: ["L7"]`
+
+Integration:
+
+- Anthropic loop: select once before building the evidence tool map
+- Local loop: re-select at the start of each iteration
+- lifecycle actions are always available and are never filtered:
+  - `report_finding`
+  - `update_layer_coverage`
+  - `submit_scan_completion`
+
+Main integration point:
+
+- `apps/backend/src/engine/workflow/workflow-execution.service.ts`
+
+### Phase 4: Smart Agent-Tool Assignment
+
+Agent-tool auto-assignment is opt-in and lives in:
+
+- `apps/backend/prisma/seed-data/agent-tool-policies.ts`
+- `apps/backend/src/features/modules/ai-agents/agent-tool-resolver.ts`
+
+This layer exists to remove manual junction-table style maintenance as the tool count grows.
+
+How it works:
+
+- If no policy exists for an agent, behavior stays exactly as before: use `agent.toolIds`
+- If a policy exists, SynoSec:
+  - loads active tools
+  - starts from `pinnedToolIds`
+  - preserves explicit `agent.toolIds`
+  - adds policy-matched tools using catalog metadata such as category, risk tier, phase, and tags
+  - deduplicates the final set
+
+Current rollout status:
+
+- `AGENT_TOOL_POLICIES` is intentionally empty by default
+- policies are activated one agent at a time by adding an entry
+
+This keeps rollout safe while enabling future “new tool automatically appears for the right agent” behavior.
+
+### Phase 5: Frontend UX for Large Tool Sets
+
+The AI tools page has been updated to remain usable when the tool inventory grows:
+
+- file: `apps/frontend/src/pages/ai-tools-page.tsx`
+
+Current list UX improvements:
+
+- category filter
+- risk tier filter
+- compact colored risk badges:
+  - passive = green
+  - active = amber
+  - controlled-exploit = red
+- default page size of 50 for the tools page
+
+This is intentionally page-local behavior so the shared list component does not need to know about tool-specific grouping logic.
+
+### Phase 6: Adding a New Tool
+
+The steady-state workflow for adding a tool is now:
+
+1. Add a `ToolCatalogEntry` to the correct file in `apps/backend/src/workflow-engine/tools/catalog/`
+2. Include `phase`, `osiLayers`, and `tags`
+3. Add the implementation script in `scripts/tools/<category>/<tool-name>.sh`
+4. Add the seed module in `apps/backend/prisma/seed-data/tools/<category>/<tool-name>.ts`
+5. Import it into `apps/backend/prisma/seed-data/ai-builder-defaults.ts` and add it to `seededToolDefinitions`
+6. Run the seed upsert so the tool exists in the database
+7. If a policy later covers that category/phase/tag set, the tool becomes available automatically to the relevant agents
+
+The core goal is low-friction tool authoring:
+
+- write a `.sh` script
+- add a small metadata object
+- let the catalog, seed layer, selector, and policy system do the rest
+
+## Developer Notes
+
+### Where Tool Behavior Actually Comes From
+
+There are three different layers to keep straight:
+
+- Catalog metadata:
+  `apps/backend/src/workflow-engine/tools/catalog/`
+  This is capability metadata, installation checks, selection hints, and future assignment input.
+
+- Seeded tool implementations:
+  `scripts/tools/`
+  `apps/backend/prisma/seed-data/tools/`
+  These are the concrete built-in tools that get seeded into the database.
+
+- Runtime execution config:
+  Stored on the tool record and resolved through:
+  `apps/backend/src/features/modules/ai-tools/tool-execution-config.ts`
+
+If you change tool behavior, make sure you are editing the correct layer.
+
+### Current Seeded Tool Set
+
+SynoSec comes with a comprehensive set of built-in security tools categorized by domain:
+
+- **Network**: `nmap`, `ncat`, `netcat`, `service-scan`
+- **Web**: `nikto`, `sqlmap`, `http-recon`, `http-headers`, `sql-injection-check`, `vuln-audit`
+- **Content Discovery**: `gobuster`, `dirb`, `ffuf`, `web-crawl`, `content-discovery`
+- **Subdomain Enumeration**: `amass`, `sublist3r`
+- **Exploitation**: `metasploit-framework`
+- **Password Cracking**: `hashcat`
+- **Forensics**: `steghide`
+- **Windows Enumeration**: `enum4linux`
+- **Utility**: `bash-probe`
+
+These tools are pre-configured with bash scripts in `scripts/tools/` and seeded into the database for immediate use by AI agents.
+
+### Key Backend Files
+
+- Workflow execution loop:
+  `apps/backend/src/engine/workflow/workflow-execution.service.ts`
+- Tool selector:
+  `apps/backend/src/workflow-engine/tools/tool-selector.ts`
+- Tool catalog entrypoint:
+  `apps/backend/src/workflow-engine/tools/tool-catalog.ts`
+- Agent tool resolver:
+  `apps/backend/src/features/modules/ai-agents/agent-tool-resolver.ts`
+- Seed assembler:
+  `apps/backend/prisma/seed-data/ai-builder-defaults.ts`
+
+### Recommended Checks After Tool-Platform Changes
+
+Backend:
+
+- `pnpm --filter @synosec/backend exec tsc -p tsconfig.json --noEmit`
+- targeted Vitest runs for the area you changed
+
+Frontend:
+
+- `pnpm --filter @synosec/frontend exec tsc -p tsconfig.json --noEmit`
+
+If you touch seeded scripts or seed modules, also make sure startup validation still passes and that `pnpm --filter @synosec/backend build` succeeds.

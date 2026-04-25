@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import type {
+  ConnectorSupportSubject,
   ConnectorExecutionJob,
   ConnectorExecutionResult,
   ConnectorRegistrationRequest
@@ -21,7 +22,7 @@ function validateSandboxedJob(
   job: ConnectorExecutionJob,
   options: SandboxExecutionOptions
 ): ConnectorExecutionResult | { bashSource: string } {
-  const support = evaluateConnectorToolSupport(job.request, {
+  const support = evaluateConnectorToolSupport(toConnectorSupportSubject(job), {
     allowedCapabilities: options.allowedCapabilities,
     allowedSandboxProfiles: options.allowedSandboxProfiles,
     allowedPrivilegeProfiles: options.allowedPrivilegeProfiles,
@@ -38,7 +39,16 @@ function validateSandboxedJob(
 
   const bashSource = typeof job.request.parameters["bashSource"] === "string"
     ? job.request.parameters["bashSource"]
-    : null;
+    : "";
+
+  if (bashSource.length === 0) {
+    return {
+      output: "",
+      exitCode: 1,
+      observations: [],
+      statusReason: "Structured bash source is required for connector execution."
+    };
+  }
 
   return { bashSource };
 }
@@ -57,6 +67,17 @@ export async function executeSandboxedConnectorJob(
     job,
     options.commandTimeoutMs ?? 30000
   );
+}
+
+function toConnectorSupportSubject(job: ConnectorExecutionJob): ConnectorSupportSubject {
+  return {
+    ...(job.request.toolId ? { toolId: job.request.toolId } : {}),
+    tool: job.request.tool,
+    capabilities: job.request.capabilities,
+    sandboxProfile: job.request.sandboxProfile,
+    privilegeProfile: job.request.privilegeProfile,
+    parameters: job.request.parameters
+  };
 }
 
 async function materializeScript(toolName: string, bashSource: string) {

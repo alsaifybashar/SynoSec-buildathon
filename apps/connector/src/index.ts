@@ -2,6 +2,7 @@ import {
   connectorPollResponseSchema,
   connectorRegistrationResponseSchema,
   evaluateConnectorToolSupport,
+  type ConnectorSupportSubject,
   type ConnectorExecutionJob,
   type ConnectorExecutionResult,
   type ConnectorRegistrationRequest
@@ -83,7 +84,7 @@ export async function executeConnectorJob(
     commandTimeoutMs?: number;
   }
 ): Promise<ConnectorExecutionResult> {
-  const support = evaluateConnectorToolSupport(job.request, {
+  const support = evaluateConnectorToolSupport(toConnectorSupportSubject(job), {
     allowedCapabilities: options.allowedCapabilities,
     allowedSandboxProfiles: options.allowedSandboxProfiles,
     allowedPrivilegeProfiles: options.allowedPrivilegeProfiles,
@@ -120,4 +121,15 @@ function thisInstalledBinaries(options: {
   installedBinaries?: ConnectorRegistrationRequest["installedBinaries"];
 }) {
   return options.installedBinaries ?? [];
+}
+
+function toConnectorSupportSubject(job: ConnectorExecutionJob): ConnectorSupportSubject {
+  return {
+    ...(job.request.toolId ? { toolId: job.request.toolId } : {}),
+    tool: job.request.tool,
+    capabilities: job.request.capabilities,
+    sandboxProfile: job.request.sandboxProfile,
+    privilegeProfile: job.request.privilegeProfile,
+    parameters: job.request.parameters
+  };
 }

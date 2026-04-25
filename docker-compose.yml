@@ -103,10 +103,10 @@ services:
       CONNECTOR_CONTROL_PLANE_URL: http://backend:${BACKEND_PORT:-3001}
       CONNECTOR_SHARED_TOKEN: ${CONNECTOR_SHARED_TOKEN:-synosec-connector-dev}
       CONNECTOR_NAME: ${CONNECTOR_NAME:-local-dev-connector}
-      CONNECTOR_RUN_MODE: ${CONNECTOR_RUN_MODE:-dry-run}
-      CONNECTOR_ALLOWED_CAPABILITIES: ${CONNECTOR_ALLOWED_CAPABILITIES:-passive,web-recon,network-recon,content-discovery,active-recon}
-      CONNECTOR_ALLOWED_SANDBOX_PROFILES: ${CONNECTOR_ALLOWED_SANDBOX_PROFILES:-network-recon,read-only-parser,active-recon}
-      CONNECTOR_ALLOWED_PRIVILEGE_PROFILES: ${CONNECTOR_ALLOWED_PRIVILEGE_PROFILES:-read-only-network,active-network}
+      CONNECTOR_RUN_MODE: ${CONNECTOR_RUN_MODE:-execute}
+      CONNECTOR_ALLOWED_CAPABILITIES: ${CONNECTOR_ALLOWED_CAPABILITIES:-all}
+      CONNECTOR_ALLOWED_SANDBOX_PROFILES: ${CONNECTOR_ALLOWED_SANDBOX_PROFILES:-all}
+      CONNECTOR_ALLOWED_PRIVILEGE_PROFILES: ${CONNECTOR_ALLOWED_PRIVILEGE_PROFILES:-all}
     volumes:
       - .:/workspace
       - connector_node_modules:/workspace/apps/connector/node_modules
