@@ -6,7 +6,7 @@ import { createPaginatedResponseSchema, executionKindSchema, resourceListQuerySc
 export const executionReportStatusSchema = z.enum(["pending", "running", "completed", "failed", "aborted"]);
 export type ExecutionReportStatus = z.infer<typeof executionReportStatusSchema>;
 
-export const executionReportFindingSourceSchema = z.enum(["single-agent-vulnerability", "workflow-finding", "attack-map-finding"]);
+export const executionReportFindingSourceSchema = z.enum(["workflow-finding", "attack-map-finding"]);
 export type ExecutionReportFindingSource = z.infer<typeof executionReportFindingSourceSchema>;
 
 export const executionReportFindingSchema = z.object({
@@ -68,15 +68,6 @@ export const executionReportSummarySchema = z.object({
 export type ExecutionReportSummary = z.infer<typeof executionReportSummarySchema>;
 
 export const executionReportSourceSummarySchema = z.discriminatedUnion("executionKind", [
-  z.object({
-    executionKind: z.literal("single-agent"),
-    scanId: z.string().min(1),
-    applicationId: z.string().uuid().nullable(),
-    runtimeId: z.string().uuid().nullable(),
-    stopReason: z.string().nullable(),
-    totalVulnerabilities: z.number().int().min(0),
-    topVulnerabilityIds: z.array(z.string().min(1)).default([])
-  }),
   z.object({
     executionKind: z.literal("workflow"),
     runId: z.string().uuid(),
@@ -163,30 +154,6 @@ export function summarizeHighestSeverity(findings: Array<{ severity: SecurityVul
     .map((finding) => finding.severity)
     .sort((left, right) => severityRank(right) - severityRank(left));
   return ordered[0] ?? null;
-}
-
-export function executionReportFindingFromVulnerability(vulnerability: SecurityVulnerability): ExecutionReportFinding {
-  return executionReportFindingSchema.parse({
-    id: vulnerability.id,
-    executionId: vulnerability.scanId,
-    executionKind: "single-agent",
-    source: "single-agent-vulnerability",
-    severity: vulnerability.severity,
-    title: vulnerability.title,
-    type: vulnerability.category,
-    summary: vulnerability.impact,
-    recommendation: vulnerability.recommendation,
-    confidence: vulnerability.confidence,
-    targetLabel: [
-      vulnerability.target.host,
-      vulnerability.target.port ? `:${vulnerability.target.port}` : "",
-      vulnerability.target.path ?? ""
-    ].join(""),
-    evidence: vulnerability.evidence,
-    sourceToolIds: uniqueExecutionReportValues(vulnerability.evidence.map((item) => item.sourceTool)),
-    sourceToolRunIds: uniqueExecutionReportValues(vulnerability.evidence.flatMap((item) => item.toolRunRef ? [item.toolRunRef] : [])),
-    createdAt: vulnerability.createdAt
-  });
 }
 
 export function executionReportFindingFromWorkflowFinding(

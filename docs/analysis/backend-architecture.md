@@ -28,7 +28,7 @@ The resource layer is relatively disciplined. The execution-heavy layer is not y
 
 ### 1. Route registration reveals backend boundary overlap
 
-`register-routes.ts` has to understand too much about how execution surfaces are assembled. It instantiates workflow streaming, single-agent scanning, workflow execution, orchestrator streaming, and orchestrator execution in one place. That is manageable today, but it is a sign that composition depends on cross-boundary knowledge.
+`register-routes.ts` has to understand too much about how execution surfaces are assembled. It instantiates workflow streaming, workflow execution, orchestrator streaming, and orchestrator execution in one place. That is manageable today, but it is a sign that composition depends on cross-boundary knowledge.
 
 ### 2. The orchestrator is a second orchestration system, not just another CRUD module
 

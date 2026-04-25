@@ -7,7 +7,6 @@ describe("builtin ai tools", () => {
 
     expect(ids).toEqual([
       "builtin-report-finding",
-      "builtin-report-vulnerability",
       "builtin-deep-analysis",
       "builtin-attack-chain-correlation"
     ]);

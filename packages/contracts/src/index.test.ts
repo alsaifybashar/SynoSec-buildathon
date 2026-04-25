@@ -23,7 +23,6 @@ import {
   scansListQuerySchema,
   securityVulnerabilitySchema,
   aiToolSchema,
-  singleAgentScanReportSchema,
   toolRequestSchema,
   toolRunSchema,
   updateAiProviderBodySchema,
@@ -364,60 +363,6 @@ describe("contracts", () => {
       vulnerabilityIds: [],
       gaps: ["No L1 adapter configured."],
       updatedAt: "2026-04-21T12:00:00.000Z"
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts a single-agent scan report with coverage overview", () => {
-    const result = singleAgentScanReportSchema.safeParse({
-      scanId: "scan-1",
-      executionKind: "single-agent",
-      executiveSummary: "The scan found one evidence-backed web vulnerability and partial transport coverage.",
-      stopReason: "submitted_completion",
-      totalVulnerabilities: 1,
-      vulnerabilitiesBySeverity: {
-        info: 0,
-        low: 0,
-        medium: 1,
-        high: 0,
-        critical: 0
-      },
-      coverageOverview: {
-        L1: "not_covered",
-        L4: "partially_covered",
-        L7: "covered"
-      },
-      topVulnerabilities: [
-        {
-          id: "vuln-1",
-          scanId: "scan-1",
-          agentId: "agent-1",
-          primaryLayer: "L7",
-          relatedLayers: [],
-          category: "auth_weakness",
-          title: "Weak session token handling",
-          description: "Session tokens are long-lived and not rotated on privilege change.",
-          impact: "Compromised sessions could remain valid longer than intended.",
-          recommendation: "Rotate tokens on login and privilege change.",
-          severity: "medium",
-          confidence: 0.82,
-          validationStatus: "single_source",
-          target: {
-            host: "localhost"
-          },
-          evidence: [
-            {
-              sourceTool: "seed-http-recon",
-              quote: "Token rotation not observed."
-            }
-          ],
-          technique: "HTTP session analysis",
-          tags: [],
-          createdAt: "2026-04-21T12:00:00.000Z"
-        }
-      ],
-      generatedAt: "2026-04-21T12:01:00.000Z"
     });
 
     expect(result.success).toBe(true);

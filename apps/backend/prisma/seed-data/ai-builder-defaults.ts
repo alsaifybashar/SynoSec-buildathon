@@ -78,9 +78,6 @@ export const anthropicProviderId = "88e995dc-c55d-4a74-b831-b64922f25858";
 export const localProviderId = "6fb18f09-f230-49df-b0ab-4f1bcedd230c";
 export const osiSingleAgentWorkflowId = "8b57f0e7-1dd7-4d6a-8db5-c4ff7be80a21";
 export const orchestrationAttackMapWorkflowId = "97fa61fd-8ae7-41d8-b267-d472413fcb9c";
-export const seededSingleAgentScanId = "b6ec7b8e-b8dc-4b58-bf5a-5f3f0f7e8d4c";
-export const seededSingleAgentTacticId = "54ec7b8e-b8dc-4b58-bf5a-5f3f0f7e8d4c";
-export const seededSingleAgentVulnerabilityId = "64ec7b8e-b8dc-4b58-bf5a-5f3f0f7e8d4c";
 
 export type SeededProviderKey = "anthropic" | "local";
 export type SeededRoleKey = "orchestrator" | "qa-analyst" | "pen-tester" | "reporter";
@@ -261,7 +258,7 @@ export const seededRoleDefinitions = [
     name: "Orchestrator",
     description: "Coordinates scans, chooses the next useful step, and delegates the right tool path.",
     systemPrompt:
-      "You are the orchestration lead for SynoSec. Execute a single transparent evidence pipeline from the current target state, choose the next highest-value evidence action, stay inside approved scope, and use only the approved tools. Keep the run prompt-driven: prefer target/baseUrl tool inputs over vague url-only shapes, register every concrete finding through report_finding, and end only through complete_run or fail_run. Canonical OSI mapping: L1 Physical, L2 Data Link, L3 Network, L4 Transport, L5 Session, L6 Presentation, L7 Application. Prefer evidence gathering before escalation, keep a concise running rationale, and stop when additional actions do not materially improve confidence or coverage.",
+      "Lead a single evidence-driven SynoSec workflow. Choose the highest-value next action, stay in scope, use only approved tools, prefer concrete target/baseUrl inputs, and stop when confidence stops improving.",
     toolIds: [
       httpReconTool.id,
       httpHeadersTool.id,
@@ -445,136 +442,4 @@ export function getSeededWorkflowDefinitions() {
       ]
     }
   ] as const;
-}
-
-export function getSeededSingleAgentScanDefinition() {
-  return {
-    workflowId: osiSingleAgentWorkflowId,
-    id: seededSingleAgentScanId,
-    mode: "single-agent" as const,
-    applicationId: localApplicationId,
-    runtimeId: targetRuntimeId,
-    agentId: seededAgentId("anthropic", "orchestrator"),
-    scan: {
-      id: seededSingleAgentScanId,
-      scope: {
-        targets: ["localhost:8888"],
-        exclusions: [],
-        layers: ["L1", "L4", "L7"] as const,
-        maxDepth: 3,
-        maxDurationMinutes: 10,
-        rateLimitRps: 5,
-        allowActiveExploits: false,
-        graceEnabled: true,
-        graceRoundInterval: 3,
-        cyberRangeMode: "simulation" as const
-      },
-      status: "complete" as const,
-      startedAt: "2026-04-21T10:00:00.000Z",
-      completedAt: "2026-04-21T10:04:30.000Z",
-      summary: "Single-agent workflow completed one OSI security pass with evidence-backed web findings."
-    },
-    layerCoverage: [
-      {
-        scanId: seededSingleAgentScanId,
-        layer: "L1" as const,
-        coverageStatus: "partially_covered" as const,
-        confidenceSummary: "No physical-layer testing is available in the local demo, but the agent recorded that limitation explicitly.",
-        toolRefs: [],
-        evidenceRefs: [],
-        vulnerabilityIds: [],
-        gaps: ["No L1 tooling is available in the local environment."],
-        updatedAt: "2026-04-21T10:04:30.000Z"
-      },
-      {
-        scanId: seededSingleAgentScanId,
-        layer: "L4" as const,
-        coverageStatus: "covered" as const,
-        confidenceSummary: "The agent confirmed exposed transport connectivity to the HTTP service and captured service evidence.",
-        toolRefs: [serviceScanTool.id],
-        evidenceRefs: ["toolrun-seed-service-scan"],
-        vulnerabilityIds: [],
-        gaps: [],
-        updatedAt: "2026-04-21T10:04:30.000Z"
-      },
-      {
-        scanId: seededSingleAgentScanId,
-        layer: "L7" as const,
-        coverageStatus: "covered" as const,
-        confidenceSummary: "The agent validated multiple application-layer weaknesses with direct HTTP evidence.",
-        toolRefs: [httpReconTool.id, vulnAuditTool.id],
-        evidenceRefs: ["toolrun-seed-http-recon", "toolrun-seed-vuln-audit"],
-        vulnerabilityIds: [seededSingleAgentVulnerabilityId],
-        gaps: [],
-        updatedAt: "2026-04-21T10:04:30.000Z"
-      }
-    ],
-    vulnerability: {
-      id: seededSingleAgentVulnerabilityId,
-      scanId: seededSingleAgentScanId,
-      agentId: seededAgentId("anthropic", "orchestrator"),
-      primaryLayer: "L7" as const,
-      relatedLayers: ["L4"] as const,
-      category: "sensitive_data_exposure",
-      title: "Sensitive user data exposed without authentication",
-      description: "The local vulnerable target exposed user records containing credential material and PII on an unauthenticated endpoint.",
-      impact: "An unauthenticated attacker can retrieve sensitive records directly, leading to credential compromise and privacy impact.",
-      recommendation: "Require authentication on the affected endpoint, remove sensitive fields from responses, and add regression tests for access control.",
-      severity: "high" as const,
-      confidence: 0.95,
-      validationStatus: "reproduced" as const,
-      target: {
-        host: "localhost",
-        port: 8888,
-        url: "http://localhost:8888/api/users",
-        service: "http"
-      },
-      evidence: [
-        {
-          sourceTool: vulnAuditTool.id,
-          quote: "Sensitive user data exposed without authentication",
-          observationRef: "audit:/api/users",
-          toolRunRef: "toolrun-seed-vuln-audit"
-        }
-      ],
-      technique: "seeded vulnerability audit",
-      reproduction: {
-        commandPreview: `${vulnAuditTool.id} baseUrl=http://localhost:8888`,
-        steps: [
-          "Issue an HTTP GET request to /api/users on the target application.",
-          "Observe that the response succeeds without authentication.",
-          "Confirm that the response body contains sensitive fields such as passwordHash or ssn."
-        ]
-      },
-      owasp: "A01:2021",
-      tags: ["demo", "single-agent", "access-control"],
-      createdAt: "2026-04-21T10:04:30.000Z"
-    },
-    auditEntries: [
-      {
-        scanId: seededSingleAgentScanId,
-        actorType: "system" as const,
-        actorId: seededAgentId("anthropic", "orchestrator"),
-        action: "single-agent-scan-started",
-        detail: "Seeded single-agent scan execution started.",
-        createdAt: "2026-04-21T10:00:00.000Z"
-      },
-      {
-        scanId: seededSingleAgentScanId,
-        actorType: "agent" as const,
-        actorId: seededAgentId("anthropic", "orchestrator"),
-        action: "single-agent-vulnerability-reported",
-        detail: "Seeded single-agent scan reported one validated vulnerability.",
-        createdAt: "2026-04-21T10:03:45.000Z"
-      },
-      {
-        scanId: seededSingleAgentScanId,
-        actorType: "system" as const,
-        actorId: seededAgentId("anthropic", "orchestrator"),
-        action: "single-agent-scan-completed",
-        detail: "Seeded single-agent scan execution completed.",
-        createdAt: "2026-04-21T10:04:30.000Z"
-      }
-    ]
-  } as const;
 }

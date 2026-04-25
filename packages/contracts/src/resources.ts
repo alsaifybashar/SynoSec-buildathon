@@ -329,7 +329,6 @@ export type ToolExecutorType = z.infer<typeof toolExecutorTypeSchema>;
 
 export const toolBuiltinActionKeySchema = z.enum([
   "report_finding",
-  "report_vulnerability",
   "deep_analysis",
   "attack_chain_correlation"
 ]);

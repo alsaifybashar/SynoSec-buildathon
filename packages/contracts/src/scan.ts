@@ -1,10 +1,7 @@
 import { z } from "zod";
 import {
-  coverageStatusSchema,
   escalationRouteSchema,
   findingSchema,
-  scanLayerCoverageSchema,
-  securityVulnerabilitySchema,
   scanLlmConfigSchema,
   scanScopeSchema,
   scanTacticSchema,
@@ -12,7 +9,7 @@ import {
   validationStatusSchema
 } from "./scan-core.js";
 import { agentNoteSchema, observationSchema, toolRunSchema } from "./tooling.js";
-import { createPaginatedResponseSchema, executionKindSchema, paginatedMetaSchema, resourceListQuerySchema, sortDirectionSchema } from "./shared.js";
+import { paginatedMetaSchema, resourceListQuerySchema, sortDirectionSchema } from "./shared.js";
 export const scanStatusSchema = z.enum(["pending", "running", "complete", "aborted", "failed"]);
 export type ScanStatus = z.infer<typeof scanStatusSchema>;
 
@@ -89,70 +86,6 @@ export const scansListQuerySchema = resourceListQuerySchema.extend({
   sortDirection: sortDirectionSchema.default("desc")
 });
 export type ScansListQuery = z.infer<typeof scansListQuerySchema>;
-
-export const singleAgentScanSchema = scanSchema.extend({
-  mode: z.literal("single-agent"),
-  applicationId: z.string().uuid(),
-  runtimeId: z.string().uuid().nullable(),
-  agentId: z.string().uuid(),
-  llm: scanLlmConfigSchema.optional(),
-  stopReason: z.string().nullable().default(null)
-});
-export type SingleAgentScan = z.infer<typeof singleAgentScanSchema>;
-
-export const createSingleAgentScanRequestSchema = z.object({
-  applicationId: z.string().uuid(),
-  runtimeId: z.string().uuid().nullable(),
-  agentId: z.string().uuid(),
-  scope: scanScopeSchema,
-  llm: scanLlmConfigSchema.optional()
-});
-export type CreateSingleAgentScanRequest = z.infer<typeof createSingleAgentScanRequestSchema>;
-
-export const singleAgentScanVulnerabilitiesResponseSchema = z.object({
-  scanId: z.string(),
-  vulnerabilities: z.array(securityVulnerabilitySchema)
-});
-export type SingleAgentScanVulnerabilitiesResponse = z.infer<typeof singleAgentScanVulnerabilitiesResponseSchema>;
-
-export const singleAgentScanCoverageResponseSchema = z.object({
-  scanId: z.string(),
-  layers: z.array(scanLayerCoverageSchema)
-});
-export type SingleAgentScanCoverageResponse = z.infer<typeof singleAgentScanCoverageResponseSchema>;
-
-export const singleAgentScanCompletionSchema = z.object({
-  summary: z.string().min(1),
-  residualRisk: z.string().min(1),
-  recommendedNextStep: z.string().min(1),
-  stopReason: z.string().min(1)
-});
-export type SingleAgentScanCompletion = z.infer<typeof singleAgentScanCompletionSchema>;
-
-export const singleAgentScanTraceResponseSchema = z.object({
-  scanId: z.string(),
-  entries: z.array(auditEntrySchema)
-});
-export type SingleAgentScanTraceResponse = z.infer<typeof singleAgentScanTraceResponseSchema>;
-
-export const singleAgentScanReportSchema = z.object({
-  scanId: z.string(),
-  executionKind: executionKindSchema.default("single-agent"),
-  executiveSummary: z.string(),
-  stopReason: z.string().nullable(),
-  totalVulnerabilities: z.number().int().min(0),
-  vulnerabilitiesBySeverity: z.object({
-    info: z.number().int().min(0),
-    low: z.number().int().min(0),
-    medium: z.number().int().min(0),
-    high: z.number().int().min(0),
-    critical: z.number().int().min(0)
-  }),
-  coverageOverview: z.record(coverageStatusSchema),
-  topVulnerabilities: z.array(securityVulnerabilitySchema).max(10),
-  generatedAt: z.string().datetime()
-});
-export type SingleAgentScanReport = z.infer<typeof singleAgentScanReportSchema>;
 
 export const strategyMapResponseSchema = z.object({
   tactics: z.array(scanTacticSchema),

@@ -65,23 +65,22 @@ describe("MemoryAiToolsRepository", () => {
     expect(builtinOnly.items.map((tool) => tool.id)).toEqual([
       "builtin-attack-chain-correlation",
       "builtin-deep-analysis",
-      "builtin-report-finding",
-      "builtin-report-vulnerability"
+      "builtin-report-finding"
     ]);
     expect(allTools.items.some((tool) => tool.id === "builtin-deep-analysis" && tool.source === "system")).toBe(true);
   });
 
   it("returns builtin tools by id and rejects builtin mutation", async () => {
     const repository = new MemoryAiToolsRepository([createTool()]);
-    const builtin = await repository.getById("builtin-report-vulnerability");
+    const builtin = await repository.getById("builtin-report-finding");
 
     expect(builtin).toMatchObject({
       source: "system",
       executorType: "builtin",
-      builtinActionKey: "report_vulnerability"
+      builtinActionKey: "report_finding"
     });
 
-    await expect(repository.update("builtin-report-vulnerability", {
+    await expect(repository.update("builtin-report-finding", {
       name: "Mutated"
     })).rejects.toMatchObject({
       status: 400,

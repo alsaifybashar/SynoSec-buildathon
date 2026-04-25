@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import {
   buildWorkflowRunReport,
   executionReportDetailSchema,
-  executionReportFindingFromVulnerability,
   executionReportFindingFromWorkflowFinding,
   executionReportSummarySchema,
   executionReportToolActivitySchema,
@@ -17,7 +16,6 @@ import {
   type ExecutionReportsListQuery
 } from "@synosec/contracts";
 import { Prisma } from "@prisma/client";
-import { getLayerCoverageForScan, getSecurityVulnerabilitiesForScan, getSingleAgentScan, getSingleAgentScanReport } from "@/engine/scans/scan-store.js";
 import { prisma } from "@/shared/database/prisma-client.js";
 import { paginateItems, type PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import { RequestError } from "@/shared/http/request-error.js";
@@ -65,7 +63,7 @@ function parseToolActivity(value: Prisma.JsonValue) {
 }
 
 function normalizeExecutionKind(value: string | null | undefined): ExecutionKind | null {
-  if (value === "single-agent" || value === "workflow" || value === "attack-map") {
+  if (value === "workflow" || value === "attack-map") {
     return value;
   }
 
@@ -159,11 +157,6 @@ export class ExecutionReportsService {
     return true;
   }
 
-  async createForSingleAgentScan(scanId: string) {
-    const snapshot = await this.buildSingleAgentSnapshot(scanId);
-    return this.createFromSnapshot(snapshot);
-  }
-
   async createForWorkflowRun(runId: string) {
     const snapshot = await this.buildWorkflowSnapshot(runId);
     return this.createFromSnapshot(snapshot);
@@ -240,62 +233,6 @@ export class ExecutionReportsService {
       sourceSummary: row.sourceSummary,
       raw: row.raw
     });
-  }
-
-  private async buildSingleAgentSnapshot(scanId: string): Promise<ExecutionReportSnapshot> {
-    const [scan, report, vulnerabilities, layers, scanRow, application] = await Promise.all([
-      getSingleAgentScan(scanId),
-      getSingleAgentScanReport(scanId),
-      getSecurityVulnerabilitiesForScan(scanId),
-      getLayerCoverageForScan(scanId),
-      prisma.scanRun.findUnique({ where: { id: scanId } }),
-      prisma.scanRun.findUnique({ where: { id: scanId } }).then(async (row) => {
-        if (!row?.applicationId) {
-          return null;
-        }
-        return prisma.application.findUnique({ where: { id: row.applicationId } });
-      })
-    ]);
-
-    if (!scan || !report || !scanRow) {
-      throw new RequestError(404, "Execution report source run not found.");
-    }
-    if (!scan.completedAt || (scan.status !== "complete" && scan.status !== "failed" && scan.status !== "aborted")) {
-      throw new RequestError(400, "Execution report can only be created after the single-agent scan finishes.");
-    }
-
-    const findings = vulnerabilities.map(executionReportFindingFromVulnerability);
-    const title = application?.name ?? "Single-agent scan";
-    return {
-      executionId: scan.id,
-      executionKind: "single-agent",
-      sourceDefinitionId: null,
-      status: normalizeExecutionReportStatus(scan.status),
-      title,
-      targetLabel: scan.scope.targets[0] ?? scan.id,
-      sourceLabel: title,
-      findingsCount: findings.length,
-      highestSeverity: summarizeHighestSeverity(findings),
-      generatedAt: scan.completedAt,
-      updatedAt: scan.completedAt,
-      executiveSummary: report.executiveSummary,
-      findings,
-      toolActivity: [],
-      coverageOverview: report.coverageOverview,
-      sourceSummary: {
-        executionKind: "single-agent",
-        scanId: scan.id,
-        applicationId: scan.applicationId,
-        runtimeId: scan.runtimeId,
-        stopReason: report.stopReason,
-        totalVulnerabilities: report.totalVulnerabilities,
-        topVulnerabilityIds: report.topVulnerabilities.map((item) => item.id)
-      },
-      raw: {
-        layers,
-        scanSummary: scanRow.summary ?? null
-      }
-    };
   }
 
   private async buildWorkflowSnapshot(runId: string): Promise<ExecutionReportSnapshot> {

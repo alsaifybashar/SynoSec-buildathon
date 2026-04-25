@@ -138,7 +138,6 @@ export function ExecutionReportsPage({
         placeholder: "Filter kind",
         allLabel: "All kinds",
         options: [
-          { label: "Single-agent", value: "single-agent" },
           { label: "Workflow", value: "workflow" },
           { label: "Attack-map", value: "attack-map" }
         ]

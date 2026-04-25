@@ -50,63 +50,6 @@ const builtinAiTools: AiTool[] = [
     updatedAt: builtinTimestamp
   },
   {
-    id: "builtin-report-vulnerability",
-    name: "Report Vulnerability",
-    status: "active",
-    source: "system",
-    description: "Single-agent scan action for persisting one structured evidence-backed vulnerability.",
-    binary: null,
-    executorType: "builtin",
-    builtinActionKey: "report_vulnerability",
-    bashSource: null,
-    capabilities: ["scan-reporting"],
-    category: "utility",
-    riskTier: "passive",
-    notes: "Executed by the single-agent security loop, not by a shell script.",
-    sandboxProfile: "read-only-parser",
-    privilegeProfile: "read-only-network",
-    timeoutMs: 1000,
-    inputSchema: {
-      type: "object",
-      properties: {
-        primaryLayer: { type: "string" },
-        category: { type: "string" },
-        title: { type: "string" },
-        description: { type: "string" },
-        impact: { type: "string" },
-        recommendation: { type: "string" },
-        severity: { type: "string" },
-        confidence: { type: "number" },
-        target: { type: "object" },
-        evidence: { type: "array" },
-        technique: { type: "string" }
-      },
-      required: [
-        "primaryLayer",
-        "category",
-        "title",
-        "description",
-        "impact",
-        "recommendation",
-        "severity",
-        "confidence",
-        "target",
-        "evidence",
-        "technique"
-      ]
-    },
-    outputSchema: {
-      type: "object",
-      properties: {
-        accepted: { type: "boolean" },
-        vulnerabilityId: { type: "string" }
-      },
-      required: ["accepted", "vulnerabilityId"]
-    },
-    createdAt: builtinTimestamp,
-    updatedAt: builtinTimestamp
-  },
-  {
     id: "builtin-deep-analysis",
     name: "Deep Analysis",
     status: "active",

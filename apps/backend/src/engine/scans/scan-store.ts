@@ -9,8 +9,6 @@ import type {
   ScanStatus,
   ScanLlmConfig,
   SecurityVulnerability,
-  SingleAgentScan,
-  SingleAgentScanReport,
   TacticStatus,
   ValidationStatus
 } from "@synosec/contracts";
@@ -53,41 +51,6 @@ function rowToScan(row: {
     currentRound: row.currentRound,
     tacticsTotal: row.tacticsTotal,
     tacticsComplete: row.tacticsComplete,
-    createdAt: row.createdAt.toISOString(),
-    ...(row.completedAt ? { completedAt: row.completedAt.toISOString() } : {})
-  };
-}
-
-function rowToSingleAgentScan(row: {
-  id: string;
-  scope: Prisma.JsonValue;
-  llmConfig: Prisma.JsonValue | null;
-  status: "pending" | "running" | "complete" | "aborted";
-  currentRound: number;
-  tacticsTotal: number;
-  tacticsComplete: number;
-  applicationId: string | null;
-  runtimeId: string | null;
-  agentId: string | null;
-  stopReason: string | null;
-  createdAt: Date;
-  completedAt: Date | null;
-}): SingleAgentScan {
-  return {
-    id: row.id,
-    mode: "single-agent",
-    applicationId: row.applicationId ?? "",
-    runtimeId: row.runtimeId,
-    agentId: row.agentId ?? "",
-    scope: row.scope as SingleAgentScan["scope"],
-    ...(row.llmConfig && typeof row.llmConfig === "object" && !Array.isArray(row.llmConfig)
-      ? { llm: row.llmConfig as ScanLlmConfig }
-      : {}),
-    status: row.status,
-    currentRound: row.currentRound,
-    tacticsTotal: row.tacticsTotal,
-    tacticsComplete: row.tacticsComplete,
-    stopReason: row.stopReason,
     createdAt: row.createdAt.toISOString(),
     ...(row.completedAt ? { completedAt: row.completedAt.toISOString() } : {})
   };
@@ -204,7 +167,7 @@ function rowToAudit(row: {
 export async function createScan(
   scan: Scan,
   metadata?: {
-    mode?: "legacy" | "workflow" | "single-agent";
+    mode?: "legacy" | "workflow";
     applicationId?: string | null;
     runtimeId?: string | null;
     agentId?: string | null;
@@ -237,83 +200,6 @@ export async function createScan(
 export async function getScan(id: string): Promise<Scan | null> {
   const row = await prisma.scanRun.findUnique({ where: { id } });
   return row ? rowToScan(row) : null;
-}
-
-export async function updateSingleAgentScan(
-  id: string,
-  input: {
-    status?: ScanStatus;
-    currentRound?: number;
-    tacticsTotal?: number;
-    tacticsComplete?: number;
-    completedAt?: string | null;
-    stopReason?: string | null;
-    summary?: Prisma.InputJsonValue | null;
-  }
-): Promise<void> {
-  await prisma.scanRun.update({
-    where: { id },
-    data: {
-      ...(input.status ? { status: mapScanStatus(input.status) } : {}),
-      ...(input.currentRound !== undefined ? { currentRound: input.currentRound } : {}),
-      ...(input.tacticsTotal !== undefined ? { tacticsTotal: input.tacticsTotal } : {}),
-      ...(input.tacticsComplete !== undefined ? { tacticsComplete: input.tacticsComplete } : {}),
-      ...(input.completedAt !== undefined ? { completedAt: input.completedAt ? toDate(input.completedAt) : null } : {}),
-      ...(input.stopReason !== undefined ? { stopReason: input.stopReason } : {}),
-      ...(input.summary !== undefined ? { summary: input.summary ?? Prisma.JsonNull } : {})
-    }
-  });
-}
-
-export async function getSingleAgentScan(id: string): Promise<SingleAgentScan | null> {
-  const row = await prisma.scanRun.findFirst({
-    where: {
-      id,
-      mode: "single-agent"
-    }
-  });
-
-  return row ? rowToSingleAgentScan(row) : null;
-}
-
-export async function listSingleAgentScans(query: {
-  page: number;
-  pageSize: number;
-  status?: ScanStatus;
-  applicationId?: string;
-  agentId?: string;
-  sortDirection: "asc" | "desc";
-}): Promise<{
-  items: SingleAgentScan[];
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-}> {
-  const where = {
-    mode: "single-agent" as const,
-    ...(query.status ? { status: mapScanStatus(query.status) } : {}),
-    ...(query.applicationId ? { applicationId: query.applicationId } : {}),
-    ...(query.agentId ? { agentId: query.agentId } : {})
-  };
-
-  const [total, rows] = await Promise.all([
-    prisma.scanRun.count({ where }),
-    prisma.scanRun.findMany({
-      where,
-      orderBy: { createdAt: query.sortDirection },
-      skip: (query.page - 1) * query.pageSize,
-      take: query.pageSize
-    })
-  ]);
-
-  return {
-    items: rows.map(rowToSingleAgentScan),
-    page: query.page,
-    pageSize: query.pageSize,
-    total,
-    totalPages: total === 0 ? 0 : Math.ceil(total / query.pageSize)
-  };
 }
 
 export async function createDfsNode(node: ScanTactic): Promise<void> {
@@ -472,48 +358,4 @@ export async function updateFindingValidation(
       validated: validationStatus === "cross_validated" || validationStatus === "reproduced"
     }
   });
-}
-
-export async function getSingleAgentScanReport(scanId: string): Promise<SingleAgentScanReport | null> {
-  const scan = await getSingleAgentScan(scanId);
-  if (!scan) {
-    return null;
-  }
-
-  const [vulnerabilities, layers] = await Promise.all([
-    getSecurityVulnerabilitiesForScan(scanId),
-    getLayerCoverageForScan(scanId)
-  ]);
-
-  const vulnerabilitiesBySeverity = {
-    info: vulnerabilities.filter((item) => item.severity === "info").length,
-    low: vulnerabilities.filter((item) => item.severity === "low").length,
-    medium: vulnerabilities.filter((item) => item.severity === "medium").length,
-    high: vulnerabilities.filter((item) => item.severity === "high").length,
-    critical: vulnerabilities.filter((item) => item.severity === "critical").length
-  };
-
-  const coverageOverview = Object.fromEntries(
-    layers.map((layer) => [layer.layer, layer.coverageStatus])
-  ) as Record<OsiLayer, ScanLayerCoverage["coverageStatus"]>;
-
-  const topVulnerabilities = vulnerabilities
-    .slice()
-    .sort((left, right) => right.confidence - left.confidence)
-    .slice(0, 10);
-
-  return {
-    scanId,
-    executionKind: "single-agent",
-    executiveSummary:
-      vulnerabilities.length > 0
-        ? `The single-agent scan recorded ${vulnerabilities.length} structured vulnerabilities across ${layers.length} layer coverage records.`
-        : `The single-agent scan completed without recording structured vulnerabilities and produced ${layers.length} layer coverage records.`,
-    stopReason: scan.stopReason,
-    totalVulnerabilities: vulnerabilities.length,
-    vulnerabilitiesBySeverity,
-    coverageOverview,
-    topVulnerabilities,
-    generatedAt: new Date().toISOString()
-  };
 }

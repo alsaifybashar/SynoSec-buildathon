@@ -301,7 +301,7 @@ The critical context-limit fix lives in:
 
 - `apps/backend/src/workflow-engine/tools/tool-selector.ts`
 
-The selector scores available tools before they are passed to the model. This prevents the single-agent scan loop from dumping every approved tool into one model call.
+The selector scores available tools before they are passed to the model. This prevents the workflow pipeline from dumping every approved tool into one model call.
 
 Selector inputs:
 
@@ -330,13 +330,13 @@ Integration:
 - Anthropic loop: select once before building the evidence tool map
 - Local loop: re-select at the start of each iteration
 - lifecycle actions are always available and are never filtered:
-  - `report_vulnerability`
+  - `report_finding`
   - `update_layer_coverage`
   - `submit_scan_completion`
 
 Main integration point:
 
-- `apps/backend/src/features/modules/scans/single-agent-scan.service.ts`
+- `apps/backend/src/engine/workflow/workflow-execution.service.ts`
 
 ### Phase 4: Smart Agent-Tool Assignment
 
@@ -439,8 +439,8 @@ These tools are pre-configured with bash scripts in `scripts/tools/` and seeded 
 
 ### Key Backend Files
 
-- Scan loop:
-  `apps/backend/src/features/modules/scans/single-agent-scan.service.ts`
+- Workflow execution loop:
+  `apps/backend/src/engine/workflow/workflow-execution.service.ts`
 - Tool selector:
   `apps/backend/src/workflow-engine/tools/tool-selector.ts`
 - Tool catalog entrypoint:
