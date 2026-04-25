@@ -10,7 +10,6 @@ import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuText,
@@ -339,11 +338,8 @@ function SidebarNav({
     }
 
     return (
-      <SidebarGroup key={entry.group.id} className="space-y-1.5">
-        <SidebarGroupLabel>{entry.group.label}</SidebarGroupLabel>
-        <SidebarMenu>
-          {entry.group.items.map((item) => renderEntry({ kind: "item", item }))}
-        </SidebarMenu>
+      <SidebarGroup key={entry.group.id}>
+        <SidebarMenu>{renderEntry(entry)}</SidebarMenu>
       </SidebarGroup>
     );
   }
