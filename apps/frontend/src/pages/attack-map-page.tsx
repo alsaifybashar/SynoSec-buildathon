@@ -7,6 +7,7 @@ type NodeType = "target" | "port" | "tech" | "vector" | "scan" | "finding" | "ch
 type NodeStatus = "pending" | "scanning" | "completed" | "vulnerable" | "blocked";
 type Severity = "info" | "low" | "medium" | "high" | "critical";
 type ThemeMode = "dark" | "white";
+type LayoutMode = "balanced" | "spread" | "compact";
 
 type AttackMapTheme = {
   mode: ThemeMode;
@@ -183,6 +184,22 @@ const RISK_COLOR: Record<string, string> = {
   low:      "#2563eb"
 };
 
+const LAYOUT_PRESETS: Record<LayoutMode, { label: string; rest: number; repulsion: number; center: number; damping: number }> = {
+  balanced: { label: "Balanced", rest: 175, repulsion: 11000, center: 0.0026, damping: 0.83 },
+  spread: { label: "Spread", rest: 245, repulsion: 18000, center: 0.0018, damping: 0.84 },
+  compact: { label: "Compact", rest: 125, repulsion: 7000, center: 0.0042, damping: 0.8 }
+};
+
+const NODE_TYPE_ORDER: Record<NodeType, number> = {
+  target: 0,
+  port: 1,
+  tech: 2,
+  vector: 3,
+  scan: 4,
+  finding: 5,
+  chain: 6
+};
+
 const SOURCE_TYPE_LABEL: Record<string, { icon: string; label: string }> = {
   nmap:        { icon: "⬡", label: "nmap scan" },
   http:        { icon: "⬡", label: "HTTP probe" },
@@ -251,12 +268,17 @@ function useForceSimulation(
   nodes: MapNode[],
   edges: MapEdge[],
   width: number,
-  height: number
+  height: number,
+  layoutMode: LayoutMode,
+  layoutRevision: number
 ) {
   const simRef = useRef<Map<string, SimNode>>(new Map());
   const rafRef = useRef<number | null>(null);
   const iterRef = useRef(0);
+  const lastLayoutRevisionRef = useRef(layoutRevision);
   const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const preset = LAYOUT_PRESETS[layoutMode];
 
   const restartSim = useCallback(() => {
     iterRef.current = 0;
@@ -278,7 +300,7 @@ function useForceSimulation(
           const dy = pb.y - pa.y || 0.01;
           const d2 = dx * dx + dy * dy;
           const d = Math.sqrt(d2);
-          const f = Math.min(7000 / d2, 60) * alpha;
+          const f = Math.min(preset.repulsion / d2, 75) * alpha;
           const fx = (dx / d) * f;
           const fy = (dy / d) * f;
           if (!pa.pinned) { pa.vx -= fx; pa.vy -= fy; }
@@ -294,7 +316,7 @@ function useForceSimulation(
         const dx = tgt.x - src.x;
         const dy = tgt.y - src.y;
         const d = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-        const rest = 150;
+        const rest = preset.rest;
         const f = (d - rest) * 0.07 * alpha;
         const fx = (dx / d) * f;
         const fy = (dy / d) * f;
@@ -305,15 +327,15 @@ function useForceSimulation(
       // Weak center gravity
       for (const [, p] of arr) {
         if (p.pinned) continue;
-        p.vx += (width / 2 - p.x) * 0.003 * alpha;
-        p.vy += (height / 2 - p.y) * 0.003 * alpha;
+        p.vx += (width / 2 - p.x) * preset.center * alpha;
+        p.vy += (height / 2 - p.y) * preset.center * alpha;
       }
 
       // Integrate
       for (const [, p] of arr) {
         if (p.pinned) continue;
-        p.vx *= 0.82;
-        p.vy *= 0.82;
+        p.vx *= preset.damping;
+        p.vy *= preset.damping;
         p.x = Math.max(50, Math.min(width - 50, p.x + p.vx));
         p.y = Math.max(50, Math.min(height - 50, p.y + p.vy));
       }
@@ -326,20 +348,35 @@ function useForceSimulation(
     };
 
     rafRef.current = requestAnimationFrame(tick);
-  }, [edges, width, height]);
+  }, [edges, preset.center, preset.damping, preset.repulsion, preset.rest, width, height]);
 
   useEffect(() => {
     const sim = simRef.current;
+    if (lastLayoutRevisionRef.current !== layoutRevision) {
+      sim.clear();
+      lastLayoutRevisionRef.current = layoutRevision;
+      setPinnedIds(new Set(nodes.filter((node) => node.type === "target").map((node) => node.id)));
+      setPositions(new Map());
+    }
+
+    const typeCounts = new Map<NodeType, number>();
+    const typeIndexes = new Map<NodeType, number>();
+    for (const node of nodes) typeCounts.set(node.type, (typeCounts.get(node.type) ?? 0) + 1);
 
     // Seed new nodes
     for (const node of nodes) {
       if (!sim.has(node.id)) {
+        const index = typeIndexes.get(node.type) ?? 0;
+        typeIndexes.set(node.type, index + 1);
         if (node.type === "target") {
           sim.set(node.id, { x: width / 2, y: height / 2, vx: 0, vy: 0, pinned: true });
         } else {
-          const angle = Math.random() * Math.PI * 2;
-          const r = 100 + Math.random() * 120;
-          sim.set(node.id, { x: width / 2 + Math.cos(angle) * r, y: height / 2 + Math.sin(angle) * r, vx: 0, vy: 0 });
+          const column = NODE_TYPE_ORDER[node.type];
+          const totalInType = Math.max(typeCounts.get(node.type) ?? 1, 1);
+          const columns = Object.keys(NODE_TYPE_ORDER).length - 1;
+          const x = Math.max(70, Math.min(width - 70, 90 + (column / columns) * (width - 180)));
+          const y = Math.max(70, Math.min(height - 70, ((index + 1) / (totalInType + 1)) * height));
+          sim.set(node.id, { x, y, vx: 0, vy: 0 });
         }
       }
     }
@@ -347,24 +384,49 @@ function useForceSimulation(
     for (const id of sim.keys()) {
       if (!nodes.some((n) => n.id === id)) sim.delete(id);
     }
+    setPinnedIds((prev) => {
+      const nodeIds = new Set(nodes.map((node) => node.id));
+      const next = new Set([...prev].filter((id) => nodeIds.has(id)));
+      for (const node of nodes) {
+        if (node.type === "target") next.add(node.id);
+      }
+      return next;
+    });
 
     restartSim();
     return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); };
-  }, [nodes, restartSim, width, height]);
+  }, [nodes, restartSim, width, height, layoutRevision]);
 
   const pinNode = useCallback((id: string, x: number, y: number) => {
     const p = simRef.current.get(id);
     if (p) { p.x = x; p.y = y; p.vx = 0; p.vy = 0; p.pinned = true; }
+    setPinnedIds((prev) => new Set([...prev, id]));
     setPositions((prev) => new Map([...prev, [id, { x, y }]]));
   }, []);
 
   const unpinNode = useCallback((id: string) => {
+    const isTarget = nodes.some((node) => node.id === id && node.type === "target");
+    if (isTarget) return;
     const p = simRef.current.get(id);
-    if (p && id !== "target") p.pinned = false;
+    if (p) p.pinned = false;
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     restartSim();
-  }, [restartSim]);
+  }, [nodes, restartSim]);
 
-  return { positions, pinNode, unpinNode };
+  const unpinAll = useCallback(() => {
+    const targetIds = new Set(nodes.filter((node) => node.type === "target").map((node) => node.id));
+    for (const [id, p] of simRef.current.entries()) {
+      if (!targetIds.has(id)) p.pinned = false;
+    }
+    setPinnedIds(targetIds);
+    restartSim();
+  }, [nodes, restartSim]);
+
+  return { positions, pinnedIds, pinNode, unpinNode, unpinAll };
 }
 
 // ─── Network Map SVG ──────────────────────────────────────────────────────────
@@ -380,22 +442,50 @@ function NetworkMap({
   height: number;
   theme: AttackMapTheme;
 }) {
-  const { positions, pinNode, unpinNode } = useForceSimulation(nodes, edges, width, height);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("spread");
+  const [layoutRevision, setLayoutRevision] = useState(0);
+  const [showLabels, setShowLabels] = useState(true);
+  const [curvedEdges, setCurvedEdges] = useState(true);
+  const [viewport, setViewport] = useState({ scale: 1, x: 0, y: 0 });
+  const { positions, pinnedIds, pinNode, unpinNode, unpinAll } = useForceSimulation(nodes, edges, width, height, layoutMode, layoutRevision);
   const dragging = useRef<{ id: string; ox: number; oy: number } | null>(null);
+  const panning = useRef<{ clientX: number; clientY: number; x: number; y: number } | null>(null);
+  const moved = useRef(false);
   const svgRef = useRef<SVGSVGElement>(null);
+  const selectedPinned = selectedId ? pinnedIds.has(selectedId) : false;
 
   function svgCoords(e: React.MouseEvent): { x: number; y: number } {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const rect = svg.getBoundingClientRect();
     return {
-      x: (e.clientX - rect.left) * (width / rect.width),
-      y: (e.clientY - rect.top) * (height / rect.height)
+      x: ((e.clientX - rect.left) * (width / rect.width) - viewport.x) / viewport.scale,
+      y: ((e.clientY - rect.top) * (height / rect.height) - viewport.y) / viewport.scale
     };
+  }
+
+  function screenCoords(clientX: number, clientY: number): { x: number; y: number } {
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const rect = svg.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) * (width / rect.width),
+      y: (clientY - rect.top) * (height / rect.height)
+    };
+  }
+
+  function setZoom(nextScale: number, anchor = { x: width / 2, y: height / 2 }) {
+    const scale = Math.max(0.45, Math.min(2.6, nextScale));
+    setViewport((prev) => {
+      const worldX = (anchor.x - prev.x) / prev.scale;
+      const worldY = (anchor.y - prev.y) / prev.scale;
+      return { scale, x: anchor.x - worldX * scale, y: anchor.y - worldY * scale };
+    });
   }
 
   function onNodeDown(e: React.MouseEvent, id: string) {
     e.stopPropagation();
+    moved.current = false;
     const coords = svgCoords(e);
     const pos = positions.get(id);
     dragging.current = { id, ox: coords.x - (pos?.x ?? 0), oy: coords.y - (pos?.y ?? 0) };
@@ -403,29 +493,64 @@ function NetworkMap({
   }
 
   function onSvgMove(e: React.MouseEvent) {
-    if (!dragging.current) return;
-    const { x, y } = svgCoords(e);
-    pinNode(dragging.current.id, x - dragging.current.ox, y - dragging.current.oy);
-  }
-
-  function onSvgUp() {
     if (dragging.current) {
-      unpinNode(dragging.current.id);
-      dragging.current = null;
+      moved.current = true;
+      const { x, y } = svgCoords(e);
+      pinNode(dragging.current.id, x - dragging.current.ox, y - dragging.current.oy);
+      return;
+    }
+    if (panning.current) {
+      moved.current = true;
+      const current = screenCoords(e.clientX, e.clientY);
+      const start = screenCoords(panning.current.clientX, panning.current.clientY);
+      setViewport((prev) => ({
+        ...prev,
+        x: panning.current!.x + current.x - start.x,
+        y: panning.current!.y + current.y - start.y
+      }));
     }
   }
 
+  function onSvgUp() {
+    dragging.current = null;
+    panning.current = null;
+  }
+
+  function onSvgDown(e: React.MouseEvent) {
+    if (e.target !== svgRef.current && (e.target as SVGElement).tagName !== "rect") return;
+    moved.current = false;
+    panning.current = { clientX: e.clientX, clientY: e.clientY, x: viewport.x, y: viewport.y };
+  }
+
+  function onSvgClick() {
+    if (!moved.current) onSelect(null);
+  }
+
+  function onWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    const anchor = screenCoords(e.clientX, e.clientY);
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoom(viewport.scale * delta, anchor);
+  }
+
+  function resetView() {
+    setViewport({ scale: 1, x: 0, y: 0 });
+  }
+
   return (
-    <svg
-      ref={svgRef}
-      width={width}
-      height={height}
-      style={{ background: theme.canvasBg, display: "block" }}
-      onClick={() => onSelect(null)}
-      onMouseMove={onSvgMove}
-      onMouseUp={onSvgUp}
-      onMouseLeave={onSvgUp}
-    >
+    <>
+      <svg
+        ref={svgRef}
+        width={width}
+        height={height}
+        style={{ background: theme.canvasBg, display: "block", cursor: panning.current ? "grabbing" : "default" }}
+        onClick={onSvgClick}
+        onMouseDown={onSvgDown}
+        onMouseMove={onSvgMove}
+        onMouseUp={onSvgUp}
+        onMouseLeave={onSvgUp}
+        onWheel={onWheel}
+      >
       {/* Subtle grid */}
       <defs>
         <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
@@ -438,25 +563,34 @@ function NetworkMap({
       </defs>
       <rect width={width} height={height} fill="url(#grid)" />
 
+      <g transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}>
+
       {/* Edges */}
-      {edges.map((edge) => {
+      {edges.map((edge, index) => {
         const src = positions.get(edge.source);
         const tgt = positions.get(edge.target);
         if (!src || !tgt) return null;
         const isChain = edge.kind === "chain";
+        const dx = tgt.x - src.x;
+        const dy = tgt.y - src.y;
+        const d = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+        const offset = curvedEdges ? ((index % 5) - 2) * 12 : 0;
+        const mx = (src.x + tgt.x) / 2 - (dy / d) * offset;
+        const my = (src.y + tgt.y) / 2 + (dx / d) * offset;
+        const path = curvedEdges
+          ? `M ${src.x} ${src.y} Q ${mx} ${my} ${tgt.x} ${tgt.y}`
+          : `M ${src.x} ${src.y} L ${tgt.x} ${tgt.y}`;
         return (
           <g key={edge.id}>
-            <line
-              x1={src.x} y1={src.y}
-              x2={tgt.x} y2={tgt.y}
+            <path
+              d={path}
+              fill="none"
               stroke={isChain ? "#dc2626" : theme.edge}
               strokeWidth={isChain ? 2 : 1.5}
               strokeDasharray={isChain ? "none" : "4 6"}
               opacity={isChain ? 0.85 : 0.7}
             />
             {isChain && (() => {
-              const mx = (src.x + tgt.x) / 2;
-              const my = (src.y + tgt.y) / 2;
               return (
                 <text x={mx} y={my - 5} textAnchor="middle" fill="#dc2626" fontSize={7} fontFamily="ui-monospace,monospace" opacity={0.9}>
                   CHAIN
@@ -516,32 +650,37 @@ function NetworkMap({
             {/* Status dot */}
             <circle cx={r - 4} cy={-(r - 4)} r={4} fill={dot} stroke={theme.nodeDotStroke} strokeWidth={1} />
             {/* Label */}
-            <text
-              y={r + 14}
-              textAnchor="middle"
-              fill={theme.nodeLabel}
-              fontSize={node.type === "target" ? 11 : 9}
-              fontFamily="ui-monospace, monospace"
-              fontWeight={node.type === "target" ? 700 : 500}
-              style={{ userSelect: "none" }}
-            >
-              {label}
-            </text>
-            {/* Type micro-label */}
-            <text
-              y={r + 24}
-              textAnchor="middle"
-              fill={stroke}
-              fontSize={7}
-              fontFamily="ui-monospace, monospace"
-              opacity={0.7}
-              style={{ userSelect: "none" }}
-            >
-              {node.type.toUpperCase()}
-            </text>
+            {showLabels && (
+              <>
+                <text
+                  y={r + 14}
+                  textAnchor="middle"
+                  fill={theme.nodeLabel}
+                  fontSize={node.type === "target" ? 11 : 9}
+                  fontFamily="ui-monospace, monospace"
+                  fontWeight={node.type === "target" ? 700 : 500}
+                  style={{ userSelect: "none" }}
+                >
+                  {label}
+                </text>
+                {/* Type micro-label */}
+                <text
+                  y={r + 24}
+                  textAnchor="middle"
+                  fill={stroke}
+                  fontSize={7}
+                  fontFamily="ui-monospace, monospace"
+                  opacity={0.7}
+                  style={{ userSelect: "none" }}
+                >
+                  {node.type.toUpperCase()}
+                </text>
+              </>
+            )}
           </g>
         );
       })}
+      </g>
 
       {/* Empty state */}
       {nodes.length === 0 && (
@@ -549,7 +688,66 @@ function NetworkMap({
           Enter a target and launch orchestration
         </text>
       )}
-    </svg>
+      </svg>
+
+      <div className="absolute top-32 left-3 flex flex-col gap-2">
+        <div className="rounded-lg border px-3 py-2 backdrop-blur-sm" style={{ background: theme.panelOverlay, borderColor: theme.border }}>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[0.55rem] uppercase tracking-wider font-semibold" style={{ color: theme.textSubtle }}>Zoom</span>
+            <span className="text-[0.55rem] font-mono" style={{ color: theme.textMuted }}>{Math.round(viewport.scale * 100)}%</span>
+          </div>
+          <div className="mt-1.5 flex items-center gap-1">
+            <button className="h-7 w-7 rounded border text-sm font-semibold" style={{ borderColor: theme.borderStrong, color: theme.text }} onClick={() => setZoom(viewport.scale / 1.18)}>−</button>
+            <input
+              type="range"
+              min="45"
+              max="260"
+              value={Math.round(viewport.scale * 100)}
+              onChange={(e) => setZoom(Number(e.target.value) / 100)}
+              className="w-24 accent-blue-600"
+            />
+            <button className="h-7 w-7 rounded border text-sm font-semibold" style={{ borderColor: theme.borderStrong, color: theme.text }} onClick={() => setZoom(viewport.scale * 1.18)}>+</button>
+            <button className="rounded border px-2 py-1 text-[0.55rem] font-mono" style={{ borderColor: theme.borderStrong, color: theme.textSubtle }} onClick={resetView}>fit</button>
+          </div>
+        </div>
+
+        <div className="rounded-lg border px-3 py-2 backdrop-blur-sm" style={{ background: theme.panelOverlay, borderColor: theme.border }}>
+          <div className="text-[0.55rem] uppercase tracking-wider font-semibold mb-1.5" style={{ color: theme.textSubtle }}>Layout</div>
+          <div className="flex gap-1">
+            {(Object.entries(LAYOUT_PRESETS) as [LayoutMode, (typeof LAYOUT_PRESETS)[LayoutMode]][]).map(([mode, presetOption]) => (
+              <button
+                key={mode}
+                type="button"
+                className="rounded border px-2 py-1 text-[0.55rem] font-mono"
+                style={{
+                  background: layoutMode === mode ? theme.button : "transparent",
+                  borderColor: layoutMode === mode ? theme.button : theme.borderStrong,
+                  color: layoutMode === mode ? "#ffffff" : theme.textSubtle
+                }}
+                onClick={() => {
+                  setLayoutMode(mode);
+                  setLayoutRevision((value) => value + 1);
+                }}
+              >
+                {presetOption.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            <button className="rounded border px-2 py-1 text-[0.55rem] font-mono" style={{ borderColor: theme.borderStrong, color: theme.textSubtle }} onClick={() => setLayoutRevision((value) => value + 1)}>reflow</button>
+            <button className="rounded border px-2 py-1 text-[0.55rem] font-mono" style={{ borderColor: theme.borderStrong, color: theme.textSubtle }} onClick={unpinAll}>release all</button>
+            <button className="rounded border px-2 py-1 text-[0.55rem] font-mono" style={{ borderColor: theme.borderStrong, color: showLabels ? theme.textMuted : theme.borderStrong }} onClick={() => setShowLabels((value) => !value)}>labels</button>
+            <button className="rounded border px-2 py-1 text-[0.55rem] font-mono" style={{ borderColor: theme.borderStrong, color: curvedEdges ? theme.textMuted : theme.borderStrong }} onClick={() => setCurvedEdges((value) => !value)}>curves</button>
+            {selectedId && selectedPinned && (
+              <button className="rounded border px-2 py-1 text-[0.55rem] font-mono" style={{ borderColor: theme.borderStrong, color: theme.textSubtle }} onClick={() => unpinNode(selectedId)}>release selected</button>
+            )}
+          </div>
+          <div className="mt-1.5 text-[0.52rem] font-mono" style={{ color: theme.textFaint }}>
+            Drag nodes to pin. Drag canvas to pan.
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 

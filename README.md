@@ -1,461 +1,386 @@
 # SynoSec
 
-SynoSec is an AI-assisted security scanning system with a frontend, backend orchestrator, connector worker, supporting data stores, and an intentionally vulnerable local target for end-to-end validation.
+SynoSec is an AI-assisted vulnerability discovery and security orchestration platform. It combines graph-reasoning agents, evidence-producing security tools, structured vulnerability reporting, and a built-in cyber range to identify weaknesses in a target system and explain how those weaknesses connect into practical attack paths.
 
-## What's in the repo
+The project is designed for authorized security testing, validation, and demonstrations. The included vulnerable target is intentionally insecure and must not be exposed to the public internet.
 
-- `apps/frontend` - UI for configuring AI providers, AI agents, AI tools, applications, and runtimes
-- `apps/backend` - API, broker, scan persistence, and connector control plane
-- `apps/connector` - Docker-installable connector worker that polls for approved tool jobs
-- `demos/vulnerable-app` - intentionally unsafe demo target used for local scanning exercises
+![SynoSec Attack Map](images/attack-map.png)
 
-## How scanning works
+## Mission
 
-SynoSec starts from a target and a scan policy, then builds out a graph of services, ports, and findings as it explores. The backend coordinates tool use, records evidence, and updates the scan state so the UI can show progress in near real time.
+SynoSec is built to reduce the gap between conventional scanner output and analyst-grade security reasoning. Instead of only reporting isolated tool findings, the platform records evidence, maps findings to system layers, correlates related weaknesses, and presents the result as an attack map that can be reviewed, reproduced, and improved.
 
-A typical scan looks like this:
+The core objective is to answer four questions for a target system:
 
-1. A scan request defines targets, depth, time limits, and allowed layers.
-2. The orchestrator creates an initial node and begins exploring reachable surfaces.
-3. Agents inspect the current node, choose the next useful action, and request tool runs through the backend broker.
-4. Tool results are stored as evidence, turned into findings or child nodes, and added back into the graph.
-5. The loop continues until the graph is exhausted or the scan reaches its configured stop conditions.
+1. What reachable services, technologies, paths, and trust boundaries exist?
+2. Which security weaknesses are supported by concrete tool evidence?
+3. Which OSI layers were covered, partially covered, or not covered?
+4. Which findings can be combined into higher-impact escalation routes?
 
-## Agent workflow
+## System Architecture
 
-The agent system is structured as a controlled analysis loop rather than an open-ended autonomous run. Each step is reviewed against policy, recorded in the audit trail, and fed back into the next decision.
+SynoSec is organized as a distributed control plane with local or connector-based execution. The backend coordinates agents, providers, tool policies, tool execution, scan state, and attack-map persistence. The frontend presents workflow traces, tool results, coverage, and graph relationships.
 
-- plan - decide what to inspect next based on the current node, prior evidence, and scan limits
-- observe - gather tool output, runtime metadata, and service details
-- evaluate - score the result, identify useful findings, and derive follow-up nodes
-- act - request the next approved tool run or exploration step
-- stop - end when no higher-value path remains or limits are reached
+```mermaid
+flowchart LR
+    User[Security analyst] --> Frontend[React dashboard]
+    Frontend --> Backend[Backend API and orchestrator]
 
-## Run locally
+    Backend --> Agents[AI agents]
+    Backend --> Providers[AI providers: Anthropic or local model]
+    Backend --> Catalog[Tool catalog and selector]
+    Backend --> Broker[Tool broker and policy engine]
+    Backend --> Store[(PostgreSQL and in-memory evidence stores)]
 
-1. Copy `.env.example` to `.env`.
-2. Set `ANTHROPIC_API_KEY` in `.env` if you want to use Anthropic models.
-3. `LOCAL_ENABLED=FALSE` is the default. Set `LOCAL_ENABLED=TRUE` in `.env` only if you explicitly want `make dev` to bring up Ollama for the local provider. The legacy typo `LOCAL_ENABHLED` is still accepted temporarily for compatibility.
-4. With local enabled, the Docker-backed dev path starts Ollama and pulls `qwen3:1.7b` for the local provider.
-5. `make dev` starts Postgres, the vulnerable target, and only starts Ollama when local mode is explicitly enabled before launching backend and frontend on the host.
-6. Attack and scan execution should be started from the Attack Map UI, not as an automatic background action during local development startup.
-7. Backend tests now include live local-model evaluation of the seeded tool defaults, so `pnpm --filter @synosec/backend test` expects Ollama with `qwen3:1.7b` to be available when local mode is enabled.
-8. Optional app-user authentication is gated behind `AUTH_ENABLED`. When enabled, configure `AUTH_GOOGLE_CLIENT_ID`, `AUTH_ALLOWED_EMAILS`, and `AUTH_SESSION_SECRET` in `.env`.
-9. The current Google integration uses Google Identity Services redirect mode. Google posts the returned ID token to `/api/auth/google`, the backend verifies it, creates the SynoSec session cookie, and redirects the browser back into the app.
-10. In Google Cloud Console, use these values:
-   Local:
-   `Authorized JavaScript origins` = `http://localhost:5173`
-   `Authorized redirect URIs` = `http://localhost:5173/api/auth/google`
-   Production:
-   `Authorized JavaScript origins` = `https://synosecai.com`
-   `Authorized redirect URIs` = `https://synosecai.com/api/auth/google`
-11. Start the full stack:
+    Agents <--> Providers
+    Catalog --> Broker
+    Broker --> Local[Local shell transport]
+    Broker --> Connector[Connector worker]
+    Local --> Target[Target system]
+    Connector --> Target
 
-```bash
-make docker-up
+    Broker --> Evidence[Tool runs, observations, findings]
+    Evidence --> Store
+    Backend --> AttackMap[Attack map and escalation routes]
+    AttackMap --> Frontend
 ```
 
-`make docker-up` does not start Ollama unless `LOCAL_ENABLED=TRUE` is set explicitly.
 
-12. Run the smoke demo:
+
+### Main Components
+
+- `apps/frontend`: React and Tailwind interface for applications, agents, tools, workflows, runtimes, scan traces, and the attack map.
+- `apps/backend`: Express API, scan orchestration, workflow execution, AI-provider integration, tool brokerage, scan storage, and attack-chain correlation.
+- `apps/connector`: Worker process for executing tool jobs from a different network position than the backend.
+- `packages/contracts`: Shared TypeScript contracts and Zod schemas for scans, vulnerabilities, OSI coverage, tool runs, observations, workflow events, reports, and escalation routes.
+- `scripts/tools`: Bash-backed tool implementations used by the broker and seeded AI-tool definitions.
+- `demos/vulnerable-app`: Controlled vulnerable target used as the cyber range for safe validation.
+
+## Vulnerability Discovery Method
+
+SynoSec uses a closed-loop methodology: observe the target, reason over the current graph, choose evidence-producing tools, validate tool output, and update the graph. The system is intentionally evidence-oriented. A vulnerability is not just a model assertion; it must be represented as a structured record with target details, severity, confidence, technique, recommendation, and evidence references.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Scope
+    Scope --> Observe: Load target, layers, approved tools
+    Observe --> SelectTools: Rank tools by layer, phase, risk, prior coverage
+    SelectTools --> Execute: Broker authorizes and dispatches tool request
+    Execute --> Evidence: Persist tool run and observations
+    Evidence --> Validate: Check evidence, coverage, and schema requirements
+    Validate --> ReportFinding: Evidence supports vulnerability
+    Validate --> UpdateCoverage: Evidence supports layer progress
+    ReportFinding --> ReasonGraph
+    UpdateCoverage --> ReasonGraph
+    ReasonGraph --> SelectTools: More coverage or follow-up required
+    ReasonGraph --> Complete: Stop condition and residual risk recorded
+    Complete --> [*]
+```
+
+The discovery method has two complementary execution paths.
+
+### Single-Agent Defensive Loop
+
+The single-agent scan path focuses on layer-aware vulnerability discovery. It creates a scan, initializes requested OSI-layer coverage, loads the approved agent tools, and asks the selected model to act through constrained tool calls.
+
+The agent can perform four structured actions:
+
+- `call_tool`: Execute one approved tool against a normalized target.
+- `report_vulnerability`: Persist one evidence-backed vulnerability.
+- `update_layer_coverage`: Mark a layer as covered, partially covered, or not covered, with evidence and gaps.
+- `submit_scan_completion`: Close the scan with a summary, residual risk, next step, and stop reason.
+
+For hosted models, SynoSec exposes these actions as tool calls through the AI SDK. For local models, the same behavior is represented as strict JSON actions. In both modes, the backend validates the action schema and rejects unsupported actions, unknown tools, invalid coverage references, or missing completion payloads.
+
+### Attack-Map Orchestrator
+
+The attack-map path focuses on graph construction and relationship analysis. It performs initial reconnaissance, asks the model to build an attack plan, executes mapped tools for each phase, extracts findings, performs deep analysis from confirmed findings, and then correlates multi-finding attack chains.
+
+```mermaid
+sequenceDiagram
+    participant UI as Frontend
+    participant API as Backend Orchestrator
+    participant LLM as Reasoning Model
+    participant Broker as Tool Execution
+    participant Target as Target System
+    participant Graph as Attack Map Store
+
+    UI->>API: Start attack-map run
+    API->>Target: HTTP probe and service scan
+    API->>LLM: Parse recon into ports, technologies, paths
+    LLM-->>API: Structured recon result
+    API->>LLM: Generate prioritized attack plan
+    LLM-->>API: Phases, tools, priorities, rationale
+    loop For each phase
+        API->>Broker: Execute suggested tool scripts
+        Broker->>Target: Probe target
+        Broker-->>API: Output and observations
+        API->>LLM: Analyze evidence for findings
+        LLM-->>API: Structured findings
+        API->>Graph: Add finding nodes and discovery edges
+        API->>LLM: Deep analysis from confirmed finding
+        LLM-->>API: Adjacent or deeper findings
+        API->>Graph: Add derived nodes and edges
+    end
+    API->>LLM: Correlate confirmed findings
+    LLM-->>API: Attack chains with impact narrative
+    API->>Graph: Add chain nodes and chain edges
+    API-->>UI: Stream phases, tool events, reasoning, and final map
+```
+
+## Graph-Reasoning Agents
+
+SynoSec treats a scan as a reasoning graph rather than a flat list of scanner results. Graph nodes represent targets, tactics, findings, and chains. Edges represent discovery relationships or chain relationships. This allows the system to preserve how a result was reached, what evidence supports it, and how one weakness enables another.
+
+```mermaid
+flowchart TD
+    Root[Target: base URL or host] --> Recon[Recon node: ports, headers, technologies]
+    Recon --> PhaseA[Planned phase: web scanning]
+    Recon --> PhaseB[Planned phase: content discovery]
+    PhaseA --> Finding1[Finding: missing security headers]
+    PhaseA --> Finding2[Finding: unauthenticated admin panel]
+    PhaseB --> Finding3[Finding: exposed files]
+    Finding2 --> Deep1[Deep analysis: leaked credentials]
+    Finding3 --> Deep1
+    Finding1 --> Chain[Attack chain: exposure to compromise]
+    Deep1 --> Chain
+```
+
+Graph reasoning is used in three ways:
+
+- Prioritization: The agent selects the next tool or phase based on current coverage, previously executed tools, observed services, and risk.
+- Expansion: Confirmed findings become new reasoning anchors for deeper or adjacent checks, such as privilege escalation, lateral movement, or exposed secrets.
+- Correlation: Multiple findings are evaluated together to identify escalation routes that have higher impact than any individual finding.
+
+The resulting attack map is not only a visualization layer. It is the working memory of the scan: a reviewable model of what was observed, what was inferred, and what relationships were established.
+
+## Evidence and Validation Model
+
+SynoSec separates raw tool execution from security conclusions. Tool output is converted into observations. Observations can become findings. Findings can become structured vulnerabilities or graph nodes. Chain analysis links findings only when there is a plausible enabling relationship.
+
+```mermaid
+flowchart LR
+    ToolRun[Tool run] --> Output[Raw output]
+    Output --> Observation[Observation: title, summary, severity, confidence, evidence]
+    Observation --> Confidence[Confidence engine]
+    Confidence --> Finding[Finding or vulnerability]
+    Finding --> Coverage[OSI layer coverage]
+    Finding --> Route[Escalation route]
+    Coverage --> Report[Report and workflow trace]
+    Route --> AttackMap[Attack map]
+```
+
+Important validation properties:
+
+- Tool requests are authorized by policy before execution.
+- Tool runs record status, exit code, output, command preview, dispatch mode, and failure reason.
+- Observations include a source tool, target, evidence, technique, confidence, and severity.
+- Vulnerability submissions require evidence, impact, recommendation, target metadata, confidence, and validation status.
+- Layer coverage records include tool references, evidence references, vulnerability references, and explicit gaps.
+- Corroborating observations are aggregated by the confidence engine using `1 - (1 - A)(1 - B)`, which increases confidence when independent evidence supports the same hypothesis.
+
+## Tool Selection and Execution
+
+Tools are defined with category, risk tier, execution phase, OSI-layer metadata, tags, input schema, and script implementation. The selector ranks tools from the approved agent set using:
+
+- Layer alignment with requested but uncovered OSI layers.
+- Phase progression from early reconnaissance to late validation.
+- Risk gating for passive, active, and controlled-exploit tools.
+- Recency penalties so the loop does not repeatedly choose the same tool without new justification.
+- Category diversity so selected tools do not collapse into one narrow class.
+
+The broker then compiles the tool definition into a concrete request, checks policy, dispatches it locally or through a connector, stores the result, and emits workflow events. Tool failures are recorded with original failure context so operators can inspect what failed instead of receiving an artificial success.
+
+## OSI-Layer Coverage
+
+SynoSec models security coverage across `L1` through `L7`:
+
+| Layer | Name | Example evidence in SynoSec |
+| --- | --- | --- |
+| `L1` | Physical | Simulated host-level leakage or mounted host artifacts in cyber range scenarios |
+| `L2` | Data Link | Docker bridge or local-link exposure checks in controlled environments |
+| `L3` | Network | Reachable hosts, segmentation gaps, ICMP behavior, network mapping |
+| `L4` | Transport | Open ports, exposed services, plaintext transport, unexpected listeners |
+| `L5` | Session | Token expiry, replay, session fixation, cookie or JWT lifecycle issues |
+| `L6` | Presentation | Encoding, content type handling, weak cryptographic presentation, parser issues |
+| `L7` | Application | Authentication bypass, injection, BOLA, XSS, exposed admin routes, sensitive data exposure |
+
+Coverage is recorded as `covered`, `partially_covered`, or `not_covered`. A layer can remain partially covered when a tool produced useful evidence but the agent still reports gaps, uncertainty, blocked checks, or missing validation.
+
+## Cyber Range Evaluation
+
+The repository includes a safe target under `demos/vulnerable-app`. It is an intentionally vulnerable Express application that exposes realistic web weaknesses for controlled testing:
+
+- SQL injection simulation in `/login`.
+- Unauthenticated administrator panel at `/admin`.
+- Verbose debug output and internal service hints.
+- Missing security headers.
+- Exposed framework and server headers.
+- Sensitive user data from `/api/users`.
+- Directory listing simulation at `/files`.
+- Reflected XSS simulation at `/search`.
+
+The cyber range exists to evaluate whether the agents can move from reconnaissance to evidence-backed conclusions without touching a real third-party system.
+
+```mermaid
+flowchart TD
+    Compose[Docker Compose] --> Backend[SynoSec backend]
+    Compose --> Frontend[SynoSec frontend]
+    Compose --> Connector[Optional connector]
+    Compose --> Range[Vulnerable target]
+
+    Backend --> Range
+    Connector --> Range
+    Backend --> Smoke[Smoke and evaluation flow]
+    Smoke --> Evidence[Expected evidence: ports, headers, routes, findings]
+    Evidence --> Coverage[Layer coverage and gaps]
+    Evidence --> Map[Attack map and chain correlation]
+```
+
+Evaluation focuses on:
+
+- Discovery accuracy: Whether open ports, services, headers, and known paths are detected.
+- Evidence quality: Whether findings cite concrete output rather than unsupported model claims.
+- Coverage quality: Whether each requested layer has an explicit status and gap statement.
+- Graph quality: Whether related findings are connected into plausible discovery or chain relationships.
+- Failure transparency: Whether failed tools and incomplete checks remain visible in traces and reports.
+
+## Data Flow
+
+At runtime, a typical vulnerability discovery pass follows this path:
+
+1. The analyst defines an application, runtime, agent, target scope, requested OSI layers, and exploit allowance.
+2. The backend creates a scan and root tactic node.
+3. The tool selector ranks approved tools for the current layer coverage and scan phase.
+4. The agent requests a tool or the orchestrator executes a planned phase.
+5. The broker authorizes the request and dispatches it locally or through a connector.
+6. Tool output is persisted as a tool run and normalized into observations.
+7. The agent or orchestrator analyzes the evidence and submits vulnerabilities, coverage updates, or graph findings.
+8. Confirmed findings are used as anchors for deeper reasoning and chain correlation.
+9. Reports, traces, coverage, and the attack map are exposed to the frontend.
+
+## Getting Started
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Node.js 20 or newer
+- `pnpm`
+- Optional Anthropic API key for hosted high-reasoning agents
+- Optional local model runtime for local-provider execution
+
+### Quick Start with Docker
 
 ```bash
+cp .env.example .env
+make docker-up
 make smoke-e2e
 ```
 
-For host-mode development against the same local model stack:
+### Local Development
 
 ```bash
+pnpm install
 make dev
 ```
 
-### Stop development environment
+Local development starts Postgres, the vulnerable target, and the host-mode backend and frontend. Attack-map and scan execution should be started from the UI rather than as an automatic background action during development startup.
 
-To completely stop the development environment, including both local processes and Docker-backed services (Postgres, target, Ollama):
+To use local inference, configure the local provider settings in `.env` and ensure the configured base URL is reachable by the backend. When `LOCAL_ENABLED=TRUE`, the Docker-backed development path can start Ollama and prepare the configured local model.
+
+### Endpoints
+
+| Service | Default URL |
+| --- | --- |
+| Frontend | `http://localhost:5173` |
+| Backend API | `http://localhost:3001` |
+| Vulnerable target | `http://localhost:8888` |
+| Ollama, when enabled | `http://localhost:11434` |
+
+### Common Commands
 
 ```bash
-# Stop Docker services and free local dev ports
-make docker-down && make free-dev-ports
+make docker-up       # Start the Docker Compose stack
+make docker-down     # Stop and remove Docker services
+make dev             # Start host-mode development
+make smoke-e2e       # Run the Docker smoke evaluation
+make test            # Run workspace tests
+pnpm build           # Build all workspace packages
 ```
 
-For auth-enabled local development, the relevant `.env` values are:
+To fully stop local development services and free the default ports:
 
-```env
-AUTH_ENABLED=true
-AUTH_GOOGLE_ENABLED=true
-AUTH_GOOGLE_CLIENT_ID=your-google-web-client-id
-AUTH_ALLOWED_EMAILS=you@example.com
-AUTH_SESSION_SECRET=replace-with-a-random-secret-at-least-32-characters
-AUTH_COOKIE_NAME=synosec_session
-AUTH_COOKIE_SECURE=false
-AUTH_SESSION_TTL_HOURS=168
-AUTH_SESSION_TOUCH_INTERVAL_SECONDS=600
-FRONTEND_URL=https://synosecai.com
+```bash
+make docker-down
+make free-dev-ports
 ```
 
-`AUTH_ALLOWED_EMAILS` is enforced on every authenticated request, so removing an email from the allowlist invalidates access on the next session-backed call. `AUTH_SESSION_TOUCH_INTERVAL_SECONDS` throttles `lastSeenAt` writes to avoid turning normal UI traffic into a write on every request.
+### Authentication
 
-The Google redirect URI must match exactly. Do not register or rely on query-string variants such as `http://localhost:5173/api/auth/google?redirectTo=%2Fapplications`.
+Optional app-user authentication is controlled by `AUTH_ENABLED`. When it is enabled, configure the Google client ID, allowed emails, session secret, cookie settings, and frontend URL in `.env`. Google Identity Services redirect mode posts the returned ID token to `/api/auth/google`; the backend verifies the token, creates the SynoSec session cookie, and redirects the browser back into the application.
 
-## Endpoints
+`AUTH_ALLOWED_EMAILS` is enforced on authenticated requests, so removing an address from the allowlist prevents continued access on the next session-backed call.
 
-- Frontend: `http://localhost:5173`
-- Backend API: `http://localhost:3001`
-- Ollama API: `http://localhost:11434`
-- Vulnerable target: `http://localhost:8888`
+### Connector Execution
 
-## VPS deploy
+The connector path lets SynoSec execute broker-approved tool jobs from another network position. This is useful for VPS deployments, segmented test networks, or cyber range layouts where the backend should not execute probes directly.
 
-GitHub Actions deploys to a VPS using `.github/workflows/deploy.yml` and the production stack in `docker-compose.vps.yml`.
-
-- Host `nginx` runs directly on the VPS and proxies traffic to Dockerized frontend and backend services bound on loopback.
-- `backend` runs the compiled API and pushes the Prisma schema on startup.
-- `frontend` runs the production frontend build behind the host nginx reverse proxy.
-- `connector` stays on the private Docker network and polls the backend control plane.
-- `postgres` persists app data in a named Docker volume.
-
-Before using the deploy workflow, define these GitHub repository variables:
-
-- `VPS_HOST`
-- `VPS_USER`
-- `SERVER_NAME`
-- `NGINX_CONFIG_PATH`
-- `FRONTEND_URL`
-
-Define these GitHub repository secrets as well:
-
-- `VPS_SSH_KEY`
-- `POSTGRES_PASSWORD`
-- `ANTHROPIC_API_KEY`
-- `CONNECTOR_SHARED_TOKEN`
-- `AUTH_SESSION_SECRET`
-
-Most non-secret application defaults now live in `infra/deploy/env.vps.template`, so GitHub only needs the host-specific variables above plus the runtime secrets. If you need to change default model, scan, connector, auth, or public port settings for every deployment, edit that committed template instead of adding more Actions variables.
-The deploy workflow now hardcodes the VPS app directory to `/opt/synosec` and binds the host loopback ports to `3030` for the frontend and `3031` for the backend.
-The deploy user must have passwordless `sudo` for `install`, `find`, and `rm` against that path, because the workflow prepares and clears `/opt/synosec` before uploading each release.
-
-Set `SERVER_NAME` to the apex domain only, for example `synosecai.com`. The nginx template will serve both `synosecai.com` and `www.synosecai.com`.
-
-Set `FRONTEND_URL` to the public HTTPS origin: `https://synosecai.com`.
-
-For Google Cloud Console production setup, use:
-
-- `Authorized JavaScript origins`: `https://synosecai.com`
-- `Authorized redirect URIs`: `https://synosecai.com/api/auth/google`
-
-If production traffic can also land on `https://www.synosecai.com`, add both of these as well:
-
-- `Authorized JavaScript origins`: `https://www.synosecai.com`
-- `Authorized redirect URIs`: `https://www.synosecai.com/api/auth/google`
-
-Set `NGINX_CONFIG_PATH` to the exact nginx site config path allowed by sudoers, for example `/etc/nginx/sites-available/synosec`.
-
-The host nginx config template lives at `infra/nginx/synosec.vps.conf.template` and is installed by the deploy workflow. It redirects HTTP to HTTPS, terminates TLS on the VPS using the standard Certbot layout under `/etc/letsencrypt/live/<server_name>/`, forwards the original client scheme/host to the app, and emits `Strict-Transport-Security`.
-
-Post-deploy health checks now run on the VPS origin loopback endpoints instead of the public domain, so deploy validation does not depend on Cloudflare edge behavior.
-
-## Connector testing
-
-The Docker stack now runs the same connector shape you can later deploy on a VPS.
+Key settings:
 
 - `TOOL_EXECUTION_MODE=connector` routes broker-approved tool runs through the connector control plane.
-- `CONNECTOR_RUN_MODE` supports `dry-run`, `simulate`, and `execute`.
-- `POST /api/connectors/test-dispatch` lets you test the broker/connector path without reviving the retired scan API.
+- `CONNECTOR_RUN_MODE` supports dry-run, simulation, and execution modes.
+- `POST /api/connectors/test-dispatch` can validate broker-to-connector dispatch without starting a full scan.
 
-## Feature documentation
+### Production Deployment
 
-Contributor-facing feature documentation lives in [docs/features.md](/home/nilwi971/projects/SynoSec-buildathon/docs/features.md).
+The production stack is defined in `docker-compose.vps.yml` and is intended to run behind host-level nginx. The VPS deployment model uses Dockerized backend, frontend, connector, and Postgres services, with nginx terminating TLS and forwarding traffic to loopback-bound frontend and backend ports.
 
-Repository cleanup and restructure guidance lives in [docs/repo-restructure-plan.md](/home/nilwi971/projects/SynoSec-buildathon/docs/repo-restructure-plan.md).
+Required deployment configuration includes:
 
-Use it to check:
+- VPS host, user, SSH key, and app directory permissions.
+- Public frontend URL and nginx server name.
+- Postgres password, connector shared token, and AI-provider credentials.
+- Authentication secrets when `AUTH_ENABLED=true`.
 
-- which features are active
-- what each feature is for
-- how each feature is tested
-- whether the feature is mature enough to extend safely
+Most non-secret VPS defaults should live in the committed deployment environment template rather than being duplicated as ad hoc CI variables.
 
-## Key commands
+## Repository Structure
 
-```bash
-make docker-up         # Start full stack (Docker Compose)
-make docker-down       # Stop and remove containers
-make dev               # Start local dev against Docker-backed infra
-make docker-down && make free-dev-ports # Stop everything completely
-make smoke-e2e         # Run the Docker E2E smoke scan
-make test              # Run workspace tests
-pnpm build             # Build all workspace packages
+```text
+apps/
+  backend/       API, orchestration, agents, tools, scan services
+  connector/     Remote or isolated tool execution worker
+  frontend/      Dashboard, workflow traces, attack-map views
+packages/
+  contracts/     Shared schemas and types
+scripts/
+  tools/         Bash tool implementations
+demos/
+  vulnerable-app/ Controlled vulnerable target for evaluation
+docs/
+  *.md           Requirements, decisions, terminology, and feature notes
 ```
 
-## Contributing
+## Feature and Design Documentation
 
-Contribute to an existing feature when it is already documented in [docs/features.md](/home/nilwi971/projects/SynoSec-buildathon/docs/features.md) and has a clear purpose, a defined test path, and enough developer-facing notes to preserve the intended behavior.
+Additional project notes live under `docs/`:
 
-The cutoff is strict:
+- `docs/features.md`: Active feature inventory and extension guidance.
+- `docs/requirements.md`: Security-stack and coverage requirements.
+- `docs/defensive-loop-contract.md`: Defensive-loop behavior and contracts.
+- `docs/strategy-flow-terminology.md`: Naming conventions for strategy maps, tactics, and escalation routes.
+- `docs/vulnerable-app-specification.md`: Cyber range concept and intended vulnerability coverage.
 
-- If a feature does not yet have purpose, tests, and developer documentation, do not expand it as normal product work.
-- Document the feature first, define how it will be tested, and only then extend it.
-- Do not contribute new behavior to retired or frozen areas unless the reactivation effort is explicitly documented as a new active feature.
+## Security and Usage Boundaries
 
-For connector-related work, preserve local/VPS parity and keep execution broker-mediated. Do not introduce direct model-to-tool or model-to-shell access as a shortcut.
+SynoSec is for authorized security assessment and controlled cyber range evaluation. Do not point active or controlled-exploit tools at systems you do not own or have explicit permission to test. The demo vulnerable application is deliberately insecure and should only run in an isolated development or evaluation environment.
 
-## Tool Platform Architecture
+## Contributing Tools
 
-The tool platform is designed so the repo can grow from a handful of demo tools to hundreds of cataloged tools without turning the scan loop, seed data, or UI into a maintenance bottleneck.
+New tool integrations should be added as auditable, policy-aware capabilities:
 
-The current model has six pieces:
-
-1. A modular tool catalog in `apps/backend/src/workflow-engine/tools/catalog/`
-2. Modular seeded tool implementations in `scripts/tools/` and `apps/backend/prisma/seed-data/tools/`
-3. A runtime tool selector that pre-filters tools before they reach the model
-4. An opt-in agent-tool policy layer for automatic assignment
-5. Frontend list UX that remains usable at larger tool counts
-6. A steady-state workflow for adding new tools with minimal friction
-
-### Phase 1: Modular Tool Catalog
-
-The canonical catalog lives under:
-
-- `apps/backend/src/workflow-engine/tools/catalog/types.ts`
-- `apps/backend/src/workflow-engine/tools/catalog/index.ts`
-- `apps/backend/src/workflow-engine/tools/catalog/<domain>.ts`
-
-Domains are split by capability area such as:
-
-- `network.ts`
-- `web.ts`
-- `content.ts`
-- `subdomain.ts`
-- `dns.ts`
-- `password.ts`
-- `cloud.ts`
-- `kubernetes.ts`
-- `windows.ts`
-- `forensics.ts`
-- `reversing.ts`
-- `exploitation.ts`
-- `utility.ts`
-
-`tool-catalog.ts` still exposes the same public functions:
-
-- `getToolCatalog()`
-- `getToolCapabilities()`
-- `isToolCatalogEntryAvailable()`
-
-Every catalog entry now includes additional metadata used by the selector and future assignment logic:
-
-- `phase`
-- `osiLayers`
-- `tags`
-
-Current `phase` values:
-
-- `recon`
-- `enum`
-- `vuln-scan`
-- `exploit`
-- `post`
-- `report`
-- `utility`
-
-`tool-catalog.ts` also performs a duplicate ID guard at startup. Duplicate catalog IDs are treated as a hard error.
-
-### Phase 2: Modular Seed Architecture
-
-Seeded tools are no longer defined as one large file with inline bash factories.
-
-The implementation is split into:
-
-- Shell assets in `scripts/tools/<category>/<tool>.sh`
-- Per-tool seed modules in `apps/backend/prisma/seed-data/tools/<category>/<tool>.ts`
-- An assembler in `apps/backend/prisma/seed-data/ai-builder-defaults.ts`
-
-Each seed module exports one tool object with a lazy `bashSource` getter that reads the script from disk. Example pattern:
-
-```ts
-export const httpReconTool = {
-  id: "seed-http-recon",
-  name: "HTTP Recon",
-  get bashSource() {
-    return loadSeedToolScript(import.meta.url, "scripts/tools/web/http-recon.sh");
-  }
-} as const;
-```
-
-Startup fail-fast behavior:
-
-- `apps/backend/src/main.ts` calls `validateSeededToolDefinitions()`
-- missing script files fail the backend immediately
-- `apps/backend/prisma/seed-data/tools/load-script.ts` resolves both source and built `dist/` layouts
-
-This means seeded tool definitions stay small and script logic lives in real `.sh` files where it is easier to inspect, test, and replace.
-
-### Phase 3: Tool Selector Layer
-
-The critical context-limit fix lives in:
-
-- `apps/backend/src/workflow-engine/tools/tool-selector.ts`
-
-The selector scores available tools before they are passed to the model. This prevents the single-agent scan loop from dumping every approved tool into one model call.
-
-Selector inputs:
-
-- requested OSI layers
-- current layer coverage
-- already executed tool IDs
-- current findings
-- `allowActiveExploits`
-
-Scoring signals:
-
-- layer alignment
-- phase progression
-- risk tier gate
-- recency penalty
-
-Important behavior:
-
-- `controlled-exploit` tools are hard-gated when `allowActiveExploits === false`
-- recently used tools are penalized
-- if the top slice is all one category, the selector swaps in another category for diversity
-- catalog metadata is used when available; uncataloged tools default to `phase: "utility"` and `osiLayers: ["L7"]`
-
-Integration:
-
-- Anthropic loop: select once before building the evidence tool map
-- Local loop: re-select at the start of each iteration
-- lifecycle actions are always available and are never filtered:
-  - `report_vulnerability`
-  - `update_layer_coverage`
-  - `submit_scan_completion`
-
-Main integration point:
-
-- `apps/backend/src/features/modules/scans/single-agent-scan.service.ts`
-
-### Phase 4: Smart Agent-Tool Assignment
-
-Agent-tool auto-assignment is opt-in and lives in:
-
-- `apps/backend/prisma/seed-data/agent-tool-policies.ts`
-- `apps/backend/src/features/modules/ai-agents/agent-tool-resolver.ts`
-
-This layer exists to remove manual junction-table style maintenance as the tool count grows.
-
-How it works:
-
-- If no policy exists for an agent, behavior stays exactly as before: use `agent.toolIds`
-- If a policy exists, SynoSec:
-  - loads active tools
-  - starts from `pinnedToolIds`
-  - preserves explicit `agent.toolIds`
-  - adds policy-matched tools using catalog metadata such as category, risk tier, phase, and tags
-  - deduplicates the final set
-
-Current rollout status:
-
-- `AGENT_TOOL_POLICIES` is intentionally empty by default
-- policies are activated one agent at a time by adding an entry
-
-This keeps rollout safe while enabling future “new tool automatically appears for the right agent” behavior.
-
-### Phase 5: Frontend UX for Large Tool Sets
-
-The AI tools page has been updated to remain usable when the tool inventory grows:
-
-- file: `apps/frontend/src/pages/ai-tools-page.tsx`
-
-Current list UX improvements:
-
-- category filter
-- risk tier filter
-- `list` / `grouped` view mode toggle
-- grouped-by-category rendering on the client
-- compact colored risk badges:
-  - passive = green
-  - active = amber
-  - controlled-exploit = red
-- default page size of 50 for the tools page
-
-This is intentionally page-local behavior so the shared list component does not need to know about tool-specific grouping logic.
-
-### Phase 6: Adding a New Tool
-
-The steady-state workflow for adding a tool is now:
-
-1. Add a `ToolCatalogEntry` to the correct file in `apps/backend/src/workflow-engine/tools/catalog/`
-2. Include `phase`, `osiLayers`, and `tags`
-3. Add the implementation script in `scripts/tools/<category>/<tool-name>.sh`
-4. Add the seed module in `apps/backend/prisma/seed-data/tools/<category>/<tool-name>.ts`
-5. Import it into `apps/backend/prisma/seed-data/ai-builder-defaults.ts` and add it to `seededToolDefinitions`
-6. Run the seed upsert so the tool exists in the database
-7. If a policy later covers that category/phase/tag set, the tool becomes available automatically to the relevant agents
-
-The core goal is low-friction tool authoring:
-
-- write a `.sh` script
-- add a small metadata object
-- let the catalog, seed layer, selector, and policy system do the rest
-
-## Developer Notes
-
-### Where Tool Behavior Actually Comes From
-
-There are three different layers to keep straight:
-
-- Catalog metadata:
-  `apps/backend/src/workflow-engine/tools/catalog/`
-  This is capability metadata, installation checks, selection hints, and future assignment input.
-
-- Seeded tool implementations:
-  `scripts/tools/`
-  `apps/backend/prisma/seed-data/tools/`
-  These are the concrete built-in tools that get seeded into the database.
-
-- Runtime execution config:
-  Stored on the tool record and resolved through:
-  `apps/backend/src/features/modules/ai-tools/tool-execution-config.ts`
-
-If you change tool behavior, make sure you are editing the correct layer.
-
-### Current Seeded Tool Set
-
-SynoSec comes with a comprehensive set of built-in security tools categorized by domain:
-
-- **Network**: `nmap`, `ncat`, `netcat`, `service-scan`
-- **Web**: `nikto`, `sqlmap`, `http-recon`, `http-headers`, `sql-injection-check`, `vuln-audit`
-- **Content Discovery**: `gobuster`, `dirb`, `ffuf`, `web-crawl`, `content-discovery`
-- **Subdomain Enumeration**: `amass`, `sublist3r`
-- **Exploitation**: `metasploit-framework`
-- **Password Cracking**: `hashcat`
-- **Forensics**: `steghide`
-- **Windows Enumeration**: `enum4linux`
-- **Utility**: `bash-probe`
-
-These tools are pre-configured with bash scripts in `scripts/tools/` and seeded into the database for immediate use by AI agents.
-
-### Key Backend Files
-
-- Scan loop:
-  `apps/backend/src/features/modules/scans/single-agent-scan.service.ts`
-- Tool selector:
-  `apps/backend/src/workflow-engine/tools/tool-selector.ts`
-- Tool catalog entrypoint:
-  `apps/backend/src/workflow-engine/tools/tool-catalog.ts`
-- Agent tool resolver:
-  `apps/backend/src/features/modules/ai-agents/agent-tool-resolver.ts`
-- Seed assembler:
-  `apps/backend/prisma/seed-data/ai-builder-defaults.ts`
-
-### Recommended Checks After Tool-Platform Changes
-
-Backend:
-
-- `pnpm --filter @synosec/backend exec tsc -p tsconfig.json --noEmit`
-- targeted Vitest runs for the area you changed
-
-Frontend:
-
-- `pnpm --filter @synosec/frontend exec tsc -p tsconfig.json --noEmit`
-
-If you touch seeded scripts or seed modules, also make sure startup validation still passes and that `pnpm --filter @synosec/backend build` succeeds.
+1. Define the tool metadata and OSI-layer mapping in the catalog or seed data.
+2. Implement the script under `scripts/tools`.
+3. Ensure the tool returns structured observations where possible.
+4. Add or update tests for compilation, selection, and execution behavior.
+5. Verify behavior against the cyber range before relying on it for demonstrations.

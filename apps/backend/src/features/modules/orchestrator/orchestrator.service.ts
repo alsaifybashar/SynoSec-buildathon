@@ -147,8 +147,74 @@ type DecisionEnvelope<T> = {
   data: T;
 };
 
+class StructuredDecisionParseError extends Error {
+  constructor(
+    message: string,
+    readonly json: string,
+    readonly parseError: unknown
+  ) {
+    super(message);
+    this.name = "StructuredDecisionParseError";
+  }
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function escapeInvalidJsonBackslashes(json: string): string {
+  return json.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
+}
+
+function parseJsonErrorPosition(error: unknown): number | null {
+  const match = errorMessage(error).match(/position\s+(\d+)/i);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const position = Number.parseInt(match[1], 10);
+  return Number.isFinite(position) ? position : null;
+}
+
+function jsonErrorExcerpt(json: string, error: unknown): string {
+  const position = parseJsonErrorPosition(error);
+  const start = Math.max(0, (position ?? 0) - 160);
+  const end = Math.min(json.length, (position ?? 0) + 160);
+  return json.slice(start, end).replace(/\s+/g, " ").trim();
+}
+
+function parseDecisionEnvelopeJson<T>(json: string): Partial<DecisionEnvelope<T>> {
+  try {
+    return JSON.parse(json) as Partial<DecisionEnvelope<T>>;
+  } catch (initialError) {
+    const repairedJson = escapeInvalidJsonBackslashes(json);
+    if (repairedJson !== json) {
+      try {
+        return JSON.parse(repairedJson) as Partial<DecisionEnvelope<T>>;
+      } catch (repairError) {
+        throw new StructuredDecisionParseError([
+          `Selected AI provider returned invalid structured reasoning JSON: ${errorMessage(initialError)}`,
+          `Repairing invalid escape sequences also failed: ${errorMessage(repairError)}`,
+          `JSON excerpt near the original parse failure: ${jsonErrorExcerpt(json, initialError)}`
+        ].join(" "), json, initialError);
+      }
+    }
+
+    throw new StructuredDecisionParseError([
+      `Selected AI provider returned invalid structured reasoning JSON: ${errorMessage(initialError)}`,
+      `JSON excerpt near the parse failure: ${jsonErrorExcerpt(json, initialError)}`
+    ].join(" "), json, initialError);
+  }
+}
+
+function extractJsonObject(text: string, errorPrefix: string): string {
+  const jsonStart = text.indexOf("{");
+  const jsonEnd = text.lastIndexOf("}");
+  if (jsonStart === -1 || jsonEnd === -1) {
+    throw new Error(errorPrefix);
+  }
+
+  return text.slice(jsonStart, jsonEnd + 1);
 }
 
 function mapRow(row: {
@@ -792,7 +858,9 @@ export class OrchestratorService {
           statusReason: result.statusReason ?? null
         });
       } catch (error) {
-        const message = errorMessage(error);
+        const message = error instanceof RequestError && error.code
+          ? `${error.code}: ${error.userFriendlyMessage ?? error.message} (${error.message})`
+          : errorMessage(error);
         const completedAt = new Date().toISOString();
         const durationMs = new Date(completedAt).getTime() - new Date(startedAt).getTime();
         this.stream.publish(runId, {
@@ -971,14 +1039,13 @@ export class OrchestratorService {
   }
 
   private async callStructuredDecisionModel<T>(provider: StoredAiProvider, model: string, prompt: string): Promise<DecisionEnvelope<T>> {
-    const text = await this.callDecisionModel(provider, model, prompt);
-    const jsonStart = text.indexOf("{");
-    const jsonEnd = text.lastIndexOf("}");
-    if (jsonStart === -1 || jsonEnd === -1) {
-      throw new Error("Selected AI provider returned structured reasoning output without a JSON object.");
-    }
-
-    const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as Partial<DecisionEnvelope<T>>;
+    const text = await this.callDecisionModel(provider, model, [
+      prompt,
+      "",
+      "JSON validity requirement: any backslash in a string must be escaped as \\\\, and regular expressions or Windows paths must be written as plain text unless correctly JSON-escaped."
+    ].join("\n"));
+    const json = extractJsonObject(text, "Selected AI provider returned structured reasoning output without a JSON object.");
+    const parsed = await this.parseOrRepairDecisionEnvelope<T>(provider, model, json);
     if (!parsed || typeof parsed !== "object") {
       throw new Error("Selected AI provider returned an invalid structured reasoning payload.");
     }
@@ -989,6 +1056,41 @@ export class OrchestratorService {
         : "No reasoning summary provided.",
       data: parsed.data as T
     };
+  }
+
+  private async parseOrRepairDecisionEnvelope<T>(
+    provider: StoredAiProvider,
+    model: string,
+    json: string
+  ): Promise<Partial<DecisionEnvelope<T>>> {
+    try {
+      return parseDecisionEnvelopeJson<T>(json);
+    } catch (error) {
+      if (!(error instanceof StructuredDecisionParseError)) {
+        throw error;
+      }
+
+      const repairedText = await this.callDecisionModel(provider, model, [
+        "The previous response was intended to be JSON, but it was not valid JSON.",
+        "Repair it into one valid JSON object without changing the meaning.",
+        "Return ONLY JSON with top-level keys reasoningSummary and data.",
+        "Escape every backslash inside strings as \\\\.",
+        "",
+        "Invalid JSON to repair:",
+        error.json.slice(0, 12000)
+      ].join("\n"));
+
+      try {
+        return parseDecisionEnvelopeJson<T>(
+          extractJsonObject(repairedText, "Selected AI provider could not repair structured reasoning output into a JSON object.")
+        );
+      } catch (repairError) {
+        throw new Error([
+          error.message,
+          `Provider repair attempt failed: ${errorMessage(repairError)}`
+        ].join(" "));
+      }
+    }
   }
 
   private async callHostedDecisionModel(provider: StoredAiProvider, model: string, prompt: string) {
