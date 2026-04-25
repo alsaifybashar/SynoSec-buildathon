@@ -188,18 +188,9 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
     columns: (context) => [
       { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
       { id: "providerId", header: "Provider", cell: (row) => <span className="text-muted-foreground">{context.providerLookup[row.providerId] ?? "Unknown"}</span> },
-      { id: "status", header: "Status", cell: (row) => <span className="text-muted-foreground">{statusLabels[row.status]}</span> },
       { id: "toolIds", header: "Tools", cell: (row) => <span className="text-muted-foreground">{row.toolIds.length}</span> }
     ],
-    filters: () => [
-      {
-        id: "status",
-        label: "Filter by agent status",
-        placeholder: "Filter by status",
-        allLabel: "All statuses",
-        options: Object.entries(statusLabels).map(([value, label]) => ({ value, label }))
-      }
-    ]
+    filters: () => []
   },
   detail: {
     loadingTitle: "AI agent detail",
@@ -228,18 +219,6 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
           <DetailFieldGroup title="Agent Configuration" className="bg-card/70">
             <DetailField label="Name" required {...definedString(errors["name"] as string | undefined)}>
               <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
-            </DetailField>
-            <DetailField label="Status" required>
-              <Select value={formValues.status} onValueChange={(value) => handleFieldChange("status", value as AiAgentStatus)}>
-                <SelectTrigger aria-label="Status">
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(statusLabels).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </DetailField>
             <DetailField label="Provider" required {...definedString(errors["providerId"] as string | undefined)}>
               <Select value={formValues.providerId} onValueChange={(value) => handleFieldChange("providerId", value)}>

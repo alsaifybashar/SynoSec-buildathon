@@ -148,7 +148,6 @@ export const applicationsDefinition: CrudFeatureDefinition<
       { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
       { id: "baseUrl", header: "Base URL", cell: (row) => <span className="text-muted-foreground">{row.baseUrl ?? "Not set"}</span> },
       { id: "environment", header: "Environment", cell: (row) => <StatusBadge label={environmentLabels[row.environment]} className={environmentBadgeStyles[row.environment]} /> },
-      { id: "status", header: "Status", cell: (row) => <StatusBadge label={statusLabels[row.status]} className={statusBadgeStyles[row.status]} /> },
       {
         id: "lastScannedAt",
         header: "Last scanned",
@@ -157,17 +156,6 @@ export const applicationsDefinition: CrudFeatureDefinition<
       }
     ],
     filters: () => [
-      {
-        id: "status",
-        label: "Filter applications by status",
-        placeholder: "Filter by status",
-        allLabel: "All statuses",
-        options: [
-          { label: "Active", value: "active" },
-          { label: "Investigating", value: "investigating" },
-          { label: "Archived", value: "archived" }
-        ]
-      },
       {
         id: "environment",
         label: "Filter applications by environment",
@@ -228,21 +216,6 @@ export const applicationsDefinition: CrudFeatureDefinition<
               </SelectTrigger>
               <SelectContent>
                 {Object.entries(environmentLabels).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </DetailField>
-
-          <DetailField label="Status" required>
-            <Select value={formValues.status} onValueChange={(value: ApplicationStatus) => handleFieldChange("status", value)}>
-              <SelectTrigger aria-label="Status" className="w-fit min-w-[10rem] max-w-[12rem]">
-                <SelectValue placeholder="Select status" />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(statusLabels).map(([value, label]) => (
                   <SelectItem key={value} value={value}>
                     {label}
                   </SelectItem>

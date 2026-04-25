@@ -347,7 +347,6 @@ export function AiToolsPage({
     { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
     { id: "source", header: "Source", cell: (row) => <span className="text-muted-foreground">{row.source}</span> },
     { id: "category", header: "Category", cell: (row) => <span className="text-muted-foreground">{row.category}</span> },
-    { id: "status", header: "Status", cell: (row) => <span className="text-muted-foreground">{statusLabels[row.status]}</span> },
     {
       id: "riskTier",
       header: "Risk",
@@ -376,13 +375,6 @@ export function AiToolsPage({
       placeholder: "Filter by category",
       allLabel: "All categories",
       options: categoryOptions.map((category) => ({ value: category, label: category }))
-    },
-    {
-      id: "status",
-      label: "Filter by tool status",
-      placeholder: "Filter by status",
-      allLabel: "All statuses",
-      options: Object.entries(statusLabels).map(([value, label]) => ({ value, label }))
     },
     {
       id: "riskTier",
@@ -589,18 +581,6 @@ export function AiToolsPage({
       <DetailFieldGroup title="Definition" className="bg-card/70">
         <DetailField label="Name" required {...definedString(errors.name)}>
           <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" disabled={!isToolEditable} />
-        </DetailField>
-        <DetailField label="Status">
-          <Select value={formValues.status} onValueChange={(value) => handleFieldChange("status", value as AiToolStatus)} disabled={!isToolEditable}>
-            <SelectTrigger aria-label="Status">
-              <SelectValue placeholder="Select status" />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(statusLabels).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </DetailField>
         <DetailField label="Category">
           <Select value={formValues.category} onValueChange={(value) => handleFieldChange("category", value as ToolCategory)} disabled={!isToolEditable}>

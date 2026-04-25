@@ -226,28 +226,12 @@ export const runtimesDefinition: CrudFeatureDefinition<
         cell: (row) => <span className="text-muted-foreground">{providerLabels[row.provider]}</span>
       },
       {
-        id: "status",
-        header: "Status",
-        cell: (row) => <StatusBadge label={statusLabels[row.status]} className={statusBadgeStyles[row.status]} />
-      },
-      {
         id: "applicationId",
         header: "Application",
         cell: (row) => <span className="text-muted-foreground">{context.applicationLookup[row.applicationId ?? ""] ?? "Unlinked"}</span>
       }
     ],
     filters: () => [
-      {
-        id: "status",
-        label: "Filter runtimes by status",
-        placeholder: "Filter by status",
-        allLabel: "All statuses",
-        options: [
-          { label: "Healthy", value: "healthy" },
-          { label: "Degraded", value: "degraded" },
-          { label: "Retired", value: "retired" }
-        ]
-      },
       {
         id: "provider",
         label: "Filter runtimes by provider",

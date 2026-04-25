@@ -140,7 +140,6 @@ export const aiProvidersDefinition: CrudFeatureDefinition<
     columns: () => [
       { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
       { id: "kind", header: "Kind", cell: (row) => <span className="text-muted-foreground">{kindLabels[row.kind]}</span> },
-      { id: "status", header: "Status", cell: (row) => <span className="text-muted-foreground">{statusLabels[row.status]}</span> },
       { id: "model", header: "Model", cell: (row) => <span className="text-muted-foreground">{row.model}</span> },
       { id: "apiKey", header: "Secret", cell: (row) => <span className="text-muted-foreground">{row.apiKeyConfigured ? "Configured" : "Not configured"}</span> }
     ],
@@ -152,13 +151,6 @@ export const aiProvidersDefinition: CrudFeatureDefinition<
         allLabel: "All kinds",
         options: Object.entries(kindLabels).map(([value, label]) => ({ value, label }))
       },
-      {
-        id: "status",
-        label: "Filter by provider status",
-        placeholder: "Filter by status",
-        allLabel: "All statuses",
-        options: Object.entries(statusLabels).map(([value, label]) => ({ value, label }))
-      }
     ]
   },
   detail: {
@@ -185,18 +177,6 @@ export const aiProvidersDefinition: CrudFeatureDefinition<
             </SelectTrigger>
             <SelectContent>
               {Object.entries(kindLabels).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </DetailField>
-        <DetailField label="Status" required>
-          <Select value={formValues.status} onValueChange={(value) => handleFieldChange("status", value as AiProviderStatus)}>
-            <SelectTrigger aria-label="Status">
-              <SelectValue placeholder="Select status" />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(statusLabels).map(([value, label]) => (
                 <SelectItem key={value} value={value}>{label}</SelectItem>
               ))}
             </SelectContent>
