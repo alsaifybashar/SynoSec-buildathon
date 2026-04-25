@@ -3,7 +3,6 @@ import {
   Bot,
   Columns2,
   FileSearch,
-  Network,
   Orbit,
   PlugZap,
   Route,
@@ -15,8 +14,7 @@ import {
 } from "lucide-react";
 
 export type NavigationId =
-  | "runtimes"
-  | "applications"
+  | "targets"
   | "ai-providers"
   | "ai-agents"
   | "ai-tools"
@@ -51,8 +49,7 @@ export type NavigationTreeEntry =
   | { kind: "group"; group: NavigationGroup };
 
 export type CrudNavigationId =
-  | "applications"
-  | "runtimes"
+  | "targets"
   | "ai-providers"
   | "ai-agents"
   | "ai-tools"
@@ -72,24 +69,17 @@ function createNavigationItem(item: NavigationItem) {
   return item;
 }
 
-export const defaultNavigationId: NavigationId = "applications";
-export const defaultRoutePath = "/applications";
+export const defaultNavigationId: NavigationId = "targets";
+export const defaultRoutePath = "/targets";
 export const loginRoutePath = "/login";
 
 export const crudRouteConfigs: Record<CrudNavigationId, CrudRouteConfig> = {
-  applications: {
-    id: "applications",
-    listPath: "/applications",
-    createPath: "/applications/new",
-    detailPath: "/applications/:applicationId",
-    paramName: "applicationId"
-  },
-  runtimes: {
-    id: "runtimes",
-    listPath: "/runtimes",
-    createPath: "/runtimes/new",
-    detailPath: "/runtimes/:runtimeId",
-    paramName: "runtimeId"
+  targets: {
+    id: "targets",
+    listPath: "/targets",
+    createPath: "/targets/new",
+    detailPath: "/targets/:targetId",
+    paramName: "targetId"
   },
   "ai-providers": {
     id: "ai-providers",
@@ -165,16 +155,10 @@ export const navigationTree: NavigationTreeEntry[] = [
       icon: AppWindow,
       items: [
         createNavigationItem({
-          id: "applications",
-          label: "Applications",
-          path: crudRouteConfigs.applications.listPath,
+          id: "targets",
+          label: "Targets",
+          path: crudRouteConfigs.targets.listPath,
           icon: AppWindow
-        }),
-        createNavigationItem({
-          id: "runtimes",
-          label: "Runtimes",
-          path: crudRouteConfigs.runtimes.listPath,
-          icon: Network
         }),
         createNavigationItem({
           id: "ai-providers",

@@ -35,7 +35,7 @@ export type ResourceClient<TItem, TQuery extends ListQueryState> = {
 };
 
 type OptionalString = string | undefined;
-export type ApplicationsQuery = {
+export type TargetsQuery = {
   page: number;
   pageSize: number;
   q: string;
@@ -45,6 +45,8 @@ export type ApplicationsQuery = {
   environment: OptionalString;
   [key: string]: number | string | undefined;
 };
+
+export type ApplicationsQuery = TargetsQuery;
 
 export type RuntimesQuery = {
   page: number;
@@ -97,10 +99,10 @@ export type WorkflowsQuery = {
   page: number;
   pageSize: number;
   q: string;
-  sortBy: "name" | "status" | "applicationId" | "agentId" | "createdAt" | "updatedAt";
+  sortBy: "name" | "status" | "targetId" | "agentId" | "createdAt" | "updatedAt";
   sortDirection: SortDirection;
   status: OptionalString;
-  applicationId: OptionalString;
+  targetId: OptionalString;
   [key: string]: number | string | undefined;
 };
 

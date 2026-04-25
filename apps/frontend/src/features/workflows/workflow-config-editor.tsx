@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import type { AiAgent, Application, ExecutionKind, Runtime, WorkflowStatus } from "@synosec/contracts";
+import type { AiAgent, ExecutionKind, Target, WorkflowStatus } from "@synosec/contracts";
 import { definedFieldError, type WorkflowFormValues } from "@/features/workflows/workflow-form";
 import { DetailField, DetailFieldGroup } from "@/shared/components/detail-page";
 import { Button } from "@/shared/ui/button";
@@ -20,7 +20,6 @@ export const workflowExecutionKindLabels: Record<ExecutionKind, string> = {
 
 const workflowFieldHints = {
   executionKind: "Choose whether this run executes a standard workflow or produces an attack-map oriented output.",
-  runtime: "Optional. Bind a runtime when this workflow should execute against a specific application runtime. Leave empty when the agent does not need one.",
   agent: "The linked AI agent owns the base prompt, provider, and default tool grants used by this workflow.",
   objective: "This is the mission brief sent with the run. It should tell the agent what outcome to achieve for the selected target.",
   agentPrompt: "This prompt is inherited from the linked AI agent. Update it from the AI Agents page when the workflow needs different standing instructions.",
@@ -30,20 +29,18 @@ const workflowFieldHints = {
 export function WorkflowConfigEditor({
   formValues,
   errors,
-  applications,
+  targets,
   agents,
   agentLookup,
   toolLookup,
-  filteredRuntimes,
   onFieldChange
 }: {
   formValues: WorkflowFormValues;
   errors: Record<string, string>;
-  applications: Application[];
+  targets: Target[];
   agents: AiAgent[];
   agentLookup: Record<string, AiAgent>;
   toolLookup: Record<string, string>;
-  filteredRuntimes: Runtime[];
   onFieldChange: <Key extends keyof WorkflowFormValues>(field: Key, value: WorkflowFormValues[Key]) => void;
 }) {
   const selectedAgent = agentLookup[formValues.agentId];
@@ -69,27 +66,14 @@ export function WorkflowConfigEditor({
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Application" required hint="Primary application context used to resolve targets and related runtimes." {...definedFieldError(errors["applicationId"])}>
-          <Select value={formValues.applicationId} onValueChange={(value) => onFieldChange("applicationId", value)}>
-            <SelectTrigger aria-label="Application">
-              <SelectValue placeholder="Select application" />
+        <DetailField label="Target" required hint="Primary target context used to resolve target assets, constraints, and reporting." {...definedFieldError(errors["targetId"])}>
+          <Select value={formValues.targetId} onValueChange={(value) => onFieldChange("targetId", value)}>
+            <SelectTrigger aria-label="Target">
+              <SelectValue placeholder="Select target" />
             </SelectTrigger>
             <SelectContent>
-              {applications.map((application) => (
-                <SelectItem key={application.id} value={application.id}>{application.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </DetailField>
-        <DetailField label="Runtime" hint={workflowFieldHints.runtime}>
-          <Select value={formValues.runtimeId || "__none__"} onValueChange={(value) => onFieldChange("runtimeId", value === "__none__" ? "" : value)}>
-            <SelectTrigger aria-label="Runtime">
-              <SelectValue placeholder="Select runtime" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">No runtime</SelectItem>
-              {filteredRuntimes.map((runtime) => (
-                <SelectItem key={runtime.id} value={runtime.id}>{runtime.name}</SelectItem>
+              {targets.map((target) => (
+                <SelectItem key={target.id} value={target.id}>{target.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>

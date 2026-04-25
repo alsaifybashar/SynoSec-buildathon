@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { apiRoutes, type Application, type Workflow, type WorkflowLiveModelOutput, type WorkflowRun, type WorkflowRunStreamMessage, type WorkflowRunTranscriptResponse } from "@synosec/contracts";
+import { apiRoutes, type Target, type Workflow, type WorkflowLiveModelOutput, type WorkflowRun, type WorkflowRunStreamMessage, type WorkflowRunTranscriptResponse } from "@synosec/contracts";
 import { fetchJson } from "@/shared/lib/api";
 import { type RunStreamState, type TranscriptProjection } from "@/features/workflows/workflow-trace";
 
@@ -10,10 +10,10 @@ async function fetchLatestWorkflowRun(workflowId: string) {
 
 export function useWorkflowRunState({
   workflow,
-  applications
+  targets
 }: {
   workflow: Workflow | null;
-  applications: Application[];
+  targets: Target[];
 }) {
   const [currentRun, setCurrentRun] = useState<WorkflowRun | null>(null);
   const [liveModelOutput, setLiveModelOutput] = useState<WorkflowLiveModelOutput | null>(null);
@@ -31,15 +31,15 @@ export function useWorkflowRunState({
       return;
     }
 
-    const application = applications.find((item) => item.id === workflow.applicationId);
-    const targetAssets = application?.targetAssets ?? [];
+    const targetRecord = targets.find((item) => item.id === workflow.targetId);
+    const targetAssets = targetRecord?.targetAssets ?? [];
     const defaultTarget = targetAssets.find((asset) => asset.isDefault) ?? targetAssets[0];
     setSelectedTargetAssetId((current) => (
       current && targetAssets.some((asset) => asset.id === current)
         ? current
         : defaultTarget?.id ?? ""
     ));
-  }, [applications, workflow]);
+  }, [targets, workflow]);
 
   useEffect(() => {
     if (!workflow) {
@@ -170,11 +170,11 @@ export function useWorkflowRunState({
       return;
     }
 
-    const application = applications.find((item) => item.id === workflow.applicationId);
-    const targetAssets = application?.targetAssets ?? [];
+    const targetRecord = targets.find((item) => item.id === workflow.targetId);
+    const targetAssets = targetRecord?.targetAssets ?? [];
     if (targetAssets.length === 0) {
       toast.error("No registered targets", {
-        description: "This application needs at least one registered target asset before a workflow can run."
+        description: "This target needs at least one registered target asset before a workflow can run."
       });
       return;
     }

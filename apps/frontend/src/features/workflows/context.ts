@@ -1,26 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { AiAgent, AiTool, Application, Runtime } from "@synosec/contracts";
+import type { AiAgent, AiTool, Target } from "@synosec/contracts";
 import { aiAgentsResource } from "@/features/ai-agents/resource";
 import { aiToolsResource } from "@/features/ai-tools/resource";
-import { applicationsResource } from "@/features/applications/resource";
-import { runtimesResource } from "@/features/runtimes/resource";
+import { targetsResource } from "@/features/targets/resource";
 
 export type WorkflowDefinitionContext = {
-  applications: Application[];
-  runtimes: Runtime[];
+  targets: Target[];
   agents: AiAgent[];
   tools: AiTool[];
-  applicationLookup: Record<string, string>;
+  targetLookup: Record<string, string>;
   agentLookup: Record<string, AiAgent>;
   toolLookup: Record<string, string>;
-  defaultApplicationId: string;
+  defaultTargetId: string;
   defaultAgentId: string;
 };
 
 export function useWorkflowDefinitionContext(): WorkflowDefinitionContext {
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [runtimes, setRuntimes] = useState<Runtime[]>([]);
+  const [targets, setTargets] = useState<Target[]>([]);
   const [agents, setAgents] = useState<AiAgent[]>([]);
   const [tools, setTools] = useState<AiTool[]>([]);
 
@@ -28,18 +25,16 @@ export function useWorkflowDefinitionContext(): WorkflowDefinitionContext {
     let active = true;
 
     void Promise.all([
-      applicationsResource.list({ ...applicationsResource.defaultQuery, pageSize: 100 }),
-      runtimesResource.list({ ...runtimesResource.defaultQuery, pageSize: 100 }),
+      targetsResource.list({ ...targetsResource.defaultQuery, pageSize: 100 }),
       aiAgentsResource.list({ ...aiAgentsResource.defaultQuery, pageSize: 100 }),
       aiToolsResource.list({ ...aiToolsResource.defaultQuery, pageSize: 100 })
     ])
-      .then(([applicationsResult, runtimesResult, agentsResult, toolsResult]) => {
+      .then(([targetsResult, agentsResult, toolsResult]) => {
         if (!active) {
           return;
         }
 
-        setApplications(applicationsResult.items);
-        setRuntimes(runtimesResult.items);
+        setTargets(targetsResult.items);
         setAgents(agentsResult.items);
         setTools(toolsResult.items);
       })
@@ -54,9 +49,9 @@ export function useWorkflowDefinitionContext(): WorkflowDefinitionContext {
     };
   }, []);
 
-  const applicationLookup = useMemo(
-    () => Object.fromEntries(applications.map((item) => [item.id, item.name])),
-    [applications]
+  const targetLookup = useMemo(
+    () => Object.fromEntries(targets.map((item) => [item.id, item.name])),
+    [targets]
   );
   const agentLookup = useMemo(
     () => Object.fromEntries(agents.map((item) => [item.id, item])),
@@ -69,16 +64,15 @@ export function useWorkflowDefinitionContext(): WorkflowDefinitionContext {
 
   return useMemo(
     () => ({
-      applications,
-      runtimes,
+      targets,
       agents,
       tools,
-      applicationLookup,
+      targetLookup,
       agentLookup,
       toolLookup,
-      defaultApplicationId: applications[0]?.id ?? "",
+      defaultTargetId: targets[0]?.id ?? "",
       defaultAgentId: agents[0]?.id ?? ""
     }),
-    [agentLookup, agents, applicationLookup, applications, runtimes, toolLookup, tools]
+    [agentLookup, agents, targetLookup, targets, toolLookup, tools]
   );
 }

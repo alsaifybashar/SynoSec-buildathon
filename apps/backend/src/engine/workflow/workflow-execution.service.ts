@@ -23,8 +23,7 @@ import { ExecutionReportsService } from "@/modules/execution-reports/index.js";
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
 import type { AiProvidersRepository, StoredAiProvider } from "@/modules/ai-providers/index.js";
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
-import type { ApplicationsRepository } from "@/modules/applications/index.js";
-import type { RuntimesRepository } from "@/modules/runtimes/index.js";
+import type { TargetsRepository } from "@/modules/targets/index.js";
 import { createScan, getScan } from "@/engine/scans/index.js";
 import type { AttackMapNode, AttackPlanPhase } from "@/engine/orchestrator/orchestrator-stream.js";
 import type { OrchestratorExecutionEngineService } from "@/engine/orchestrator/index.js";
@@ -68,8 +67,7 @@ type PipelineTerminalState =
 type PipelineContext = {
   workflow: Workflow;
   run: WorkflowRun;
-  application: NonNullable<Awaited<ReturnType<ApplicationsRepository["getById"]>>>;
-  runtime: Awaited<ReturnType<RuntimesRepository["getById"]>>;
+  targetRecord: NonNullable<Awaited<ReturnType<TargetsRepository["getById"]>>>;
   agent: NonNullable<Awaited<ReturnType<AiAgentsRepository["getById"]>>>;
   provider: StoredAiProvider;
   target: { baseUrl: string; host: string; port?: number };
@@ -117,8 +115,7 @@ export class WorkflowExecutionService {
 
   constructor(
     private readonly workflowsRepository: WorkflowsRepository,
-    private readonly applicationsRepository: ApplicationsRepository,
-    private readonly runtimesRepository: RuntimesRepository,
+    private readonly targetsRepository: TargetsRepository,
     private readonly aiAgentsRepository: AiAgentsRepository,
     private readonly aiProvidersRepository: AiProvidersRepository,
     private readonly aiToolsRepository: AiToolsRepository,
@@ -136,9 +133,9 @@ export class WorkflowExecutionService {
       throw new RequestError(404, "Workflow not found.");
     }
 
-    const application = await this.applicationsRepository.getById(workflow.applicationId);
-    if (!application) {
-      throw new RequestError(400, "Workflow application not found.");
+    const targetRecord = await this.targetsRepository.getById(workflow.targetId);
+    if (!targetRecord) {
+      throw new RequestError(400, "Workflow target not found.");
     }
 
     const agent = await this.aiAgentsRepository.getById(workflow.agentId);
@@ -153,8 +150,8 @@ export class WorkflowExecutionService {
       this.assertProviderSupportsWorkflowExecution(provider);
     }
 
-    const targetAsset = resolveTargetAsset(application, input.targetAssetId);
-    const constraintSet = resolveEffectiveExecutionConstraints(application, targetAsset, 5);
+    const targetAsset = resolveTargetAsset(targetRecord, input.targetAssetId);
+    const constraintSet = resolveEffectiveExecutionConstraints(targetRecord, targetAsset, 5);
 
     const run = await this.workflowsRepository.createRun(workflowId, targetAsset.id);
     if (!run) {
@@ -163,8 +160,8 @@ export class WorkflowExecutionService {
 
     this.eventPublisher.publishSnapshot(run);
     const execution = workflow.executionKind === "attack-map"
-      ? this.executeAttackMapWorkflowRun(workflow, run, application, agent, provider, constraintSet)
-      : this.executePipelineRun(workflow, run, application, agent, provider, constraintSet);
+      ? this.executeAttackMapWorkflowRun(workflow, run, targetRecord, agent, provider, constraintSet)
+      : this.executePipelineRun(workflow, run, targetRecord, agent, provider, constraintSet);
     void execution.catch(async (error) => {
       await this.failWorkflowRunAfterUnhandledError(run.id, error);
     });
@@ -337,9 +334,11 @@ export class WorkflowExecutionService {
   private buildTaskPrompt(input: PipelineContext) {
     return [
       `Workflow: ${input.workflow.name}`,
-      `Application: ${input.application.name}`,
+      `Target: ${input.targetRecord.name}`,
       `Target URL: ${input.target.baseUrl}`,
-      input.runtime ? `Runtime: ${input.runtime.name} (${input.runtime.provider}, ${input.runtime.region})` : null
+      input.targetRecord.deployments?.length
+        ? `Deployments: ${input.targetRecord.deployments.map((deployment) => `${deployment.name} (${deployment.provider}, ${deployment.region})`).join("; ")}`
+        : null
     ].filter(Boolean).join("\n");
   }
 
@@ -413,8 +412,8 @@ export class WorkflowExecutionService {
 
     await createScan(scan, {
       mode: "workflow",
-      applicationId: context.application.id,
-      runtimeId: context.runtime?.id ?? null,
+      applicationId: context.targetRecord.id,
+      runtimeId: null,
       agentId: context.agent.id
     });
 
@@ -453,7 +452,7 @@ export class WorkflowExecutionService {
   private async executeAttackMapWorkflowRun(
     workflow: Workflow,
     run: WorkflowRun,
-    application: NonNullable<Awaited<ReturnType<ApplicationsRepository["getById"]>>>,
+    targetRecord: NonNullable<Awaited<ReturnType<TargetsRepository["getById"]>>>,
     agent: NonNullable<Awaited<ReturnType<AiAgentsRepository["getById"]>>>,
     provider: StoredAiProvider,
     constraintSet: EffectiveExecutionConstraintSet
@@ -566,7 +565,7 @@ export class WorkflowExecutionService {
     };
 
     const target = {
-      baseUrl: constraintSet.normalizedTarget.baseUrl ?? application.baseUrl ?? `http://${constraintSet.normalizedTarget.host}`,
+      baseUrl: constraintSet.normalizedTarget.baseUrl ?? targetRecord.baseUrl ?? `http://${constraintSet.normalizedTarget.host}`,
       host: constraintSet.normalizedTarget.host,
       ...(constraintSet.normalizedTarget.port === undefined ? {} : { port: constraintSet.normalizedTarget.port })
     };
@@ -883,19 +882,18 @@ export class WorkflowExecutionService {
   private async executePipelineRun(
     workflow: Workflow,
     run: WorkflowRun,
-    applicationOverride?: NonNullable<Awaited<ReturnType<ApplicationsRepository["getById"]>>>,
+    targetOverride?: NonNullable<Awaited<ReturnType<TargetsRepository["getById"]>>>,
     agentOverride?: NonNullable<Awaited<ReturnType<AiAgentsRepository["getById"]>>>,
     providerOverride?: StoredAiProvider,
     constraintSetOverride?: EffectiveExecutionConstraintSet
   ) {
-    const [application, runtime, agent] = await Promise.all([
-      applicationOverride ? Promise.resolve(applicationOverride) : this.applicationsRepository.getById(workflow.applicationId),
-      workflow.runtimeId ? this.runtimesRepository.getById(workflow.runtimeId) : Promise.resolve(null),
+    const [targetRecord, agent] = await Promise.all([
+      targetOverride ? Promise.resolve(targetOverride) : this.targetsRepository.getById(workflow.targetId),
       agentOverride ? Promise.resolve(agentOverride) : this.aiAgentsRepository.getById(workflow.agentId)
     ]);
 
-    if (!application) {
-      throw new RequestError(400, "Workflow application not found.");
+    if (!targetRecord) {
+      throw new RequestError(400, "Workflow target not found.");
     }
     if (!agent) {
       throw new RequestError(400, "Workflow agent not found.");
@@ -903,10 +901,10 @@ export class WorkflowExecutionService {
 
     const provider = providerOverride ?? await this.aiProvidersRepository.getStoredById(agent.providerId);
     this.assertProviderSupportsWorkflowExecution(provider);
-    const targetAsset = resolveTargetAsset(application, run.targetAssetId ?? undefined);
-    const constraintSet = constraintSetOverride ?? resolveEffectiveExecutionConstraints(application, targetAsset, 5);
+    const targetAsset = resolveTargetAsset(targetRecord, run.targetAssetId ?? undefined);
+    const constraintSet = constraintSetOverride ?? resolveEffectiveExecutionConstraints(targetRecord, targetAsset, 5);
     const target = {
-      baseUrl: constraintSet.normalizedTarget.baseUrl ?? application.baseUrl ?? `http://${constraintSet.normalizedTarget.host}`,
+      baseUrl: constraintSet.normalizedTarget.baseUrl ?? targetRecord.baseUrl ?? `http://${constraintSet.normalizedTarget.host}`,
       host: constraintSet.normalizedTarget.host,
       ...(constraintSet.normalizedTarget.port === undefined ? {} : { port: constraintSet.normalizedTarget.port })
     };
@@ -937,7 +935,7 @@ export class WorkflowExecutionService {
         }
       }).allowed);
       if (incompatibleTool) {
-        throw new RequestError(400, `Workflow cannot start because ${incompatibleTool.name} is not compatible with the active application constraints.`, {
+        throw new RequestError(400, `Workflow cannot start because ${incompatibleTool.name} is not compatible with the active target constraints.`, {
           code: "WORKFLOW_TOOL_CONSTRAINT_INCOMPATIBLE",
           userFriendlyMessage: `Workflow cannot start because ${incompatibleTool.name} cannot enforce the active target policy.`
         });
@@ -947,8 +945,7 @@ export class WorkflowExecutionService {
     const context: PipelineContext = {
       workflow,
       run,
-      application,
-      runtime,
+      targetRecord,
       agent,
       provider,
       target,

@@ -2,9 +2,8 @@ import type { ComponentType } from "react";
 import { AiAgentsPage } from "@/features/ai-agents/page";
 import { AiProvidersPage } from "@/features/ai-providers/page";
 import { AiToolsPage } from "@/features/ai-tools/page";
-import { ApplicationsPage } from "@/features/applications/page";
 import { ExecutionConstraintsPage } from "@/features/execution-constraints/page";
-import { RuntimesPage } from "@/features/runtimes/page";
+import { TargetsPage } from "@/features/targets/page";
 import { WorkflowDetailPage } from "@/features/workflows/detail-page";
 import { WorkflowsPage } from "@/features/workflows/page";
 import { crudRouteConfigs, type CrudNavigationId } from "@/app/navigation";
@@ -20,16 +19,10 @@ export type CrudRouteRegistryEntry = {
 
 export const crudRouteRegistry: CrudRouteRegistryEntry[] = [
   {
-    id: "applications",
-    component: ApplicationsPage as ComponentType<Record<string, unknown>>,
-    detailIdProp: "applicationId",
-    detailLabelProp: "applicationNameHint"
-  },
-  {
-    id: "runtimes",
-    component: RuntimesPage as ComponentType<Record<string, unknown>>,
-    detailIdProp: "runtimeId",
-    detailLabelProp: "runtimeNameHint"
+    id: "targets",
+    component: TargetsPage as ComponentType<Record<string, unknown>>,
+    detailIdProp: "targetId",
+    detailLabelProp: "targetNameHint"
   },
   {
     id: "ai-providers",
@@ -66,6 +59,12 @@ export const crudRouteRegistry: CrudRouteRegistryEntry[] = [
 ];
 
 export const legacyCrudRedirects = [
+  { path: "/applications", redirectTo: crudRouteConfigs.targets.listPath },
+  { path: "/applications/new", redirectTo: crudRouteConfigs.targets.createPath },
+  { path: "/applications/:applicationId", section: "targets", legacyParamName: "applicationId" },
+  { path: "/runtimes", redirectTo: crudRouteConfigs.targets.listPath },
+  { path: "/runtimes/new", redirectTo: crudRouteConfigs.targets.createPath },
+  { path: "/runtimes/:runtimeId", redirectTo: crudRouteConfigs.targets.listPath },
   { path: "/ai-providers", redirectTo: crudRouteConfigs["ai-providers"].listPath },
   { path: "/ai-providers/:providerId", section: "ai-providers", legacyParamName: "providerId" },
   { path: "/ai-agents", redirectTo: crudRouteConfigs["ai-agents"].listPath },

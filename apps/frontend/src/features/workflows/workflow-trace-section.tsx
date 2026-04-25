@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import type { AiAgent, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
+import type { AiAgent, AiTool, Target as WorkflowTarget, Workflow, WorkflowRun } from "@synosec/contracts";
 import { AlertTriangle, ChevronRight, LoaderCircle, Radio, Target } from "lucide-react";
 import { DetailHintTrigger } from "@/shared/components/detail-page";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
@@ -142,7 +142,7 @@ const KIND_ACCENT: Record<DuplexAtomKind, { label: string; dot: string }> = {
 
 const WORKFLOW_METADATA_HINTS = {
   status: "Lifecycle state of the workflow definition itself, separate from the currently selected run.",
-  target: "Application context this workflow is currently bound to for targeting and reporting.",
+  target: "Target context this workflow is currently bound to for targeting and reporting.",
   agent: "AI agent definition that provides the standing prompt, provider, and default tool grants.",
   currentRun: "Latest persisted run state and the number of workflow events currently attached to it.",
   updated: "Last time the workflow definition record changed."
@@ -867,8 +867,7 @@ function EmptyRunState({
 
 export function WorkflowTraceSection({
   workflow,
-  applications,
-  runtimes,
+  targets,
   agents,
   tools,
   run,
@@ -881,8 +880,7 @@ export function WorkflowTraceSection({
   streamError
 }: {
   workflow: Workflow | null;
-  applications: Application[];
-  runtimes: Runtime[];
+  targets: WorkflowTarget[];
   agents: AiAgent[];
   tools: AiTool[];
   run: WorkflowRun | null;
@@ -919,8 +917,8 @@ export function WorkflowTraceSection({
     [workflow, agents]
   );
   const applicationName = workflow
-    ? (applications.find((item) => item.id === workflow.applicationId)?.name ?? "Unknown application")
-    : "Unknown application";
+    ? (targets.find((item) => item.id === workflow.targetId)?.name ?? "Unknown target")
+    : "Unknown target";
   const visibleToolNames = workflow
     ? (summaryCard.toolNames.length > 0
       ? summaryCard.toolNames

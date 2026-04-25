@@ -5,6 +5,7 @@ export const apiRoutes = {
   authGoogleLogin: "/api/auth/google",
   authLogout: "/api/auth/logout",
   authSession: "/api/auth/session",
+  targets: "/api/targets",
   applications: "/api/applications",
   applicationTargets: "/api/applications/:id/targets",
   runtimes: "/api/runtimes",

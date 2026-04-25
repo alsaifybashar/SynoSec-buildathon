@@ -4,13 +4,11 @@ import type { ExecutionReportsService } from "@/modules/execution-reports/index.
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
 import type { AiProvidersRepository } from "@/modules/ai-providers/index.js";
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
-import type { ApplicationsRepository } from "@/modules/applications/index.js";
-import type { RuntimesRepository } from "@/modules/runtimes/index.js";
+import type { TargetsRepository } from "@/modules/targets/index.js";
 import type { WorkflowsRepository } from "@/modules/workflows/index.js";
 
 export type EngineDependencies = {
-  applicationsRepository: ApplicationsRepository;
-  runtimesRepository: RuntimesRepository;
+  targetsRepository: TargetsRepository;
   aiProvidersRepository: AiProvidersRepository;
   aiAgentsRepository: AiAgentsRepository;
   aiToolsRepository: AiToolsRepository;
@@ -30,8 +28,7 @@ export function createEngineServices(dependencies: EngineDependencies) {
   const workflowRunEventStream = new WorkflowRunStream();
   const workflowExecutionEngine = new WorkflowExecutionEngineService(
     dependencies.workflowsRepository,
-    dependencies.applicationsRepository,
-    dependencies.runtimesRepository,
+    dependencies.targetsRepository,
     dependencies.aiAgentsRepository,
     dependencies.aiProvidersRepository,
     dependencies.aiToolsRepository,

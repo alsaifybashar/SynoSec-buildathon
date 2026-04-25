@@ -5,9 +5,8 @@ import { WorkflowRunArtifactsService } from "@/modules/workflows/index.js";
 
 export function createRouteServices(dependencies: Pick<
   AppDependencies,
-  | "applicationsRepository"
+  | "targetsRepository"
   | "executionConstraintsRepository"
-  | "runtimesRepository"
   | "aiProvidersRepository"
   | "aiAgentsRepository"
   | "aiToolsRepository"

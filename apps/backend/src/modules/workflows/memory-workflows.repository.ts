@@ -11,8 +11,7 @@ import { selectLatestWorkflowRun } from "@synosec/contracts";
 import { paginateItems, type PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import { RequestError } from "@/shared/http/request-error.js";
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
-import type { ApplicationsRepository } from "@/modules/applications/index.js";
-import type { RuntimesRepository } from "@/modules/runtimes/index.js";
+import type { TargetsRepository } from "@/modules/targets/index.js";
 import type { WorkflowRunStatePatch, WorkflowsRepository } from "./workflows.repository.js";
 import { normalizeWorkflowStageContract } from "./workflow-stage-contract.js";
 
@@ -21,8 +20,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
   private readonly runs = new Map<string, WorkflowRun>();
 
   constructor(
-    private readonly applicationsRepository: ApplicationsRepository,
-    private readonly runtimesRepository: RuntimesRepository,
+    private readonly targetsRepository: TargetsRepository,
     private readonly aiAgentsRepository: AiAgentsRepository,
     seed: Workflow[] = [],
     seedRuns: WorkflowRun[] = []
@@ -39,7 +37,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     const normalizedQuery = query.q?.trim().toLowerCase();
     const sorted = [...this.workflows.values()]
       .filter((workflow) => !query.status || workflow.status === query.status)
-      .filter((workflow) => !query.applicationId || workflow.applicationId === query.applicationId)
+      .filter((workflow) => !query.targetId || workflow.targetId === query.targetId)
       .filter((workflow) => {
         if (!normalizedQuery) {
           return true;
@@ -69,7 +67,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
 
   async create(input: CreateWorkflowBody): Promise<Workflow> {
     const agentId = input.agentId;
-    await this.assertReferences(input.applicationId, input.runtimeId, [agentId]);
+    await this.assertReferences(input.targetId, [agentId]);
     const timestamp = new Date().toISOString();
     const normalizedContract = normalizeWorkflowStageContract({
       label: "Pipeline",
@@ -82,8 +80,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       status: input.status,
       executionKind: input.executionKind,
       description: input.description,
-      applicationId: input.applicationId,
-      runtimeId: input.runtimeId,
+      targetId: input.targetId,
       agentId,
       objective: normalizedContract.objective,
       allowedToolIds: normalizedContract.allowedToolIds,
@@ -114,8 +111,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     }
 
     await this.assertReferences(
-      input.applicationId ?? current.applicationId,
-      input.runtimeId === undefined ? current.runtimeId : input.runtimeId,
+      input.targetId ?? current.targetId,
       [input.agentId ?? current.agentId]
     );
 
@@ -131,8 +127,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       status: input.status ?? current.status,
       executionKind: input.executionKind ?? current.executionKind,
       description: input.description === undefined ? current.description : input.description,
-      applicationId: input.applicationId ?? current.applicationId,
-      runtimeId: input.runtimeId === undefined ? current.runtimeId : input.runtimeId,
+      targetId: input.targetId ?? current.targetId,
       agentId: input.agentId ?? current.agentId,
       objective: nextStageContract.objective,
       allowedToolIds: nextStageContract.allowedToolIds,
@@ -247,17 +242,10 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     return run;
   }
 
-  private async assertReferences(applicationId: string, runtimeId: string | null, agentIds: string[]) {
-    const application = await this.applicationsRepository.getById(applicationId);
-    if (!application) {
-      throw new RequestError(400, "Application not found.");
-    }
-
-    if (runtimeId) {
-      const runtime = await this.runtimesRepository.getById(runtimeId);
-      if (!runtime) {
-        throw new RequestError(400, "Runtime not found.");
-      }
+  private async assertReferences(targetId: string, agentIds: string[]) {
+    const targetRecord = await this.targetsRepository.getById(targetId);
+    if (!targetRecord) {
+      throw new RequestError(400, "Target not found.");
     }
 
     for (const agentId of agentIds) {
