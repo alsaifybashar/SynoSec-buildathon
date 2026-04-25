@@ -4,6 +4,12 @@ import { ffufScanTool } from "./tools/content/ffuf-scan.js";
 import { gobusterScanTool } from "./tools/content/gobuster-scan.js";
 import { webCrawlTool } from "./tools/content/web-crawl.js";
 import { metasploitFrameworkTool } from "./tools/exploitation/metasploit-framework.js";
+import { familyContentDiscoveryTool } from "./tools/family/content-discovery.js";
+import { familyHttpSurfaceTool } from "./tools/family/http-surface.js";
+import { familyNetworkEnumerationTool } from "./tools/family/network-enumeration.js";
+import { familySubdomainDiscoveryTool } from "./tools/family/subdomain-discovery.js";
+import { familyVulnerabilityValidationTool } from "./tools/family/vulnerability-validation.js";
+import { familyWebCrawlTool } from "./tools/family/web-crawl.js";
 import { binwalkTool } from "./tools/forensics/binwalk.js";
 import { bulkExtractorTool } from "./tools/forensics/bulk-extractor.js";
 import { exifToolTool } from "./tools/forensics/exiftool.js";
@@ -78,9 +84,10 @@ export const anthropicProviderId = "88e995dc-c55d-4a74-b831-b64922f25858";
 export const localProviderId = "6fb18f09-f230-49df-b0ab-4f1bcedd230c";
 export const osiSingleAgentWorkflowId = "8b57f0e7-1dd7-4d6a-8db5-c4ff7be80a21";
 export const orchestrationAttackMapWorkflowId = "97fa61fd-8ae7-41d8-b267-d472413fcb9c";
+export const osiCompactFamilyWorkflowId = "0e8e3912-c48f-4c34-9ac0-c54ec70df3f6";
 
 export type SeededProviderKey = "anthropic" | "local";
-export type SeededRoleKey = "orchestrator" | "qa-analyst" | "pen-tester" | "reporter";
+export type SeededRoleKey = "orchestrator" | "qa-analyst" | "pen-tester" | "reporter" | "compact-evaluator";
 
 export function getSeededProviderDefinitions(env: NodeJS.ProcessEnv = process.env) {
   return [
@@ -171,6 +178,12 @@ const rawSeededToolDefinitions = [
   ffufScanTool,
   gobusterScanTool,
   webCrawlTool,
+  familyContentDiscoveryTool,
+  familyHttpSurfaceTool,
+  familyNetworkEnumerationTool,
+  familySubdomainDiscoveryTool,
+  familyVulnerabilityValidationTool,
+  familyWebCrawlTool,
   metasploitFrameworkTool,
   binwalkTool,
   bulkExtractorTool,
@@ -322,6 +335,21 @@ export const seededRoleDefinitions = [
     ] as const
   },
   {
+    key: "compact-evaluator" as const,
+    name: "Compact Evaluator",
+    description: "Evaluates the semantic-family tool surface as a compact alternative to the raw pentest catalog.",
+    systemPrompt:
+      "You are the compact evaluation agent for SynoSec. Use only the available semantic family tools, think in terms of task families rather than tool brands, keep the evidence chain explicit, and evaluate whether the compact tool surface is sufficient to make progress. Do not ask for raw tool access. Work within the family tools you are given, report concrete findings through the workflow actions, and stop when confidence stops improving.",
+    toolIds: [
+      familyHttpSurfaceTool.id,
+      familyNetworkEnumerationTool.id,
+      familySubdomainDiscoveryTool.id,
+      familyWebCrawlTool.id,
+      familyContentDiscoveryTool.id,
+      familyVulnerabilityValidationTool.id
+    ] as const
+  },
+  {
     key: "reporter" as const,
     name: "Reporter",
     description: "Builds clear security reports for both executive and technical audiences.",
@@ -336,10 +364,12 @@ export const seededAgentIds = {
   "anthropic:qa-analyst": "751d2c0b-85f1-4f7a-8ac6-2c05d0ce0f56",
   "anthropic:pen-tester": "f1f99dd4-c2a7-47e8-946e-6a880f09001f",
   "anthropic:reporter": "897204f6-2e08-4775-aae8-f233d4ec8154",
+  "anthropic:compact-evaluator": "3d9992c0-a20b-4527-86d3-9479e86d6c3b",
   "local:orchestrator": "fa1a0bfa-6b02-4948-8e1c-155f6b9a4ae7",
   "local:qa-analyst": "fcfe30d4-9473-4e74-8836-d824ff777c88",
   "local:pen-tester": "36f56ea0-e8ce-48ca-bda8-c33ed49e67b2",
-  "local:reporter": "72ea29f0-f780-4402-bfe4-574604830749"
+  "local:reporter": "72ea29f0-f780-4402-bfe4-574604830749",
+  "local:compact-evaluator": "7115bc3d-9237-4fba-97f7-8d72966502c0"
 } as const;
 
 export function seededAgentId(providerKey: SeededProviderKey, roleKey: SeededRoleKey) {
@@ -433,6 +463,49 @@ export function getSeededWorkflowDefinitions() {
           completionRule: {
             requireStageResult: true,
             requireToolCall: true,
+            allowEmptyResult: true,
+            minFindings: 0
+          },
+          resultSchemaVersion: 1,
+          handoffSchema: null
+        }
+      ]
+    },
+    {
+      id: osiCompactFamilyWorkflowId,
+      name: "OSI Compact Family Evaluation",
+      status: "active" as const,
+      executionKind: "workflow" as const,
+      description: "Seeded Anthropic workflow for evaluating a compact semantic-family tool surface against the same local target and evidence pipeline.",
+      applicationId: localApplicationId,
+      runtimeId: targetRuntimeId,
+      stages: [
+        {
+          id: "d6be6af5-fc56-42fa-a802-702d002b4bf6",
+          label: "Compact Evaluation",
+          agentId: seededAgentId("anthropic", "compact-evaluator"),
+          objective: "Run one evidence-backed compact-family evaluation pipeline across the configured target, use only the semantic family tools for collection and validation, register concrete findings through report_finding, and stop only through complete_run or fail_run.",
+          allowedToolIds: [
+            ...getSeededRoleDefinition("compact-evaluator")?.toolIds ?? []
+          ],
+          requiredEvidenceTypes: [],
+          findingPolicy: {
+            taxonomy: "typed-core-v1",
+            allowedTypes: [
+              "service_exposure",
+              "content_discovery",
+              "missing_security_header",
+              "tls_weakness",
+              "injection_signal",
+              "auth_weakness",
+              "sensitive_data_exposure",
+              "misconfiguration",
+              "other"
+            ]
+          },
+          completionRule: {
+            requireStageResult: true,
+            requireToolCall: false,
             allowEmptyResult: true,
             minFindings: 0
           },
