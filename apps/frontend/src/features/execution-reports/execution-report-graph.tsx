@@ -268,8 +268,24 @@ export function ExecutionReportGraphMap({ graph }: { graph: ExecutionReportGraph
     kind: node.kind,
     title: node.title,
     summary: node.summary,
-    ...("severity" in node ? { severity: node.severity } : {}),
-    ...("sourceTool" in node ? { sourceTool: node.sourceTool, quote: node.quote, refs: node.refs } : {}),
+    ...("severity" in node && node.severity ? { severity: node.severity } : {}),
+    ...("sourceTool" in node
+      ? {
+          ...(node.sourceTool ? { sourceTool: node.sourceTool } : {}),
+          ...(node.quote ? { quote: node.quote } : {}),
+          ...(node.refs
+            ? {
+                refs: node.refs.map((ref) => ({
+                  ...(ref.traceEventId ? { traceEventId: ref.traceEventId } : {}),
+                  ...(ref.observationRef ? { observationRef: ref.observationRef } : {}),
+                  ...(ref.toolRunRef ? { toolRunRef: ref.toolRunRef } : {}),
+                  ...(ref.artifactRef ? { artifactRef: ref.artifactRef } : {}),
+                  ...(ref.externalUrl ? { externalUrl: ref.externalUrl } : {})
+                }))
+              }
+            : {})
+        }
+      : {}),
     ...("targetLabel" in node ? { targetLabel: node.targetLabel } : {}),
     ...("findingIds" in node ? { findingIds: node.findingIds } : {})
   }));

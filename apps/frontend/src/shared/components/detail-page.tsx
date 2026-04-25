@@ -99,7 +99,7 @@ export function DetailPage({
       <PageHeader title={title} breadcrumbs={breadcrumbs} />
 
       {subtitle || timestamp ? (
-        <div className="mx-3 -mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-[0.625rem] uppercase tracking-[0.25em] text-muted-foreground md:justify-start">
+        <div className="mx-3 -mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-eyebrow uppercase tracking-[0.25em] text-muted-foreground md:justify-start">
           {subtitle ? <span>ID · {subtitle}</span> : null}
           {subtitle && timestamp ? <span aria-hidden className="h-px w-3 bg-border" /> : null}
           {timestamp ? <span>updated · {timestamp}</span> : null}
@@ -178,7 +178,7 @@ export function DetailFieldGroup({
         .join(" ")}
     >
       {title ? (
-        <p className="col-span-full font-mono text-[0.625rem] font-medium uppercase tracking-[0.3em] text-muted-foreground">
+        <p className="col-span-full font-mono text-eyebrow font-medium uppercase tracking-[0.3em] text-muted-foreground">
           {title}
         </p>
       ) : null}
@@ -200,7 +200,7 @@ export function DetailMetadataPanel({
 }) {
   return (
     <aside className={["rounded-md border border-border/60 bg-card/40 p-5", className].filter(Boolean).join(" ")}>
-      <div className="mb-4 flex items-center gap-1.5 font-mono text-[0.625rem] font-medium uppercase tracking-[0.3em] text-muted-foreground">
+      <div className="mb-4 flex items-center gap-1.5 font-mono text-eyebrow font-medium uppercase tracking-[0.3em] text-muted-foreground">
         <span>{title}</span>
         {hint ? (
           <TooltipProvider delayDuration={150}>
@@ -229,7 +229,7 @@ export function DetailSidebarItem({
 }) {
   return (
     <div className="space-y-1">
-      <div className="flex items-center gap-1.5 font-mono text-[0.6rem] font-medium uppercase tracking-[0.3em] text-muted-foreground">
+      <div className="flex items-center gap-1.5 font-mono text-eyebrow font-medium uppercase tracking-[0.3em] text-muted-foreground">
         <span>{label}</span>
         {hint ? (
           <TooltipProvider delayDuration={150}>
@@ -256,7 +256,7 @@ export const DetailHintTrigger = forwardRef<HTMLButtonElement, ButtonHTMLAttribu
       ref={ref}
       type="button"
       className={[
-        "inline-flex items-center font-mono text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-primary/80 transition hover:text-primary focus-visible:text-primary focus-visible:outline-none",
+        "inline-flex items-center font-mono text-xs font-semibold uppercase tracking-[0.18em] text-primary/80 transition hover:text-primary focus-visible:text-primary focus-visible:outline-none",
         className
       ].filter(Boolean).join(" ")}
       aria-label={`Show guidance for ${label}`}
@@ -284,7 +284,7 @@ export function DetailField({
 }) {
   return (
     <div className={className ? `block space-y-1.5 ${className}` : "block space-y-1.5"}>
-      <div className="flex items-center gap-1.5 font-mono text-[0.6rem] font-medium uppercase tracking-[0.28em] text-muted-foreground">
+      <div className="flex items-center gap-1.5 font-mono text-eyebrow font-medium uppercase tracking-[0.28em] text-muted-foreground">
         <span>
           {label}
           {required ? <span className="ml-1 text-destructive">*</span> : null}

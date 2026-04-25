@@ -11,7 +11,7 @@ export function PageHeader({
   return (
     <div className="m-3 space-y-2 text-center md:space-y-2.5 md:text-left">
       <div className="space-y-1.5">
-        <Display className="max-w-none text-3xl md:text-5xl">{title}</Display>
+        <Display className="max-w-none text-3xl md:text-4xl">{title}</Display>
       </div>
 
       <nav className="hidden items-center gap-2 text-xs text-muted-foreground md:flex" aria-label="Breadcrumb">
