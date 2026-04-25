@@ -795,17 +795,19 @@ function FindingsRail({
             {findings.map((finding) => (
               <li key={finding.id}>
                 <details className="group">
-                  <summary className="flex cursor-pointer list-none items-start gap-2 px-4 py-2.5 marker:hidden hover:bg-muted/30">
+                  <summary className="grid cursor-pointer list-none grid-cols-[5rem_minmax(0,1fr)_4rem_1rem] items-center gap-3 px-4 py-2.5 marker:hidden hover:bg-muted/30">
                     <SeverityBadge severity={finding.severity} />
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0">
                       <p className="truncate text-[0.82rem] font-medium text-foreground">{finding.title}</p>
-                      <p className="mt-0.5 flex items-center gap-1.5 truncate font-mono text-[0.62rem] uppercase tracking-[0.12em] text-muted-foreground">
-                        <Target className="h-3 w-3 text-primary" />
+                      <p className="mt-0.5 flex items-center gap-1 truncate font-mono text-[0.6rem] uppercase tracking-[0.12em] text-muted-foreground">
+                        <Target className="h-3 w-3 shrink-0 text-primary" />
                         <span className="truncate">{finding.host}</span>
-                        <span>· conf {finding.confidence.toFixed(2)}</span>
                       </p>
                     </div>
-                    <ChevronRight className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+                    <span className="text-right font-mono text-[0.62rem] uppercase tracking-[0.12em] text-muted-foreground">
+                      {finding.confidence.toFixed(2)}
+                    </span>
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
                   </summary>
                   <div className="space-y-2 border-t border-dashed border-border/60 bg-background/40 px-4 py-3">
                     <p className="font-mono text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">{finding.type}</p>
