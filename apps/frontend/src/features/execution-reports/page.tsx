@@ -31,6 +31,24 @@ function downloadJson(filename: string, value: unknown) {
 
 const statusOptions: ExecutionReportStatus[] = ["pending", "running", "completed", "failed", "aborted"];
 
+const statusBadgeStyles: Record<ExecutionReportStatus, string> = {
+  pending: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300",
+  running: "border-sky-500/40 bg-sky-500/10 text-sky-600 dark:text-sky-300",
+  completed: "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
+  failed: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-300",
+  aborted: "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
+};
+
+function StatusBadge({ status }: { status: ExecutionReportStatus }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[0.65rem] uppercase tracking-[0.16em] ${statusBadgeStyles[status]}`}
+    >
+      {status}
+    </span>
+  );
+}
+
 function SectionTitleWithHint({ title, hint }: { title: string; hint: string }) {
   return (
     <div className="flex items-center gap-2">
@@ -176,8 +194,9 @@ export function ExecutionReportsPage({
   if (!reportId) {
     const columns: ListPageColumn<ExecutionReportDetail>[] = [
       { id: "title", header: "Report", sortable: true, cell: (row) => row.title },
-      { id: "executionKind", header: "Kind", sortable: true, cell: (row) => row.executionKind },
-      { id: "status", header: "Status", sortable: true, cell: (row) => row.status },
+      { id: "executionKind", header: "Workflow type", sortable: true, cell: (row) => row.executionKind },
+      { id: "status", header: "Status", sortable: true, cell: (row) => <StatusBadge status={row.status} /> },
+      { id: "targetLabel", header: "Target", sortable: false, cell: (row) => row.targetLabel },
       { id: "findingsCount", header: "Findings", sortable: true, cell: (row) => row.findingsCount },
       { id: "highestSeverity", header: "Highest", sortable: true, cell: (row) => row.highestSeverity ?? "none" },
       { id: "generatedAt", header: "Generated", sortable: true, cell: (row) => new Date(row.generatedAt).toLocaleString() }
@@ -200,22 +219,12 @@ export function ExecutionReportsPage({
         allLabel: "All statuses",
         options: statusOptions.map((status) => ({ label: status, value: status }))
       },
-      {
-        id: "archived",
-        label: "Report state",
-        placeholder: "Filter reports",
-        allLabel: "Active only",
-        options: [
-          { label: "All reports", value: "include" },
-          { label: "Archived only", value: "only" }
-        ]
-      }
     ];
 
     return (
       <ListPage
-        title="Execution Reports"
-        recordLabel="Execution report"
+        title="Reports"
+        recordLabel="Report"
         columns={columns}
         query={list.query}
         dataState={list.dataState}
@@ -244,7 +253,7 @@ export function ExecutionReportsPage({
     return (
       <DetailLoadingState
         title="Execution report"
-        breadcrumbs={["Start", "Execution Reports", "Loading"]}
+        breadcrumbs={["Start", "Reports", "Loading"]}
         onBack={onNavigateToList}
         message="Loading execution report..."
       />
@@ -256,7 +265,7 @@ export function ExecutionReportsPage({
   return (
     <DetailPage
       title={report.title}
-      breadcrumbs={["Start", "Execution Reports", report.title]}
+      breadcrumbs={["Start", "Reports", report.title]}
       subtitle={report.executionId}
       timestamp={new Date(report.updatedAt).toLocaleString()}
       isDirty={false}

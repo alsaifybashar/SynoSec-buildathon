@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExecutionReportGraph, ExecutionReportGraphEdge, ExecutionReportGraphNode } from "@synosec/contracts";
 import { cn } from "@/shared/lib/utils";
 
@@ -29,8 +29,6 @@ type RenderEdge = {
   target: string;
   kind: ExecutionReportGraphEdge["kind"];
 };
-
-type SimNode = { x: number; y: number; vx: number; vy: number };
 
 const NODE_RADIUS: Record<GraphKind, number> = {
   evidence: 20,
@@ -69,6 +67,14 @@ const KIND_COLUMN: Record<GraphKind, number> = {
   evidence: 0,
   finding: 1,
   chain: 2
+};
+
+const SEVERITY_RANK: Record<NonNullable<RenderNode["severity"]>, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+  info: 4
 };
 
 function useContainerSize() {
@@ -111,122 +117,79 @@ function useContainerSize() {
   return { ref, size };
 }
 
-function useForceLayout(nodes: RenderNode[], edges: RenderEdge[], width: number, height: number) {
-  const simRef = useRef<Map<string, SimNode>>(new Map());
-  const rafRef = useRef<number | null>(null);
-  const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
+function buildSnapshotLayout(nodes: RenderNode[], edges: RenderEdge[], width: number, height: number) {
+  const positions = new Map<string, { x: number; y: number }>();
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const adjacency = new Map<string, string[]>();
 
-  const restart = useCallback(() => {
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
+  for (const node of nodes) {
+    adjacency.set(node.id, []);
+  }
+
+  for (const edge of edges) {
+    adjacency.get(edge.source)?.push(edge.target);
+    adjacency.get(edge.target)?.push(edge.source);
+  }
+
+  const compareByTitle = (left: RenderNode, right: RenderNode) => left.title.localeCompare(right.title);
+  const compareByFindingPriority = (left: RenderNode, right: RenderNode) => {
+    const leftSeverity = left.severity ? SEVERITY_RANK[left.severity] : Number.MAX_SAFE_INTEGER;
+    const rightSeverity = right.severity ? SEVERITY_RANK[right.severity] : Number.MAX_SAFE_INTEGER;
+    if (leftSeverity !== rightSeverity) {
+      return leftSeverity - rightSeverity;
+    }
+    return compareByTitle(left, right);
+  };
+
+  const findings = nodes.filter((node) => node.kind === "finding").sort(compareByFindingPriority);
+  const findingIndex = new Map(findings.map((node, index) => [node.id, index]));
+
+  const averageNeighborFindingIndex = (node: RenderNode) => {
+    const neighbors = adjacency.get(node.id) ?? [];
+    const indices = neighbors
+      .map((neighborId) => nodeById.get(neighborId))
+      .filter((neighbor): neighbor is RenderNode => Boolean(neighbor && neighbor.kind === "finding"))
+      .map((neighbor) => findingIndex.get(neighbor.id))
+      .filter((index): index is number => index !== undefined);
+
+    if (indices.length === 0) {
+      return Number.MAX_SAFE_INTEGER;
     }
 
-    let iteration = 0;
-    const tick = () => {
-      iteration += 1;
-      if (iteration > 180) {
-        return;
-      }
+    return indices.reduce((sum, index) => sum + index, 0) / indices.length;
+  };
 
-      const alpha = Math.max(0.08, 1 - iteration / 180);
-      const sim = simRef.current;
-      const entries = [...sim.entries()];
-
-      for (let i = 0; i < entries.length; i += 1) {
-        for (let j = i + 1; j < entries.length; j += 1) {
-          const [, left] = entries[i]!;
-          const [, right] = entries[j]!;
-          const dx = right.x - left.x || 0.01;
-          const dy = right.y - left.y || 0.01;
-          const distanceSquared = dx * dx + dy * dy;
-          const distance = Math.sqrt(distanceSquared);
-          const force = Math.min(14000 / distanceSquared, 80) * alpha;
-          const fx = (dx / distance) * force;
-          const fy = (dy / distance) * force;
-          left.vx -= fx;
-          left.vy -= fy;
-          right.vx += fx;
-          right.vy += fy;
+  const orderWithinKind = (kind: GraphKind) => {
+    return nodes
+      .filter((node) => node.kind === kind)
+      .sort((left, right) => {
+        const leftAnchor = averageNeighborFindingIndex(left);
+        const rightAnchor = averageNeighborFindingIndex(right);
+        if (leftAnchor !== rightAnchor) {
+          return leftAnchor - rightAnchor;
         }
-      }
-
-      for (const edge of edges) {
-        const source = sim.get(edge.source);
-        const target = sim.get(edge.target);
-        if (!source || !target) {
-          continue;
+        if (kind === "finding") {
+          return compareByFindingPriority(left, right);
         }
+        return compareByTitle(left, right);
+      });
+  };
 
-        const dx = target.x - source.x;
-        const dy = target.y - source.y;
-        const distance = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-        const rest = edge.kind === "supports" ? 130 : 180;
-        const force = (distance - rest) * 0.07 * alpha;
-        const fx = (dx / distance) * force;
-        const fy = (dy / distance) * force;
-        source.vx += fx;
-        source.vy += fy;
-        target.vx -= fx;
-        target.vy -= fy;
-      }
+  const laneWidth = Math.max(width - 220, 240) / 2;
+  const xForKind = (kind: GraphKind) => 110 + KIND_COLUMN[kind] * laneWidth;
+  const verticalPadding = 58;
 
-      for (const [, point] of entries) {
-        point.vx += (width / 2 - point.x) * 0.0018 * alpha;
-        point.vy += (height / 2 - point.y) * 0.0018 * alpha;
-      }
+  for (const kind of ["evidence", "finding", "chain"] satisfies GraphKind[]) {
+    const ordered = kind === "finding" ? findings : orderWithinKind(kind);
+    const usableHeight = Math.max(height - verticalPadding * 2, 180);
 
-      for (const [, point] of entries) {
-        point.vx *= 0.84;
-        point.vy *= 0.84;
-        point.x = Math.max(54, Math.min(width - 54, point.x + point.vx));
-        point.y = Math.max(54, Math.min(height - 54, point.y + point.vy));
-      }
-
-      if (iteration % 3 === 0) {
-        setPositions(new Map([...sim.entries()].map(([id, point]) => [id, { x: point.x, y: point.y }])));
-      }
-
-      rafRef.current = requestAnimationFrame(tick);
-    };
-
-    rafRef.current = requestAnimationFrame(tick);
-  }, [edges, height, width]);
-
-  useEffect(() => {
-    const sim = simRef.current;
-    const kindCounts = new Map<GraphKind, number>();
-    const kindIndexes = new Map<GraphKind, number>();
-
-    for (const node of nodes) {
-      kindCounts.set(node.kind, (kindCounts.get(node.kind) ?? 0) + 1);
-    }
-
-    for (const node of nodes) {
-      if (sim.has(node.id)) {
-        continue;
-      }
-
-      const index = kindIndexes.get(node.kind) ?? 0;
-      kindIndexes.set(node.kind, index + 1);
-      const total = Math.max(kindCounts.get(node.kind) ?? 1, 1);
-      const x = 110 + (KIND_COLUMN[node.kind] / 2) * Math.max(width - 220, 200);
-      const y = ((index + 1) / (total + 1)) * Math.max(height - 80, 240) + 40;
-      sim.set(node.id, { x, y, vx: 0, vy: 0 });
-    }
-
-    for (const id of [...sim.keys()]) {
-      if (!nodes.some((node) => node.id === id)) {
-        sim.delete(id);
-      }
-    }
-
-    restart();
-    return () => {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-      }
-    };
-  }, [height, nodes, restart, width]);
+    ordered.forEach((node, index) => {
+      const y = ordered.length === 1
+        ? height / 2
+        : verticalPadding + (index * usableHeight) / Math.max(ordered.length - 1, 1);
+      positions.set(node.id, { x: xForKind(kind), y });
+    });
+  }
 
   return positions;
 }
@@ -317,7 +280,7 @@ export function ExecutionReportGraphMap({ graph }: { graph: ExecutionReportGraph
     kind: edge.kind
   }));
   const { ref, size } = useContainerSize();
-  const positions = useForceLayout(nodes, edges, size.width, size.height);
+  const positions = useMemo(() => buildSnapshotLayout(nodes, edges, size.width, size.height), [edges, nodes, size.height, size.width]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(graph.nodes[0]?.id ?? null);
   const [viewport, setViewport] = useState({ scale: 1, x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -400,6 +363,7 @@ export function ExecutionReportGraphMap({ graph }: { graph: ExecutionReportGraph
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className="rounded-full border border-border/70 px-2 py-1">{nodes.length} nodes</span>
         <span className="rounded-full border border-border/70 px-2 py-1">{edges.length} edges</span>
+        <span className="rounded-full border border-border/70 px-2 py-1">snapshot layout</span>
         <span className="rounded-full border border-border/70 px-2 py-1">pan, zoom, inspect</span>
       </div>
 

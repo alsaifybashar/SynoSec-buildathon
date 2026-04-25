@@ -286,7 +286,7 @@ function SidebarNav({
     const isExpanded = expandedGroups[group.id] ?? false;
 
     return (
-      <div key={group.id} className="grid gap-0.5">
+      <div key={group.id} className="grid gap-1.5">
         <SidebarMenuItem
           aria-expanded={isExpanded}
           onClick={() => setExpandedGroups((prev) => ({ ...prev, [group.id]: !isExpanded }))}
@@ -303,7 +303,7 @@ function SidebarNav({
           />
         </SidebarMenuItem>
         {isExpanded ? (
-          <div className="ml-5 grid gap-0.5 border-l border-sidebar-border/60 pl-1">
+          <div className="ml-5 grid gap-1.5 border-l border-sidebar-border/60 pl-1">
             {group.items.map((item) => {
               const Icon = item.icon;
               const isActive = isNavigationItemActive(item, pathname);

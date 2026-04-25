@@ -126,7 +126,7 @@ describe("ExecutionReportsPage", () => {
     expect(screen.getByText("Execution Graph")).toBeInTheDocument();
     expect(screen.getByText("2 nodes")).toBeInTheDocument();
     expect(screen.getByText("1 edges")).toBeInTheDocument();
-    expect(screen.getByText("Admin response")).toBeInTheDocument();
+    expect(screen.getAllByText("Admin response").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Admin surface exposed").length).toBeGreaterThan(0);
     expect(screen.getByText("tool:tool-run-1")).toBeInTheDocument();
     expect(screen.getAllByText("supports").length).toBeGreaterThan(0);

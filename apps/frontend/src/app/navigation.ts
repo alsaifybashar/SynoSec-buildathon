@@ -143,7 +143,7 @@ export const navigationTree: NavigationTreeEntry[] = [
     kind: "item",
     item: createNavigationItem({
       id: "execution-reports",
-      label: "Execution Reports",
+      label: "Reports",
       path: "/execution-reports",
       icon: FileSearch
     })

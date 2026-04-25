@@ -112,18 +112,18 @@ export function DetailPage({
             actions
           ) : (
             <>
-              <Button type="button" variant="outline" onClick={onBack} className="h-8 text-[0.72rem]">
+              <Button type="button" variant="outline" onClick={onBack} className="h-9 text-sm">
                 <ArrowLeft className="h-4 w-4" />
                 Back
               </Button>
               <DetailActionFade show={isDirty} className="flex items-center gap-2">
                 <>
                   <div aria-hidden className="mx-1 hidden h-6 w-px bg-border/70 md:block" />
-                  <Button type="button" onClick={() => void onSave()} disabled={isSaving} className="h-8 text-[0.72rem]">
+                  <Button type="button" onClick={() => void onSave()} disabled={isSaving} className="h-9 text-sm">
                     <Check className="h-4 w-4" />
                     {saveLabel}
                   </Button>
-                  <Button type="button" variant="outline" onClick={onDismiss} disabled={isSaving} className="h-8 text-[0.72rem]">
+                  <Button type="button" variant="outline" onClick={onDismiss} disabled={isSaving} className="h-9 text-sm">
                     <Undo2 className="h-4 w-4" />
                     Dismiss
                   </Button>
@@ -131,7 +131,7 @@ export function DetailPage({
               </DetailActionFade>
               {onExportJson ? (
                 <div className="ml-auto">
-                  <Button type="button" variant="outline" onClick={onExportJson} className="h-8 text-[0.72rem]">
+                  <Button type="button" variant="outline" onClick={onExportJson} className="h-9 text-sm">
                     <Download className="h-4 w-4" />
                     Export JSON
                   </Button>

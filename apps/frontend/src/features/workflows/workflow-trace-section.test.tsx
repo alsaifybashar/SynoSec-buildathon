@@ -152,6 +152,7 @@ const run: WorkflowRun = {
         "",
         "Built-in actions",
         "",
+        "log_progress: Persist one short operator-visible progress update for the workflow transcript.",
         "report_finding: Persist one evidence-backed workflow finding.",
         "complete_run: Finish the workflow pipeline successfully.",
         "fail_run: Finish the workflow pipeline as failed."
@@ -166,6 +167,7 @@ const run: WorkflowRun = {
           "",
           "Built-in actions",
           "",
+          "log_progress: Persist one short operator-visible progress update for the workflow transcript.",
           "report_finding: Persist one evidence-backed workflow finding.",
           "complete_run: Finish the workflow pipeline successfully.",
           "fail_run: Finish the workflow pipeline as failed."
@@ -801,11 +803,12 @@ describe("WorkflowTraceSection", () => {
       />
     );
 
-    expect(screen.getByText("4 tools and actions available to the model.")).toBeInTheDocument();
+    expect(screen.getByText("5 tools and actions available to the model.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Structured tool segment"));
 
     expect(screen.getByText("Web Probe")).toBeInTheDocument();
+    expect(screen.getByText("log_progress")).toBeInTheDocument();
     expect(screen.getByText("report_finding")).toBeInTheDocument();
     expect(screen.getByText("complete_run")).toBeInTheDocument();
     expect(screen.getByText("fail_run")).toBeInTheDocument();

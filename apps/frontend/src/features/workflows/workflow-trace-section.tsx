@@ -190,6 +190,19 @@ function getVerificationToneLabel(status: string | undefined, title: string) {
 function createWorkflowBuiltinToolSegment(): StructuredToolSegment["tools"] {
   return [
     {
+      key: "builtin:log_progress",
+      name: "log_progress",
+      description: "Persist one short operator-visible progress update for the workflow transcript.",
+      source: "builtin-action",
+      inputSchema: JSON.stringify({
+        type: "object",
+        required: ["message"],
+        properties: {
+          message: { type: "string" }
+        }
+      }, null, 2),
+    },
+    {
       key: "builtin:report_finding",
       name: "report_finding",
       description: "Persist one evidence-backed workflow finding.",
@@ -367,7 +380,7 @@ function buildDuplexAtoms(input: {
           key: `${item.id}:body`,
           side: "left",
           kind: "body",
-          label: item.title,
+          label: "",
           body: assistantBody,
           meta: compactDate(item.createdAt),
           ...(item.live ? { title: "Live model output" } : {})
@@ -598,6 +611,7 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
   const compactToolInput = isTool ? getCompactToolInput(atom) : null;
   const compactToolOutput = isTool ? getCompactToolOutput(atom, labelText) : null;
   const showTitle = Boolean(atom.title) && (!isTool || normalizeInlineText(atom.title) !== normalizeInlineText(labelText));
+  const showLeadLine = Boolean(labelText) || Boolean(compactToolInput && !showFullDetails) || Boolean(showTitle);
   const isStructuredToolContext = atom.kind === "tool-context" && atom.structuredToolSegment;
   const structuredToolSegment = isStructuredToolContext ? atom.structuredToolSegment : null;
   const hasObservations = Boolean(atom.observations && atom.observations.length > 0);
@@ -664,7 +678,7 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
             </details>
           ) : null}
 
-          {!isStructuredToolContext ? (
+          {!isStructuredToolContext && showLeadLine ? (
           <p
             className={cn(
               "whitespace-pre-wrap leading-[1.65] text-foreground/90",
@@ -719,7 +733,9 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
                   "whitespace-pre-wrap leading-[1.7]",
                   isSystemTone
                     ? "text-[0.86rem] font-light text-foreground/68"
-                    : "text-[0.92rem] text-foreground/88"
+                    : atom.kind === "body"
+                      ? "text-[0.88rem] text-foreground/88"
+                      : "text-[0.92rem] text-foreground/88"
                 )}
               >
                 {atom.body}

@@ -291,7 +291,7 @@ export function ListPage<T extends { id: string }>({
       <div className="sticky top-0 z-10 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="flex flex-col gap-2.5 px-3 py-2.5">
           <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
-            <Button onClick={onAddRecord ?? handleDefaultAddRecord} className="h-8 text-[0.72rem]">
+            <Button onClick={onAddRecord ?? handleDefaultAddRecord} className="h-9 text-sm">
               <Plus className="h-4 w-4" />
               Add {recordLabel}
             </Button>
@@ -554,11 +554,11 @@ export function ListPage<T extends { id: string }>({
                 </div>
 
                 <div className="flex flex-wrap items-center justify-start gap-2 md:justify-center">
-                  <Button type="button" variant="outline" className="h-8 text-[0.72rem]" onClick={() => onPageChange(1)} disabled={meta.page <= 1}>
+                  <Button type="button" variant="outline" className="h-9 text-sm" onClick={() => onPageChange(1)} disabled={meta.page <= 1}>
                     <ChevronsLeft className="h-4 w-4" />
                     <span className="hidden sm:inline">First</span>
                   </Button>
-                  <Button type="button" variant="outline" className="h-8 text-[0.72rem]" onClick={() => onPageChange(Math.max(1, meta.page - 1))} disabled={meta.page <= 1}>
+                  <Button type="button" variant="outline" className="h-9 text-sm" onClick={() => onPageChange(Math.max(1, meta.page - 1))} disabled={meta.page <= 1}>
                     <ArrowLeft className="h-4 w-4" />
                     <span className="hidden sm:inline">Previous</span>
                   </Button>
@@ -567,7 +567,7 @@ export function ListPage<T extends { id: string }>({
                       key={pageNumber}
                       type="button"
                       variant={pageNumber === meta.page ? "default" : "outline"}
-                      className="h-8 min-w-8 text-[0.72rem]"
+                      className="h-9 min-w-9 text-sm"
                       onClick={() => onPageChange(pageNumber)}
                     >
                       {pageNumber}
@@ -576,7 +576,7 @@ export function ListPage<T extends { id: string }>({
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-8 text-[0.72rem]"
+                    className="h-9 text-sm"
                     onClick={() => onPageChange(meta.page + 1)}
                     disabled={meta.totalPages === 0 || meta.page >= meta.totalPages}
                   >
@@ -586,7 +586,7 @@ export function ListPage<T extends { id: string }>({
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-8 text-[0.72rem]"
+                    className="h-9 text-sm"
                     onClick={() => onPageChange(meta.totalPages)}
                     disabled={meta.totalPages === 0 || meta.page >= meta.totalPages}
                   >
