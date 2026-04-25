@@ -86,6 +86,8 @@ enum WorkflowTraceEventType {
   agent_summary
   stage_completed
   stage_failed
+  run_completed
+  run_failed
 }
 
 enum WorkflowTraceEventStatus {

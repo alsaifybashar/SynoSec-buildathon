@@ -551,6 +551,7 @@ describe("WorkflowExecutionService", () => {
 
     expect(createdRuns[0]!.events.some((event) => event.type === "tool_call" && event.payload?.["toolName"] === "log_progress")).toBe(false);
     expect(createdRuns[0]!.events.some((event) => event.type === "tool_result" && event.payload?.["toolName"] === "log_progress")).toBe(false);
+    expect(createdRuns[0]!.events.some((event) => event.type === "run_completed")).toBe(true);
 
     const liveMessages = messages.filter((message) => message["type"] === "run_event" && message["liveModelOutput"]) as Array<{
       liveModelOutput: { text: string; reasoning: string | null; final: boolean };

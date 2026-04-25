@@ -131,7 +131,9 @@ type PersistedWorkflowTraceType =
   | "finding_reported"
   | "agent_summary"
   | "stage_completed"
-  | "stage_failed";
+  | "stage_failed"
+  | "run_completed"
+  | "run_failed";
 
 function createWorkflowScan(run: WorkflowRun, constraints: EffectiveExecutionConstraintSet): Scan {
   return {
