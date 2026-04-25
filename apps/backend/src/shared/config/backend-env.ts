@@ -25,6 +25,29 @@ function defaultCookieSecure() {
   return backendEnv.toLowerCase() === "production";
 }
 
+function isDevelopmentEnv() {
+  const backendEnv = process.env["BACKEND_ENV"] ?? process.env["NODE_ENV"] ?? "development";
+  return backendEnv.toLowerCase() === "development";
+}
+
+function defaultRateLimitMax(surface: "health" | "auth" | "connector" | "api") {
+  const developmentDefaults = {
+    health: 1_200,
+    auth: 60,
+    connector: 1_200,
+    api: 600
+  } as const;
+
+  const standardDefaults = {
+    health: 120,
+    auth: 10,
+    connector: 120,
+    api: 60
+  } as const;
+
+  return (isDevelopmentEnv() ? developmentDefaults : standardDefaults)[surface];
+}
+
 export const rateLimitPolicySchema = z.object({
   windowMs: z.coerce.number().int().min(1),
   max: z.coerce.number().int().min(1)
@@ -135,19 +158,19 @@ export function loadRateLimitConfig(): RateLimitConfig {
     cleanupIntervalMs: process.env["RATE_LIMIT_CLEANUP_INTERVAL_MS"] ?? "60000",
     health: {
       windowMs: process.env["RATE_LIMIT_HEALTH_WINDOW_MS"] ?? "60000",
-      max: process.env["RATE_LIMIT_HEALTH_MAX"] ?? "120"
+      max: process.env["RATE_LIMIT_HEALTH_MAX"] ?? String(defaultRateLimitMax("health"))
     },
     auth: {
       windowMs: process.env["RATE_LIMIT_AUTH_WINDOW_MS"] ?? "60000",
-      max: process.env["RATE_LIMIT_AUTH_MAX"] ?? "10"
+      max: process.env["RATE_LIMIT_AUTH_MAX"] ?? String(defaultRateLimitMax("auth"))
     },
     connector: {
       windowMs: process.env["RATE_LIMIT_CONNECTOR_WINDOW_MS"] ?? "60000",
-      max: process.env["RATE_LIMIT_CONNECTOR_MAX"] ?? "120"
+      max: process.env["RATE_LIMIT_CONNECTOR_MAX"] ?? String(defaultRateLimitMax("connector"))
     },
     api: {
       windowMs: process.env["RATE_LIMIT_API_WINDOW_MS"] ?? "60000",
-      max: process.env["RATE_LIMIT_API_MAX"] ?? "60"
+      max: process.env["RATE_LIMIT_API_MAX"] ?? String(defaultRateLimitMax("api"))
     }
   });
 }
@@ -173,12 +196,12 @@ export function loadBackendEnv(): BackendEnv {
     rateLimitEnabled: parseBoolean(process.env["RATE_LIMIT_ENABLED"], true),
     rateLimitCleanupIntervalMs: process.env["RATE_LIMIT_CLEANUP_INTERVAL_MS"] ?? "60000",
     rateLimitHealthWindowMs: process.env["RATE_LIMIT_HEALTH_WINDOW_MS"] ?? "60000",
-    rateLimitHealthMax: process.env["RATE_LIMIT_HEALTH_MAX"] ?? "120",
+    rateLimitHealthMax: process.env["RATE_LIMIT_HEALTH_MAX"] ?? String(defaultRateLimitMax("health")),
     rateLimitAuthWindowMs: process.env["RATE_LIMIT_AUTH_WINDOW_MS"] ?? "60000",
-    rateLimitAuthMax: process.env["RATE_LIMIT_AUTH_MAX"] ?? "10",
+    rateLimitAuthMax: process.env["RATE_LIMIT_AUTH_MAX"] ?? String(defaultRateLimitMax("auth")),
     rateLimitConnectorWindowMs: process.env["RATE_LIMIT_CONNECTOR_WINDOW_MS"] ?? "60000",
-    rateLimitConnectorMax: process.env["RATE_LIMIT_CONNECTOR_MAX"] ?? "120",
+    rateLimitConnectorMax: process.env["RATE_LIMIT_CONNECTOR_MAX"] ?? String(defaultRateLimitMax("connector")),
     rateLimitApiWindowMs: process.env["RATE_LIMIT_API_WINDOW_MS"] ?? "60000",
-    rateLimitApiMax: process.env["RATE_LIMIT_API_MAX"] ?? "60"
+    rateLimitApiMax: process.env["RATE_LIMIT_API_MAX"] ?? String(defaultRateLimitMax("api"))
   });
 }
