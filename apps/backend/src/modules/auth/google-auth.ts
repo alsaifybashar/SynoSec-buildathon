@@ -1,4 +1,4 @@
-import { RequestError } from "@/core/http/request-error.js";
+import { RequestError } from "@/shared/http/request-error.js";
 
 type GoogleTokenResponse = {
   access_token?: string;

@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { prisma } from "@/core/database/prisma-client.js";
+import { prisma } from "@/shared/database/prisma-client.js";
 
 type UpsertUserInput = {
   email: string;

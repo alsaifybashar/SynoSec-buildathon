@@ -1,58 +1,38 @@
 import { type Express } from "express";
-import { type AuthConfig } from "@/modules/auth/auth-config.js";
-import { requireAuthenticatedApi, requireCsrfProtection } from "@/modules/auth/auth-middleware.js";
-import { createAuthRouter } from "@/modules/auth/auth-routes.js";
-import { registerHealthRoutes } from "@/modules/health/health.routes.js";
-import { registerApplicationsRoutes } from "@/features/modules/applications/applications.routes.js";
-import { type ApplicationsRepository } from "@/features/modules/applications/applications.repository.js";
-import { registerRuntimesRoutes } from "@/features/modules/runtimes/runtimes.routes.js";
-import { type RuntimesRepository } from "@/features/modules/runtimes/runtimes.repository.js";
-import { registerAiProvidersRoutes } from "@/features/modules/ai-providers/ai-providers.routes.js";
-import { type AiProvidersRepository } from "@/features/modules/ai-providers/ai-providers.repository.js";
-import { registerAiAgentsRoutes } from "@/features/modules/ai-agents/ai-agents.routes.js";
-import { type AiAgentsRepository } from "@/features/modules/ai-agents/ai-agents.repository.js";
-import { registerAiToolsRoutes } from "@/features/modules/ai-tools/ai-tools.routes.js";
-import { type AiToolsRepository } from "@/features/modules/ai-tools/ai-tools.repository.js";
-import { SingleAgentScanService } from "@/features/modules/scans/single-agent-scan.service.js";
-import { registerWorkflowsRoutes } from "@/features/modules/workflows/workflows.routes.js";
-import { WorkflowExecutionService } from "@/features/modules/workflows/workflow-execution.service.js";
-import { type WorkflowsRepository } from "@/features/modules/workflows/workflows.repository.js";
-import { WorkflowRunStream } from "@/features/modules/workflows/workflow-run-stream.js";
-import { createToolsRouter } from "@/platform/routes/tools.js";
+import {
+  createAuthRouter,
+  requireAuthenticatedApi,
+  requireCsrfProtection,
+  type AuthConfig
+} from "@/modules/auth/index.js";
+import { registerHealthRoutes } from "@/modules/health/index.js";
+import { registerApplicationsRoutes, type ApplicationsRepository } from "@/modules/applications/index.js";
+import { registerExecutionConstraintsRoutes, type ExecutionConstraintsRepository } from "@/modules/execution-constraints/index.js";
+import { registerRuntimesRoutes, type RuntimesRepository } from "@/modules/runtimes/index.js";
+import { registerAiProvidersRoutes, type AiProvidersRepository } from "@/modules/ai-providers/index.js";
+import { registerAiAgentsRoutes, type AiAgentsRepository } from "@/modules/ai-agents/index.js";
+import {
+  registerAiToolCapabilityRoutes,
+  registerAiToolsRoutes,
+  type AiToolsRepository
+} from "@/modules/ai-tools/index.js";
+import { registerExecutionReportsRoutes } from "@/modules/execution-reports/index.js";
+import { registerWorkflowsRoutes, type WorkflowsRepository } from "@/modules/workflows/index.js";
 import { createConnectorsRouter } from "@/integrations/connectors/routes.js";
-import { OrchestratorService } from "@/features/modules/orchestrator/orchestrator.service.js";
-import { OrchestratorStream } from "@/features/modules/orchestrator/orchestrator.stream.js";
-import { registerOrchestratorRoutes } from "@/features/modules/orchestrator/orchestrator.routes.js";
+import { createRouteServices } from "@/app/create-route-services.js";
+import { registerOrchestratorRoutes } from "@/engine/index.js";
 
 export function registerRoutes(app: Express, dependencies: {
   authConfig: AuthConfig;
   applicationsRepository: ApplicationsRepository;
+  executionConstraintsRepository: ExecutionConstraintsRepository;
   runtimesRepository: RuntimesRepository;
   aiProvidersRepository: AiProvidersRepository;
   aiAgentsRepository: AiAgentsRepository;
   aiToolsRepository: AiToolsRepository;
   workflowsRepository: WorkflowsRepository;
 }) {
-  const orchestratorStream = new OrchestratorStream();
-  const orchestratorService = new OrchestratorService(orchestratorStream, dependencies.aiProvidersRepository);
-  const workflowRunStream = new WorkflowRunStream();
-  const singleAgentScanService = new SingleAgentScanService(
-    dependencies.applicationsRepository,
-    dependencies.runtimesRepository,
-    dependencies.aiAgentsRepository,
-    dependencies.aiProvidersRepository,
-    dependencies.aiToolsRepository
-  );
-  const workflowExecutionService = new WorkflowExecutionService(
-    dependencies.workflowsRepository,
-    dependencies.applicationsRepository,
-    dependencies.runtimesRepository,
-    dependencies.aiAgentsRepository,
-    dependencies.aiProvidersRepository,
-    dependencies.aiToolsRepository,
-    workflowRunStream,
-    singleAgentScanService
-  );
+  const routeServices = createRouteServices(dependencies);
 
   registerHealthRoutes(app);
   app.use(createAuthRouter(dependencies.authConfig));
@@ -61,11 +41,19 @@ export function registerRoutes(app: Express, dependencies: {
   app.use("/api", requireAuthenticatedApi, requireCsrfProtection);
 
   registerApplicationsRoutes(app, dependencies.applicationsRepository);
+  registerExecutionConstraintsRoutes(app, dependencies.executionConstraintsRepository);
   registerRuntimesRoutes(app, dependencies.runtimesRepository);
   registerAiProvidersRoutes(app, dependencies.aiProvidersRepository);
   registerAiAgentsRoutes(app, dependencies.aiAgentsRepository);
   registerAiToolsRoutes(app, dependencies.aiToolsRepository);
-  registerWorkflowsRoutes(app, dependencies.workflowsRepository, workflowExecutionService, workflowRunStream);
-  registerOrchestratorRoutes(app, orchestratorService, orchestratorStream);
-  app.use(createToolsRouter());
+  registerAiToolCapabilityRoutes(app);
+  registerExecutionReportsRoutes(app, routeServices.executionReportsService);
+  registerWorkflowsRoutes(
+    app,
+    dependencies.workflowsRepository,
+    routeServices.workflowExecutionEngine,
+    routeServices.workflowRunEventStream,
+    routeServices.workflowRunArtifactsService
+  );
+  registerOrchestratorRoutes(app, routeServices.orchestratorExecutionEngine, routeServices.orchestratorEventStream);
 }

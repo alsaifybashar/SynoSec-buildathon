@@ -1,15 +1,12 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import type { AiAgent, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
-import { AlertTriangle, Bot, CircleHelp, LoaderCircle, RotateCcw, ShieldAlert, Target } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { AlertTriangle, CircleHelp, LoaderCircle, Radio, Target } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 import {
   buildWorkflowTranscript,
   getToolLookup,
   getWorkflowAllowedToolIds,
-  type AssistantTurnDetail,
   type FindingsRailItem,
   type LiveModelOutput,
   type TranscriptProjection
@@ -18,6 +15,41 @@ import {
 type SummaryCardData = {
   toolCount: number;
   toolNames: string[];
+};
+
+type MetadataItem = {
+  label: string;
+  value: string;
+};
+
+type DuplexAtomKind =
+  | "objective"
+  | "system-prompt"
+  | "system"
+  | "reasoning"
+  | "body"
+  | "tool-call"
+  | "tool-output"
+  | "verification"
+  | "finding"
+  | "sealed"
+  | "error";
+
+type DuplexAtom = {
+  key: string;
+  side: "left" | "right";
+  kind: DuplexAtomKind;
+  label: string;
+  toolCallId?: string | null;
+  title?: string;
+  summaryText?: string;
+  body?: string;
+  meta?: string;
+  severity?: FindingsRailItem["severity"];
+  code?: string;
+  observations?: string[];
+  status?: string;
+  expandableBody?: boolean;
 };
 
 function HelpHint({ label, hint }: { label: string; hint: string }) {
@@ -47,7 +79,7 @@ function MonoLabel({ children, className }: { children: ReactNode; className?: s
   );
 }
 
-function SeverityBadge({ severity }: { severity: string }) {
+function SeverityBadge({ severity }: { severity: FindingsRailItem["severity"] }) {
   const tone =
     severity === "critical"
       ? "border-destructive/40 bg-destructive text-destructive-foreground"
@@ -55,7 +87,9 @@ function SeverityBadge({ severity }: { severity: string }) {
         ? "border-destructive/25 bg-destructive/90 text-destructive-foreground"
         : severity === "medium"
           ? "border-warning/35 bg-warning text-warning-foreground"
-          : "border-primary/25 bg-primary/90 text-primary-foreground";
+          : severity === "low"
+            ? "border-primary/25 bg-primary/90 text-primary-foreground"
+            : "border-border bg-muted text-foreground";
 
   return (
     <span className={cn("inline-flex items-center rounded-sm border px-2 py-0.5 font-mono text-[0.62rem] uppercase tracking-[0.16em]", tone)}>
@@ -64,75 +98,44 @@ function SeverityBadge({ severity }: { severity: string }) {
   );
 }
 
-function ThreadAvatar() {
-  return (
-    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary font-mono text-[0.62rem] font-semibold uppercase tracking-[0.1em] text-primary-foreground">
-      <Bot className="h-3.5 w-3.5" />
-    </span>
-  );
-}
+const KIND_LABEL: Record<DuplexAtomKind, string> = {
+  objective: "Objective",
+  "system-prompt": "System prompt",
+  system: "System",
+  reasoning: "Agent reasoning",
+  body: "Agent",
+  "tool-call": "Tool",
+  "tool-output": "Tool output",
+  verification: "Verification",
+  finding: "Finding",
+  sealed: "Run sealed",
+  error: "Run error"
+};
 
-function InlineExpandable({
-  summary,
-  body,
-  monospace = true
-}: {
-  summary: string;
-  body: string;
-  monospace?: boolean;
-}) {
-  return (
-    <details className="mt-2 rounded-md border border-border/70 bg-background/60 px-3 py-2">
-      <summary className="cursor-pointer font-mono text-[0.68rem] uppercase tracking-[0.12em] text-primary">{summary}</summary>
-      {monospace ? (
-        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-md border border-border/70 bg-background px-3 py-3 font-mono text-[0.74rem] leading-6 text-foreground">
-          {body}
-        </pre>
-      ) : (
-        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">{body}</p>
-      )}
-    </details>
-  );
-}
+const KIND_ACCENT: Record<DuplexAtomKind, { label: string; dot: string }> = {
+  objective: { label: "text-primary", dot: "bg-primary" },
+  "system-prompt": { label: "text-primary", dot: "bg-primary" },
+  system: { label: "text-foreground/75", dot: "bg-foreground/60" },
+  reasoning: { label: "text-muted-foreground", dot: "bg-muted-foreground" },
+  body: { label: "text-foreground/70", dot: "bg-foreground/50" },
+  "tool-call": { label: "text-warning", dot: "bg-warning" },
+  "tool-output": { label: "text-success", dot: "bg-success" },
+  verification: { label: "text-primary", dot: "bg-primary" },
+  finding: { label: "text-destructive", dot: "bg-destructive" },
+  sealed: { label: "text-success", dot: "bg-success" },
+  error: { label: "text-destructive", dot: "bg-destructive" }
+};
 
-function MarkdownBlock({ content, className }: { content: string; className?: string }) {
-  return (
-    <div className={cn(
-      "prose prose-sm max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-headings:font-medium prose-headings:text-foreground prose-p:my-3 prose-p:text-foreground prose-p:leading-7 prose-strong:text-foreground prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.9em] prose-pre:border prose-pre:border-border/70 prose-pre:bg-background prose-pre:text-foreground prose-table:w-full prose-table:border-collapse prose-th:border prose-th:border-border prose-th:bg-muted/50 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-th:text-foreground prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2 prose-td:text-foreground prose-ul:my-3 prose-ol:my-3 prose-li:my-1 prose-hr:border-border prose-blockquote:border-l-2 prose-blockquote:border-border prose-blockquote:pl-4 prose-blockquote:text-muted-foreground",
-      className
-    )}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-        {content}
-      </ReactMarkdown>
-    </div>
-  );
-}
-
-function sanitizeAssistantBody(body: string, hasRenderedToolDetails: boolean) {
-  const withoutWrapper = body
-    .split("\n")
-    .filter((line) => !/^The agent selected .*\.$/i.test(line.trim()))
-    .join("\n")
-    .trim();
-
-  if (!hasRenderedToolDetails) {
-    return withoutWrapper;
+function compactDate(value: string | null | undefined) {
+  if (!value) {
+    return "Not started";
   }
 
-  const withoutStructuredAction = withoutWrapper.replace(/\{[\s\S]*?"action"\s*:\s*"[^"]+"[\s\S]*?\}\s*/m, "").trim();
-  return withoutStructuredAction;
-}
-
-function sanitizeAssistantSummary(summary: string, body: string) {
-  const normalized = summary
-    .split("\n")
-    .filter((line) => !/^The agent selected .*\.$/i.test(line.trim()))
-    .join("\n")
-    .trim();
-  if (!normalized || normalized === body) {
-    return "";
-  }
-  return normalized;
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(new Date(value));
 }
 
 function formatDuration(run: WorkflowRun | null) {
@@ -152,403 +155,388 @@ function formatDuration(run: WorkflowRun | null) {
   return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;
 }
 
-function compactDate(value: string | null | undefined) {
-  if (!value) {
-    return "Not started";
+function getVerificationToneLabel(status: string | undefined, title: string) {
+  if (status === "failed") {
+    return "failed";
   }
-
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(new Date(value));
+  if (/retry/i.test(title)) {
+    return "retry";
+  }
+  return "accepted";
 }
 
-function RunBar({
-  workflow,
-  run
-}: {
+function buildDuplexAtoms(input: {
   workflow: Workflow;
   run: WorkflowRun | null;
+  transcript: TranscriptProjection;
+  agent: AiAgent | null;
+  findingsById: Map<string, FindingsRailItem>;
+  errors: string[];
 }) {
-  const shortId = run?.id ? run.id.slice(0, 8) : workflow.id.slice(0, 8);
-  const inFlight = run?.status === "running";
-  return (
-    <header className="sticky top-0 z-10 -mx-4 grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-border/70 bg-background/90 px-4 py-3 backdrop-blur md:-mx-6 md:px-6">
-      <span className="font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">
-        Workflows · {workflow.name}
-      </span>
-      <span className="text-center text-sm font-medium tracking-[-0.01em] text-foreground">
-        Run {shortId}
-      </span>
-      <span className="justify-self-end font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">
-        <span className="inline-flex items-center gap-2">
-          {inFlight ? <LoaderCircle className="h-3.5 w-3.5 animate-spin text-primary" /> : null}
-          <span className={cn("h-1.5 w-1.5 rounded-full", run?.status === "failed" ? "bg-destructive" : "bg-success")} />
-          {(run?.status ?? "idle")} · {formatDuration(run)}
-        </span>
-      </span>
-    </header>
-  );
-}
+  const atoms: DuplexAtom[] = [];
 
-function ThreadHeader({
-  workflow,
-  applicationName,
-  runtimeName,
-  toolNames
-}: {
-  workflow: Workflow;
-  applicationName: string;
-  runtimeName: string;
-  toolNames: string[];
-}) {
-  return (
-    <section className="space-y-5 pt-8">
-      <div>
-        <MonoLabel>Thread · Workflow Transcript · Hybrid Flow</MonoLabel>
-        <h2 className="mt-4 text-[1.85rem] font-medium tracking-[-0.03em] text-foreground">{workflow.name}</h2>
-        <p className="mt-2 max-w-[62ch] text-sm leading-6 text-muted-foreground">
-          {workflow.description || workflow.objective}
-        </p>
-      </div>
-      <div className="flex flex-wrap border-y border-border/80">
-        {[
-          ["Target", applicationName],
-          ["Runtime", runtimeName],
-          ["Status", workflow.status],
-          ["Tools", `${toolNames.length}`]
-        ].map(([label, value]) => (
-          <div key={label} className="min-w-[120px] border-r border-border/60 px-4 py-3 last:border-r-0">
-            <MonoLabel>{label}</MonoLabel>
-            <p className="mt-1 font-mono text-[0.78rem] font-medium text-foreground">{value}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function PromptSections({
-  items
-}: {
-  items: Extract<TranscriptProjection["items"][number], { kind: "system_message" }>[];
-}) {
-  if (items.length === 0) {
-    return null;
+  for (const error of input.errors) {
+    atoms.push({
+      key: `error:${error}`,
+      side: "right",
+      kind: "error",
+      label: "Run state issue",
+      body: error
+    });
   }
 
-  const promptItems = items.filter((item) => {
-    const title = item.title.toLowerCase();
-    return title.includes("prompt");
-  });
+  for (const item of input.transcript.items) {
+    if (item.kind === "system_message") {
+      atoms.push({
+        key: item.id,
+        side: "right",
+        kind: item.title.toLowerCase().includes("prompt") ? "system-prompt" : "system",
+        label: item.title,
+        body: item.body ?? item.summary,
+        meta: compactDate(item.createdAt),
+        expandableBody: Boolean(item.body && item.body !== item.summary)
+      });
+      continue;
+    }
 
-  if (promptItems.length === 0) {
-    return null;
-  }
+    if (item.kind === "assistant_turn") {
+      const toolAtoms: DuplexAtom[] = [];
 
-  return (
-    <section className="mt-6 space-y-2">
-      {promptItems.map((item) => {
-        const body = item.body && item.body !== item.summary ? item.body : null;
-        if (!body) {
-          return null;
+      if (item.reasoning) {
+        atoms.push({
+          key: `${item.id}:reasoning`,
+          side: "left",
+          kind: "reasoning",
+          label: "Reasoning",
+          body: item.reasoning,
+          meta: item.agentName
+        });
+      }
+
+      const assistantBody = (item.body ?? item.summary).trim();
+      if (assistantBody) {
+        atoms.push({
+          key: `${item.id}:body`,
+          side: "left",
+          kind: "body",
+          label: item.title,
+          body: assistantBody,
+          meta: compactDate(item.createdAt),
+          ...(item.live ? { title: "Live model output" } : {})
+        });
+      }
+
+      for (const detail of item.details) {
+        if (detail.kind === "tool_call") {
+          toolAtoms.push({
+            key: detail.id,
+            side: "left",
+            kind: "tool-call",
+            label: detail.toolName,
+            toolCallId: detail.toolCallId,
+            title: detail.title,
+            meta: "requested",
+            ...(detail.body ? { code: detail.body } : {})
+          });
+          continue;
         }
 
-        return (
-          <div key={item.id} className="rounded-lg border border-border/80 bg-card px-4 py-3">
-            <div className="mb-2 flex items-baseline gap-3">
-              <MonoLabel className="text-foreground">{item.title}</MonoLabel>
-              <span className="font-mono text-[0.68rem] text-muted-foreground">
-                {compactDate(item.createdAt)}
-              </span>
-            </div>
-            <p className="text-sm leading-6 text-muted-foreground">{item.summary}</p>
-            <InlineExpandable
-              summary={`Show ${item.title}`}
-              body={body}
-            />
-          </div>
-        );
-      })}
-    </section>
-  );
+        if (detail.kind === "tool_result") {
+          const existingToolAtom = [...toolAtoms].reverse().find((atom) =>
+            atom.kind === "tool-call"
+              && atom.status === undefined
+              && (
+                (detail.toolCallId && atom.toolCallId === detail.toolCallId)
+                || (!detail.toolCallId && atom.label === detail.toolName)
+              )
+          );
+
+          if (existingToolAtom) {
+            existingToolAtom.summaryText = detail.summary;
+            existingToolAtom.body = detail.body ?? detail.summary;
+            existingToolAtom.observations = detail.observations;
+            existingToolAtom.status = detail.status;
+            existingToolAtom.meta = detail.status;
+          } else {
+            toolAtoms.push({
+              key: detail.id,
+              side: "left",
+              kind: "tool-call",
+              label: detail.toolName,
+              toolCallId: detail.toolCallId,
+              title: `${detail.toolName} returned`,
+              summaryText: detail.summary,
+              body: detail.body ?? detail.summary,
+              observations: detail.observations,
+              status: detail.status,
+              meta: detail.status
+            });
+          }
+          continue;
+        }
+
+        if (detail.kind === "verification") {
+          atoms.push({
+            key: detail.id,
+            side: "right",
+            kind: "verification",
+            label: detail.title,
+            body: detail.body ?? detail.summary,
+            meta: getVerificationToneLabel(detail.status, detail.title),
+            status: detail.status,
+            ...(detail.toolName ? { title: detail.toolName } : {})
+          });
+          continue;
+        }
+
+        atoms.push({
+          key: detail.id,
+          side: "left",
+          kind: "body",
+          label: detail.title,
+          body: detail.body ?? detail.summary,
+          meta: "note"
+        });
+      }
+
+      atoms.push(...toolAtoms);
+
+      for (const findingId of item.findingIds) {
+        const finding = input.findingsById.get(findingId);
+        if (!finding) {
+          continue;
+        }
+
+        atoms.push({
+          key: `finding:${finding.id}`,
+          side: "right",
+          kind: "finding",
+          label: finding.title,
+          title: finding.host,
+          body: finding.impact,
+          meta: `conf ${finding.confidence.toFixed(2)} · ${finding.recommendation}`,
+          severity: finding.severity
+        });
+      }
+
+      continue;
+    }
+
+    atoms.push({
+      key: item.id,
+      side: "right",
+      kind: item.status === "failed" ? "error" : "sealed",
+      label: item.title,
+      body: item.body ?? item.summary,
+      meta: compactDate(item.createdAt)
+    });
+  }
+
+  return atoms;
 }
 
-function FindingChip({ finding }: { finding: FindingsRailItem }) {
-  return (
-    <div className={cn(
-      "mt-3 inline-grid max-w-full grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border bg-card px-3 py-2",
-      finding.severity === "high" || finding.severity === "critical"
-        ? "border-destructive/25"
-        : "border-warning/25"
-    )}>
-      <SeverityBadge severity={finding.severity} />
-      <span className="min-w-0 text-sm font-medium text-foreground">{finding.title}</span>
-      <span className="font-mono text-[0.68rem] text-muted-foreground">
-        conf {finding.confidence.toFixed(2)}
-      </span>
-    </div>
-  );
+function formatToolLine(atom: DuplexAtom) {
+  const verb = atom.status ? "Called" : "Calling";
+  return `${verb} ${atom.label}`;
 }
 
-function ToolBlock({
-  detail,
-  tool
-}: {
-  detail: Extract<AssistantTurnDetail, { kind: "tool_call" | "tool_result" }>;
-  tool: AiTool | undefined;
-}) {
-  const command = tool?.executorType === "bash" ? tool.bashSource : null;
-  const commandLabel = tool?.binary ?? detail.toolName;
-  const statusText = detail.kind === "tool_result" ? detail.status : "running";
-  const body = detail.kind === "tool_result" ? detail.body : detail.body;
-  const failed = statusText === "failed";
-  const running = statusText === "running";
+function normalizeInlineText(value: string | undefined) {
+  return (value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function collapseWhitespace(value: string | undefined) {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function truncateWithEllipsis(value: string, maxChars: number) {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, maxChars)).trimEnd()}...`;
+}
+
+function getCompactToolInput(atom: DuplexAtom) {
+  if (!atom.code) {
+    return null;
+  }
+
+  const collapsed = collapseWhitespace(atom.code);
+  if (!collapsed) {
+    return null;
+  }
+
+  return truncateWithEllipsis(collapsed, 30);
+}
+
+function getCompactToolOutput(atom: DuplexAtom, labelText: string) {
+  const preferredSource = collapseWhitespace(atom.summaryText) || collapseWhitespace(atom.body);
+  if (!preferredSource) {
+    return atom.status ? `${atom.status} with no summarized output.` : null;
+  }
+
+  const normalizedSummary = normalizeInlineText(preferredSource);
+  const normalizedLabel = normalizeInlineText(labelText);
+  const normalizedName = normalizeInlineText(atom.label);
+  const normalizedStatus = normalizeInlineText(atom.status);
+
+  const repeatsLabel = normalizedLabel.length > 0 && normalizedSummary.includes(normalizedLabel);
+  const repeatsName = normalizedName.length > 0 && normalizedSummary.includes(normalizedName);
+  const repeatsStatus = normalizedStatus.length > 0 && normalizedSummary.includes(normalizedStatus);
+
+  if (repeatsLabel || (repeatsName && repeatsStatus)) {
+    return atom.status ? `${atom.status} with no summarized output.` : null;
+  }
+
+  const lines = preferredSource.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length > 2) {
+    return `${lines.slice(0, 2).join("\n")}...`;
+  }
+
+  return truncateWithEllipsis(preferredSource, 100);
+}
+
+function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; showFullDetails: boolean }) {
+  const isLeft = atom.side === "left";
+  const accent = KIND_ACCENT[atom.kind];
+  const isTool = atom.kind === "tool-call" || atom.kind === "tool-output";
+  const isSystemTone = atom.kind === "objective" || atom.kind === "system-prompt" || atom.kind === "system" || atom.kind === "verification";
+  const isErrorTone = atom.kind === "error";
+  const labelText = isTool ? formatToolLine(atom) : atom.label;
+  const compactToolInput = isTool ? getCompactToolInput(atom) : null;
+  const compactToolOutput = isTool ? getCompactToolOutput(atom, labelText) : null;
+  const showTitle = Boolean(atom.title) && (!isTool || normalizeInlineText(atom.title) !== normalizeInlineText(labelText));
 
   return (
-    <div className={cn(
-      "mt-4 overflow-hidden rounded-lg border bg-card",
-      failed ? "border-destructive/35" : "border-border/80"
-    )}>
-      <div className={cn(
-        "flex items-center gap-3 border-b px-4 py-2.5",
-        failed ? "border-destructive/20 bg-destructive/8" : "border-border/70 bg-muted/35"
-      )}>
-        <span className="font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">Tool</span>
-        <span className="font-mono text-[0.76rem] font-semibold text-foreground">{detail.toolName}</span>
-        {running ? <LoaderCircle className="h-3.5 w-3.5 animate-spin text-primary" aria-label="Tool running" /> : null}
-        {failed ? <AlertTriangle className="h-3.5 w-3.5 text-destructive" aria-label="Tool error" /> : null}
-        <span className={cn(
-          "ml-auto font-mono text-[0.62rem] uppercase tracking-[0.12em]",
-          failed ? "text-destructive" : running ? "text-primary" : "text-success"
-        )}>
-          {running ? "running" : statusText}
-        </span>
-      </div>
-      {command ? (
-        <div className="border-b border-border/70 bg-background px-4 py-2 font-mono text-[0.74rem] text-muted-foreground">
-          <span className="text-border">$ </span>
-          {commandLabel}
+    <div className={cn("flex w-full", isLeft ? "justify-start pr-[6%]" : "justify-end pl-[6%]")}>
+      <article className={cn("w-full max-w-[52rem] space-y-1.5", isTool ? "max-w-[48rem]" : "")}>
+        <div
+          className={cn(
+            "flex items-center gap-2 px-0.5 font-mono text-[0.6rem] uppercase tracking-wider text-muted-foreground",
+            isLeft ? "" : "flex-row-reverse"
+          )}
+        >
+          <span className={cn("inline-flex items-center gap-1.5 font-semibold", accent.label)}>
+            <span className={cn("h-1 w-1 rounded-full", accent.dot)} />
+            {KIND_LABEL[atom.kind]}
+          </span>
+          {atom.severity ? (
+            <>
+              <span className="text-border">·</span>
+              <span className="font-semibold text-destructive">{atom.severity}</span>
+            </>
+          ) : null}
+          {atom.meta ? (
+            <>
+              <span className="text-border">·</span>
+              <span>{atom.meta}</span>
+            </>
+          ) : null}
         </div>
-      ) : null}
-      <div className="px-4 py-3">
-        <p className="font-mono text-[0.72rem] text-foreground">{detail.title}</p>
-        {detail.kind === "tool_result" && detail.summary ? (
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail.summary}</p>
-        ) : null}
-        {detail.kind === "tool_result" && detail.observations.length > 0 ? (
-          <ul className="mt-3 space-y-1.5">
-            {detail.observations.map((observation) => (
-              <li key={observation} className="grid grid-cols-[14px_1fr] gap-2 text-sm leading-6 text-muted-foreground">
-                <span className="font-mono text-border">—</span>
-                <span>{observation}</span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {detail.kind === "tool_call" && detail.body ? (
-          <InlineExpandable summary="Show tool input" body={detail.body} />
-        ) : null}
-        {command ? <InlineExpandable summary="Show tool command" body={command} /> : null}
-        {detail.kind === "tool_result" && body ? (
-          <InlineExpandable summary="Show tool response" body={body} />
-        ) : null}
-      </div>
+        <div className={cn("space-y-1", isTool ? "pl-4" : "")}>
+          <p
+            className={cn(
+              "whitespace-pre-wrap leading-[1.65] text-foreground/90",
+              isTool
+                ? "text-[0.78rem] text-muted-foreground"
+                : isSystemTone
+                  ? "text-[0.86rem] font-normal text-foreground/70"
+                  : "text-[0.96rem] font-normal text-foreground",
+              isErrorTone ? "text-destructive" : ""
+            )}
+          >
+            <span className={cn("font-medium", isSystemTone ? "font-normal text-foreground/65" : "text-foreground")}>{labelText}</span>
+            {compactToolInput && !showFullDetails ? <span className="font-mono text-[0.74rem] text-muted-foreground/90"> {compactToolInput}</span> : null}
+            {showTitle ? <span className="text-muted-foreground"> · {atom.title}</span> : null}
+          </p>
+
+          {compactToolOutput && !showFullDetails ? (
+            <p className="whitespace-pre-wrap font-mono text-[0.74rem] leading-[1.55] text-muted-foreground/90">
+              {compactToolOutput}
+            </p>
+          ) : null}
+
+          {atom.body && (!isTool || showFullDetails) ? (
+            <p
+              className={cn(
+                "whitespace-pre-wrap leading-[1.7]",
+                isSystemTone
+                  ? "text-[0.86rem] font-light text-foreground/68"
+                  : "text-[0.92rem] text-foreground/88"
+              )}
+            >
+              {atom.body}
+            </p>
+          ) : null}
+
+          {showFullDetails && atom.code ? (
+            <pre className="overflow-x-auto rounded-sm border border-border/70 bg-muted/35 px-2.5 py-1.5 font-mono text-[0.7rem] leading-5 text-foreground/85">
+              {atom.code}
+            </pre>
+          ) : null}
+
+          {showFullDetails && atom.observations && atom.observations.length > 0 ? (
+            <div className="space-y-1.5 pt-1">
+              <div className="font-mono text-[0.58rem] uppercase tracking-wider text-muted-foreground">Observations</div>
+              <ul className="space-y-0.5">
+                {atom.observations.map((observation) => (
+                  <li key={observation} className="grid grid-cols-[10px_1fr] gap-1.5 text-[0.76rem] leading-[1.5] text-foreground/85">
+                    <span className="text-success">+</span>
+                    <span>{observation}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      </article>
     </div>
-  );
-}
-
-function VerificationBlock({
-  detail
-}: {
-  detail: Extract<AssistantTurnDetail, { kind: "verification" }>;
-}) {
-  const isFailure = detail.status === "failed";
-  const isModelError = detail.tone === "model_error";
-  const isToolError = detail.tone === "tool_error";
-  const isRetry = detail.tone === "retry";
-
-  return (
-    <div className={cn(
-      "mt-4 rounded-lg border px-4 py-3",
-      isFailure
-        ? "border-destructive/35 bg-destructive/8"
-        : "border-border/70 bg-background/50"
-    )}>
-      <div className="flex items-center gap-2">
-        {isFailure ? <AlertTriangle className="h-3.5 w-3.5 text-destructive" /> : <ShieldAlert className="h-3.5 w-3.5 text-primary" />}
-        <MonoLabel className={cn("text-foreground", isFailure ? "text-destructive" : undefined)}>
-          {isModelError ? "Model Error" : isToolError ? "Tool Error" : isRetry ? "Retry" : "Verification"}
-        </MonoLabel>
-        {isRetry ? <RotateCcw className="h-3.5 w-3.5 text-warning" /> : null}
-      </div>
-      <p className="mt-2 text-sm font-medium text-foreground">{detail.title}</p>
-      <p className="mt-1 text-sm leading-6 text-muted-foreground">{detail.summary}</p>
-      {isToolError ? (
-        <p className="mt-2 font-mono text-[0.68rem] uppercase tracking-[0.14em] text-destructive">
-          retry policy · retry the tool, switch tools, or mark the layer as blocked
-        </p>
-      ) : null}
-      {isModelError ? (
-        <p className="mt-2 font-mono text-[0.68rem] uppercase tracking-[0.14em] text-destructive">
-          supported actions · call_tool, report_vulnerability, update_layer_coverage, submit_scan_completion
-        </p>
-      ) : null}
-      {detail.body && detail.body !== detail.summary ? (
-        <InlineExpandable summary="Show verification detail" body={detail.body} monospace={false} />
-      ) : null}
-    </div>
-  );
-}
-
-function NoteBlock({
-  detail
-}: {
-  detail: Extract<AssistantTurnDetail, { kind: "note" }>;
-}) {
-  return (
-    <div className="mt-4 border-t border-border/70 pt-3">
-      <MonoLabel className="text-foreground">Summary</MonoLabel>
-      <p className="mt-2 text-sm font-medium text-foreground">{detail.title}</p>
-      <p className="mt-1 text-sm leading-6 text-muted-foreground">{detail.summary}</p>
-      {detail.body && detail.body !== detail.summary ? (
-        <p className="mt-2 text-sm leading-6 text-foreground/90">{detail.body}</p>
-      ) : null}
-    </div>
-  );
-}
-
-function ThreadTurn({
-  item,
-  ord,
-  toolsById,
-  toolsByName,
-  findingsById
-}: {
-  item: Extract<TranscriptProjection["items"][number], { kind: "assistant_turn" }>;
-  ord: number;
-  toolsById: Map<string, AiTool>;
-  toolsByName: Map<string, AiTool>;
-  findingsById: Map<string, FindingsRailItem>;
-}) {
-  const toolDetails = item.details.filter((detail): detail is Extract<AssistantTurnDetail, { kind: "tool_call" | "tool_result" }> =>
-    detail.kind === "tool_call" || detail.kind === "tool_result");
-  const verificationDetails = item.details.filter((detail): detail is Extract<AssistantTurnDetail, { kind: "verification" }> => detail.kind === "verification");
-  const noteDetails = item.details.filter((detail): detail is Extract<AssistantTurnDetail, { kind: "note" }> => detail.kind === "note");
-  const hasModelError = verificationDetails.some((detail) => detail.tone === "model_error");
-  const rawBodyText = item.body?.trim() ?? "";
-  const suppressStructuredPrelude = toolDetails.length > 0 && rawBodyText.includes('"action"');
-  const bodyText = suppressStructuredPrelude ? "" : sanitizeAssistantBody(rawBodyText, toolDetails.length > 0);
-  const summaryText = sanitizeAssistantSummary(item.summary, bodyText);
-  const hideBodyAsRawModelOutput = hasModelError && bodyText.startsWith("{") && bodyText.endsWith("}");
-
-  return (
-    <article className="border-b border-border/60 py-8 last:border-b-0">
-      <div className="flex items-center gap-3">
-        <ThreadAvatar />
-        <span className="text-sm font-medium text-foreground">
-          {item.agentName}
-          <span className="ml-2 text-[0.82rem] font-normal text-muted-foreground">· workflow agent</span>
-        </span>
-        {item.live ? <LoaderCircle className="h-3.5 w-3.5 animate-spin text-primary" aria-label="Run step in progress" /> : null}
-        <span className="ml-auto font-mono text-[0.66rem] text-muted-foreground">
-          <span className="mr-2 text-border">ord {String(ord).padStart(2, "0")}</span>
-          {compactDate(item.createdAt)}
-        </span>
-      </div>
-      <div className="mt-4 max-w-[62ch] space-y-3">
-        {summaryText ? (
-          <p className="text-[0.95rem] leading-7 text-foreground">{summaryText}</p>
-        ) : null}
-        {item.body && !hideBodyAsRawModelOutput ? (
-          <MarkdownBlock content={item.body} className="text-[0.95rem]" />
-        ) : null}
-        {hideBodyAsRawModelOutput ? <InlineExpandable summary="Show raw model output" body={item.body ?? ""} /> : null}
-        {item.live ? (
-          <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/75 px-3 py-1.5 text-sm text-muted-foreground">
-            <LoaderCircle className="h-3.5 w-3.5 animate-spin text-primary" />
-            Waiting for the next model step or tool result…
-          </div>
-        ) : null}
-      </div>
-      <div className="max-w-[42rem]">
-        {toolDetails.map((detail) => {
-          const tool = (detail.toolId ? toolsById.get(detail.toolId) : undefined) ?? toolsByName.get(detail.toolName);
-          return <ToolBlock key={detail.id} detail={detail} tool={tool} />;
-        })}
-        {verificationDetails.map((detail) => <VerificationBlock key={detail.id} detail={detail} />)}
-        {noteDetails.map((detail) => <NoteBlock key={detail.id} detail={detail} />)}
-      </div>
-      {item.findingIds.map((findingId) => {
-        const finding = findingsById.get(findingId);
-        return finding ? <FindingChip key={finding.id} finding={finding} /> : null;
-      })}
-    </article>
-  );
-}
-
-function CloseoutSection({
-  item,
-  turnCount,
-  toolCount,
-  observationCount,
-  findingCount
-}: {
-  item: Extract<TranscriptProjection["items"][number], { kind: "closeout" }>;
-  turnCount: number;
-  toolCount: number;
-  observationCount: number;
-  findingCount: number;
-}) {
-  return (
-    <section className="mt-10 rounded-xl border border-border/80 bg-card px-6 py-6">
-      <div className="font-mono text-[0.62rem] uppercase tracking-[0.14em] text-success">
-        <span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-success align-middle" />
-        Run complete · sealed {compactDate(item.createdAt)}
-      </div>
-      <h3 className="mt-3 text-xl font-medium tracking-[-0.02em] text-foreground">{item.title}</h3>
-      <p className="mt-2 max-w-[60ch] text-sm leading-6 text-muted-foreground">{item.summary}</p>
-      {item.body && item.body !== item.summary ? (
-        <p className="mt-2 max-w-[60ch] text-sm leading-6 text-foreground/90">{item.body}</p>
-      ) : null}
-      <div className="mt-6 grid grid-cols-2 gap-4 border-t border-border/70 pt-4 md:grid-cols-4">
-        {[
-          ["Turns", `${turnCount}`],
-          ["Tools", `${toolCount}`],
-          ["Observations", `${observationCount}`],
-          ["Findings", `${findingCount}`]
-        ].map(([label, value]) => (
-          <div key={label} className="border-r border-border/60 pr-4 last:border-r-0">
-            <MonoLabel>{label}</MonoLabel>
-            <p className="mt-1 text-xl font-medium tracking-[-0.02em] text-foreground">{value}</p>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 
 function FindingsRail({
   findings,
-  runStatus
+  runStatus,
+  metadata
 }: {
   findings: TranscriptProjection["findings"];
   runStatus: WorkflowRun["status"] | null;
+  metadata: MetadataItem[];
 }) {
-  const shouldRender = findings.length > 0 || runStatus === "completed" || runStatus === "failed";
+  const shouldRender = metadata.length > 0 || findings.length > 0 || runStatus === "completed" || runStatus === "failed";
   if (!shouldRender) {
     return null;
   }
 
   return (
     <aside className="space-y-3 lg:sticky lg:top-6">
+      {metadata.length > 0 ? (
+        <div className="rounded-xl border border-border/80 bg-card px-4 py-4">
+          <div className="flex items-center gap-2">
+            <MonoLabel>Metadata</MonoLabel>
+            <HelpHint
+              label="Metadata"
+              hint="Workflow identity, linked resources, and current run state for this Duplex session."
+            />
+          </div>
+          <div className="mt-4 space-y-4">
+            {metadata.map((item) => (
+              <div key={item.label} className="space-y-1">
+                <p className="font-mono text-[0.6rem] font-medium uppercase tracking-[0.3em] text-muted-foreground">
+                  {item.label}
+                </p>
+                <div className="text-xs text-foreground">{item.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div className="rounded-xl border border-border/80 bg-card px-4 py-4">
         <div className="flex items-center gap-2">
           <MonoLabel>Findings</MonoLabel>
           <HelpHint
             label="Findings"
-            hint="This side rail tracks issues the workflow explicitly reported while it was running. Inline chips in the thread show where they appeared."
+            hint="This rail tracks issues the workflow explicitly reported while it was running."
           />
         </div>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -578,6 +566,31 @@ function FindingsRail({
   );
 }
 
+function EmptyRunState({
+  toolNames
+}: {
+  toolNames: string[];
+}) {
+  return (
+    <div className="rounded-2xl border border-dashed border-border/80 bg-card/50 px-5 py-5">
+      <MonoLabel className="text-foreground">No run yet</MonoLabel>
+      <h3 className="mt-2 text-lg font-medium text-foreground">Start the first Duplex session</h3>
+      <p className="mt-2 max-w-[56ch] text-sm leading-6 text-muted-foreground">
+        This workflow has configuration and execution context, but no persisted run yet. Launch a run from the toolbar to start streaming the agent transcript into this thread.
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {toolNames.length > 0 ? toolNames.map((toolName) => (
+          <span key={toolName} className="inline-flex items-center rounded-full border border-border/70 bg-background px-2.5 py-1 font-mono text-[0.62rem] uppercase tracking-[0.14em] text-foreground/85">
+            {toolName}
+          </span>
+        )) : (
+          <span className="text-sm text-muted-foreground">No tools granted yet.</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function WorkflowTraceSection({
   workflow,
   applications,
@@ -587,7 +600,12 @@ export function WorkflowTraceSection({
   run,
   running,
   liveModelOutput,
-  summaryCard
+  transcript,
+  summaryCard,
+  showFullDetails = false,
+  latestRunError,
+  transcriptError,
+  streamError
 }: {
   workflow: Workflow | null;
   applications: Application[];
@@ -597,104 +615,134 @@ export function WorkflowTraceSection({
   run: WorkflowRun | null;
   running: boolean;
   liveModelOutput?: LiveModelOutput | null;
+  transcript?: TranscriptProjection | null;
   summaryCard: SummaryCardData;
+  showFullDetails?: boolean;
+  latestRunError?: string | null;
+  transcriptError?: string | null;
+  streamError?: string | null;
 }) {
+  const errorMessages = [latestRunError, transcriptError, streamError].filter((value): value is string => Boolean(value));
+  const toolLookup = useMemo(() => getToolLookup(tools), [tools]);
+  const derivedTranscript = useMemo<TranscriptProjection>(() => {
+    if (!workflow) {
+      return { items: [], findings: [] };
+    }
+
+    return buildWorkflowTranscript({
+      workflow,
+      run,
+      agents,
+      toolLookup,
+      running,
+      liveModelOutput: liveModelOutput ?? null
+    });
+  }, [workflow, run, agents, toolLookup, running, liveModelOutput]);
+  const effectiveTranscript = transcript ?? derivedTranscript;
+  const findingsById = useMemo(
+    () => new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding])),
+    [effectiveTranscript]
+  );
+  const agent = useMemo(
+    () => workflow ? agents.find((item) => item.id === workflow.agentId) ?? null : null,
+    [workflow, agents]
+  );
+  const applicationName = workflow
+    ? (applications.find((item) => item.id === workflow.applicationId)?.name ?? "Unknown application")
+    : "Unknown application";
+  const visibleToolNames = workflow
+    ? (summaryCard.toolNames.length > 0
+      ? summaryCard.toolNames
+      : getWorkflowAllowedToolIds(workflow).map((toolId) => toolLookup[toolId] ?? toolId))
+    : [];
+  const metadataItems = useMemo<MetadataItem[]>(() => {
+    if (!workflow) {
+      return [];
+    }
+
+    return [
+      { label: "Status", value: workflow.status },
+      { label: "Target", value: applicationName },
+      { label: "Agent", value: agent?.name ?? "Unknown" },
+      { label: "Current Run", value: run ? `${run.status} · ${run.events.length} events` : "No active run" },
+      { label: "Updated", value: new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(workflow.updatedAt)) }
+    ];
+  }, [workflow, applicationName, agent, run]);
+  const atoms = useMemo(() => {
+    if (!workflow) {
+      return [];
+    }
+
+    return buildDuplexAtoms({
+      workflow,
+      run,
+      transcript: effectiveTranscript,
+      agent,
+      findingsById,
+      errors: errorMessages
+    }).filter((atom) => atom.kind !== "finding");
+  }, [workflow, run, effectiveTranscript, agent, findingsById, errorMessages]);
+
   if (!workflow) {
     return null;
   }
 
-  const toolLookup = getToolLookup(tools);
-  const toolsById = new Map(tools.map((tool) => [tool.id, tool]));
-  const toolsByName = new Map(tools.map((tool) => [tool.name, tool]));
-  const transcript = buildWorkflowTranscript({
-    workflow,
-    run,
-    agents,
-    toolLookup,
-    running,
-    liveModelOutput: liveModelOutput ?? null
-  });
-  const findingsById = new Map(transcript.findings.map((finding) => [finding.id, finding]));
-  const applicationName = applications.find((item) => item.id === workflow.applicationId)?.name ?? "Unknown application";
-  const runtimeName = workflow.runtimeId
-    ? (runtimes.find((item) => item.id === workflow.runtimeId)?.name ?? "Unknown runtime")
-    : "No runtime";
-  const inheritedToolIds = getWorkflowAllowedToolIds(workflow);
-  const visibleToolNames = summaryCard.toolNames.length > 0
-    ? summaryCard.toolNames
-    : inheritedToolIds.map((toolId) => toolLookup[toolId] ?? toolId);
-
-  const systemItems = transcript.items.filter((item): item is Extract<TranscriptProjection["items"][number], { kind: "system_message" }> => item.kind === "system_message");
-  const threadItems = transcript.items.filter((item) => item.kind !== "system_message");
-  const assistantTurns = threadItems.filter((item): item is Extract<TranscriptProjection["items"][number], { kind: "assistant_turn" }> => item.kind === "assistant_turn");
-  const closeout = threadItems.find((item): item is Extract<TranscriptProjection["items"][number], { kind: "closeout" }> => item.kind === "closeout") ?? null;
-  const toolCount = assistantTurns.reduce((total, turn) => total + turn.details.filter((detail) => detail.kind === "tool_call").length, 0);
-  const observationCount = assistantTurns.reduce(
-    (total, turn) => total + turn.details.reduce((turnTotal, detail) => detail.kind === "tool_result" ? turnTotal + detail.observations.length : turnTotal, 0),
-    0
-  );
-
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.75fr)]">
       <div className="min-w-0">
-        <div className="overflow-hidden rounded-[1.25rem] border border-border/80 bg-background px-4 shadow-[0_16px_50px_-36px_hsl(var(--foreground)/0.18)] md:px-6">
-          <RunBar workflow={workflow} run={run} />
-          <div className="mx-auto max-w-[54rem] pb-12">
-            <ThreadHeader
-              workflow={workflow}
-              applicationName={applicationName}
-              runtimeName={runtimeName}
-              toolNames={visibleToolNames}
-            />
-            <PromptSections items={systemItems} />
-            <div className="mt-2">
-              {assistantTurns.map((item, index) => (
-                <ThreadTurn
-                  key={item.id}
-                  item={item}
-                  ord={index + 1}
-                  toolsById={toolsById}
-                  toolsByName={toolsByName}
-                  findingsById={findingsById}
-                />
-              ))}
-            </div>
-            {closeout ? (
-              <CloseoutSection
-                item={closeout}
-                turnCount={assistantTurns.length}
-                toolCount={toolCount}
-                observationCount={observationCount}
-                findingCount={transcript.findings.length}
-              />
-            ) : null}
-            <div className="sticky bottom-0 mt-10 bg-gradient-to-b from-transparent to-background px-2 pt-8">
-              <div className="flex items-center gap-3 rounded-xl border border-border/80 bg-card px-4 py-3 shadow-[0_1px_0_hsl(var(--foreground)/0.04)]">
-                {run?.status === "running" ? <LoaderCircle className="h-4 w-4 animate-spin text-primary" aria-label="Run in progress" /> : null}
-                <input
-                  disabled
-                  value=""
-                  placeholder={run?.status === "completed" || run?.status === "failed"
-                    ? "Run is sealed — replay, branch, or spawn a follow-up probe…"
-                    : "Collecting evidence, waiting for the next agent step…"}
-                  className="flex-1 bg-transparent text-sm text-muted-foreground outline-none placeholder:text-muted-foreground"
-                />
-                <span className="rounded border border-border/70 px-2 py-1 font-mono text-[0.62rem] uppercase tracking-[0.12em] text-muted-foreground">
-                  run
-                </span>
-                <button
-                  type="button"
-                  disabled
-                  className="h-7 w-7 rounded-md bg-foreground text-[0.85rem] text-background opacity-40"
-                >
-                  ↑
-                </button>
+        <div className="space-y-4">
+          <div className="relative min-h-[38rem]">
+            <div className="mx-auto w-full max-w-[56rem] px-6 py-8">
+              <div className="space-y-5">
+                {atoms.map((atom) => (
+                  <div key={atom.key} className="duplex-entry">
+                    <InlineTranscriptEntry atom={atom} showFullDetails={showFullDetails} />
+                  </div>
+                ))}
+
+                {!run ? <EmptyRunState toolNames={visibleToolNames} /> : null}
+
+                {run?.status === "running" ? (
+                  <div className="flex w-full justify-start pr-[8%]">
+                    <div className="flex items-center gap-2 rounded-md border bg-card px-3 py-1.5 font-mono text-[0.64rem] text-muted-foreground">
+                      <Radio className="h-3 w-3 text-primary" />
+                      <span>Agent typing</span>
+                      <span className="duplex-typing inline-flex items-center gap-0.5">
+                        <span>•</span>
+                        <span>•</span>
+                        <span>•</span>
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
+
+          {errorMessages.length > 0 ? (
+            <div className="px-4 pb-4 md:px-6">
+              <div className="mt-3 flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{errorMessages[errorMessages.length - 1]}</span>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
-      <FindingsRail findings={transcript.findings} runStatus={run?.status ?? null} />
+
+      <FindingsRail findings={effectiveTranscript.findings} runStatus={run?.status ?? null} metadata={metadataItems} />
+
+      <style>{`
+        @keyframes duplex-in {
+          from { opacity: 0; transform: translateY(2px); }
+          to { opacity: 1; transform: none; }
+        }
+        .duplex-entry { animation: duplex-in 260ms ease-out both; }
+        @keyframes duplex-dot { 0%, 80%, 100% { opacity: 0.25 } 40% { opacity: 1 } }
+        .duplex-typing span { animation: duplex-dot 1.1s infinite; }
+        .duplex-typing span:nth-child(2) { animation-delay: 0.15s; }
+        .duplex-typing span:nth-child(3) { animation-delay: 0.3s; }
+      `}</style>
     </section>
   );
 }

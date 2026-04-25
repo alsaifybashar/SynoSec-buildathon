@@ -1,20 +1,30 @@
 import cors from "cors";
 import express, { type Express } from "express";
 import { apiRoutes } from "@synosec/contracts";
-import { loadRateLimitConfig } from "@/core/env/backend-env.js";
-import { applySecurityHeaders } from "@/core/http/security-headers.js";
-import { createRateLimitMiddleware } from "@/core/http/rate-limit.js";
-import { RequestError } from "@/core/http/request-error.js";
-import { loadAuthConfig } from "@/modules/auth/auth-config.js";
-import { attachAuthContext } from "@/modules/auth/auth-middleware.js";
-import { createErrorHandler } from "@/core/http/error-handler.js";
+import { loadRateLimitConfig } from "@/shared/config/backend-env.js";
+import { applySecurityHeaders } from "@/shared/http/security-headers.js";
+import { createRateLimitMiddleware } from "@/shared/http/rate-limit.js";
+import { RequestError } from "@/shared/http/request-error.js";
+import { attachAuthContext, loadAuthConfig } from "@/modules/auth/index.js";
+import { createErrorHandler } from "@/shared/http/error-handler.js";
 import { registerRoutes } from "@/app/register-routes.js";
-import { type ApplicationsRepository } from "@/features/modules/applications/applications.repository.js";
-import { type RuntimesRepository } from "@/features/modules/runtimes/runtimes.repository.js";
-import { type AiProvidersRepository } from "@/features/modules/ai-providers/ai-providers.repository.js";
-import { type AiAgentsRepository } from "@/features/modules/ai-agents/ai-agents.repository.js";
-import { type AiToolsRepository } from "@/features/modules/ai-tools/ai-tools.repository.js";
-import { type WorkflowsRepository } from "@/features/modules/workflows/workflows.repository.js";
+import type { ApplicationsRepository } from "@/modules/applications/index.js";
+import type { ExecutionConstraintsRepository } from "@/modules/execution-constraints/index.js";
+import type { RuntimesRepository } from "@/modules/runtimes/index.js";
+import type { AiProvidersRepository } from "@/modules/ai-providers/index.js";
+import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
+import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
+import type { WorkflowsRepository } from "@/modules/workflows/index.js";
+
+export type AppDependencies = {
+  applicationsRepository: ApplicationsRepository;
+  executionConstraintsRepository: ExecutionConstraintsRepository;
+  runtimesRepository: RuntimesRepository;
+  aiProvidersRepository: AiProvidersRepository;
+  aiAgentsRepository: AiAgentsRepository;
+  aiToolsRepository: AiToolsRepository;
+  workflowsRepository: WorkflowsRepository;
+};
 
 function isAllowedRequestOrigin(origin: string, frontendUrl: string, path: string) {
   if (origin === frontendUrl) {
@@ -30,14 +40,7 @@ function isAllowedRequestOrigin(origin: string, frontendUrl: string, path: strin
   return false;
 }
 
-export function createApp(options: {
-  applicationsRepository: ApplicationsRepository;
-  runtimesRepository: RuntimesRepository;
-  aiProvidersRepository: AiProvidersRepository;
-  aiAgentsRepository: AiAgentsRepository;
-  aiToolsRepository: AiToolsRepository;
-  workflowsRepository: WorkflowsRepository;
-}): Express {
+export function createApp(options: AppDependencies): Express {
   const app = express();
   const authConfig = loadAuthConfig();
 

@@ -1,5 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { RequestError } from "@/core/http/request-error.js";
+import { RequestError } from "@/shared/http/request-error.js";
 
 type GoogleIdentityPayload = {
   sub?: unknown;

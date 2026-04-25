@@ -7,7 +7,7 @@ import { clearSessionCookie, parseCookies, setSessionCookie } from "@/modules/au
 import { createOpaqueToken, hashToken, normalizeEmail } from "@/modules/auth/auth-crypto.js";
 import { verifyGoogleIdToken } from "@/modules/auth/google-id-token.js";
 import { authRepository } from "@/modules/auth/auth-repository.js";
-import { RequestError } from "@/core/http/request-error.js";
+import { RequestError } from "@/shared/http/request-error.js";
 
 function parseRedirectTarget(rawRedirectTo: unknown) {
   if (rawRedirectTo === undefined) {

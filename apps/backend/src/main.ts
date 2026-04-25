@@ -1,27 +1,15 @@
 import http from "node:http";
-import { loadBackendEnv } from "@/core/env/backend-env.js";
+import { loadBackendEnv } from "@/shared/config/backend-env.js";
+import { buildBackendDependencies } from "@/app/build-backend-dependencies.js";
 import { createApp } from "@/app/create-app.js";
-import { createApplicationsRepositoryFromEnvironment } from "@/features/modules/applications/create-applications-repository.js";
-import { createRuntimesRepositoryFromEnvironment } from "@/features/modules/runtimes/create-runtimes-repository.js";
-import { createAiProvidersRepositoryFromEnvironment } from "@/features/modules/ai-providers/create-ai-providers-repository.js";
-import { createAiAgentsRepositoryFromEnvironment } from "@/features/modules/ai-agents/create-ai-agents-repository.js";
-import { createAiToolsRepositoryFromEnvironment } from "@/features/modules/ai-tools/create-ai-tools-repository.js";
-import { createWorkflowsRepositoryFromEnvironment } from "@/features/modules/workflows/create-workflows-repository.js";
-import { validateSeededToolDefinitions } from "../prisma/seed-data/ai-builder-defaults.js";
+import { validateSeededToolDefinitions } from "@/prisma/seed-data/ai-builder-defaults.js";
 
 const env = loadBackendEnv();
 const port = env.backendPort;
 
 validateSeededToolDefinitions();
 
-const app = createApp({
-  applicationsRepository: createApplicationsRepositoryFromEnvironment(),
-  runtimesRepository: createRuntimesRepositoryFromEnvironment(),
-  aiProvidersRepository: createAiProvidersRepositoryFromEnvironment(),
-  aiAgentsRepository: createAiAgentsRepositoryFromEnvironment(),
-  aiToolsRepository: createAiToolsRepositoryFromEnvironment(),
-  workflowsRepository: createWorkflowsRepositoryFromEnvironment()
-});
+const app = createApp(buildBackendDependencies());
 const server = http.createServer(app);
 let shuttingDown = false;
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createPaginatedResponseSchema, jsonSchemaObjectSchema, paginatedMetaSchema, resourceListQuerySchema } from "./shared.js";
+import { createPaginatedResponseSchema, executionKindSchema, jsonSchemaObjectSchema, paginatedMetaSchema, resourceListQuerySchema } from "./shared.js";
 import { toolCapabilityTagSchema, toolCategorySchema, toolRiskTierSchema } from "./tooling.js";
 
 export const applicationEnvironmentSchema = z.enum(["production", "staging", "development"]);
@@ -8,6 +8,137 @@ export type ApplicationEnvironment = z.infer<typeof applicationEnvironmentSchema
 export const applicationStatusSchema = z.enum(["active", "investigating", "archived"]);
 export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
 
+export const targetAssetKindSchema = z.enum(["url", "hostname", "ip", "cidr"]);
+export type TargetAssetKind = z.infer<typeof targetAssetKindSchema>;
+
+export const targetAssetOwnershipStatusSchema = z.enum(["verified", "pending", "unverified"]);
+export type TargetAssetOwnershipStatus = z.infer<typeof targetAssetOwnershipStatusSchema>;
+
+export const executionConstraintKindSchema = z.enum(["provider_policy", "legal_scope", "workflow_gate"]);
+export type ExecutionConstraintKind = z.infer<typeof executionConstraintKindSchema>;
+
+export const targetAssetSchema = z.object({
+  id: z.string().uuid(),
+  applicationId: z.string().uuid(),
+  label: z.string().min(1),
+  kind: targetAssetKindSchema,
+  hostname: z.string().min(1).nullable(),
+  baseUrl: z.string().url().nullable(),
+  ipAddress: z.string().min(1).nullable(),
+  cidr: z.string().min(1).nullable(),
+  provider: z.string().min(1).nullable(),
+  ownershipStatus: targetAssetOwnershipStatusSchema,
+  isDefault: z.boolean(),
+  metadata: jsonSchemaObjectSchema.nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type TargetAsset = z.infer<typeof targetAssetSchema>;
+
+const targetAssetBodyObjectSchema = z.object({
+  label: z.string().trim().min(1),
+  kind: targetAssetKindSchema,
+  hostname: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
+  baseUrl: z.union([z.string().trim().url(), z.literal(""), z.null()]).transform((value) => value || null).optional(),
+  ipAddress: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
+  cidr: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
+  provider: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
+  ownershipStatus: targetAssetOwnershipStatusSchema.default("unverified"),
+  isDefault: z.boolean().default(false),
+  metadata: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
+});
+
+const targetAssetBodyBaseSchema = targetAssetBodyObjectSchema.superRefine((value, ctx) => {
+  const hasOneLocator = [value.hostname, value.baseUrl, value.ipAddress, value.cidr].some((entry) => !!entry);
+  if (!hasOneLocator) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "A target asset must include at least one locator.",
+      path: ["hostname"]
+    });
+  }
+});
+
+export const targetAssetBodySchema = targetAssetBodyBaseSchema;
+export type TargetAssetBody = z.infer<typeof targetAssetBodySchema>;
+
+const excludedPathsSchema = z.array(z.string().trim().min(1)).transform((paths) => {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const path of paths) {
+    if (!seen.has(path)) {
+      seen.add(path);
+      normalized.push(path);
+    }
+  }
+
+  return normalized;
+});
+
+export const executionConstraintSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  kind: executionConstraintKindSchema,
+  provider: z.string().min(1).nullable(),
+  version: z.number().int().min(1),
+  description: z.string().nullable(),
+  denyProviderOwnedTargets: z.boolean(),
+  requireVerifiedOwnership: z.boolean(),
+  allowActiveExploit: z.boolean(),
+  requireRateLimitSupport: z.boolean(),
+  rateLimitRps: z.number().int().min(1).nullable(),
+  requireHostAllowlistSupport: z.boolean(),
+  requirePathExclusionSupport: z.boolean(),
+  excludedPaths: excludedPathsSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type ExecutionConstraint = z.infer<typeof executionConstraintSchema>;
+
+export const executionConstraintsListQuerySchema = resourceListQuerySchema.extend({
+  kind: executionConstraintKindSchema.optional(),
+  provider: z.string().trim().min(1).optional(),
+  sortBy: z.enum(["name", "kind", "provider", "version", "createdAt", "updatedAt"]).optional()
+});
+export type ExecutionConstraintsListQuery = z.infer<typeof executionConstraintsListQuerySchema>;
+
+export const listExecutionConstraintsResponseSchema = paginatedMetaSchema.extend({
+  constraints: z.array(executionConstraintSchema)
+});
+export type ListExecutionConstraintsResponse = z.infer<typeof listExecutionConstraintsResponseSchema>;
+
+const executionConstraintBodyBaseSchema = z.object({
+  name: z.string().trim().min(1),
+  kind: executionConstraintKindSchema,
+  provider: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null),
+  version: z.number().int().min(1),
+  description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
+  denyProviderOwnedTargets: z.boolean().default(false),
+  requireVerifiedOwnership: z.boolean().default(false),
+  allowActiveExploit: z.boolean().default(false),
+  requireRateLimitSupport: z.boolean().default(false),
+  rateLimitRps: z.union([z.number().int().min(1), z.null()]).default(null),
+  requireHostAllowlistSupport: z.boolean().default(false),
+  requirePathExclusionSupport: z.boolean().default(false),
+  excludedPaths: excludedPathsSchema.default([])
+});
+
+export const createExecutionConstraintBodySchema = executionConstraintBodyBaseSchema;
+export type CreateExecutionConstraintBody = z.infer<typeof createExecutionConstraintBodySchema>;
+
+export const updateExecutionConstraintBodySchema = executionConstraintBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
+  message: "At least one field is required."
+});
+export type UpdateExecutionConstraintBody = z.infer<typeof updateExecutionConstraintBodySchema>;
+
+export const applicationConstraintBindingSchema = z.object({
+  constraintId: z.string().min(1),
+  createdAt: z.string().datetime().optional(),
+  constraint: executionConstraintSchema.optional()
+});
+export type ApplicationConstraintBinding = z.infer<typeof applicationConstraintBindingSchema>;
+
 export const applicationSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
@@ -15,6 +146,8 @@ export const applicationSchema = z.object({
   environment: applicationEnvironmentSchema,
   status: applicationStatusSchema,
   lastScannedAt: z.string().datetime().nullable(),
+  targetAssets: z.array(targetAssetSchema).optional(),
+  constraintBindings: z.array(applicationConstraintBindingSchema).optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 });
@@ -37,7 +170,20 @@ const applicationBodyBaseSchema = z.object({
   baseUrl: z.union([z.string().trim().url(), z.literal(""), z.null()]).transform((value) => value || null),
   environment: applicationEnvironmentSchema,
   status: applicationStatusSchema,
-  lastScannedAt: z.union([z.string().datetime(), z.null()])
+  lastScannedAt: z.union([z.string().datetime(), z.null()]),
+  targetAssets: z.array(targetAssetBodyObjectSchema.extend({
+    id: z.string().uuid().optional()
+  }).superRefine((value, ctx) => {
+    const hasOneLocator = [value.hostname, value.baseUrl, value.ipAddress, value.cidr].some((entry) => !!entry);
+    if (!hasOneLocator) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "A target asset must include at least one locator.",
+        path: ["hostname"]
+      });
+    }
+  })).optional(),
+  constraintIds: z.array(z.string().min(1)).optional()
 });
 
 export const createApplicationBodySchema = applicationBodyBaseSchema;
@@ -178,8 +324,15 @@ export type AiToolSource = z.infer<typeof aiToolSourceSchema>;
 export const aiToolStatusSchema = z.enum(["active", "inactive", "missing", "manual"]);
 export type AiToolStatus = z.infer<typeof aiToolStatusSchema>;
 
-export const toolExecutorTypeSchema = z.literal("bash");
+export const toolExecutorTypeSchema = z.enum(["bash", "builtin"]);
 export type ToolExecutorType = z.infer<typeof toolExecutorTypeSchema>;
+
+export const toolBuiltinActionKeySchema = z.enum([
+  "report_finding",
+  "deep_analysis",
+  "attack_chain_correlation"
+]);
+export type ToolBuiltinActionKey = z.infer<typeof toolBuiltinActionKeySchema>;
 
 export const toolSandboxProfileSchema = z.enum([
   "network-recon",
@@ -196,6 +349,26 @@ export const toolPrivilegeProfileSchema = z.enum([
 ]);
 export type ToolPrivilegeProfile = z.infer<typeof toolPrivilegeProfileSchema>;
 
+export const toolConstraintTargetKindSchema = z.enum(["host", "domain", "url", "cidr"]);
+export type ToolConstraintTargetKind = z.infer<typeof toolConstraintTargetKindSchema>;
+
+export const toolConstraintNetworkBehaviorSchema = z.enum(["none", "outbound-read", "outbound-active"]);
+export type ToolConstraintNetworkBehavior = z.infer<typeof toolConstraintNetworkBehaviorSchema>;
+
+export const toolConstraintMutationClassSchema = z.enum(["none", "content-enumeration", "active-validation", "exploit"]);
+export type ToolConstraintMutationClass = z.infer<typeof toolConstraintMutationClassSchema>;
+
+export const toolConstraintProfileSchema = z.object({
+  enforced: z.boolean().default(false),
+  targetKinds: z.array(toolConstraintTargetKindSchema).default([]),
+  networkBehavior: toolConstraintNetworkBehaviorSchema.default("outbound-read"),
+  mutationClass: toolConstraintMutationClassSchema.default("none"),
+  supportsHostAllowlist: z.boolean().default(false),
+  supportsPathExclusions: z.boolean().default(false),
+  supportsRateLimit: z.boolean().default(false)
+});
+export type ToolConstraintProfile = z.infer<typeof toolConstraintProfileSchema>;
+
 export const aiToolSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -204,7 +377,8 @@ export const aiToolSchema = z.object({
   description: z.string().nullable(),
   binary: z.string().nullable(),
   executorType: toolExecutorTypeSchema.default("bash"),
-  bashSource: z.string().min(1),
+  builtinActionKey: toolBuiltinActionKeySchema.nullable().optional(),
+  bashSource: z.string().min(1).nullable(),
   capabilities: z.array(z.lazy(() => toolCapabilityTagSchema)).default([]),
   category: z.lazy(() => toolCategorySchema),
   riskTier: z.lazy(() => toolRiskTierSchema),
@@ -212,10 +386,31 @@ export const aiToolSchema = z.object({
   sandboxProfile: toolSandboxProfileSchema,
   privilegeProfile: toolPrivilegeProfileSchema,
   timeoutMs: z.number().int().min(1000).max(300000),
+  constraintProfile: toolConstraintProfileSchema.optional(),
   inputSchema: z.lazy(() => jsonSchemaObjectSchema),
   outputSchema: z.lazy(() => jsonSchemaObjectSchema),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
+}).superRefine((value, ctx) => {
+  if (value.executorType === "bash") {
+    if (!value.bashSource?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Bash source is required for bash tools.",
+        path: ["bashSource"]
+      });
+    }
+
+    return;
+  }
+
+  if (!value.builtinActionKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Built-in action key is required for builtin tools.",
+      path: ["builtinActionKey"]
+    });
+  }
 });
 export type AiTool = z.infer<typeof aiToolSchema>;
 
@@ -269,7 +464,7 @@ const aiToolBodyBaseSchema = z.object({
   source: aiToolSourceSchema,
   description: z.string().trim().min(1),
   binary: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  executorType: toolExecutorTypeSchema.default("bash"),
+  executorType: z.literal("bash").default("bash"),
   bashSource: z.string().min(1),
   capabilities: z.array(z.lazy(() => toolCapabilityTagSchema)).default([]),
   category: z.lazy(() => toolCategorySchema),
@@ -278,6 +473,7 @@ const aiToolBodyBaseSchema = z.object({
   sandboxProfile: z.lazy(() => toolSandboxProfileSchema),
   privilegeProfile: z.lazy(() => toolPrivilegeProfileSchema),
   timeoutMs: z.number().int().min(1000).max(300000),
+  constraintProfile: toolConstraintProfileSchema.optional(),
   inputSchema: z.lazy(() => jsonSchemaObjectSchema),
   outputSchema: z.lazy(() => jsonSchemaObjectSchema)
 });
@@ -442,7 +638,7 @@ export type WorkflowFindingSubmission = z.infer<typeof workflowFindingSubmission
 export const workflowReportedFindingSchema = workflowFindingSubmissionSchema.extend({
   id: z.string().uuid(),
   workflowRunId: z.string().uuid(),
-  workflowStageId: z.string().uuid().nullable(),
+  workflowStageId: z.string().uuid().nullable().optional(),
   createdAt: z.string().datetime()
 });
 export type WorkflowReportedFinding = z.infer<typeof workflowReportedFindingSchema>;
@@ -509,6 +705,7 @@ export const workflowSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
   status: workflowStatusSchema,
+  executionKind: executionKindSchema.optional(),
   description: z.string().nullable(),
   applicationId: z.string().uuid(),
   runtimeId: z.string().uuid().nullable(),
@@ -569,6 +766,7 @@ export type WorkflowStageBody = z.infer<typeof workflowStageBodySchema>;
 const workflowBodyBaseSchema = z.object({
   name: z.string().trim().min(1),
   status: workflowStatusSchema,
+  executionKind: executionKindSchema.optional(),
   description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
   applicationId: z.string().uuid(),
   runtimeId: z.union([z.string().uuid(), z.literal(""), z.null()]).transform((value) => value || null),
@@ -601,6 +799,11 @@ export type UpdateWorkflowBody = z.infer<typeof updateWorkflowBodySchema>;
 export const workflowRunStatusSchema = z.enum(["pending", "running", "completed", "failed"]);
 export type WorkflowRunStatus = z.infer<typeof workflowRunStatusSchema>;
 
+export const startWorkflowRunBodySchema = z.object({
+  targetAssetId: z.string().uuid().optional()
+});
+export type StartWorkflowRunBody = z.infer<typeof startWorkflowRunBodySchema>;
+
 export const workflowTraceEntryStatusSchema = z.enum(["completed", "failed"]);
 export type WorkflowTraceEntryStatus = z.infer<typeof workflowTraceEntryStatusSchema>;
 
@@ -609,15 +812,27 @@ export const workflowTraceEventTypeSchema = z.enum([
   "system_message",
   "agent_input",
   "model_decision",
+  "start",
+  "start-step",
+  "text",
+  "reasoning",
   "tool_call",
+  "tool_call_streaming_start",
+  "tool_call_delta",
   "tool_result",
   "verification",
   "finding_reported",
   "stage_result_submitted",
   "stage_contract_validation_failed",
   "agent_summary",
+  "finish-step",
+  "finish",
   "stage_completed",
-  "stage_failed"
+  "stage_failed",
+  "run_completed",
+  "run_failed",
+  "error",
+  "abort"
 ]);
 export type WorkflowTraceEventType = z.infer<typeof workflowTraceEventTypeSchema>;
 
@@ -628,14 +843,14 @@ export const workflowTraceEventSchema = z.object({
   id: z.string().uuid(),
   workflowRunId: z.string().uuid(),
   workflowId: z.string().uuid(),
-  workflowStageId: z.string().uuid().nullable(),
-  stepIndex: z.number().int().min(0),
+  workflowStageId: z.string().uuid().nullable().default(null),
+  stepIndex: z.number().int().min(0).default(0),
   ord: z.number().int().min(0),
   type: workflowTraceEventTypeSchema,
   status: workflowTraceEventStatusSchema,
-  title: z.string().min(1),
-  summary: z.string().min(1),
-  detail: z.string().nullable(),
+  title: z.string().min(1).default("Workflow event"),
+  summary: z.string().min(1).default("Workflow event"),
+  detail: z.string().nullable().default(null),
   payload: jsonSchemaObjectSchema,
   createdAt: z.string().datetime()
 });
@@ -645,8 +860,8 @@ export const workflowTraceEntrySchema = z.object({
   id: z.string().uuid(),
   workflowRunId: z.string().uuid(),
   workflowId: z.string().uuid(),
-  workflowStageId: z.string().uuid().nullable(),
-  stepIndex: z.number().int().min(0),
+  workflowStageId: z.string().uuid().nullable().default(null),
+  stepIndex: z.number().int().min(0).default(0),
   stageLabel: z.string().min(1),
   agentId: z.string().uuid(),
   agentName: z.string().min(1),
@@ -663,37 +878,38 @@ export type WorkflowTraceEntry = z.infer<typeof workflowTraceEntrySchema>;
 export const workflowRunSchema = z.object({
   id: z.string().uuid(),
   workflowId: z.string().uuid(),
+  executionKind: executionKindSchema.optional(),
+  targetAssetId: z.string().uuid().nullable().optional(),
   status: workflowRunStatusSchema,
-  currentStepIndex: z.number().int().min(0),
+  currentStepIndex: z.number().int().min(0).default(0),
   startedAt: z.string().datetime(),
   completedAt: z.string().datetime().nullable(),
-  trace: z.array(workflowTraceEntrySchema),
+  trace: z.array(workflowTraceEntrySchema).default([]),
   events: z.array(workflowTraceEventSchema).default([])
 });
 export type WorkflowRun = z.infer<typeof workflowRunSchema>;
 
+export const workflowLiveModelOutputSchema = z.object({
+  runId: z.string().uuid(),
+  source: z.enum(["local", "hosted"]),
+  text: z.string(),
+  reasoning: z.string().nullable().default(null),
+  final: z.boolean().default(false),
+  createdAt: z.string().datetime()
+});
+export type WorkflowLiveModelOutput = z.infer<typeof workflowLiveModelOutputSchema>;
+
 export const workflowRunStreamMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("snapshot"),
-    run: workflowRunSchema
+    run: workflowRunSchema,
+    liveModelOutput: workflowLiveModelOutputSchema.nullable().optional()
   }),
   z.object({
-    type: z.literal("event_appended"),
+    type: z.literal("run_event"),
     run: workflowRunSchema,
-    event: workflowTraceEventSchema
-  }),
-  z.object({
-    type: z.literal("trace_appended"),
-    run: workflowRunSchema,
-    traceEntry: workflowTraceEntrySchema
-  }),
-  z.object({
-    type: z.literal("model_output"),
-    run: workflowRunSchema,
-    source: z.enum(["local", "hosted"]),
-    text: z.string(),
-    final: z.boolean().default(false),
-    createdAt: z.string().datetime()
+    event: workflowTraceEventSchema,
+    liveModelOutput: workflowLiveModelOutputSchema.nullable().optional()
   })
 ]);
 export type WorkflowRunStreamMessage = z.infer<typeof workflowRunStreamMessageSchema>;

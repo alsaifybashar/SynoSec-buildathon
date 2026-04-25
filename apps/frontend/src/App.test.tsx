@@ -320,16 +320,17 @@ describe("App", () => {
     render(<App />);
 
     await screen.findByRole("heading", { name: "Applications" });
-    fireEvent.click(screen.getAllByRole("button", { name: "AI Providers" })[0]!);
+    expect(screen.getAllByRole("link", { name: "AI Providers" })[0]).toHaveAttribute("href", "/ai/providers");
+    fireEvent.click(screen.getAllByRole("link", { name: "AI Providers" })[0]!);
     expect(await screen.findByRole("heading", { name: "AI Providers" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "AI Agents" })[0]!);
+    fireEvent.click(screen.getAllByRole("link", { name: "AI Agents" })[0]!);
     expect(await screen.findByRole("heading", { name: "AI Agents" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "AI Tools" })[0]!);
+    fireEvent.click(screen.getAllByRole("link", { name: "AI Tools" })[0]!);
     expect(await screen.findByRole("heading", { name: "AI Tools" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Workflows" })[0]!);
+    fireEvent.click(screen.getAllByRole("link", { name: "Workflows" })[0]!);
     expect(await screen.findByRole("heading", { name: "Workflows" })).toBeInTheDocument();
 
     expect(screen.queryByText("Templates")).not.toBeInTheDocument();
@@ -339,12 +340,40 @@ describe("App", () => {
     render(<App />);
 
     await screen.findByRole("heading", { name: "Applications" });
-    fireEvent.click(screen.getAllByRole("button", { name: "AI Providers" })[0]!);
+    fireEvent.click(screen.getAllByRole("link", { name: "AI Providers" })[0]!);
     fireEvent.click((await screen.findAllByText("Primary Anthropic"))[0]!);
 
     expect(await screen.findByRole("heading", { name: "Primary Anthropic" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/ai-providers/2ef12df8-fdf6-4ef0-89ce-01d34b4f3af7");
+    expect(window.location.pathname).toBe("/ai/providers/2ef12df8-fdf6-4ef0-89ce-01d34b4f3af7");
     expect(await screen.findByPlaceholderText("Configured; leave blank to keep current value")).toBeInTheDocument();
+  });
+
+  it("loads the AI agent detail page without refetch loops", async () => {
+    window.history.replaceState({}, "", "/ai/agents/67043e91-4017-47b8-ac3f-81eb19f51538");
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Recon Agent" })).toBeInTheDocument();
+
+    const fetchMock = vi.mocked(fetch);
+    const requestedUrls = fetchMock.mock.calls.map(([input]) => String(input));
+
+    expect(requestedUrls.filter((url) => url === "/api/ai-agents/67043e91-4017-47b8-ac3f-81eb19f51538").length).toBeLessThanOrEqual(2);
+    expect(requestedUrls.filter((url) => url.startsWith("/api/ai-agents?")).length).toBeLessThanOrEqual(3);
+    expect(requestedUrls.filter((url) => url.startsWith("/api/ai-providers?")).length).toBeLessThanOrEqual(2);
+    expect(requestedUrls.filter((url) => url.startsWith("/api/ai-tools?")).length).toBeLessThanOrEqual(2);
+  });
+
+  it("opens the AI provider create page from the list add-record action", async () => {
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Applications" });
+    fireEvent.click(screen.getAllByRole("link", { name: "AI Providers" })[0]!);
+    fireEvent.click(await screen.findByRole("button", { name: "Add AI Provider" }));
+
+    expect(window.location.pathname).toBe("/ai/providers/new");
+    expect(await screen.findByRole("heading", { name: "New AI provider" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Name" })).toBeInTheDocument();
   });
 
   it("redirects protected routes to login when auth is enabled and no session exists", async () => {
@@ -355,13 +384,13 @@ describe("App", () => {
       googleClientId: "google-client-id",
       user: null
     };
-    window.history.replaceState({}, "", "/ai-providers");
+    window.history.replaceState({}, "", "/ai/providers");
 
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: "Sign in to SynoSec" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/login");
-    expect(window.location.search).toContain("redirectTo=%2Fai-providers");
+    expect(window.location.search).toContain("redirectTo=%2Fai%2Fproviders");
   });
 
   it("retries session bootstrap before loading the app", async () => {
@@ -403,6 +432,7 @@ describe("App", () => {
 
     expect((await screen.findAllByText("operator@example.com")).length).toBeGreaterThan(0);
 
+    fireEvent.click((await screen.findAllByRole("button", { name: "Open settings" }))[0]!);
     fireEvent.click((await screen.findAllByRole("button", { name: "Sign out" }))[0]!);
 
     expect(await screen.findByRole("heading", { name: "Sign in to SynoSec" })).toBeInTheDocument();

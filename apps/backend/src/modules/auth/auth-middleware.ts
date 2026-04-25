@@ -4,7 +4,7 @@ import { type AuthConfig, type EnabledAuthConfig } from "@/modules/auth/auth-con
 import { clearSessionCookie, parseCookies } from "@/modules/auth/auth-cookies.js";
 import { hashToken, normalizeEmail } from "@/modules/auth/auth-crypto.js";
 import { authRepository } from "@/modules/auth/auth-repository.js";
-import { RequestError } from "@/core/http/request-error.js";
+import { RequestError } from "@/shared/http/request-error.js";
 
 function isSafeMethod(method: string) {
   return ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());

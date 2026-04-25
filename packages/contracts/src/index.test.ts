@@ -13,6 +13,8 @@ import {
   defensiveLoopContract,
   defensiveLoopStages,
   executeDefensiveIteration,
+  executionReportDetailSchema,
+  executionReportsListQuerySchema,
   prioritizeDefensiveAction,
   healthResponseSchema,
   listApplicationsResponseSchema,
@@ -21,7 +23,6 @@ import {
   scansListQuerySchema,
   securityVulnerabilitySchema,
   aiToolSchema,
-  singleAgentScanReportSchema,
   toolRequestSchema,
   toolRunSchema,
   updateAiProviderBodySchema,
@@ -367,57 +368,65 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
-  it("accepts a single-agent scan report with coverage overview", () => {
-    const result = singleAgentScanReportSchema.safeParse({
-      scanId: "scan-1",
-      executiveSummary: "The scan found one evidence-backed web vulnerability and partial transport coverage.",
-      stopReason: "submitted_completion",
-      totalVulnerabilities: 1,
-      vulnerabilitiesBySeverity: {
-        info: 0,
-        low: 0,
-        medium: 1,
-        high: 0,
-        critical: 0
-      },
-      coverageOverview: {
-        L1: "not_covered",
-        L4: "partially_covered",
-        L7: "covered"
-      },
-      topVulnerabilities: [
+  it("accepts execution report detail payloads", () => {
+    const result = executionReportDetailSchema.safeParse({
+      id: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+      executionId: "run-1",
+      executionKind: "attack-map",
+      sourceDefinitionId: null,
+      status: "completed",
+      title: "Attack map run",
+      targetLabel: "https://target.local",
+      sourceLabel: "Attack map",
+      findingsCount: 1,
+      highestSeverity: "high",
+      generatedAt: "2026-04-25T12:00:00.000Z",
+      updatedAt: "2026-04-25T12:05:00.000Z",
+      archivedAt: null,
+      executiveSummary: "One meaningful attack path was confirmed.",
+      findings: [
         {
-          id: "vuln-1",
-          scanId: "scan-1",
-          agentId: "agent-1",
-          primaryLayer: "L7",
-          relatedLayers: [],
-          category: "auth_weakness",
-          title: "Weak session token handling",
-          description: "Session tokens are long-lived and not rotated on privilege change.",
-          impact: "Compromised sessions could remain valid longer than intended.",
-          recommendation: "Rotate tokens on login and privilege change.",
-          severity: "medium",
-          confidence: 0.82,
-          validationStatus: "single_source",
-          target: {
-            host: "localhost"
-          },
-          evidence: [
-            {
-              sourceTool: "seed-http-recon",
-              quote: "Token rotation not observed."
-            }
-          ],
-          technique: "HTTP session analysis",
-          tags: [],
-          createdAt: "2026-04-21T12:00:00.000Z"
+          id: "finding-1",
+          executionId: "run-1",
+          executionKind: "attack-map",
+          source: "attack-map-finding",
+          severity: "high",
+          title: "Admin surface exposed",
+          type: "phase-finding",
+          summary: "The attack map confirmed an exposed admin surface.",
+          recommendation: null,
+          confidence: null,
+          targetLabel: "https://target.local/admin",
+          evidence: [],
+          sourceToolIds: ["tool-httpx"],
+          sourceToolRunIds: ["tool-run-1"],
+          createdAt: "2026-04-25T12:03:00.000Z"
         }
       ],
-      generatedAt: "2026-04-21T12:01:00.000Z"
+      toolActivity: [],
+      coverageOverview: {},
+      sourceSummary: {
+        executionKind: "attack-map",
+        runId: "11111111-1111-4111-8111-111111111111",
+        phase: "complete",
+        overallRisk: "high",
+        chainCount: 1,
+        findingNodeCount: 1
+      },
+      raw: {}
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it("applies defaults for execution report list queries", () => {
+    const result = executionReportsListQuerySchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.sortBy).toBe("generatedAt");
+      expect(result.data.sortDirection).toBe("desc");
+      expect(result.data.archived).toBe("exclude");
+    }
   });
 
   it("requires UUID scan and tactic ids for connector test dispatch", () => {
@@ -494,6 +503,33 @@ describe("contracts", () => {
       timeoutMs: 30000,
       inputSchema: { type: "object", properties: { target: { type: "string" } } },
       outputSchema: { type: "object", properties: { summary: { type: "string" } } },
+      createdAt: "2026-04-21T12:00:00.000Z",
+      updatedAt: "2026-04-21T12:00:00.000Z"
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts builtin ai tools without bash source", () => {
+    const result = aiToolSchema.safeParse({
+      id: "builtin-report-finding",
+      name: "Report Finding",
+      status: "active",
+      source: "system",
+      description: "Workflow built-in action for persisting a structured finding.",
+      binary: null,
+      executorType: "builtin",
+      builtinActionKey: "report_finding",
+      bashSource: null,
+      capabilities: ["workflow-reporting"],
+      category: "utility",
+      riskTier: "passive",
+      notes: "Executed by the workflow engine.",
+      sandboxProfile: "read-only-parser",
+      privilegeProfile: "read-only-network",
+      timeoutMs: 1000,
+      inputSchema: { type: "object", properties: { title: { type: "string" } } },
+      outputSchema: { type: "object", properties: { findingId: { type: "string" } } },
       createdAt: "2026-04-21T12:00:00.000Z",
       updatedAt: "2026-04-21T12:00:00.000Z"
     });

@@ -84,8 +84,6 @@ jobs:
 
           require_var "VPS_HOST" "${{ vars.VPS_HOST }}"
           require_var "VPS_USER" "${{ vars.VPS_USER }}"
-          require_var "SERVER_NAME" "${{ vars.SERVER_NAME }}"
-          require_var "NGINX_CONFIG_PATH" "${{ vars.NGINX_CONFIG_PATH }}"
           require_var "FRONTEND_URL" "${{ vars.FRONTEND_URL }}"
           require_var "AUTH_GOOGLE_CLIENT_ID" "${{ vars.AUTH_GOOGLE_CLIENT_ID }}"
           require_secret "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
@@ -98,7 +96,6 @@ jobs:
         run: |
           test -f docker-compose.vps.yml
           test -f infra/deploy/env.vps.template
-          test -f infra/nginx/synosec.vps.conf.template
 
       - name: Add VPS to known hosts
         run: |
@@ -115,8 +112,8 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             set -euo pipefail
-            sudo -n mkdir -p "${{ env.VPS_TARGET_DIR }}"
-            sudo -n chown "$USER:$USER" "${{ env.VPS_TARGET_DIR }}"
+            mkdir -p "${{ env.VPS_TARGET_DIR }}"
+            find "${{ env.VPS_TARGET_DIR }}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 
       - name: Copy project to VPS
         uses: appleboy/scp-action@v0.1.7
@@ -142,7 +139,6 @@ jobs:
             printf '%s\n' '${{ github.sha }}' > .deploy-revision
             test -f docker-compose.vps.yml
             test -f infra/deploy/env.vps.template
-            test -f infra/nginx/synosec.vps.conf.template
             python3 - <<'PY'
             from pathlib import Path
 
@@ -164,14 +160,6 @@ jobs:
             Path(".env").chmod(0o600)
             PY
             docker compose -f docker-compose.vps.yml up -d --build --remove-orphans
-            sed \
-              -e 's|__SERVER_NAME__|${{ vars.SERVER_NAME }}|g' \
-              -e 's|__BACKEND_PUBLIC_PORT__|${{ env.BACKEND_PUBLIC_PORT }}|g' \
-              -e 's|__FRONTEND_PUBLIC_PORT__|${{ env.FRONTEND_PUBLIC_PORT }}|g' \
-              infra/nginx/synosec.vps.conf.template > /tmp/synosec-nginx.conf
-            sudo -n /usr/bin/install -m 0644 /tmp/synosec-nginx.conf "${{ vars.NGINX_CONFIG_PATH }}"
-            sudo -n /usr/sbin/nginx -t
-            sudo -n /bin/systemctl reload nginx
             docker image prune -f
 
       - name: Purge Cloudflare cache

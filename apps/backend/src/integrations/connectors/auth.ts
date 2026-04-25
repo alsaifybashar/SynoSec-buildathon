@@ -1,5 +1,5 @@
 import type { Request } from "express";
-import { RequestError } from "@/core/http/request-error.js";
+import { RequestError } from "@/shared/http/request-error.js";
 
 export function assertConnectorAuth(request: Request): void {
   const configuredToken = process.env["CONNECTOR_SHARED_TOKEN"];

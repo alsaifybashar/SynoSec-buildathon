@@ -1,17 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, LogIn, LogOut, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, LogIn, LogOut, Settings, X } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { navigationTree, type NavigationId } from "@/app/navigation";
+import { isNavigationItemActive, navigationTree } from "@/app/navigation";
 import { logout } from "@/features/auth/auth-store";
-import { cn } from "@/lib/utils";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
+import { cn } from "@/shared/lib/utils";
+import { Button } from "@/shared/ui/button";
 import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
   SidebarMenu,
   SidebarMenuItem,
-  SidebarMenuText
+  SidebarMenuText,
+  sidebarMenuItemClassName
 } from "@/shared/ui/sidebar";
 
 type ThemeId = "synosec" | "dark";
@@ -29,9 +31,7 @@ type SidebarUser = {
 };
 
 type AppSidebarProps = {
-  currentSection: NavigationId;
-  navigateToSection: (section: NavigationId) => void;
-  navigateToPath: (path: string) => void;
+  pathname: string;
   theme: ThemeId;
   onThemeChange: (theme: ThemeId) => void;
   currentPathWithQuery: string;
@@ -72,37 +72,114 @@ function ThemeSwatch({ swatch, className }: { swatch: ThemeMeta["swatch"]; class
   );
 }
 
-function ThemeSwitcher({ value, onValueChange }: { value: ThemeId; onValueChange: (theme: ThemeId) => void }) {
-  const current = themes.find((theme) => theme.id === value) ?? themes[0]!;
+function ThemeToggle({ value, onValueChange }: { value: ThemeId; onValueChange: (theme: ThemeId) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-1 rounded-md border border-sidebar-border/60 bg-sidebar-accent/30 p-1">
+      {themes.map((theme) => {
+        const isActive = theme.id === value;
+
+        return (
+          <button
+            key={theme.id}
+            type="button"
+            aria-pressed={isActive}
+            className={cn(
+              "flex items-center justify-center gap-1 rounded-sm px-1.5 py-1.5 text-[0.66rem] font-medium leading-none transition-colors",
+              isActive
+                ? "bg-sidebar text-sidebar-foreground shadow-sm ring-1 ring-sidebar-border/70"
+                : "text-sidebar-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+            )}
+            onClick={() => onValueChange(theme.id)}
+          >
+            <ThemeSwatch swatch={theme.swatch} className="!h-2.5 !w-4.5" />
+            <span className="truncate">{theme.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SettingsPopover({
+  theme,
+  onThemeChange,
+  onLogout
+}: {
+  theme: ThemeId;
+  onThemeChange: (theme: ThemeId) => void;
+  onLogout: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
 
   return (
-    <Select value={value} onValueChange={(nextValue) => onValueChange(nextValue as ThemeId)}>
-      <SelectTrigger
-        aria-label="Select theme"
-        className="h-7 w-auto gap-1.5 rounded-[3px] border-sidebar-border/60 bg-sidebar-accent/40 px-2 text-[0.7rem] font-medium text-sidebar-foreground hover:bg-sidebar-accent [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-sidebar-muted-foreground"
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        aria-label="Open settings"
+        aria-expanded={isOpen}
+        title="Settings"
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-sidebar-border/60 bg-sidebar-accent/40 text-[0.75rem] leading-none text-sidebar-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-foreground [&_svg]:h-[1em] [&_svg]:w-[1em]"
+        onClick={() => setIsOpen((current) => !current)}
       >
-        <SelectValue>
-          <span className="flex items-center gap-1.5">
-            <ThemeSwatch swatch={current.swatch} className="!h-3 !w-5" />
-            <span className="truncate">{current.label}</span>
-          </span>
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent align="end" className="min-w-[10rem] p-1">
-        {themes.map((theme) => (
-          <SelectItem
-            key={theme.id}
-            value={theme.id}
-            className="rounded-sm py-1.5 pl-2 pr-6 text-[0.75rem] focus:bg-accent/70"
-          >
-            <span className="flex items-center gap-2">
-              <ThemeSwatch swatch={theme.swatch} className="!h-3 !w-5" />
-              <span className="truncate">{theme.label}</span>
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+        <Settings />
+      </button>
+
+      {isOpen ? (
+        <div className="absolute bottom-0 right-0 z-[80] mb-2 ml-2 w-44 translate-x-full rounded-md border border-sidebar-border/70 bg-sidebar px-2.5 py-2.5 shadow-xl">
+          <div className="space-y-2.5">
+            <div className="space-y-1.5">
+              <div className="font-mono text-[0.56rem] uppercase tracking-[0.24em] text-sidebar-muted-foreground/70">
+                Theme
+              </div>
+              <ThemeToggle value={theme} onValueChange={onThemeChange} />
+            </div>
+
+            <div className="border-t border-sidebar-border/50 pt-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 w-full justify-between border-sidebar-border/70 bg-sidebar-accent/20 px-2.5 text-[0.66rem] uppercase tracking-[0.16em] text-sidebar-foreground hover:bg-sidebar-accent/60"
+                onClick={() => {
+                  setIsOpen(false);
+                  onLogout();
+                }}
+              >
+                <span>Sign out</span>
+                <LogOut className="text-sidebar-muted-foreground" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -141,19 +218,19 @@ function SidebarBrand() {
 }
 
 function SidebarNav({
-  currentSection,
-  navigateToSection
-}: Pick<AppSidebarProps, "currentSection" | "navigateToSection">) {
+  pathname,
+  onNavigate
+}: Pick<AppSidebarProps, "pathname"> & { onNavigate?: () => void }) {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const groupActiveMap = useMemo(() => {
     const map: Record<string, boolean> = {};
     for (const entry of navigationTree) {
       if (entry.kind === "group") {
-        map[entry.group.id] = entry.group.items.some((item) => item.id === currentSection);
+        map[entry.group.id] = entry.group.items.some((item) => isNavigationItemActive(item, pathname));
       }
     }
     return map;
-  }, [currentSection]);
+  }, [pathname]);
 
   useEffect(() => {
     const activeGroupIds = Object.entries(groupActiveMap)
@@ -184,25 +261,24 @@ function SidebarNav({
             if (entry.kind === "item") {
               const item = entry.item;
               const Icon = item.icon;
-              const isActive = item.id === currentSection;
+              const isActive = isNavigationItemActive(item, pathname);
 
               return (
-                <SidebarMenuItem
+                <Link
                   key={item.id}
+                  to={item.path}
                   className={cn(
+                    sidebarMenuItemClassName,
                     isActive &&
                       "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border))] before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-sidebar-primary before:content-['']"
                   )}
-                  onClick={() => navigateToSection(item.id)}
+                  onClick={onNavigate}
                 >
                   <Icon
-                    className={cn(
-                      "h-4 w-4 shrink-0 transition-colors",
-                      isActive ? "text-sidebar-primary" : "text-sidebar-muted-foreground"
-                    )}
+                    className={cn("transition-colors", isActive ? "text-sidebar-primary" : "text-sidebar-muted-foreground")}
                   />
                   <SidebarMenuText>{item.label}</SidebarMenuText>
-                </SidebarMenuItem>
+                </Link>
               );
             }
 
@@ -218,10 +294,7 @@ function SidebarNav({
                   onClick={() => setExpandedGroups((prev) => ({ ...prev, [group.id]: !isExpanded }))}
                 >
                   <GroupIcon
-                    className={cn(
-                      "h-4 w-4 shrink-0 transition-colors",
-                      hasActiveChild ? "text-sidebar-primary" : "text-sidebar-muted-foreground"
-                    )}
+                    className={cn("transition-colors", hasActiveChild ? "text-sidebar-primary" : "text-sidebar-muted-foreground")}
                   />
                   <SidebarMenuText>{group.label}</SidebarMenuText>
                   <ChevronRight
@@ -235,25 +308,24 @@ function SidebarNav({
                   <div className="ml-5 grid gap-0.5 border-l border-sidebar-border/60 pl-1">
                     {group.items.map((item) => {
                       const Icon = item.icon;
-                      const isActive = item.id === currentSection;
+                      const isActive = isNavigationItemActive(item, pathname);
 
                       return (
-                        <SidebarMenuItem
+                        <Link
                           key={item.id}
+                          to={item.path}
                           className={cn(
+                            sidebarMenuItemClassName,
                             isActive &&
                               "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border))] before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-sidebar-primary before:content-['']"
                           )}
-                          onClick={() => navigateToSection(item.id)}
+                          onClick={onNavigate}
                         >
                           <Icon
-                            className={cn(
-                              "h-4 w-4 shrink-0 transition-colors",
-                              isActive ? "text-sidebar-primary" : "text-sidebar-muted-foreground"
-                            )}
+                            className={cn("transition-colors", isActive ? "text-sidebar-primary" : "text-sidebar-muted-foreground")}
                           />
                           <SidebarMenuText>{item.label}</SidebarMenuText>
-                        </SidebarMenuItem>
+                        </Link>
                       );
                     })}
                   </div>
@@ -273,20 +345,14 @@ function SidebarFooter({
   user,
   showSignIn,
   currentPathWithQuery,
-  navigateToPath
+  onNavigate
 }: Pick<
   AppSidebarProps,
-  "theme" | "onThemeChange" | "user" | "showSignIn" | "currentPathWithQuery" | "navigateToPath"
->) {
+  "theme" | "onThemeChange" | "user" | "showSignIn" | "currentPathWithQuery"
+> & { onNavigate?: () => void }) {
+
   return (
     <div className="mt-2 border-t border-sidebar-border/60">
-      <div className="flex items-center justify-between gap-2 border-b border-sidebar-border/40 px-3 py-1.5">
-        <span className="font-mono text-[0.58rem] uppercase tracking-[0.26em] text-sidebar-muted-foreground/70">
-          theme
-        </span>
-        <ThemeSwitcher value={theme} onValueChange={onThemeChange} />
-      </div>
-
       {user ? (
         <div className="flex items-center gap-2 px-3 py-2">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent/60 font-mono text-[0.625rem] font-semibold text-sidebar-foreground">
@@ -300,34 +366,30 @@ function SidebarFooter({
               {user.email}
             </p>
           </div>
-          <button
-            type="button"
-            aria-label="Sign out"
-            title="Sign out"
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-sidebar-border/60 bg-sidebar-accent/40 text-sidebar-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-foreground"
-            onClick={() => {
+          <SettingsPopover
+            theme={theme}
+            onThemeChange={onThemeChange}
+            onLogout={() => {
               void logout().catch((error) => {
                 toast.error("Sign out failed", {
                   description: error instanceof Error ? error.message : "Unable to sign out."
                 });
               });
             }}
-          >
-            <LogOut className="h-3 w-3" />
-          </button>
+          />
         </div>
       ) : showSignIn ? (
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.72rem] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50"
-          onClick={() => navigateToPath(`/login?redirectTo=${encodeURIComponent(currentPathWithQuery)}`)}
+        <Link
+          to={`/login?redirectTo=${encodeURIComponent(currentPathWithQuery)}`}
+          className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[0.72rem] font-medium leading-none text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50 [&_svg]:h-[1em] [&_svg]:w-[1em]"
+          onClick={onNavigate}
         >
-          <LogIn className="h-3.5 w-3.5 text-sidebar-muted-foreground" />
+          <LogIn className="text-sidebar-muted-foreground" />
           <span>Sign in</span>
           <span className="ml-auto font-mono text-[0.58rem] uppercase tracking-[0.22em] text-sidebar-muted-foreground/70">
             google
           </span>
-        </button>
+        </Link>
       ) : null}
     </div>
   );
@@ -340,14 +402,13 @@ export function AppSidebar(props: AppSidebarProps) {
         <div className="flex h-full flex-col pt-5">
           <SidebarBrand />
           <div aria-hidden className="border-t border-sidebar-border/60" />
-          <SidebarNav currentSection={props.currentSection} navigateToSection={props.navigateToSection} />
+          <SidebarNav pathname={props.pathname} />
           <SidebarFooter
             theme={props.theme}
             onThemeChange={props.onThemeChange}
             user={props.user}
             showSignIn={props.showSignIn}
             currentPathWithQuery={props.currentPathWithQuery}
-            navigateToPath={props.navigateToPath}
           />
         </div>
       </Sidebar>
@@ -371,14 +432,14 @@ export function AppSidebar(props: AppSidebarProps) {
             </button>
           </div>
           <div aria-hidden className="border-t border-sidebar-border/60" />
-          <SidebarNav currentSection={props.currentSection} navigateToSection={props.navigateToSection} />
+          <SidebarNav pathname={props.pathname} onNavigate={props.onCloseMobileNav} />
           <SidebarFooter
             theme={props.theme}
             onThemeChange={props.onThemeChange}
             user={props.user}
             showSignIn={props.showSignIn}
             currentPathWithQuery={props.currentPathWithQuery}
-            navigateToPath={props.navigateToPath}
+            onNavigate={props.onCloseMobileNav}
           />
         </div>
       </div>

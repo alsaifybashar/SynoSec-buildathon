@@ -1,23 +1,18 @@
-import { createElement, type ComponentType, type ReactNode } from "react";
 import {
   AppWindow,
   Bot,
+  Columns2,
+  FileSearch,
   Network,
+  Orbit,
   PlugZap,
   Route,
-  Target,
-  Waypoints,
+  ScrollText,
+  Shapes,
+  Sparkles,
   Wrench,
   type LucideIcon
 } from "lucide-react";
-import { AiAgentsPage } from "@/pages/ai-agents-page";
-import { AiProvidersPage } from "@/pages/ai-providers-page";
-import { AiToolsPage } from "@/pages/ai-tools-page";
-import { ApplicationsPage } from "@/pages/applications-page";
-import { FlowStudioPage } from "@/pages/flow-studio-page";
-import { RuntimesPage } from "@/pages/runtimes-page";
-import { WorkflowsPage } from "@/features/workflows/workflows-page";
-import { AttackMapPage } from "@/pages/attack-map-page";
 
 export type NavigationId =
   | "runtimes"
@@ -25,86 +20,23 @@ export type NavigationId =
   | "ai-providers"
   | "ai-agents"
   | "ai-tools"
+  | "execution-constraints"
   | "workflows"
+  | "execution-reports"
   | "attack-map"
-  | "flow-studio";
-
-export type AppRoute = {
-  section: NavigationId;
-  detailId: string | undefined;
-  detailLabel: string | undefined;
-};
+  | "design-stream"
+  | "design-duplex";
 
 export type NavigationState = {
-  detailLabel: string | undefined;
-};
-
-export type NavigationRenderContext = {
-  route: AppRoute;
-  navigateToPath: (path: string, state?: NavigationState) => void;
-  navigateToSection: (section: NavigationId) => void;
-  navigateToCreate: (section: NavigationId) => void;
-  navigateToDetail: (section: NavigationId, id: string, label: string | undefined) => void;
+  detailLabel?: string;
 };
 
 export type NavigationItem = {
   id: NavigationId;
   label: string;
-  slug: string;
+  path: string;
   icon: LucideIcon;
-  render: (context: NavigationRenderContext) => ReactNode;
-};
-
-function createCrudNavigationItem(options: {
-  id: NavigationId;
-  label: string;
-  slug: string;
-  icon: LucideIcon;
-  detailIdProp: string;
-  detailLabelProp: string;
-  component: ComponentType<any>;
-}) {
-  return {
-    id: options.id,
-    label: options.label,
-    slug: options.slug,
-    icon: options.icon,
-    render(context: NavigationRenderContext) {
-      return createElement(options.component, {
-        key: `${options.id}:${context.route.detailId ?? "list"}`,
-        ...(context.route.detailLabel ? { [options.detailLabelProp]: context.route.detailLabel } : {}),
-        ...(context.route.detailId ? { [options.detailIdProp]: context.route.detailId } : {}),
-        onNavigateToList: () => context.navigateToSection(options.id),
-        onNavigateToCreate: () => context.navigateToCreate(options.id),
-        onNavigateToDetail: (id: string, label?: string) => context.navigateToDetail(options.id, id, label)
-      });
-    }
-  } satisfies NavigationItem;
-}
-
-const attackMapItem: NavigationItem = {
-  id: "attack-map",
-  label: "Attack Map",
-  slug: "attack-map",
-  icon: Target,
-  render() {
-    return createElement(AttackMapPage, { key: "attack-map" });
-  }
-};
-
-const flowStudioItem: NavigationItem = {
-  id: "flow-studio",
-  label: "Flow Studio",
-  slug: "flow-studio",
-  icon: Waypoints,
-  render(context) {
-    return createElement(FlowStudioPage, {
-      key: `flow-studio:${context.route.detailId ?? "root"}`,
-      ...(context.route.detailId ? { workflowId: context.route.detailId } : {}),
-      onNavigateToRoot: () => context.navigateToSection("flow-studio"),
-      onNavigateToFlow: (id: string) => context.navigateToPath(getDetailPath("flow-studio", id))
-    });
-  }
+  matchPaths?: string[];
 };
 
 export type NavigationGroup = {
@@ -118,125 +50,226 @@ export type NavigationTreeEntry =
   | { kind: "item"; item: NavigationItem }
   | { kind: "group"; group: NavigationGroup };
 
+export type CrudNavigationId =
+  | "applications"
+  | "runtimes"
+  | "ai-providers"
+  | "ai-agents"
+  | "ai-tools"
+  | "execution-constraints"
+  | "workflows";
+
+export type CrudRouteConfig = {
+  id: CrudNavigationId;
+  listPath: string;
+  createPath: string;
+  detailPath: string;
+  paramName: string;
+};
+
+function createNavigationItem(item: NavigationItem) {
+  return item;
+}
+
+export const defaultNavigationId: NavigationId = "applications";
+export const defaultRoutePath = "/applications";
+export const loginRoutePath = "/login";
+
+export const crudRouteConfigs: Record<CrudNavigationId, CrudRouteConfig> = {
+  applications: {
+    id: "applications",
+    listPath: "/applications",
+    createPath: "/applications/new",
+    detailPath: "/applications/:applicationId",
+    paramName: "applicationId"
+  },
+  runtimes: {
+    id: "runtimes",
+    listPath: "/runtimes",
+    createPath: "/runtimes/new",
+    detailPath: "/runtimes/:runtimeId",
+    paramName: "runtimeId"
+  },
+  "ai-providers": {
+    id: "ai-providers",
+    listPath: "/ai/providers",
+    createPath: "/ai/providers/new",
+    detailPath: "/ai/providers/:providerId",
+    paramName: "providerId"
+  },
+  "ai-agents": {
+    id: "ai-agents",
+    listPath: "/ai/agents",
+    createPath: "/ai/agents/new",
+    detailPath: "/ai/agents/:agentId",
+    paramName: "agentId"
+  },
+  "ai-tools": {
+    id: "ai-tools",
+    listPath: "/ai/tools",
+    createPath: "/ai/tools/new",
+    detailPath: "/ai/tools/:toolId",
+    paramName: "toolId"
+  },
+  "execution-constraints": {
+    id: "execution-constraints",
+    listPath: "/execution-constraints",
+    createPath: "/execution-constraints/new",
+    detailPath: "/execution-constraints/:constraintId",
+    paramName: "constraintId"
+  },
+  workflows: {
+    id: "workflows",
+    listPath: "/workflows",
+    createPath: "/workflows/new",
+    detailPath: "/workflows/:workflowId",
+    paramName: "workflowId"
+  }
+};
+
 export const navigationTree: NavigationTreeEntry[] = [
   {
     kind: "item",
-    item: createCrudNavigationItem({
+    item: createNavigationItem({
       id: "runtimes",
       label: "Runtimes",
-      slug: "runtimes",
-      icon: Network,
-      detailIdProp: "runtimeId",
-      detailLabelProp: "runtimeNameHint",
-      component: RuntimesPage
+      path: crudRouteConfigs.runtimes.listPath,
+      icon: Network
     })
   },
   {
     kind: "item",
-    item: createCrudNavigationItem({
+    item: createNavigationItem({
       id: "applications",
       label: "Applications",
-      slug: "applications",
-      icon: AppWindow,
-      detailIdProp: "applicationId",
-      detailLabelProp: "applicationNameHint",
-      component: ApplicationsPage
+      path: crudRouteConfigs.applications.listPath,
+      icon: AppWindow
     })
   },
   {
     kind: "item",
-    item: createCrudNavigationItem({
+    item: createNavigationItem({
       id: "ai-providers",
       label: "AI Providers",
-      slug: "ai-providers",
-      icon: PlugZap,
-      detailIdProp: "providerId",
-      detailLabelProp: "providerNameHint",
-      component: AiProvidersPage
+      path: crudRouteConfigs["ai-providers"].listPath,
+      icon: PlugZap
     })
   },
   {
     kind: "item",
-    item: createCrudNavigationItem({
+    item: createNavigationItem({
       id: "ai-agents",
       label: "AI Agents",
-      slug: "ai-agents",
-      icon: Bot,
-      detailIdProp: "agentId",
-      detailLabelProp: "agentNameHint",
-      component: AiAgentsPage
+      path: crudRouteConfigs["ai-agents"].listPath,
+      icon: Bot
     })
   },
   {
     kind: "item",
-    item: createCrudNavigationItem({
+    item: createNavigationItem({
       id: "ai-tools",
       label: "AI Tools",
-      slug: "ai-tools",
-      icon: Wrench,
-      detailIdProp: "toolId",
-      detailLabelProp: "toolNameHint",
-      component: AiToolsPage
+      path: crudRouteConfigs["ai-tools"].listPath,
+      icon: Wrench
     })
   },
   {
     kind: "item",
-    item: createCrudNavigationItem({
+    item: createNavigationItem({
+      id: "execution-constraints",
+      label: "Execution Constraints",
+      path: crudRouteConfigs["execution-constraints"].listPath,
+      icon: ScrollText
+    })
+  },
+  {
+    kind: "item",
+    item: createNavigationItem({
       id: "workflows",
       label: "Workflows",
-      slug: "workflows",
-      icon: Route,
-      detailIdProp: "workflowId",
-      detailLabelProp: "workflowNameHint",
-      component: WorkflowsPage
+      path: crudRouteConfigs.workflows.listPath,
+      icon: Route
     })
   },
   {
     kind: "item",
-    item: attackMapItem
+    item: createNavigationItem({
+      id: "execution-reports",
+      label: "Execution Reports",
+      path: "/execution-reports",
+      icon: FileSearch
+    })
   },
-  { kind: "item", item: flowStudioItem }
+  {
+    kind: "item",
+    item: createNavigationItem({
+      id: "attack-map",
+      label: "Attack Map",
+      path: "/attack-map",
+      icon: Orbit
+    })
+  },
+  {
+    kind: "group",
+    group: {
+      id: "designs",
+      label: "Designs",
+      icon: Shapes,
+      items: [
+        createNavigationItem({
+          id: "design-stream",
+          label: "Streaming Document",
+          path: "/designs/stream",
+          icon: Sparkles
+        }),
+        createNavigationItem({
+          id: "design-duplex",
+          label: "Duplex Stream",
+          path: "/designs/duplex",
+          icon: Columns2
+        })
+      ]
+    }
+  }
 ];
 
 export const navigationItems: NavigationItem[] = navigationTree.flatMap((entry) =>
   entry.kind === "item" ? [entry.item] : entry.group.items
 );
 
-export const defaultSection: NavigationId = "applications";
-
-const navigationBySlug = new Map(navigationItems.map((item) => [item.slug, item]));
 const navigationById = new Map(navigationItems.map((item) => [item.id, item]));
 
-export function getNavigationItem(section: NavigationId) {
-  return navigationById.get(section) ?? navigationById.get(defaultSection)!;
+export function getNavigationItem(id: NavigationId) {
+  return navigationById.get(id) ?? navigationById.get(defaultNavigationId)!;
 }
 
-export function getSectionPath(section: NavigationId) {
-  return `/${getNavigationItem(section).slug}`;
+export function getSectionPath(id: NavigationId) {
+  return getNavigationItem(id).path;
 }
 
-export function getDetailPath(section: NavigationId, detailId: string) {
-  return `${getSectionPath(section)}/${detailId}`;
+export function getCreatePath(id: CrudNavigationId) {
+  return crudRouteConfigs[id].createPath;
 }
 
-export function getRouteFromPath(pathname: string, state?: unknown): AppRoute {
-  const segments = pathname.split("/").filter(Boolean);
-  const detailLabel = typeof state === "object" && state !== null && "detailLabel" in state && typeof state.detailLabel === "string"
-    ? state.detailLabel
-    : undefined;
+export function getDetailPath(id: CrudNavigationId, detailId: string) {
+  return `${crudRouteConfigs[id].listPath}/${detailId}`;
+}
 
-  if (segments.length === 0) {
-    return { section: defaultSection, detailId: undefined, detailLabel };
+function matchesPath(pathname: string, path: string) {
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
+
+export function getActiveNavigationId(pathname: string) {
+  const exactMatch = navigationItems.find((item) => pathname === item.path);
+  if (exactMatch) {
+    return exactMatch.id;
   }
 
-  const navigationItem = navigationBySlug.get(segments[0] ?? "");
-  if (!navigationItem) {
-    return { section: defaultSection, detailId: undefined, detailLabel };
-  }
+  const nestedMatch = navigationItems.find((item) => matchesPath(pathname, item.path));
+  return nestedMatch?.id ?? defaultNavigationId;
+}
 
-  return {
-    section: navigationItem.id,
-    detailId: segments[1],
-    detailLabel
-  };
+export function isNavigationItemActive(item: NavigationItem, pathname: string) {
+  const matchPaths = item.matchPaths ?? [item.path];
+  return matchPaths.some((path) => matchesPath(pathname, path));
 }

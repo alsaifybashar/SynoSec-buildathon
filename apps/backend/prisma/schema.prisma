@@ -19,6 +19,25 @@ enum ApplicationStatus {
   archived
 }
 
+enum TargetAssetKind {
+  url
+  hostname
+  ip
+  cidr
+}
+
+enum TargetAssetOwnershipStatus {
+  verified
+  pending
+  unverified
+}
+
+enum ExecutionConstraintKind {
+  provider_policy
+  legal_scope
+  workflow_gate
+}
+
 enum RuntimeServiceType {
   gateway
   api
@@ -140,6 +159,8 @@ model Application {
   updatedAt     DateTime               @updatedAt @map("updated_at")
   runtimes      Runtime[]
   workflows     Workflow[]
+  targetAssets  TargetAsset[]
+  constraintBindings ApplicationConstraintBinding[]
 
   @@index([name])
   @@index([status, environment])
@@ -147,6 +168,67 @@ model Application {
   @@index([updatedAt])
   @@index([lastScannedAt])
   @@map("applications")
+}
+
+model TargetAsset {
+  id              String                     @id @db.Uuid
+  applicationId   String                     @map("application_id") @db.Uuid
+  label           String
+  kind            TargetAssetKind
+  hostname        String?
+  baseUrl         String?                    @map("base_url")
+  ipAddress       String?                    @map("ip_address")
+  cidr            String?
+  provider        String?
+  ownershipStatus TargetAssetOwnershipStatus @default(unverified) @map("ownership_status")
+  isDefault       Boolean                    @default(false) @map("is_default")
+  metadata        Json?
+  createdAt       DateTime                   @default(now()) @map("created_at")
+  updatedAt       DateTime                   @updatedAt @map("updated_at")
+  application     Application                @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  workflowRuns    WorkflowRun[]
+
+  @@index([applicationId])
+  @@index([provider])
+  @@index([hostname])
+  @@index([ipAddress])
+  @@index([isDefault])
+  @@map("target_assets")
+}
+
+model ExecutionConstraint {
+  id                          String                   @id
+  name                        String
+  kind                        ExecutionConstraintKind
+  provider                    String?
+  version                     Int                      @default(1)
+  description                 String?
+  denyProviderOwnedTargets    Boolean                  @default(false) @map("deny_provider_owned_targets")
+  requireVerifiedOwnership    Boolean                  @default(false) @map("require_verified_ownership")
+  allowActiveExploit          Boolean                  @default(false) @map("allow_active_exploit")
+  requireRateLimitSupport     Boolean                  @default(false) @map("require_rate_limit_support")
+  rateLimitRps                Int?                     @map("rate_limit_rps")
+  requireHostAllowlistSupport Boolean                  @default(false) @map("require_host_allowlist_support")
+  requirePathExclusionSupport Boolean                  @default(false) @map("require_path_exclusion_support")
+  excludedPaths               String[]                 @default([]) @map("excluded_paths")
+  createdAt                   DateTime                 @default(now()) @map("created_at")
+  updatedAt                   DateTime                 @updatedAt @map("updated_at")
+  bindings                    ApplicationConstraintBinding[]
+
+  @@index([kind, provider])
+  @@map("execution_constraints")
+}
+
+model ApplicationConstraintBinding {
+  applicationId String              @map("application_id") @db.Uuid
+  constraintId  String              @map("constraint_id")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  application   Application         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  constraint    ExecutionConstraint @relation(fields: [constraintId], references: [id], onDelete: Cascade)
+
+  @@id([applicationId, constraintId])
+  @@index([constraintId])
+  @@map("application_constraint_bindings")
 }
 
 model Runtime {
@@ -255,6 +337,7 @@ model Workflow {
   id            String               @id @db.Uuid
   name          String
   status        WorkflowStatus
+  executionKind String               @default("workflow") @map("execution_kind")
   description   String?
   applicationId String               @map("application_id") @db.Uuid
   runtimeId     String?              @map("runtime_id") @db.Uuid
@@ -303,15 +386,19 @@ model WorkflowStage {
 model WorkflowRun {
   id               String               @id @db.Uuid
   workflowId       String               @map("workflow_id") @db.Uuid
+  targetAssetId    String?              @map("target_asset_id") @db.Uuid
+  executionKind    String               @default("workflow") @map("execution_kind")
   status           WorkflowRunStatus
   currentStepIndex Int                  @default(0) @map("current_step_index")
   startedAt        DateTime             @default(now()) @map("started_at")
   completedAt      DateTime?            @map("completed_at")
   workflow         Workflow             @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  targetAsset      TargetAsset?         @relation(fields: [targetAssetId], references: [id], onDelete: SetNull)
   traceEntries     WorkflowTraceEntry[]
   traceEvents      WorkflowTraceEvent[]
 
   @@index([workflowId])
+  @@index([targetAssetId])
   @@map("workflow_runs")
 }
 
@@ -363,6 +450,34 @@ model WorkflowTraceEvent {
   @@index([workflowId])
   @@index([workflowStageId])
   @@map("workflow_trace_events")
+}
+
+model ExecutionReport {
+  id                 String   @id @db.Uuid
+  executionKind      String   @map("execution_kind")
+  sourceExecutionId  String   @map("source_execution_id")
+  sourceDefinitionId String?  @map("source_definition_id") @db.Uuid
+  sourceStatus       String   @map("source_status")
+  title              String
+  targetLabel        String   @map("target_label")
+  sourceLabel        String   @map("source_label")
+  executiveSummary   String   @map("executive_summary")
+  findingsCount      Int      @default(0) @map("findings_count")
+  highestSeverity    String?  @map("highest_severity")
+  findings           Json
+  toolActivity       Json     @map("tool_activity")
+  coverageOverview   Json     @map("coverage_overview")
+  sourceSummary      Json     @map("source_summary")
+  raw                Json
+  generatedAt        DateTime @map("generated_at")
+  archivedAt         DateTime? @map("archived_at")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@unique([executionKind, sourceExecutionId])
+  @@index([executionKind, sourceStatus])
+  @@index([archivedAt, generatedAt(sort: Desc)])
+  @@map("execution_reports")
 }
 
 model User {
@@ -556,6 +671,8 @@ model OrchestratorRun {
   plan      Json?
   mapNodes  Json?    @map("map_nodes")
   mapEdges  Json?    @map("map_edges")
+  findings  Json?
+  toolActivity Json? @map("tool_activity")
   summary   String?
   error     String?
   createdAt DateTime @default(now()) @map("created_at")

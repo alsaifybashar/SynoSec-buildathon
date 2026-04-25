@@ -1,6 +1,9 @@
 import type { HTMLAttributes } from "react";
 import type { ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
+
+export const sidebarMenuItemClassName =
+  "relative flex w-full items-center gap-2 rounded-none px-3 py-2 text-left text-[0.8125rem] font-medium leading-none text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground [&_svg]:h-[1em] [&_svg]:w-[1em] [&_svg]:shrink-0";
 
 export function SidebarProvider({ children }: { children: ReactNode }) {
   return <>{children}</>;
@@ -10,7 +13,7 @@ export function Sidebar({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return (
     <aside
       className={cn(
-        "sticky top-0 hidden h-screen w-[208px] shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground xl:block",
+        "sticky top-0 z-30 hidden h-screen w-[208px] shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground xl:block",
         className
       )}
       {...props}
@@ -49,10 +52,7 @@ export function SidebarMenu({ className, ...props }: HTMLAttributes<HTMLDivEleme
 export function SidebarMenuItem({ className, ...props }: HTMLAttributes<HTMLButtonElement>) {
   return (
     <button
-      className={cn(
-        "relative flex w-full items-center gap-3 rounded-none px-3 py-2 text-left text-[0.8125rem] font-medium text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
-        className
-      )}
+      className={cn(sidebarMenuItemClassName, className)}
       type="button"
       {...props}
     />

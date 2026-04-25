@@ -3,15 +3,14 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiRoutes } from "@synosec/contracts";
 import { createApp } from "@/app/create-app.js";
-import { applySecurityHeaders } from "@/core/http/security-headers.js";
-import { loadAuthConfig } from "@/modules/auth/auth-config.js";
-import { createAuthRouter } from "@/modules/auth/auth-routes.js";
+import { applySecurityHeaders } from "@/shared/http/security-headers.js";
+import { createAuthRouter, loadAuthConfig } from "@/modules/auth/index.js";
 import { authRepository } from "@/modules/auth/auth-repository.js";
 import { attachAuthContext, requireAuthenticatedApi, requireCsrfProtection } from "@/modules/auth/auth-middleware.js";
 import { verifyGoogleIdToken } from "@/modules/auth/google-id-token.js";
-import { registerHealthRoutes } from "@/modules/health/health.routes.js";
+import { registerHealthRoutes } from "@/modules/health/index.js";
 import { createConnectorsRouter } from "@/integrations/connectors/routes.js";
-import { createErrorHandler } from "@/core/http/error-handler.js";
+import { createErrorHandler } from "@/shared/http/error-handler.js";
 
 vi.mock("@/modules/auth/auth-repository.js", () => ({
   authRepository: {
@@ -228,6 +227,7 @@ describe("auth integration", () => {
   it("rejects disallowed origins with hardened headers intact", async () => {
     const app = createApp({
       applicationsRepository: {} as never,
+      executionConstraintsRepository: {} as never,
       runtimesRepository: {} as never,
       aiProvidersRepository: {} as never,
       aiAgentsRepository: {} as never,
