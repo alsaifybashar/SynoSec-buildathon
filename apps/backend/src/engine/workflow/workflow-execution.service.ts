@@ -24,9 +24,12 @@ import type { AiProvidersRepository, StoredAiProvider } from "@/modules/ai-provi
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
 import type { ApplicationsRepository } from "@/modules/applications/index.js";
 import type { RuntimesRepository } from "@/modules/runtimes/index.js";
-import { createScan, getScan } from "@/engine/scans/index.js";
-import type { AttackMapNode, AttackPlanPhase } from "@/engine/orchestrator/orchestrator-stream.js";
+import { createScan, getEnvironmentGraphForScan, getScan } from "@/engine/scans/index.js";
+import { buildScopeFromTargetAssets } from "@/engine/scans/environment-graph.js";
+import type { AttackMapNode, AttackPlan, AttackPlanPhase } from "@/engine/orchestrator/orchestrator-stream.js";
 import type { OrchestratorExecutionEngineService } from "@/engine/orchestrator/index.js";
+import { enrichAttackTechnique } from "@/engine/findings/attack-technique-mapper.js";
+import { inferCrossHostLateralRoutes } from "@/engine/findings/cross-host-lateral-routes.js";
 import { ToolBroker } from "./broker/tool-broker.js";
 import {
   authorizeToolAgainstConstraints,
@@ -34,21 +37,17 @@ import {
   resolveTargetAsset,
   type EffectiveExecutionConstraintSet
 } from "./execution-constraints.js";
-import { inferLayer, normalizeToolInput, parseExecutionTarget, truncate } from "./workflow-execution.utils.js";
+import {
+  inferLayer,
+  normalizeToolInput,
+  parseExecutionTarget,
+  truncate,
+  enrichWorkflowFindingDetails,
+  verifyFindingEvidence,
+  type ExecutedToolResult
+} from "./workflow-execution.utils.js";
 import { WorkflowRunEventPublisher } from "./workflow-run-event-publisher.js";
 import type { WorkflowsRepository } from "@/modules/workflows/workflows.repository.js";
-
-type ExecutedToolResult = {
-  toolId: string;
-  toolName: string;
-  toolInput: Record<string, string | number | boolean | string[]>;
-  toolRequest: ToolRequest;
-  toolRun: ToolRun;
-  status: ToolRun["status"];
-  observations: string[];
-  outputPreview: string;
-  fullOutput: string;
-};
 
 type PipelineTerminalState =
   | {
@@ -86,24 +85,33 @@ type PersistedWorkflowTraceType =
   | "stage_completed"
   | "stage_failed";
 
-function createWorkflowScan(run: WorkflowRun, constraints: EffectiveExecutionConstraintSet): Scan {
+function createWorkflowScan(
+  run: WorkflowRun,
+  constraints: EffectiveExecutionConstraintSet,
+  application: NonNullable<Awaited<ReturnType<ApplicationsRepository["getById"]>>>
+): Scan {
+  const scope = buildScopeFromTargetAssets({
+    environmentName: application.name,
+    defaultHost: constraints.normalizedTarget.host,
+    targetAssets: (application.targetAssets ?? []).map((asset) => ({
+      label: asset.label,
+      hostname: asset.hostname,
+      baseUrl: asset.baseUrl,
+      ipAddress: asset.ipAddress,
+      cidr: asset.cidr,
+      metadata: asset.metadata as Record<string, unknown> | null
+    })),
+    exclusions: constraints.excludedPaths,
+    rateLimitRps: constraints.rateLimitRps,
+    allowActiveExploit: constraints.allowActiveExploit
+  });
+
   return {
     id: run.id,
-    scope: {
-      targets: [constraints.normalizedTarget.host],
-      exclusions: constraints.excludedPaths,
-      layers: ["L4", "L7"],
-      maxDepth: 3,
-      maxDurationMinutes: 15,
-      rateLimitRps: constraints.rateLimitRps,
-      allowActiveExploits: constraints.allowActiveExploit,
-      graceEnabled: true,
-      graceRoundInterval: 3,
-      cyberRangeMode: "live"
-    },
+    scope,
     status: "running",
     currentRound: 0,
-    tacticsTotal: 1,
+    tacticsTotal: Math.max(scope.targets.length, 1),
     tacticsComplete: 0,
     createdAt: run.startedAt
   };
@@ -128,7 +136,7 @@ export class WorkflowExecutionService {
     this.eventPublisher = new WorkflowRunEventPublisher(this.workflowsRepository, this.workflowRunStream);
   }
 
-  async startRun(workflowId: string, input: StartWorkflowRunBody = {}) {
+  async startRun(workflowId: string, input: StartWorkflowRunBody = { coordinateEnvironment: false }) {
     const workflow = await this.workflowsRepository.getById(workflowId);
     if (!workflow) {
       throw new RequestError(404, "Workflow not found.");
@@ -151,8 +159,19 @@ export class WorkflowExecutionService {
       this.assertProviderSupportsWorkflowExecution(provider);
     }
 
-    const targetAsset = resolveTargetAsset(application, input.targetAssetId);
+    const targetAsset = input.coordinateEnvironment && !input.targetAssetId
+      ? application.targetAssets?.find((asset) => asset.isDefault) ?? application.targetAssets?.[0] ?? resolveTargetAsset(application, input.targetAssetId)
+      : resolveTargetAsset(application, input.targetAssetId);
     const constraintSet = resolveEffectiveExecutionConstraints(application, targetAsset, 5);
+    const coordinatedTargetPlans = input.coordinateEnvironment && !input.targetAssetId
+      ? (application.targetAssets ?? [])
+          .filter((asset) => asset.id !== targetAsset.id)
+          .slice(0, 20)
+          .map((asset) => ({
+            targetAsset: asset,
+            constraintSet: resolveEffectiveExecutionConstraints(application, asset, 5)
+          }))
+      : [];
 
     const run = await this.workflowsRepository.createRun(workflowId, targetAsset.id);
     if (!run) {
@@ -166,6 +185,48 @@ export class WorkflowExecutionService {
     void execution.catch(async (error) => {
       await this.failWorkflowRunAfterUnhandledError(run.id, error);
     });
+
+    if (input.coordinateEnvironment && !input.targetAssetId) {
+      const childRunIds: string[] = [];
+      for (const plan of coordinatedTargetPlans) {
+        const siblingRun = await this.workflowsRepository.createRun(workflowId, plan.targetAsset.id);
+        if (!siblingRun) {
+          throw new RequestError(404, "Workflow not found.");
+        }
+        childRunIds.push(siblingRun.id);
+        this.eventPublisher.publishSnapshot(siblingRun);
+        const siblingExecution = workflow.executionKind === "attack-map"
+          ? this.executeAttackMapWorkflowRun(workflow, siblingRun, application, agent, provider, plan.constraintSet)
+          : this.executePipelineRun(workflow, siblingRun, application, agent, provider, plan.constraintSet);
+        void siblingExecution.catch(async (error) => {
+          await this.failWorkflowRunAfterUnhandledError(siblingRun.id, error);
+        });
+      }
+
+      if (childRunIds.length > 0) {
+        const updatedRun = await this.eventPublisher.appendEvent(
+          run,
+          this.createEvent(
+            run,
+            workflow.id,
+            run.events.length,
+            "model_decision",
+            "completed",
+            {
+              title: "Environment workflow fan-out started",
+              summary: `Started ${childRunIds.length} additional workflow run(s) for registered environment targets.`,
+              childRunIds,
+              primaryRunId: run.id
+            },
+            "Environment workflow fan-out started",
+            `Started ${childRunIds.length} additional workflow run(s) for registered environment targets.`,
+            childRunIds.map((id) => `- ${id}`).join("\n")
+          )
+        );
+        this.eventPublisher.publishSnapshot(updatedRun);
+      }
+    }
+
     return run;
   }
 
@@ -283,6 +344,23 @@ export class WorkflowExecutionService {
     toolCommandPreview?: string | null;
     tags?: string[];
   }): WorkflowReportedFinding {
+    const enrichment = enrichAttackTechnique({
+      technique: input.vector,
+      title: input.title,
+      description: input.description,
+      tags: input.tags ?? ["attack-map", "workflow-orchestrator"]
+    });
+    const detail = enrichWorkflowFindingDetails({
+      title: input.title,
+      target: {
+        host: input.target.host,
+        ...(input.target.port === undefined ? {} : { port: input.target.port }),
+        url: input.target.baseUrl
+      },
+      evidence: input.evidence,
+      ...(input.toolCommandPreview ? { reproduction: { commandPreview: input.toolCommandPreview, steps: [] } } : {})
+    }, [], input.target);
+
     return {
       id: randomUUID(),
       workflowRunId: input.runId,
@@ -291,26 +369,16 @@ export class WorkflowExecutionService {
       severity: input.severity,
       confidence: this.severityConfidence(input.severity),
       target: {
-        host: input.target.host,
-        ...(input.target.port === undefined ? {} : { port: input.target.port }),
-        url: input.target.baseUrl
+        ...detail.target
       },
       evidence: input.evidence,
       impact: input.description,
       recommendation: `Investigate and remediate the attack path associated with "${input.title}" before additional chaining increases impact.`,
-      ...(input.toolCommandPreview
-        ? {
-            reproduction: {
-              commandPreview: input.toolCommandPreview,
-              steps: [
-                `Review the evidence gathered for ${input.title}.`,
-                "Re-run the captured tool command against the same in-scope target.",
-                "Confirm that the observed behavior is still reproducible."
-              ]
-            }
-          }
-        : {}),
-      tags: input.tags ?? ["attack-map", "workflow-orchestrator"],
+      validationStatus: "single_source",
+      ...(enrichment.cwe ? { cwe: enrichment.cwe } : {}),
+      ...(enrichment.mitreId ? { mitreId: enrichment.mitreId } : {}),
+      reproduction: detail.reproduction,
+      tags: enrichment.tags,
       createdAt: new Date().toISOString()
     };
   }
@@ -523,6 +591,32 @@ export class WorkflowExecutionService {
         probeOutput: string;
         toolAttempts: Array<{ toolRunId: string; toolId: string; toolName: string; commandPreview: string; output: string }>;
       }>;
+      adaptAttackPlan: (
+        targetUrl: string,
+        currentPlan: AttackPlan,
+        completedPhase: AttackPlanPhase,
+        phaseFindings: { title: string; severity: string; description: string; vector: string; rawEvidence?: string }[],
+        confirmedFindings: { title: string; severity: string; description: string; vector: string }[],
+        recon: {
+          openPorts: { port: number; protocol: string; service: string; version: string }[];
+          technologies: string[];
+          httpHeaders: Record<string, string>;
+          serverInfo: { os?: string; webServer?: string; cms?: string };
+          interestingPaths: string[];
+          probes: Array<{
+            toolName: string;
+            command: string;
+            output: string;
+            status: "completed" | "failed";
+          }>;
+          rawNmap: string;
+          rawCurl: string;
+        },
+        plannerTools: Array<AiTool>,
+        provider: StoredAiProvider,
+        model: string,
+        emitReasoning: (phase: string, title: string, summary: string) => void
+      ) => Promise<AttackPlan>;
       deepDiveFinding: (
         targetUrl: string,
         finding: AttackMapNode,
@@ -693,6 +787,49 @@ export class WorkflowExecutionService {
       );
     }
 
+    const attackMapScan = createWorkflowScan(currentRun, constraintSet, application);
+    const existingAttackMapScan = await getScan(attackMapScan.id);
+    if (!existingAttackMapScan) {
+      await createScan(attackMapScan, {
+        mode: "workflow",
+        applicationId: application.id,
+        runtimeId: workflow.runtimeId,
+        agentId: agent.id
+      });
+    }
+    const environmentGraph = await getEnvironmentGraphForScan(attackMapScan.id);
+    if (environmentGraph) {
+      await appendEvent(
+        "system_message",
+        "completed",
+        {
+          title: "Environment graph initialized",
+          summary: `Mapped ${environmentGraph.nodes.length} asset node(s) and ${environmentGraph.edges.length} edge(s) before attack planning.`,
+          graph: environmentGraph,
+          targetCount: attackMapScan.scope.targets.length,
+          coordinatedTargets: attackMapScan.scope.targets
+        },
+        "Environment graph initialized",
+        `Mapped ${environmentGraph.nodes.length} asset node(s) and ${environmentGraph.edges.length} edge(s) before attack planning.`,
+        JSON.stringify(environmentGraph, null, 2)
+      );
+    }
+    if (attackMapScan.scope.targets.length > 1) {
+      await appendEvent(
+        "model_decision",
+        "completed",
+        {
+          title: "Multi-host coordination plan",
+          summary: `This environment has ${attackMapScan.scope.targets.length} in-scope target(s). The current run analyzes ${target.host} and records the shared graph for follow-up host workflows.`,
+          primaryTarget: target.host,
+          inScopeTargets: attackMapScan.scope.targets
+        },
+        "Multi-host coordination plan",
+        `Prepared shared attack-map context for ${attackMapScan.scope.targets.length} in-scope target(s).`,
+        attackMapScan.scope.targets.map((candidate) => `- ${candidate}`).join("\n")
+      );
+    }
+
     const recon = await orchestrator.runRecon(target.baseUrl, run.id, provider, provider.model, (phase, title, summary) => {
       void emitReasoning(phase, title, summary);
     });
@@ -713,7 +850,7 @@ export class WorkflowExecutionService {
       recon.rawCurl.slice(0, 1000)
     );
 
-    const plan = await orchestrator.createPlan(target.baseUrl, recon, plannerTools, provider, provider.model, (phase, title, summary) => {
+    let plan = await orchestrator.createPlan(target.baseUrl, recon, plannerTools, provider, provider.model, (phase, title, summary) => {
       void emitReasoning(phase, title, summary);
     });
     await appendEvent(
@@ -732,7 +869,14 @@ export class WorkflowExecutionService {
     );
 
     const findingNodes: AttackMapNode[] = [];
-    for (const phase of plan.phases.slice(0, 3)) {
+    const confirmedFindings: { title: string; severity: string; description: string; vector: string }[] = [];
+    let executedPhaseCount = 0;
+    while (executedPhaseCount < 3) {
+      const phase = plan.phases.find((candidate) => candidate.status === "pending");
+      if (!phase) {
+        break;
+      }
+      phase.status = "running";
       const result = await orchestrator.executePhase(
         target.baseUrl,
         phase,
@@ -746,8 +890,16 @@ export class WorkflowExecutionService {
         recordToolActivity,
         updateToolActivity
       );
+      phase.status = "completed";
+      executedPhaseCount++;
 
       for (const finding of result.findings) {
+        confirmedFindings.push({
+          title: finding.title,
+          severity: finding.severity,
+          description: finding.description,
+          vector: finding.vector
+        });
         const severity = (["critical", "high", "medium", "low", "info"].includes(finding.severity) ? finding.severity : "medium") as WorkflowReportedFinding["severity"];
         const workflowFinding = this.createAttackMapWorkflowFinding({
           runId: currentRun.id,
@@ -789,6 +941,35 @@ export class WorkflowExecutionService {
           }
         });
       }
+
+      plan = await orchestrator.adaptAttackPlan(
+        target.baseUrl,
+        plan,
+        phase,
+        result.findings,
+        confirmedFindings,
+        recon,
+        plannerTools,
+        provider,
+        provider.model,
+        (reasonPhase, title, summary) => {
+          void emitReasoning(reasonPhase, title, summary);
+        }
+      );
+      await appendEvent(
+        "model_decision",
+        "completed",
+        {
+          title: "Attack plan adapted",
+          summary: plan.summary,
+          body: JSON.stringify(plan, null, 2),
+          phase: "planning",
+          plan
+        },
+        "Attack plan adapted",
+        plan.summary,
+        JSON.stringify(plan, null, 2)
+      );
     }
 
     for (const finding of findingNodes.filter((node) => node.severity === "critical" || node.severity === "high" || node.severity === "medium").slice(0, 4)) {
@@ -844,7 +1025,19 @@ export class WorkflowExecutionService {
           void emitReasoning(phase, title, summary);
         })
       : [];
-    const closeoutSummary = `Attack-map workflow completed. ${plan.phases.length} phases planned, ${getWorkflowReportedFindings(currentRun).length} findings reported, ${chains.length} attack chains identified.`;
+    const reportedWorkflowFindings = getWorkflowReportedFindings(currentRun);
+    const crossHostRoutes = inferCrossHostLateralRoutes(currentRun.id, reportedWorkflowFindings);
+    for (const route of crossHostRoutes) {
+      await appendEvent(
+        "model_decision",
+        "completed",
+        { route, phase: "cross_host_correlation" },
+        `Cross-host route detected: ${route.title}`,
+        route.narrative ?? route.title,
+        JSON.stringify(route, null, 2)
+      );
+    }
+    const closeoutSummary = `Attack-map workflow completed. ${plan.phases.length} phases planned, ${reportedWorkflowFindings.length} findings reported, ${chains.length + crossHostRoutes.length} attack chains identified.`;
     await appendEvent(
       "run_completed",
       "completed",
@@ -853,8 +1046,10 @@ export class WorkflowExecutionService {
         summary: closeoutSummary,
         body: plan.summary,
         overallRisk: plan.overallRisk,
-        chainCount: chains.length,
-        findingNodeCount: getWorkflowReportedFindings(currentRun).length,
+        chainCount: chains.length + crossHostRoutes.length,
+        crossHostRouteCount: crossHostRoutes.length,
+        crossHostRoutes,
+        findingNodeCount: reportedWorkflowFindings.length,
         recommendedNextStep: "Investigate the highest-severity workflow findings and validate the reported attack paths.",
         residualRisk: `Overall attack-map risk remains ${plan.overallRisk}.`
       },
@@ -1020,8 +1215,17 @@ export class WorkflowExecutionService {
       }, "Tool context", "Persisted the tool inventory exposed to the workflow model.", toolContext);
     }
 
-    const scan = createWorkflowScan(run, constraintSet);
+    const scan = createWorkflowScan(run, constraintSet, context.application);
     await this.ensureWorkflowScan(scan, context);
+    const environmentGraph = await getEnvironmentGraphForScan(scan.id);
+    if (environmentGraph) {
+      await appendEvent("system_message", "completed", {
+        title: "Environment graph initialized",
+        summary: `Mapped ${environmentGraph.nodes.length} asset node(s) and ${environmentGraph.edges.length} edge(s) for ${environmentGraph.environmentName ?? "this environment"}.`,
+        graph: environmentGraph,
+        targetCount: scan.scope.targets.length
+      }, "Environment graph initialized", `Mapped ${environmentGraph.nodes.length} asset node(s) and ${environmentGraph.edges.length} edge(s).`, JSON.stringify(environmentGraph, null, 2));
+    }
     const executedResults: ExecutedToolResult[] = [];
     const reportedFindings = new Map<string, WorkflowReportedFinding>();
     let terminalState: PipelineTerminalState | null = null;
@@ -1149,21 +1353,56 @@ export class WorkflowExecutionService {
         inputSchema: workflowFindingSubmissionSchema,
         execute: async (rawInput) => {
           const findingInput = workflowFindingSubmissionSchema.parse(rawInput);
+          const verification = verifyFindingEvidence(findingInput, executedResults);
+          const enrichment = enrichAttackTechnique({
+            technique: findingInput.type,
+            title: findingInput.title,
+            description: findingInput.impact,
+            ...(findingInput.cwe ? { existingCwe: findingInput.cwe } : {}),
+            ...(findingInput.mitreId ? { existingMitreId: findingInput.mitreId } : {}),
+            tags: findingInput.tags
+          });
+
+          await appendEvent("verification", verification.validationStatus === "rejected" ? "failed" : "completed", {
+            title: "Evidence Verification",
+            status: verification.validationStatus,
+            confidence: verification.confidence,
+            reason: verification.reason
+          }, "Evidence Verification", verification.reason);
+
+          if (verification.validationStatus === "rejected") {
+            return {
+              accepted: false,
+              reason: verification.reason,
+              validationStatus: verification.validationStatus
+            };
+          }
+
+          const detail = enrichWorkflowFindingDetails(findingInput, executedResults, context.target);
           const finding: WorkflowReportedFinding = {
             id: randomUUID(),
             workflowRunId: currentRun.id,
             createdAt: new Date().toISOString(),
-            ...findingInput
+            ...findingInput,
+            target: detail.target,
+            reproduction: detail.reproduction,
+            ...(enrichment.cwe ? { cwe: enrichment.cwe } : {}),
+            ...(enrichment.mitreId ? { mitreId: enrichment.mitreId } : {}),
+            tags: enrichment.tags,
+            validationStatus: verification.validationStatus,
+            confidence: verification.confidence
           };
           reportedFindings.set(finding.id, finding);
           await appendEvent("finding_reported", "completed", {
             finding
           }, `Finding reported: ${finding.title}`, `${finding.severity.toUpperCase()} ${finding.type} on ${finding.target.host}.`, finding.impact);
           return {
+            accepted: true,
             findingId: finding.id,
             title: finding.title,
             severity: finding.severity,
-            host: finding.target.host
+            validationStatus: finding.validationStatus,
+            confidence: finding.confidence
           };
         }
       }),

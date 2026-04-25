@@ -14,8 +14,23 @@ export const osiLayerLabels: Record<OsiLayer, string> = {
 };
 
 export const scanScopeSchema = z.object({
-  targets: z.array(z.string().min(1)).min(1).max(20),
+  environmentName: z.string().min(1).optional(),
+  targets: z.array(z.string().min(1)).min(1).max(100),
   exclusions: z.array(z.string()).default([]),
+  trustZones: z.array(z.object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    hosts: z.array(z.string().min(1)).default([]),
+    description: z.string().min(1).optional()
+  })).default([]),
+  connectivity: z.array(z.object({
+    from: z.string().min(1),
+    to: z.string().min(1),
+    port: z.number().int().min(1).max(65535).optional(),
+    protocol: z.enum(["tcp", "udp", "icmp", "any"]).default("tcp"),
+    trustZone: z.string().min(1).optional(),
+    evidence: z.string().min(1).optional()
+  })).default([]),
   layers: z.array(osiLayerSchema).min(1).default(["L4", "L6", "L7"]),
   maxDepth: z.number().int().min(1).max(8).default(3),
   maxDurationMinutes: z.number().int().min(1).max(60).default(10),
@@ -26,6 +41,33 @@ export const scanScopeSchema = z.object({
   cyberRangeMode: z.enum(["simulation", "live"]).default("simulation")
 });
 export type ScanScope = z.infer<typeof scanScopeSchema>;
+
+export const assetNodeSchema = z.object({
+  id: z.string().min(1),
+  host: z.string().min(1),
+  type: z.enum(["host", "service", "subnet"]),
+  discoveredAt: z.string().datetime(),
+  metadata: z.record(z.unknown()).default({})
+});
+export type AssetNode = z.infer<typeof assetNodeSchema>;
+
+export const assetEdgeSchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+  edgeType: z.enum(["reaches", "trusts", "hosts", "lateral_movement"]),
+  evidence: z.string().min(1),
+  metadata: z.record(z.unknown()).default({})
+});
+export type AssetEdge = z.infer<typeof assetEdgeSchema>;
+
+export const environmentGraphSchema = z.object({
+  scanId: z.string(),
+  environmentName: z.string().min(1).optional(),
+  nodes: z.array(assetNodeSchema),
+  edges: z.array(assetEdgeSchema),
+  generatedAt: z.string().datetime()
+});
+export type EnvironmentGraph = z.infer<typeof environmentGraphSchema>;
 
 export const llmProviderSchema = z.enum(["anthropic", "local"]);
 export type LlmProvider = z.infer<typeof llmProviderSchema>;
@@ -118,6 +160,7 @@ export const securityVulnerabilitySubmissionSchema = z.object({
     steps: z.array(z.string().min(1)).min(1)
   }).optional(),
   cwe: z.string().min(1).optional(),
+  mitreId: z.string().min(1).optional(),
   owasp: z.string().min(1).optional(),
   tags: z.array(z.string().min(1)).default([])
 });
@@ -150,7 +193,9 @@ export type ScanLayerCoverage = z.infer<typeof scanLayerCoverageSchema>;
 
 export const validationStatusSchema = z.enum([
   "unverified",
+  "suspected",
   "single_source",
+  "replay_pending",
   "cross_validated",
   "reproduced",
   "rejected"
@@ -190,7 +235,10 @@ export const escalationRouteLinkSchema = z.object({
   fromFindingId: z.string(),
   toFindingId: z.string(),
   probability: z.number().min(0).max(1),
-  order: z.number().int().min(0)
+  order: z.number().int().min(0),
+  edgeType: z.enum(["finding_chain", "lateral_movement"]).default("finding_chain"),
+  fromHost: z.string().min(1).optional(),
+  toHost: z.string().min(1).optional()
 });
 export type EscalationRouteLink = z.infer<typeof escalationRouteLinkSchema>;
 
@@ -205,6 +253,7 @@ export const escalationRouteSchema = z.object({
   startTarget: z.string(),
   endTarget: z.string(),
   chainLength: z.number().int().min(1),
+  crossHost: z.boolean().default(false),
   confidence: z.number().min(0).max(1),
   narrative: z.string().optional(),
   createdAt: z.string().datetime()

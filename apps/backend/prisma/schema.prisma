@@ -533,9 +533,40 @@ model ScanRun {
   scanAuditEntries ScanAuditEntry[]
   escalationRoutes EscalationRoute[]
   layerCoverage    ScanLayerCoverage[]
+  assetNodes       ScanAssetNode[]
+  assetEdges       ScanAssetEdge[]
 
   @@index([mode, createdAt])
   @@map("scan_runs")
+}
+
+model ScanAssetNode {
+  id           String   @id
+  scanRunId    String   @map("scan_run_id") @db.Uuid
+  host         String
+  type         String
+  discoveredAt DateTime @map("discovered_at")
+  metadata     Json
+  scanRun      ScanRun  @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+
+  @@index([scanRunId])
+  @@index([scanRunId, host])
+  @@map("scan_asset_nodes")
+}
+
+model ScanAssetEdge {
+  id        String   @id
+  scanRunId String   @map("scan_run_id") @db.Uuid
+  fromNode  String   @map("from_node")
+  toNode    String   @map("to_node")
+  edgeType  String   @map("edge_type")
+  evidence  String
+  metadata  Json
+  scanRun   ScanRun  @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+
+  @@index([scanRunId])
+  @@index([scanRunId, fromNode, toNode])
+  @@map("scan_asset_edges")
 }
 
 model ScanTactic {
@@ -584,6 +615,7 @@ model ScanFinding {
   validated        Boolean                  @default(false)
   validationStatus String?                  @map("validation_status")
   cwe              String?
+  mitreId          String?                  @map("mitre_id")
   owasp            String?
   tags             Json?
   evidenceRefs     Json?                    @map("evidence_refs")
@@ -641,6 +673,7 @@ model EscalationRoute {
   startTarget   String                   @map("start_target")
   endTarget     String                   @map("end_target")
   routeLength   Int                      @map("route_length")
+  crossHost     Boolean                  @default(false) @map("cross_host")
   confidence    Float
   narrative     String?
   createdAt     DateTime                 @default(now()) @map("created_at")
@@ -656,6 +689,9 @@ model EscalationRouteFinding {
   scanFindingId     String          @map("scan_finding_id") @db.Uuid
   ord               Int
   linkProbability   Float?          @map("link_probability")
+  edgeType          String?         @map("edge_type")
+  fromHost          String?         @map("from_host")
+  toHost            String?         @map("to_host")
   escalationRoute   EscalationRoute @relation(fields: [escalationRouteId], references: [id], onDelete: Cascade)
   scanFinding       ScanFinding     @relation(fields: [scanFindingId], references: [id], onDelete: Cascade)
 

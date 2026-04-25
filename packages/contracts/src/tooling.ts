@@ -9,6 +9,8 @@ export const toolCapabilityTagSchema = z.string().trim().min(1);
 export type ToolCapabilityTag = z.infer<typeof toolCapabilityTagSchema>;
 
 export const toolCategorySchema = z.enum([
+  "topology",
+  "auth",
   "network",
   "web",
   "content",

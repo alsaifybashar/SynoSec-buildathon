@@ -110,6 +110,28 @@ function SeverityBadge({ severity }: { severity: FindingsRailItem["severity"] })
   );
 }
 
+function ValidationTierBadge({ status }: { status: string | undefined }) {
+  const tone =
+    status === "single_source" || status === "cross_validated" || status === "reproduced"
+      ? "border-success/40 bg-success/10 text-success"
+      : status === "suspected"
+        ? "border-warning/40 bg-warning/10 text-warning"
+        : "border-border bg-muted text-muted-foreground";
+
+  const label =
+    status === "single_source" || status === "cross_validated" || status === "reproduced"
+      ? "Tool-backed"
+      : status === "suspected"
+        ? "Suspected"
+        : "Unverified";
+
+  return (
+    <span className={cn("inline-flex items-center rounded-sm border px-2 py-0.5 font-mono text-[0.62rem] uppercase tracking-[0.16em]", tone)}>
+      {label}
+    </span>
+  );
+}
+
 const KIND_LABEL: Record<DuplexAtomKind, string> = {
   objective: "Objective",
   "system-prompt": "System prompt",
@@ -712,6 +734,7 @@ function FindingsRail({
         <div key={finding.id} className="rounded-xl border border-border/80 bg-background/80 px-4 py-4">
           <div className="flex flex-wrap items-center gap-2">
             <SeverityBadge severity={finding.severity} />
+            <ValidationTierBadge status={finding.validationStatus} />
             <span className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground">{finding.type}</span>
           </div>
           <p className="mt-3 text-sm font-semibold text-foreground">{finding.title}</p>

@@ -7,11 +7,24 @@ export interface ToolSelectorContext {
   executedToolIds: string[];
   findings: { primaryLayer: OsiLayer; category: string }[];
   allowActiveExploits: boolean;
+  patternBiases?: ToolSelectionPatternBias[];
 }
 
 type SelectorOptions = {
   maxTools?: number;
   minTools?: number;
+};
+
+export type ToolSelectionPatternBias = {
+  toolId?: string | null;
+  toolName?: string | null;
+  category?: string | null;
+  targetType?: string | null;
+  bias: number;
+  sampleCount: number;
+  confirmationRate: number;
+  falsePositiveRate: number;
+  reason: string;
 };
 
 type CatalogMetadata = {
@@ -58,11 +71,12 @@ export function selectToolsForContext(
       const riskGate = getRiskGateScore(tool, context.allowActiveExploits);
       const layerAlignment = getLayerAlignmentScore(metadata.osiLayers, uncoveredRequestedLayers, context.requestedLayers);
       const phaseProgression = getPhaseProgressionScore(metadata.phase, phaseStage, context.allowActiveExploits);
+      const patternBias = getPatternBiasScore(tool, context.patternBiases ?? []);
       const weightedScore = (layerAlignment * 0.4) + (phaseProgression * 0.25) + (riskGate * 0.2);
       const recencyPenalty = executedToolIds.has(tool.id) ? 0.3 : 0;
       const score = riskGate === 0
         ? 0
-        : Math.max(0, Math.min(1, weightedScore + 0.15 - recencyPenalty));
+        : Math.max(0, Math.min(1, weightedScore + 0.15 + patternBias - recencyPenalty));
 
       return { tool, score, gatedOut: riskGate === 0 };
     })
@@ -172,4 +186,27 @@ function getRiskGateScore(tool: AiTool, allowActiveExploits: boolean) {
   }
 
   return 1;
+}
+
+function getPatternBiasScore(tool: AiTool, biases: ToolSelectionPatternBias[]) {
+  if (biases.length === 0) {
+    return 0;
+  }
+
+  const normalizedToolName = tool.name.trim().toLowerCase();
+  const matchingBiases = biases.filter((bias) => {
+    const toolIdMatches = bias.toolId ? bias.toolId === tool.id : false;
+    const toolNameMatches = bias.toolName ? bias.toolName.trim().toLowerCase() === normalizedToolName : false;
+    const categoryMatches = !bias.toolId && !bias.toolName && bias.category ? bias.category === tool.category : false;
+    return toolIdMatches || toolNameMatches || categoryMatches;
+  });
+
+  if (matchingBiases.length === 0) {
+    return 0;
+  }
+
+  const strongest = matchingBiases
+    .slice()
+    .sort((left, right) => Math.abs(right.bias) - Math.abs(left.bias))[0];
+  return Math.max(-0.25, Math.min(0.25, strongest?.bias ?? 0));
 }

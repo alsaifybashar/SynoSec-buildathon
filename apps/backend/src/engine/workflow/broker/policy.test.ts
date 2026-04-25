@@ -7,6 +7,8 @@ const scan: Scan = {
   scope: {
     targets: ["http://localhost:8888"],
     exclusions: [],
+    trustZones: [],
+    connectivity: [],
     layers: ["L4", "L7"],
     maxDepth: 2,
     maxDurationMinutes: 5,

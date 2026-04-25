@@ -11,6 +11,14 @@ import { compileToolRequestFromDefinition } from "./tool-definition.compiler.js"
 import { executeScriptedTool } from "@/engine/tools/script-executor.js";
 
 function inferLayer(category: string): OsiLayer {
+  if (category === "topology") {
+    return "L3";
+  }
+
+  if (category === "auth") {
+    return "L5";
+  }
+
   if (category === "network" || category === "dns" || category === "subdomain") {
     return "L4";
   }
@@ -39,7 +47,7 @@ function normalizeToolInput(input: unknown): Record<string, string | number | bo
 }
 
 function parseExecutionTarget(toolInput: Record<string, string | number | boolean | string[]>) {
-  const candidateUrl = ["baseUrl", "startUrl", "url"]
+  const candidateUrl = ["baseUrl", "startUrl", "url", "loginUrl"]
     .map((key) => toolInput[key])
     .find((value): value is string => typeof value === "string" && value.length > 0);
 
@@ -75,6 +83,13 @@ function parseExecutionTarget(toolInput: Record<string, string | number | boolea
       code: "AI_TOOL_TARGET_MISSING",
       userFriendlyMessage: "The AI tool target host is required."
     });
+  }
+
+  if (typeof toolInput["token"] === "string" && toolInput["token"].length > 0) {
+    return {
+      target: "jwt",
+      port: undefined
+    };
   }
 
   throw new RequestError(400, "AI tool execution requires a target host or URL.", {

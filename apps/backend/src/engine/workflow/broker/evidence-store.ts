@@ -1,9 +1,10 @@
-import type { AgentNote, Observation, ToolRun } from "@synosec/contracts";
+import type { AgentNote, Finding, Observation, ToolRun, ValidationStatus } from "@synosec/contracts";
 
 class EvidenceStore {
   private toolRunsByScan = new Map<string, ToolRun[]>();
   private observationsByScan = new Map<string, Observation[]>();
   private agentNotesByScan = new Map<string, AgentNote[]>();
+  private findingsByScan = new Map<string, Finding[]>();
 
   addToolRun(toolRun: ToolRun): void {
     const existing = this.toolRunsByScan.get(toolRun.scanId) ?? [];
@@ -29,6 +30,22 @@ class EvidenceStore {
     this.agentNotesByScan.set(agentNote.scanId, existing);
   }
 
+  addFinding(finding: Finding): void {
+    const existing = this.findingsByScan.get(finding.scanId) ?? [];
+    existing.push(finding);
+    this.findingsByScan.set(finding.scanId, existing);
+  }
+
+  updateFindingValidationStatus(scanId: string, findingId: string, status: ValidationStatus): void {
+    const existing = this.findingsByScan.get(scanId) ?? [];
+    const next = existing.map((f) => f.id === findingId ? { ...f, validationStatus: status } : f);
+    this.findingsByScan.set(scanId, next);
+  }
+
+  getFindingsForScan(scanId: string): Finding[] {
+    return [...(this.findingsByScan.get(scanId) ?? [])];
+  }
+
   getToolRunsForScan(scanId: string): ToolRun[] {
     return [...(this.toolRunsByScan.get(scanId) ?? [])];
   }
@@ -49,6 +66,7 @@ class EvidenceStore {
     this.toolRunsByScan.clear();
     this.observationsByScan.clear();
     this.agentNotesByScan.clear();
+    this.findingsByScan.clear();
   }
 }
 

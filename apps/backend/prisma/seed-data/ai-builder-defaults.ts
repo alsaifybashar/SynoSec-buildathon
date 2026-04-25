@@ -1,3 +1,5 @@
+import { authFlowProbeTool } from "./tools/auth/auth-flow-probe.js";
+import { jwtAnalyzerTool } from "./tools/auth/jwt-analyzer.js";
 import { contentDiscoveryTool } from "./tools/content/content-discovery.js";
 import { dirbScanTool } from "./tools/content/dirb-scan.js";
 import { ffufScanTool } from "./tools/content/ffuf-scan.js";
@@ -17,7 +19,10 @@ import { ncatProbeTool } from "./tools/network/ncat-probe.js";
 import { netcatProbeTool } from "./tools/network/netcat-probe.js";
 import { nmapScanTool } from "./tools/network/nmap-scan.js";
 import { rustScanTool } from "./tools/network/rustscan.js";
+import { serviceFingerprintTool } from "./tools/network/service-fingerprint.js";
 import { serviceScanTool } from "./tools/network/service-scan.js";
+import { tlsAuditTool } from "./tools/network/tls-audit.js";
+import { networkSegmentMapTool } from "./tools/network/network-segment-map.js";
 import { cipherIdentifierTool } from "./tools/password/cipher-identifier.js";
 import { hashIdentifierTool } from "./tools/password/hash-identifier.js";
 import { hashcatCrackTool } from "./tools/password/hashcat-crack.js";
@@ -141,7 +146,7 @@ function withConstraintProfile<
     "seed-paramspider"
   ]);
 
-  const readOnlyWebCategories = new Set(["web", "content", "dns", "subdomain", "network", "cloud", "kubernetes", "utility"]);
+  const readOnlyWebCategories = new Set(["topology", "auth", "web", "content", "dns", "subdomain", "network", "cloud", "kubernetes", "utility"]);
   const targetKinds: NonNullable<AiTool["constraintProfile"]>["targetKinds"] = tool.category === "web" || tool.category === "content"
     ? ["host", "domain", "url"]
     : ["host", "domain"];
@@ -166,6 +171,8 @@ function withConstraintProfile<
 }
 
 const rawSeededToolDefinitions = [
+  authFlowProbeTool,
+  jwtAnalyzerTool,
   contentDiscoveryTool,
   dirbScanTool,
   ffufScanTool,
@@ -185,7 +192,10 @@ const rawSeededToolDefinitions = [
   netcatProbeTool,
   nmapScanTool,
   rustScanTool,
+  serviceFingerprintTool,
   serviceScanTool,
+  tlsAuditTool,
+  networkSegmentMapTool,
   cipherIdentifierTool,
   hashIdentifierTool,
   hashcatCrackTool,
@@ -293,7 +303,12 @@ export const seededRoleDefinitions = [
       wPScanTool.id,
       autoreconTool.id,
       masscanTool.id,
-      rustScanTool.id
+      rustScanTool.id,
+      networkSegmentMapTool.id,
+      serviceFingerprintTool.id,
+      tlsAuditTool.id,
+      jwtAnalyzerTool.id,
+      authFlowProbeTool.id
     ] as const
   },
   {
@@ -308,6 +323,10 @@ export const seededRoleDefinitions = [
       niktoScanTool.id,
       bashProbeTool.id,
       nmapScanTool.id,
+      serviceFingerprintTool.id,
+      tlsAuditTool.id,
+      jwtAnalyzerTool.id,
+      authFlowProbeTool.id,
       vulnAuditTool.id
     ] as const
   },

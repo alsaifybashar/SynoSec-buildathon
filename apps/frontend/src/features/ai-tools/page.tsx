@@ -53,7 +53,7 @@ const statusLabels: Record<AiToolStatus, string> = {
   manual: "Manual"
 };
 
-const categoryOptions: ToolCategory[] = ["web", "network", "content", "dns", "subdomain", "cloud", "utility", "password", "windows", "kubernetes", "forensics", "reversing", "exploitation"];
+const categoryOptions: ToolCategory[] = ["topology", "auth", "web", "network", "content", "dns", "subdomain", "cloud", "utility", "password", "windows", "kubernetes", "forensics", "reversing", "exploitation"];
 const riskTierOptions: ToolRiskTier[] = ["passive", "active", "controlled-exploit"];
 const sandboxProfileOptions: ToolSandboxProfile[] = ["network-recon", "read-only-parser", "active-recon", "controlled-exploit-lab"];
 const privilegeProfileOptions: ToolPrivilegeProfile[] = ["read-only-network", "active-network", "controlled-exploit"];

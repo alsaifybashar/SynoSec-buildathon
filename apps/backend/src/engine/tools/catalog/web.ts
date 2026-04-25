@@ -9,5 +9,10 @@ export const webTools: ToolCatalogEntry[] = [
   { id: "nuclei", displayName: "Nuclei", binary: "nuclei", category: "web", riskTier: "active", notes: "Implemented via nuclei_scan.", phase: "vuln-scan", osiLayers: ["L7"], tags: ["web", "templates", "vuln-scan"] },
   { id: "paramspider", displayName: "ParamSpider", binary: "paramspider", category: "web", riskTier: "passive", phase: "enum", osiLayers: ["L7"], tags: ["web", "parameters", "archive"] },
   { id: "sqlmap", displayName: "SQLMap", binary: "sqlmap", category: "web", riskTier: "controlled-exploit", notes: "Implemented via db_injection_check.", phase: "exploit", osiLayers: ["L7"], tags: ["web", "sqli", "database"] },
-  { id: "whatweb", displayName: "WhatWeb", binary: "whatweb", category: "web", riskTier: "passive", notes: "Implemented via web_fingerprint.", phase: "recon", osiLayers: ["L7"], tags: ["web", "fingerprint", "tech-stack"] }
+  { id: "whatweb", displayName: "WhatWeb", binary: "whatweb", category: "web", riskTier: "passive", notes: "Implemented via web_fingerprint.", phase: "recon", osiLayers: ["L7"], tags: ["web", "fingerprint", "tech-stack"] },
+  { id: "git-dumper", displayName: "git-dumper", binary: "git-dumper", category: "web", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["web", "git", "source-code"] },
+  { id: "eyewitness", displayName: "EyeWitness", binary: "EyeWitness", category: "web", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["web", "screenshot", "fingerprint"] },
+  { id: "wappalyzer", displayName: "Wappalyzer", binary: "wappalyzer", category: "web", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["web", "fingerprint", "tech-stack"] },
+  { id: "snallygaster", displayName: "snallygaster", binary: "snallygaster", category: "web", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["web", "secrets", "exposed-files"] },
+  { id: "parsero", displayName: "Parsero", binary: "parsero", category: "web", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["web", "robots.txt", "osint"] }
 ];

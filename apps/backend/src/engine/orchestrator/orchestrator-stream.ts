@@ -6,6 +6,7 @@ export type OrchestratorEvent =
   | { type: "node_updated"; node: AttackMapNode }
   | { type: "edge_added"; edge: AttackMapEdge }
   | { type: "plan_created"; plan: AttackPlan }
+  | { type: "plan_updated"; plan: AttackPlan }
   | { type: "reasoning"; phase: string; title: string; summary: string }
   | { type: "tool_started"; phase: string; toolId?: string; toolName: string; command: string; startedAt: string }
   | { type: "tool_completed"; phase: string; toolId?: string; toolName: string; command: string; startedAt: string; completedAt: string; durationMs: number; exitCode: number; outputPreview: string }

@@ -103,4 +103,48 @@ describe("selectToolsForContext", () => {
 
     expect(new Set(selected.map((tool) => tool.category)).size).toBeGreaterThan(1);
   });
+
+  it("uses cross-scan pattern biases as a bounded ranking input", () => {
+    const selected = selectToolsForContext(
+      [
+        createTool({ id: "seed-nikto", name: "Nikto", category: "web", riskTier: "passive" }),
+        createTool({ id: "seed-nuclei", name: "Nuclei", category: "web", riskTier: "passive" }),
+        createTool({ id: "seed-web-crawl", name: "Web Crawl", category: "content", riskTier: "passive" })
+      ],
+      {
+        requestedLayers: ["L7"],
+        currentCoverage: new Map(),
+        executedToolIds: [],
+        findings: [],
+        allowActiveExploits: false,
+        patternBiases: [
+          {
+            toolId: "seed-nikto",
+            toolName: "Nikto",
+            category: "web",
+            targetType: "web-http",
+            bias: -0.25,
+            sampleCount: 8,
+            confirmationRate: 0.2,
+            falsePositiveRate: 0.8,
+            reason: "Historically noisy for this target type."
+          },
+          {
+            toolId: "seed-nuclei",
+            toolName: "Nuclei",
+            category: "web",
+            targetType: "web-http",
+            bias: 0.25,
+            sampleCount: 8,
+            confirmationRate: 0.9,
+            falsePositiveRate: 0.1,
+            reason: "Historically reliable for this target type."
+          }
+        ]
+      },
+      { maxTools: 1, minTools: 1 }
+    );
+
+    expect(selected[0]?.id).toBe("seed-nuclei");
+  });
 });

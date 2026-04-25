@@ -643,7 +643,17 @@ export const workflowFindingSubmissionSchema = z.object({
   evidence: z.array(workflowFindingEvidenceSchema).min(1),
   impact: z.string().min(1),
   recommendation: z.string().min(1),
+  validationStatus: z.enum([
+    "unverified",
+    "suspected",
+    "single_source",
+    "cross_validated",
+    "reproduced",
+    "blocked",
+    "rejected"
+  ]).default("unverified"),
   cwe: z.string().min(1).optional(),
+  mitreId: z.string().min(1).optional(),
   owasp: z.string().min(1).optional(),
   reproduction: z.object({
     commandPreview: z.string().min(1).optional(),
@@ -818,7 +828,8 @@ export const workflowRunStatusSchema = z.enum(["pending", "running", "completed"
 export type WorkflowRunStatus = z.infer<typeof workflowRunStatusSchema>;
 
 export const startWorkflowRunBodySchema = z.object({
-  targetAssetId: z.string().uuid().optional()
+  targetAssetId: z.string().uuid().optional(),
+  coordinateEnvironment: z.boolean().default(false)
 });
 export type StartWorkflowRunBody = z.infer<typeof startWorkflowRunBodySchema>;
 

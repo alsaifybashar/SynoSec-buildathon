@@ -44,6 +44,31 @@ function createService(tools: AiTool[]) {
   );
 }
 
+const provider = {
+  id: "provider-1",
+  name: "Claude",
+  kind: "anthropic",
+  status: "active",
+  description: null,
+  baseUrl: null,
+  model: "sonnet",
+  apiKeyConfigured: true,
+  apiKey: "secret",
+  createdAt: "",
+  updatedAt: ""
+} as const;
+
+const recon = {
+  openPorts: [{ port: 443, protocol: "tcp", service: "https", version: "nginx" }],
+  technologies: ["nginx"],
+  httpHeaders: {},
+  serverInfo: { webServer: "nginx" },
+  interestingPaths: [],
+  probes: [],
+  rawNmap: "",
+  rawCurl: ""
+};
+
 describe("OrchestratorExecutionEngineService", () => {
   beforeEach(() => {
     executeScriptedToolMock.mockReset();
@@ -84,7 +109,7 @@ describe("OrchestratorExecutionEngineService", () => {
         rawCurl: ""
       },
       await privateService.listOrchestratorRunnableTools(),
-      { id: "provider-1", name: "Claude", kind: "anthropic", status: "active", description: null, baseUrl: null, model: "sonnet", apiKeyConfigured: true, apiKey: "secret", createdAt: "", updatedAt: "" },
+      provider,
       "sonnet",
       vi.fn()
     );
@@ -164,6 +189,121 @@ describe("OrchestratorExecutionEngineService", () => {
     } satisfies AttackPlanPhase, "run-1")).rejects.toMatchObject({
       status: 500,
       code: "ORCHESTRATOR_TOOL_EXECUTION_FAILED"
+    });
+  });
+
+  it("adapts plans by skipping pending phases and adding validated new phases", async () => {
+    const service = createService([createTool({ id: "tool-1", name: "Nuclei" })]);
+    const privateService = service as any;
+    vi.spyOn(privateService, "callStructuredDecisionModel").mockResolvedValue({
+      reasoningSummary: "Skip redundant probing and add targeted validation.",
+      data: {
+        skipPhaseIds: ["phase-2"],
+        newPhases: [{
+          id: "phase-adaptive-1",
+          name: "Targeted Template Validation",
+          priority: "high",
+          rationale: "Confirmed web exposure warrants focused validation.",
+          targetService: "https",
+          tools: ["Nuclei"],
+          status: "pending"
+        }],
+        overallRisk: "high",
+        updatedSummary: "Plan adapted after confirmed web findings."
+      }
+    });
+    const emitReasoning = vi.fn();
+    const completedPhase = {
+      id: "phase-1",
+      name: "Initial Web Probe",
+      priority: "high",
+      rationale: "HTTP service found",
+      targetService: "https",
+      tools: ["Nuclei"],
+      status: "completed"
+    } satisfies AttackPlanPhase;
+
+    const adapted = await privateService.adaptAttackPlan(
+      "https://example.com/app",
+      {
+        phases: [
+          completedPhase,
+          {
+            id: "phase-2",
+            name: "Generic Follow-up",
+            priority: "medium",
+            rationale: "Baseline check",
+            targetService: "https",
+            tools: ["Nuclei"],
+            status: "pending"
+          }
+        ],
+        overallRisk: "medium",
+        summary: "Initial plan."
+      },
+      completedPhase,
+      [{ title: "Exposed admin", severity: "high", description: "Admin path exposed.", vector: "/admin" }],
+      [{ title: "Exposed admin", severity: "high", description: "Admin path exposed.", vector: "/admin" }],
+      recon,
+      await privateService.listOrchestratorRunnableTools(),
+      provider,
+      "sonnet",
+      emitReasoning
+    );
+
+    expect(adapted.phases).toHaveLength(3);
+    expect(adapted.phases[0]).toMatchObject({ id: "phase-1", status: "completed" });
+    expect(adapted.phases[1]).toMatchObject({ id: "phase-2", status: "skipped" });
+    expect(adapted.phases[2]).toMatchObject({ id: "phase-adaptive-1", status: "pending", tools: ["Nuclei"] });
+    expect(adapted.overallRisk).toBe("high");
+    expect(adapted.summary).toBe("Plan adapted after confirmed web findings.");
+    expect(emitReasoning).toHaveBeenCalledWith("planning", "Adaptive planning reasoning · Initial Web Probe", "Skip redundant probing and add targeted validation.");
+  });
+
+  it("fails loudly when adaptive planning selects an unknown tool", async () => {
+    const service = createService([createTool({ id: "tool-1", name: "Nuclei" })]);
+    const privateService = service as any;
+    vi.spyOn(privateService, "callStructuredDecisionModel").mockResolvedValue({
+      reasoningSummary: "Add a tool that is not in the catalog.",
+      data: {
+        skipPhaseIds: [],
+        newPhases: [{
+          id: "phase-adaptive-1",
+          name: "Invalid Tool Phase",
+          priority: "high",
+          rationale: "Bad model output",
+          targetService: "https",
+          tools: ["Unknown Scanner"],
+          status: "pending"
+        }],
+        overallRisk: "high",
+        updatedSummary: "Invalid."
+      }
+    });
+    const completedPhase = {
+      id: "phase-1",
+      name: "Initial Web Probe",
+      priority: "high",
+      rationale: "HTTP service found",
+      targetService: "https",
+      tools: ["Nuclei"],
+      status: "completed"
+    } satisfies AttackPlanPhase;
+
+    await expect(privateService.adaptAttackPlan(
+      "https://example.com/app",
+      { phases: [completedPhase], overallRisk: "medium", summary: "Initial plan." },
+      completedPhase,
+      [],
+      [],
+      recon,
+      await privateService.listOrchestratorRunnableTools(),
+      provider,
+      "sonnet",
+      vi.fn()
+    )).rejects.toMatchObject({
+      status: 500,
+      code: "ORCHESTRATOR_ADAPTIVE_PLAN_INVALID_TOOL"
     });
   });
 });

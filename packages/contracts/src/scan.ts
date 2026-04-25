@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   escalationRouteSchema,
+  environmentGraphSchema,
   findingSchema,
   scanLlmConfigSchema,
   scanScopeSchema,
@@ -70,6 +71,7 @@ export const reportSchema = z.object({
   ),
   attackPaths: z.array(attackPathSchema),
   escalationRoutes: z.array(escalationRouteSchema).default([]),
+  environmentGraph: environmentGraphSchema.optional(),
   generatedAt: z.string().datetime()
 });
 export type Report = z.infer<typeof reportSchema>;
@@ -119,6 +121,7 @@ export const wsEventSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("report_ready"), report: reportSchema }),
   z.object({ type: z.literal("escalation_route_detected"), route: escalationRouteSchema }),
+  z.object({ type: z.literal("environment_graph_updated"), graph: environmentGraphSchema }),
   z.object({
     type: z.literal("strategy_analysis_complete"),
     round: z.number(),

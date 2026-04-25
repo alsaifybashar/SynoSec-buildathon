@@ -30,6 +30,7 @@ describe("scan-store vulnerability loading", () => {
               technique: "test",
               reproduction: null,
               cwe: null,
+              mitreId: null,
               owasp: null,
               tags: [],
               createdAt: new Date("2026-04-21T00:00:00.000Z")

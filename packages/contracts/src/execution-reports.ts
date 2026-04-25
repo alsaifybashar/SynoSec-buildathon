@@ -170,7 +170,7 @@ export function executionReportFindingFromWorkflowFinding(
     summary: finding.impact,
     recommendation: finding.recommendation,
     confidence: finding.confidence,
-    targetLabel: [
+    targetLabel: finding.target.url ?? [
       finding.target.host,
       finding.target.port ? `:${finding.target.port}` : "",
       finding.target.path ?? ""

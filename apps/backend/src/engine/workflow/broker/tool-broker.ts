@@ -15,6 +15,7 @@ import { createAuditEntry } from "@/engine/scans/index.js";
 import { confidenceEngine } from "./confidence-engine.js";
 import { evidenceStore } from "./evidence-store.js";
 import { authorizeToolRequest } from "./policy.js";
+import { ReplayScheduler } from "./replay-scheduler.js";
 import {
   applyConstraintInputs,
   authorizeToolAgainstConstraints,
@@ -42,7 +43,7 @@ interface ExecuteRequestsInput {
 interface ExecuteRequestsResult {
   toolRuns: ToolRun[];
   observations: Observation[];
-  findings: Array<Omit<Finding, "id" | "createdAt">>;
+  findings: Finding[];
 }
 
 export class BrokerExecutionError extends Error {
@@ -125,9 +126,14 @@ function findingFromObservationGroup(
 
 export class ToolBroker {
   private readonly transport: ToolExecutionTransport;
+  private readonly replayScheduler: ReplayScheduler;
 
   constructor(private readonly options: BrokerOptions) {
     this.transport = options.transport ?? createToolExecutionTransport();
+    this.replayScheduler = new ReplayScheduler({
+      broadcast: options.broadcast,
+      transport: this.transport
+    });
   }
 
   private publishAgentNote(
@@ -149,6 +155,7 @@ export class ToolBroker {
   async executeRequests(input: ExecuteRequestsInput): Promise<ExecuteRequestsResult> {
     const toolRuns: ToolRun[] = [];
     const observations: Observation[] = [];
+    const requestByToolRunId = new Map<string, ToolRequest>();
 
     for (const request of input.requests) {
       const startedAt = new Date().toISOString();
@@ -182,6 +189,7 @@ export class ToolBroker {
 
       evidenceStore.addToolRun(toolRun);
       toolRuns.push(toolRun);
+      requestByToolRunId.set(toolRun.id, scopedRequest);
       this.options.broadcast({ type: "tool_run_started", toolRun });
       this.publishAgentNote(input.scan.id, input.agentId, {
         tacticId: input.tacticId,
@@ -323,11 +331,16 @@ export class ToolBroker {
       grouped.set(observation.title, existing);
     }
 
-    const findings = [...grouped.values()].map((group) =>
-      findingFromObservationGroup(input.scan.id, input.tacticId, input.agentId, group)
-    );
+    const now = new Date().toISOString();
+    const findings: Finding[] = [...grouped.values()].map((group) => ({
+      id: randomUUID(),
+      createdAt: now,
+      ...findingFromObservationGroup(input.scan.id, input.tacticId, input.agentId, group)
+    }));
 
     for (const finding of findings) {
+      evidenceStore.addFinding(finding);
+      this.options.broadcast({ type: "finding_added", finding });
       this.publishAgentNote(input.scan.id, input.agentId, {
         tacticId: input.tacticId,
         stage: "finding",
@@ -335,6 +348,22 @@ export class ToolBroker {
         summary: finding.description,
         detail: finding.evidence
       });
+
+      if (finding.validationStatus === "single_source") {
+        const primaryRunId = finding.sourceToolRuns?.[0];
+        const originalRequest = primaryRunId ? requestByToolRunId.get(primaryRunId) : undefined;
+        if (originalRequest) {
+          this.replayScheduler.schedule(input.scan, {
+            findingId: finding.id,
+            findingTitle: finding.title,
+            scanId: input.scan.id,
+            tacticId: input.tacticId,
+            agentId: input.agentId,
+            originalToolRunId: primaryRunId!,
+            originalRequest
+          });
+        }
+      }
     }
 
     return { toolRuns, observations, findings };

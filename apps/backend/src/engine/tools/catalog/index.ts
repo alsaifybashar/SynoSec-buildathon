@@ -1,3 +1,4 @@
+import { authTools } from "./auth.js";
 import { cloudTools } from "./cloud.js";
 import { contentTools } from "./content.js";
 import { dnsTools } from "./dns.js";
@@ -17,6 +18,7 @@ export { type ToolCatalogEntry, type ToolPhase } from "./types.js";
 
 export const TOOL_CATALOG: ToolCatalogEntry[] = [
   ...subdomainTools,
+  ...authTools,
   ...webTools,
   ...networkTools,
   ...reversingTools,

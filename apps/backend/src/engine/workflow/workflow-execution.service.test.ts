@@ -17,6 +17,7 @@ vi.mock("ai", async (importOriginal) => {
 
 vi.mock("@/engine/scans/index.js", () => ({
   createScan: vi.fn(async () => undefined),
+  getEnvironmentGraphForScan: vi.fn(async () => null),
   getScan: vi.fn(async () => null)
 }));
 

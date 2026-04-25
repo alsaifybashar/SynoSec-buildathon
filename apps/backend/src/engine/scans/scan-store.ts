@@ -2,6 +2,10 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/shared/database/prisma-client.js";
 import type {
   AuditEntry,
+  AssetEdge,
+  AssetNode,
+  EnvironmentGraph,
+  EscalationRoute,
   ScanTactic,
   OsiLayer,
   Scan,
@@ -12,6 +16,8 @@ import type {
   TacticStatus,
   ValidationStatus
 } from "@synosec/contracts";
+import { enrichAttackTechnique } from "@/engine/findings/attack-technique-mapper.js";
+import { buildEnvironmentGraphFromScope } from "./environment-graph.js";
 
 function toDate(value: string | Date): Date {
   return value instanceof Date ? value : new Date(value);
@@ -75,6 +81,7 @@ function rowToSecurityVulnerability(row: {
   technique: string;
   reproduction: Prisma.JsonValue | null;
   cwe: string | null;
+  mitreId: string | null;
   owasp: string | null;
   tags: Prisma.JsonValue | null;
   createdAt: Date;
@@ -112,6 +119,7 @@ function rowToSecurityVulnerability(row: {
       ? { reproduction: row.reproduction as NonNullable<SecurityVulnerability["reproduction"]> }
       : {}),
     ...(row.cwe ? { cwe: row.cwe } : {}),
+    ...(row.mitreId ? { mitreId: row.mitreId } : {}),
     ...(row.owasp ? { owasp: row.owasp } : {}),
     tags: Array.isArray(row.tags) ? row.tags as string[] : [],
     createdAt: row.createdAt.toISOString()
@@ -176,25 +184,205 @@ export async function createScan(
     summary?: Prisma.InputJsonValue | null;
   }
 ): Promise<void> {
-  await prisma.scanRun.create({
-    data: {
-      id: scan.id,
-      mode: metadata?.mode ?? "legacy",
-      applicationId: metadata?.applicationId ?? null,
-      runtimeId: metadata?.runtimeId ?? null,
-      agentId: metadata?.agentId ?? null,
-      scope: scan.scope as Prisma.InputJsonValue,
-      llmConfig: metadata?.llm ? metadata.llm as Prisma.InputJsonValue : Prisma.JsonNull,
-      status: mapScanStatus(scan.status),
-      currentRound: scan.currentRound,
-      tacticsTotal: scan.tacticsTotal,
-      tacticsComplete: scan.tacticsComplete,
-      stopReason: metadata?.stopReason ?? null,
-      summary: metadata?.summary ?? Prisma.JsonNull,
-      createdAt: toDate(scan.createdAt),
-      completedAt: scan.completedAt ? toDate(scan.completedAt) : null
+  await prisma.$transaction(async (transaction) => {
+    await transaction.scanRun.create({
+      data: {
+        id: scan.id,
+        mode: metadata?.mode ?? "legacy",
+        applicationId: metadata?.applicationId ?? null,
+        runtimeId: metadata?.runtimeId ?? null,
+        agentId: metadata?.agentId ?? null,
+        scope: scan.scope as Prisma.InputJsonValue,
+        llmConfig: metadata?.llm ? metadata.llm as Prisma.InputJsonValue : Prisma.JsonNull,
+        status: mapScanStatus(scan.status),
+        currentRound: scan.currentRound,
+        tacticsTotal: scan.tacticsTotal,
+        tacticsComplete: scan.tacticsComplete,
+        stopReason: metadata?.stopReason ?? null,
+        summary: metadata?.summary ?? Prisma.JsonNull,
+        createdAt: toDate(scan.createdAt),
+        completedAt: scan.completedAt ? toDate(scan.completedAt) : null
+      }
+    });
+
+    const graph = buildEnvironmentGraphFromScope(scan.id, scan.scope, scan.createdAt);
+    await transaction.scanAssetNode.createMany({
+      data: graph.nodes.map((node) => ({
+        id: node.id,
+        scanRunId: scan.id,
+        host: node.host,
+        type: node.type,
+        discoveredAt: toDate(node.discoveredAt),
+        metadata: node.metadata as Prisma.InputJsonValue
+      }))
+    });
+    if (graph.edges.length > 0) {
+      await transaction.scanAssetEdge.createMany({
+        data: graph.edges.map((edge, index) => ({
+          id: `${scan.id}:edge:${index}`,
+          scanRunId: scan.id,
+          fromNode: edge.from,
+          toNode: edge.to,
+          edgeType: edge.edgeType,
+          evidence: edge.evidence,
+          metadata: edge.metadata as Prisma.InputJsonValue
+        }))
+      });
     }
   });
+}
+
+function rowToAssetNode(row: {
+  id: string;
+  scanRunId: string;
+  host: string;
+  type: string;
+  discoveredAt: Date;
+  metadata: Prisma.JsonValue;
+}): AssetNode {
+  return {
+    id: row.id,
+    host: row.host,
+    type: row.type as AssetNode["type"],
+    discoveredAt: row.discoveredAt.toISOString(),
+    metadata: row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+      ? row.metadata as Record<string, unknown>
+      : {}
+  };
+}
+
+function rowToAssetEdge(row: {
+  fromNode: string;
+  toNode: string;
+  edgeType: string;
+  evidence: string;
+  metadata: Prisma.JsonValue;
+}): AssetEdge {
+  return {
+    from: row.fromNode,
+    to: row.toNode,
+    edgeType: row.edgeType as AssetEdge["edgeType"],
+    evidence: row.evidence,
+    metadata: row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+      ? row.metadata as Record<string, unknown>
+      : {}
+  };
+}
+
+export async function getEnvironmentGraphForScan(scanId: string): Promise<EnvironmentGraph | null> {
+  const scan = await prisma.scanRun.findUnique({
+    where: { id: scanId },
+    select: { id: true, scope: true, createdAt: true }
+  });
+  if (!scan) {
+    return null;
+  }
+
+  const [nodes, edges] = await Promise.all([
+    prisma.scanAssetNode.findMany({ where: { scanRunId: scanId }, orderBy: { id: "asc" } }),
+    prisma.scanAssetEdge.findMany({ where: { scanRunId: scanId }, orderBy: { id: "asc" } })
+  ]);
+  const scope = scan.scope as Scan["scope"];
+  return {
+    scanId,
+    ...(scope.environmentName ? { environmentName: scope.environmentName } : {}),
+    nodes: nodes.map(rowToAssetNode),
+    edges: edges.map(rowToAssetEdge),
+    generatedAt: scan.createdAt.toISOString()
+  };
+}
+
+export async function createEscalationRoute(scanId: string, route: EscalationRoute): Promise<void> {
+  await prisma.escalationRoute.create({
+    data: {
+      id: route.id,
+      scanRunId: scanId,
+      title: route.title,
+      compositeRisk: route.compositeRisk,
+      technique: route.technique,
+      startTarget: route.startTarget,
+      endTarget: route.endTarget,
+      routeLength: route.chainLength,
+      crossHost: route.crossHost,
+      confidence: route.confidence,
+      narrative: route.narrative ?? null,
+      createdAt: toDate(route.createdAt),
+      routeFindings: {
+        createMany: {
+          data: route.findingIds.map((findingId, index) => {
+            const link = route.links.find((candidate) => candidate.order === index);
+            return {
+              scanFindingId: findingId,
+              ord: index,
+              linkProbability: link?.probability ?? null,
+              edgeType: link?.edgeType ?? null,
+              fromHost: link?.fromHost ?? null,
+              toHost: link?.toHost ?? null
+            };
+          })
+        }
+      }
+    }
+  });
+}
+
+function rowToEscalationRoute(row: {
+  id: string;
+  scanRunId: string;
+  title: string;
+  compositeRisk: number;
+  technique: string;
+  startTarget: string;
+  endTarget: string;
+  routeLength: number;
+  crossHost: boolean;
+  confidence: number;
+  narrative: string | null;
+  createdAt: Date;
+  routeFindings: Array<{
+    scanFindingId: string;
+    ord: number;
+    linkProbability: number | null;
+    edgeType: string | null;
+    fromHost: string | null;
+    toHost: string | null;
+  }>;
+}): EscalationRoute {
+  const ordered = row.routeFindings.slice().sort((left, right) => left.ord - right.ord);
+  return {
+    id: row.id,
+    scanId: row.scanRunId,
+    title: row.title,
+    compositeRisk: row.compositeRisk,
+    technique: row.technique,
+    findingIds: ordered.map((item) => item.scanFindingId),
+    links: ordered.slice(0, -1).map((item, index) => ({
+      fromFindingId: item.scanFindingId,
+      toFindingId: ordered[index + 1]?.scanFindingId ?? item.scanFindingId,
+      probability: item.linkProbability ?? 0.5,
+      order: item.ord,
+      edgeType: item.edgeType === "lateral_movement" ? "lateral_movement" : "finding_chain",
+      ...(item.fromHost ? { fromHost: item.fromHost } : {}),
+      ...(item.toHost ? { toHost: item.toHost } : {})
+    })),
+    startTarget: row.startTarget,
+    endTarget: row.endTarget,
+    chainLength: row.routeLength,
+    crossHost: row.crossHost,
+    confidence: row.confidence,
+    ...(row.narrative ? { narrative: row.narrative } : {}),
+    createdAt: row.createdAt.toISOString()
+  };
+}
+
+export async function getEscalationRoutesForScan(scanId: string): Promise<EscalationRoute[]> {
+  const rows = await prisma.escalationRoute.findMany({
+    where: { scanRunId: scanId },
+    include: { routeFindings: true },
+    orderBy: { compositeRisk: "desc" }
+  });
+
+  return rows.map(rowToEscalationRoute);
 }
 
 export async function getScan(id: string): Promise<Scan | null> {
@@ -233,37 +421,53 @@ export async function createSecurityVulnerability(
   tacticId: string,
   vulnerability: SecurityVulnerability
 ): Promise<void> {
+  const enrichment = enrichAttackTechnique({
+    technique: vulnerability.technique,
+    title: vulnerability.title,
+    description: vulnerability.description,
+    ...(vulnerability.cwe ? { existingCwe: vulnerability.cwe } : {}),
+    ...(vulnerability.mitreId ? { existingMitreId: vulnerability.mitreId } : {}),
+    tags: vulnerability.tags
+  });
+  const enrichedVulnerability = {
+    ...vulnerability,
+    ...(enrichment.cwe ? { cwe: enrichment.cwe } : {}),
+    ...(enrichment.mitreId ? { mitreId: enrichment.mitreId } : {}),
+    tags: enrichment.tags
+  };
+
   await prisma.scanFinding.create({
     data: {
-      id: vulnerability.id,
+      id: enrichedVulnerability.id,
       scanRunId: scanId,
       scanTacticId: tacticId,
       agentId,
-      primaryLayer: vulnerability.primaryLayer,
-      relatedLayers: vulnerability.relatedLayers as Prisma.InputJsonValue,
-      category: vulnerability.category,
-      target: vulnerability.target as Prisma.InputJsonValue,
-      severity: vulnerability.severity,
-      confidence: vulnerability.confidence,
-      title: vulnerability.title,
-      description: vulnerability.description,
-      evidence: vulnerability.evidence.map((item) => item.quote).join("\n\n"),
-      evidenceItems: vulnerability.evidence as Prisma.InputJsonValue,
-      technique: vulnerability.technique,
-      impact: vulnerability.impact,
-      recommendation: vulnerability.recommendation,
-      reproduceCommand: vulnerability.reproduction?.commandPreview ?? null,
-      reproduction: vulnerability.reproduction ? vulnerability.reproduction as Prisma.InputJsonValue : Prisma.JsonNull,
-      validated: vulnerability.validationStatus === "cross_validated" || vulnerability.validationStatus === "reproduced",
-      validationStatus: vulnerability.validationStatus,
-      cwe: vulnerability.cwe ?? null,
-      owasp: vulnerability.owasp ?? null,
-      tags: vulnerability.tags as Prisma.InputJsonValue,
-      evidenceRefs: vulnerability.evidence
+      primaryLayer: enrichedVulnerability.primaryLayer,
+      relatedLayers: enrichedVulnerability.relatedLayers as Prisma.InputJsonValue,
+      category: enrichedVulnerability.category,
+      target: enrichedVulnerability.target as Prisma.InputJsonValue,
+      severity: enrichedVulnerability.severity,
+      confidence: enrichedVulnerability.confidence,
+      title: enrichedVulnerability.title,
+      description: enrichedVulnerability.description,
+      evidence: enrichedVulnerability.evidence.map((item) => item.quote).join("\n\n"),
+      evidenceItems: enrichedVulnerability.evidence as Prisma.InputJsonValue,
+      technique: enrichedVulnerability.technique,
+      impact: enrichedVulnerability.impact,
+      recommendation: enrichedVulnerability.recommendation,
+      reproduceCommand: enrichedVulnerability.reproduction?.commandPreview ?? null,
+      reproduction: enrichedVulnerability.reproduction ? enrichedVulnerability.reproduction as Prisma.InputJsonValue : Prisma.JsonNull,
+      validated: enrichedVulnerability.validationStatus === "cross_validated" || enrichedVulnerability.validationStatus === "reproduced",
+      validationStatus: enrichedVulnerability.validationStatus,
+      cwe: enrichedVulnerability.cwe ?? null,
+      mitreId: enrichedVulnerability.mitreId ?? null,
+      owasp: enrichedVulnerability.owasp ?? null,
+      tags: enrichedVulnerability.tags as Prisma.InputJsonValue,
+      evidenceRefs: enrichedVulnerability.evidence
         .flatMap((item) => [item.artifactRef, item.observationRef].filter((value): value is string => Boolean(value))) as Prisma.InputJsonValue,
-      sourceToolRuns: vulnerability.evidence
+      sourceToolRuns: enrichedVulnerability.evidence
         .flatMap((item) => item.toolRunRef ? [item.toolRunRef] : []) as Prisma.InputJsonValue,
-      createdAt: toDate(vulnerability.createdAt)
+      createdAt: toDate(enrichedVulnerability.createdAt)
     }
   });
 }

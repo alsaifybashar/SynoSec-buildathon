@@ -91,6 +91,13 @@ type DecisionEnvelope<T> = {
   data: T;
 };
 
+type AdaptivePlanDecision = {
+  skipPhaseIds?: string[];
+  newPhases?: Partial<AttackPlanPhase>[];
+  overallRisk?: AttackPlan["overallRisk"];
+  updatedSummary?: string;
+};
+
 class StructuredDecisionParseError extends Error {
   constructor(
     message: string,
@@ -479,12 +486,12 @@ export class OrchestratorExecutionEngineService {
     emit({ type: "log", level: "info", message: "Generating attack plan from recon data" });
 
     const plannerTools = await this.listOrchestratorRunnableTools();
-    const plan = await this.createPlan(targetUrl, recon, plannerTools, provider, modelName, emitReasoning);
+    let plan = await this.createPlan(targetUrl, recon, plannerTools, provider, modelName, emitReasoning);
     await prisma.orchestratorRun.update({ where: { id: runId }, data: { plan } });
     emit({ type: "plan_created", plan });
 
     const vectorNodeIds = new Map<string, string>();
-    for (const phase of plan.phases) {
+    const addVectorNodeForPhase = async (phase: AttackPlanPhase) => {
       const nodeId = randomUUID();
       vectorNodeIds.set(phase.id, nodeId);
       const severity = phase.priority === "critical" ? "critical" : phase.priority === "high" ? "high" : phase.priority === "medium" ? "medium" : "low";
@@ -512,6 +519,24 @@ export class OrchestratorExecutionEngineService {
       );
       const parentId = portMatch ? portNodeIds.get(portMatch.port) : undefined;
       await addEdge({ id: randomUUID(), source: parentId ?? targetNodeId, target: nodeId });
+    };
+
+    const syncPlanVectorNodes = async () => {
+      for (const phase of plan.phases) {
+        if (!vectorNodeIds.has(phase.id)) {
+          await addVectorNodeForPhase(phase);
+        }
+        if (phase.status === "skipped") {
+          const nodeId = vectorNodeIds.get(phase.id);
+          if (nodeId) {
+            await updateNode(nodeId, { status: "blocked" });
+          }
+        }
+      }
+    };
+
+    for (const phase of plan.phases) {
+      await addVectorNodeForPhase(phase);
     }
 
     await prisma.orchestratorRun.update({ where: { id: runId }, data: { phase: "execution" } });
@@ -519,7 +544,14 @@ export class OrchestratorExecutionEngineService {
 
     const findings: { title: string; severity: string; description: string; vector: string }[] = [];
 
-    for (const phase of plan.phases.slice(0, 3)) {
+    let executedPhaseCount = 0;
+    while (executedPhaseCount < 3) {
+      const phase = plan.phases.find((candidate) => candidate.status === "pending");
+      if (!phase) {
+        break;
+      }
+      phase.status = "running";
+      await prisma.orchestratorRun.update({ where: { id: runId }, data: { plan } });
       const vectorNodeId = vectorNodeIds.get(phase.id);
       if (vectorNodeId) {
         await updateNode(vectorNodeId, { status: "scanning" });
@@ -538,6 +570,8 @@ export class OrchestratorExecutionEngineService {
         updateToolActivity
       );
       findings.push(...phaseFindings);
+      phase.status = "completed";
+      executedPhaseCount++;
 
       if (vectorNodeId) {
         const patch: Partial<AttackMapNode> = { status: phaseFindings.length > 0 ? "vulnerable" : "completed" };
@@ -594,6 +628,23 @@ export class OrchestratorExecutionEngineService {
           await addEdge({ id: randomUUID(), source: vectorNodeId, target: nodeId });
         }
       }
+
+      plan = await this.adaptAttackPlan(
+        targetUrl,
+        plan,
+        phase,
+        phaseFindings,
+        findings,
+        recon,
+        plannerTools,
+        provider,
+        modelName,
+        emitReasoning
+      );
+      await syncPlanVectorNodes();
+      await prisma.orchestratorRun.update({ where: { id: runId }, data: { plan } });
+      emit({ type: "plan_updated", plan });
+      emit({ type: "log", level: "info", message: `Adaptive plan updated after ${phase.name}` });
     }
 
     const significantFindings = nodes.filter(
@@ -811,7 +862,7 @@ export class OrchestratorExecutionEngineService {
   private async createPlan(
     targetUrl: string,
     recon: ReconResult,
-    plannerTools: OrchestratorRunnableTool[],
+    plannerTools: Array<Pick<AiTool, "name" | "description">>,
     provider: StoredAiProvider,
     model: string,
     emitReasoning: (phase: string, title: string, summary: string) => void
@@ -849,6 +900,153 @@ export class OrchestratorExecutionEngineService {
       phases: Array.isArray(parsed.phases) ? parsed.phases.map((phase) => ({ ...phase, status: "pending" as const })) : [],
       overallRisk: (parsed.overallRisk as AttackPlan["overallRisk"]) ?? "medium",
       summary: parsed.summary ?? "Attack plan generated from recon data."
+    };
+  }
+
+  private async adaptAttackPlan(
+    targetUrl: string,
+    currentPlan: AttackPlan,
+    completedPhase: AttackPlanPhase,
+    phaseFindings: { title: string; severity: string; description: string; vector: string; rawEvidence?: string }[],
+    confirmedFindings: { title: string; severity: string; description: string; vector: string }[],
+    recon: ReconResult,
+    plannerTools: Array<Pick<AiTool, "name" | "description">>,
+    provider: StoredAiProvider,
+    model: string,
+    emitReasoning: (phase: string, title: string, summary: string) => void
+  ): Promise<AttackPlan> {
+    if (plannerTools.length === 0) {
+      throw new RequestError(500, "Adaptive attack planning requires at least one planner-visible AI tool, but none are available.", {
+        code: "ORCHESTRATOR_TOOLS_UNAVAILABLE",
+        userFriendlyMessage: "No runnable AI tools are available for adaptive attack planning."
+      });
+    }
+
+    const availableToolNames = new Set(plannerTools.map((tool) => normalizeToolName(tool.name)));
+    const availableTools = plannerTools.map((tool) => tool.name).join(", ");
+    const currentPlanSummary = currentPlan.phases.map((phase) => ({
+      id: phase.id,
+      name: phase.name,
+      priority: phase.priority,
+      status: phase.status,
+      targetService: phase.targetService,
+      tools: phase.tools
+    }));
+    const findingSummary = confirmedFindings.slice(-12).map((finding) => ({
+      title: finding.title,
+      severity: finding.severity,
+      vector: finding.vector,
+      description: finding.description.slice(0, 500)
+    }));
+
+    const envelope = await this.callStructuredDecisionModel<AdaptivePlanDecision>(provider, model, [
+      `You are adapting an attack plan for: ${targetUrl}`,
+      "",
+      "Question: Given what we now know, which planned phases can be skipped, and which new phases should be added?",
+      "",
+      "Current plan:",
+      JSON.stringify(currentPlanSummary, null, 2),
+      "",
+      "Just-completed phase:",
+      JSON.stringify({
+        id: completedPhase.id,
+        name: completedPhase.name,
+        priority: completedPhase.priority,
+        targetService: completedPhase.targetService,
+        tools: completedPhase.tools,
+        newFindings: phaseFindings.map((finding) => ({
+          title: finding.title,
+          severity: finding.severity,
+          vector: finding.vector,
+          description: finding.description.slice(0, 500)
+        }))
+      }, null, 2),
+      "",
+      "All confirmed findings so far:",
+      JSON.stringify(findingSummary, null, 2),
+      "",
+      "Recon context:",
+      JSON.stringify({ openPorts: recon.openPorts, technologies: recon.technologies, serverInfo: recon.serverInfo }, null, 2),
+      "",
+      `Available tools (use ONLY names from this exact list in new phase "tools" arrays): ${availableTools}`,
+      "",
+      "Return ONLY a JSON object with this exact shape:",
+      '{"reasoningSummary":"short summary of why the plan should change or stay the same","data":{"skipPhaseIds":["phase-2"],"newPhases":[{"id":"phase-adaptive-1","name":"Targeted Auth Probe","priority":"high","rationale":"Confirmed session weakness warrants deeper auth testing","targetService":"http auth","tools":["Auth Flow Probe"],"status":"pending"}],"overallRisk":"high","updatedSummary":"Brief updated risk and plan summary"}}',
+      "Only include phase IDs in skipPhaseIds when their current status is pending. New phase IDs must be unique. Return empty arrays when no change is needed."
+    ].join("\n"));
+    emitReasoning("planning", `Adaptive planning reasoning · ${completedPhase.name}`, envelope.reasoningSummary);
+
+    const data = envelope.data;
+    if (!data || typeof data !== "object") {
+      throw new RequestError(500, "Selected AI provider returned an invalid adaptive attack plan payload.", {
+        code: "ORCHESTRATOR_ADAPTIVE_PLAN_INVALID"
+      });
+    }
+
+    const existingIds = new Set(currentPlan.phases.map((phase) => phase.id));
+    const pendingIds = new Set(currentPlan.phases.filter((phase) => phase.status === "pending").map((phase) => phase.id));
+    const skipPhaseIds = Array.isArray(data.skipPhaseIds) ? data.skipPhaseIds : [];
+    for (const phaseId of skipPhaseIds) {
+      if (!pendingIds.has(phaseId)) {
+        throw new RequestError(500, `Adaptive attack plan tried to skip a non-pending or unknown phase: ${phaseId}.`, {
+          code: "ORCHESTRATOR_ADAPTIVE_PLAN_INVALID_SKIP"
+        });
+      }
+    }
+
+    const newPhases = Array.isArray(data.newPhases) ? data.newPhases.slice(0, 4).map((phase, index) => {
+      const id = typeof phase.id === "string" && phase.id.trim() ? phase.id.trim() : `phase-adaptive-${index + 1}`;
+      if (existingIds.has(id)) {
+        throw new RequestError(500, `Adaptive attack plan returned a duplicate phase id: ${id}.`, {
+          code: "ORCHESTRATOR_ADAPTIVE_PLAN_DUPLICATE_PHASE"
+        });
+      }
+      existingIds.add(id);
+
+      const tools = Array.isArray(phase.tools)
+        ? phase.tools.filter((tool): tool is string => typeof tool === "string" && tool.trim().length > 0).map((tool) => tool.trim())
+        : [];
+      for (const tool of tools) {
+        if (!availableToolNames.has(normalizeToolName(tool))) {
+          throw new RequestError(500, `Adaptive attack plan selected an unknown AI tool: ${tool}.`, {
+            code: "ORCHESTRATOR_ADAPTIVE_PLAN_INVALID_TOOL",
+            userFriendlyMessage: "The adaptive attack plan selected an unknown AI tool."
+          });
+        }
+      }
+      if (tools.length === 0) {
+        throw new RequestError(500, `Adaptive attack plan phase "${id}" did not include any valid tools.`, {
+          code: "ORCHESTRATOR_ADAPTIVE_PLAN_INVALID_TOOL"
+        });
+      }
+
+      const priority = ["critical", "high", "medium", "low"].includes(String(phase.priority))
+        ? phase.priority as AttackPlanPhase["priority"]
+        : "medium";
+      return {
+        id,
+        name: typeof phase.name === "string" && phase.name.trim() ? phase.name.trim() : `Adaptive phase ${index + 1}`,
+        priority,
+        rationale: typeof phase.rationale === "string" ? phase.rationale : "Added by adaptive attack planning.",
+        targetService: typeof phase.targetService === "string" ? phase.targetService : completedPhase.targetService,
+        tools,
+        status: "pending" as const
+      };
+    }) : [];
+
+    const skipSet = new Set(skipPhaseIds);
+    const overallRisk = ["critical", "high", "medium", "low"].includes(String(data.overallRisk))
+      ? data.overallRisk as AttackPlan["overallRisk"]
+      : currentPlan.overallRisk;
+    return {
+      phases: [
+        ...currentPlan.phases.map((phase) => skipSet.has(phase.id) ? { ...phase, status: "skipped" as const } : phase),
+        ...newPhases
+      ],
+      overallRisk,
+      summary: typeof data.updatedSummary === "string" && data.updatedSummary.trim()
+        ? data.updatedSummary.trim()
+        : currentPlan.summary
     };
   }
 
@@ -1101,22 +1299,84 @@ export class OrchestratorExecutionEngineService {
     if (!Array.isArray(parsed)) {
       throw new Error(`Selected AI provider returned an invalid deep analysis payload for ${finding.label}.`);
     }
-    return parsed.slice(0, 2).map((candidate) => ({
-      id: randomUUID(),
-      type: "finding" as const,
-      label: candidate.title,
-      status: "vulnerable" as const,
-      severity: (["critical", "high", "medium", "low", "info"].includes(candidate.severity) ? candidate.severity : "medium") as Severity,
-      parentId: finding.id,
-      data: {
-        description: candidate.description,
-        vector: candidate.vector,
-        sourceType: "ai",
-        source: `Deep analysis of: ${finding.label} via ${provider.name}`,
-        command: `AI-guided deep analysis (${provider.name}:${model})`,
-        rawOutput: `Derived from: ${finding.label}\n\nVector: ${candidate.vector}`
+
+    const verifiedFindings: AttackMapNode[] = [];
+    for (const candidate of parsed.slice(0, 2)) {
+      const verification = await this.adversarialVerifyFinding(
+        targetUrl,
+        finding,
+        candidate,
+        recon,
+        provider,
+        model,
+        emitReasoning
+      );
+
+      if (verification.accepted) {
+        verifiedFindings.push({
+          id: randomUUID(),
+          type: "finding" as const,
+          label: candidate.title,
+          status: "vulnerable" as const,
+          severity: (["critical", "high", "medium", "low", "info"].includes(candidate.severity) ? candidate.severity : "medium") as Severity,
+          parentId: finding.id,
+          data: {
+            description: candidate.description,
+            vector: candidate.vector,
+            sourceType: "ai",
+            source: `Deep analysis of: ${finding.label} via ${provider.name}`,
+            command: `AI-guided deep analysis (${provider.name}:${model})`,
+            rawOutput: `Derived from: ${finding.label}\n\nVector: ${candidate.vector}\n\nAdversarial verification: Accepted\nReasoning: ${verification.reasoning}`
+          }
+        });
+      } else {
+        this.stream.publish(randomUUID(), {
+          type: "log",
+          level: "warn",
+          message: `Adversarial Verifier REJECTED finding "${candidate.title}": ${verification.reasoning}`
+        });
       }
-    }));
+    }
+
+    return verifiedFindings;
+  }
+
+  private async adversarialVerifyFinding(
+    targetUrl: string,
+    parentFinding: AttackMapNode,
+    candidate: { title: string; severity: string; description: string; vector: string },
+    recon: ReconResult,
+    provider: StoredAiProvider,
+    model: string,
+    emitReasoning: (phase: string, title: string, summary: string) => void
+  ): Promise<{ accepted: boolean; reasoning: string }> {
+    const envelope = await this.callStructuredDecisionModel<{ accepted: boolean; reasoning: string }>(provider, model, [
+      "You are an Adversarial Verifier. Your job is to challenge a hypothesized security finding and determine if it is concrete and reachable given actual evidence.",
+      `Target: ${targetUrl}`,
+      "",
+      "Evidence from parent finding:",
+      `  Title: ${parentFinding.label}`,
+      `  Description: ${String(parentFinding.data["description"] ?? "")}`,
+      "",
+      "Hypothesized finding to verify:",
+      `  Title: ${candidate.title}`,
+      `  Vector: ${candidate.vector}`,
+      `  Hypothesized impact: ${candidate.description}`,
+      "",
+      "Actual Recon signals:",
+      `  Ports: ${recon.openPorts.map(p => `${p.port}/${p.service}`).join(", ")}`,
+      `  Tech: ${recon.technologies.join(", ")}`,
+      "",
+      "Challenge: Is this vector concrete and reachable given what was actually observed? Or is it pure model speculation?",
+      "Return ONLY a JSON object:",
+      '{"reasoningSummary":"short summary of why you accept or reject the finding","data":{"accepted":true|false,"reasoning":"detailed explanation for the operator"}}'
+    ].join("\n"));
+
+    emitReasoning("verification", `Adversarial verification · ${candidate.title}`, envelope.reasoningSummary);
+    return {
+      accepted: envelope.data.accepted === true,
+      reasoning: envelope.data.reasoning || envelope.reasoningSummary
+    };
   }
 
   private async correlateAttackChains(

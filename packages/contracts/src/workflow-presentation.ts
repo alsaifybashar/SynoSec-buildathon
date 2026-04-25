@@ -128,6 +128,15 @@ export const workflowFindingsRailItemSchema = z.object({
   impact: z.string().min(1),
   recommendation: z.string().min(1),
   confidence: z.number().min(0).max(1),
+  validationStatus: z.enum([
+    "unverified",
+    "suspected",
+    "single_source",
+    "cross_validated",
+    "reproduced",
+    "blocked",
+    "rejected"
+  ]).optional(),
   host: z.string().min(1)
 });
 export type WorkflowFindingsRailItem = z.infer<typeof workflowFindingsRailItemSchema>;
@@ -245,6 +254,7 @@ function toFindingsRailItem(finding: WorkflowReportedFinding, ord: number, creat
     impact: finding.impact,
     recommendation: finding.recommendation,
     confidence: finding.confidence,
+    validationStatus: finding.validationStatus,
     host: finding.target.host
   };
 }
