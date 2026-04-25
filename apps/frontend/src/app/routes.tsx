@@ -3,15 +3,8 @@ import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams
 import { AttackMapPage } from "@/features/attack-map/page";
 import { ExecutionReportsPage } from "@/features/execution-reports/page";
 import { LoginPage } from "@/features/auth/login-page";
-import { DesignDiff } from "@/features/designs/design-diff";
-import { DesignDocument } from "@/features/designs/design-document";
 import { DesignDuplex } from "@/features/designs/design-duplex";
 import { DesignStream } from "@/features/designs/design-stream";
-import { WorkflowJournalPage } from "@/features/workflow-journal/page";
-import { WorkflowLedgerPage } from "@/features/workflow-ledger/page";
-import { WorkflowStepsPage } from "@/features/workflow-steps/page";
-import { WorkflowThreadPage } from "@/features/workflow-thread/page";
-import { WorkflowTracePage } from "@/features/workflow-trace/page";
 import { crudRouteRegistry, legacyCrudRedirects } from "@/app/crud-route-registry";
 import {
   crudRouteConfigs,
@@ -159,13 +152,6 @@ export function AppContentRoutes({
       <Route path="/execution-reports/:reportId" element={protect(<ExecutionReportsRouteAdapter />)} />
       <Route path="/designs/stream" element={protect(<DesignStream />)} />
       <Route path="/designs/duplex" element={protect(<DesignDuplex />)} />
-      <Route path="/designs/document" element={protect(<DesignDocument />)} />
-      <Route path="/designs/diff" element={protect(<DesignDiff />)} />
-      <Route path="/designs/workflow/thread" element={protect(<WorkflowThreadPage />)} />
-      <Route path="/designs/workflow/trace" element={protect(<WorkflowTracePage />)} />
-      <Route path="/designs/workflow/ledger" element={protect(<WorkflowLedgerPage />)} />
-      <Route path="/designs/workflow/steps" element={protect(<WorkflowStepsPage />)} />
-      <Route path="/designs/workflow/journal" element={protect(<WorkflowJournalPage />)} />
 
       {legacyCrudRedirects.map((redirect) => (
         "redirectTo" in redirect
@@ -174,13 +160,6 @@ export function AppContentRoutes({
       ))}
       <Route path="/designs-stream" element={protect(<Navigate to="/designs/stream" replace />)} />
       <Route path="/designs-duplex" element={protect(<Navigate to="/designs/duplex" replace />)} />
-      <Route path="/designs-document" element={protect(<Navigate to="/designs/document" replace />)} />
-      <Route path="/designs-diff" element={protect(<Navigate to="/designs/diff" replace />)} />
-      <Route path="/workflow-thread" element={protect(<Navigate to="/designs/workflow/thread" replace />)} />
-      <Route path="/workflow-trace" element={protect(<Navigate to="/designs/workflow/trace" replace />)} />
-      <Route path="/workflow-ledger" element={protect(<Navigate to="/designs/workflow/ledger" replace />)} />
-      <Route path="/workflow-steps" element={protect(<Navigate to="/designs/workflow/steps" replace />)} />
-      <Route path="/workflow-journal" element={protect(<Navigate to="/designs/workflow/journal" replace />)} />
 
       <Route path="*" element={protect(<Navigate to={defaultRoutePath} replace />)} />
     </Routes>

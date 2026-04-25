@@ -1,14 +1,9 @@
 import {
-  AlignLeft,
   AppWindow,
   Bot,
   Columns2,
   FileSearch,
-  GitCompare,
-  ListTree,
-  MessageSquareText,
   Network,
-  NotebookText,
   Orbit,
   PlugZap,
   Route,
@@ -28,16 +23,9 @@ export type NavigationId =
   | "execution-constraints"
   | "workflows"
   | "execution-reports"
-  | "workflow-thread"
-  | "workflow-trace"
-  | "workflow-ledger"
-  | "workflow-steps"
-  | "workflow-journal"
   | "attack-map"
   | "design-stream"
-  | "design-duplex"
-  | "design-document"
-  | "design-diff";
+  | "design-duplex";
 
 export type NavigationState = {
   detailLabel?: string;
@@ -239,48 +227,6 @@ export const navigationTree: NavigationTreeEntry[] = [
           label: "Duplex Stream",
           path: "/designs/duplex",
           icon: Columns2
-        }),
-        createNavigationItem({
-          id: "design-document",
-          label: "Live Document",
-          path: "/designs/document",
-          icon: ScrollText
-        }),
-        createNavigationItem({
-          id: "design-diff",
-          label: "Diff View",
-          path: "/designs/diff",
-          icon: GitCompare
-        }),
-        createNavigationItem({
-          id: "workflow-thread",
-          label: "Chat · Thread",
-          path: "/designs/workflow/thread",
-          icon: MessageSquareText
-        }),
-        createNavigationItem({
-          id: "workflow-trace",
-          label: "Chat · Trace",
-          path: "/designs/workflow/trace",
-          icon: AlignLeft
-        }),
-        createNavigationItem({
-          id: "workflow-ledger",
-          label: "Chat · Ledger",
-          path: "/designs/workflow/ledger",
-          icon: Columns2
-        }),
-        createNavigationItem({
-          id: "workflow-steps",
-          label: "Chat · Steps",
-          path: "/designs/workflow/steps",
-          icon: ListTree
-        }),
-        createNavigationItem({
-          id: "workflow-journal",
-          label: "Chat · Journal",
-          path: "/designs/workflow/journal",
-          icon: NotebookText
         })
       ]
     }
