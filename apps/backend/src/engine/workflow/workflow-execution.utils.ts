@@ -38,9 +38,9 @@ export function truncate(value: string, maxLength = 220) {
 
 export function parseTarget(baseUrl: string | null | undefined) {
   if (!baseUrl?.trim()) {
-    throw new RequestError(400, "Workflow application requires a real base URL before execution.", {
+    throw new RequestError(400, "Workflow target requires a real base URL before execution.", {
       code: "WORKFLOW_TARGET_MISSING",
-      userFriendlyMessage: "The workflow application target URL is required."
+      userFriendlyMessage: "The workflow target URL is required."
     });
   }
 
@@ -48,9 +48,9 @@ export function parseTarget(baseUrl: string | null | undefined) {
   try {
     url = new URL(baseUrl);
   } catch (error) {
-    throw new RequestError(400, `Invalid workflow application base URL: ${baseUrl}.`, {
+    throw new RequestError(400, `Invalid workflow target base URL: ${baseUrl}.`, {
       code: "WORKFLOW_TARGET_INVALID",
-      userFriendlyMessage: "The workflow application target URL is invalid.",
+      userFriendlyMessage: "The workflow target URL is invalid.",
       cause: error
     });
   }

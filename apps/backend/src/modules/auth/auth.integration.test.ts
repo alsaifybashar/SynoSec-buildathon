@@ -226,9 +226,8 @@ describe("auth integration", () => {
 
   it("rejects disallowed origins with hardened headers intact", async () => {
     const app = createApp({
-      applicationsRepository: {} as never,
+      targetsRepository: {} as never,
       executionConstraintsRepository: {} as never,
-      runtimesRepository: {} as never,
       aiProvidersRepository: {} as never,
       aiAgentsRepository: {} as never,
       aiToolsRepository: {} as never,
@@ -256,14 +255,14 @@ describe("auth integration", () => {
     setAuthEnv(true);
     const app = createTestApp();
     const response = await request(app)
-      .post(`${apiRoutes.authGoogleLogin}?redirectTo=%2Fapplications`)
+      .post(`${apiRoutes.authGoogleLogin}?redirectTo=%2Ftargets`)
       .set("Origin", "https://accounts.google.com")
       .set("Content-Type", "application/x-www-form-urlencoded")
       .set("Cookie", "g_csrf_token=csrf-value")
       .send("credential=google-id-token&g_csrf_token=csrf-value")
       .expect(303);
 
-    expect(response.headers["location"]).toBe("/applications");
+    expect(response.headers["location"]).toBe("/targets");
     expect(response.headers["set-cookie"]?.join(";")).toContain("synosec_session=");
   });
 
@@ -271,14 +270,14 @@ describe("auth integration", () => {
     setAuthEnv(true);
     const app = createTestApp();
     const response = await request(app)
-      .post(`${apiRoutes.authGoogleLogin}?redirectTo=%2Fapplications`)
+      .post(`${apiRoutes.authGoogleLogin}?redirectTo=%2Ftargets`)
       .set("Origin", "null")
       .set("Content-Type", "application/x-www-form-urlencoded")
       .set("Cookie", "g_csrf_token=csrf-value")
       .send("credential=google-id-token&g_csrf_token=csrf-value")
       .expect(303);
 
-    expect(response.headers["location"]).toBe("/applications");
+    expect(response.headers["location"]).toBe("/targets");
     expect(response.headers["set-cookie"]?.join(";")).toContain("synosec_session=");
   });
 

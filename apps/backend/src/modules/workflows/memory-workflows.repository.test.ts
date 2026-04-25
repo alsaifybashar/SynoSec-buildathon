@@ -3,22 +3,18 @@ import { MemoryWorkflowsRepository } from "./memory-workflows.repository.js";
 
 describe("MemoryWorkflowsRepository", () => {
   it("stores workflows in the pipeline-oriented shape", async () => {
-    const applicationsRepository = {
+    const targetsRepository = {
       getById: async () => ({
         id: "10000000-0000-0000-0000-000000000001",
-        name: "Demo App",
+        name: "Demo Target",
         baseUrl: "http://localhost:3000",
         environment: "development",
         status: "active",
         lastScannedAt: null,
-        targetAssets: [],
         constraintBindings: [],
         createdAt: "2026-04-24T10:00:00.000Z",
         updatedAt: "2026-04-24T10:00:00.000Z"
       })
-    } as any;
-    const runtimesRepository = {
-      getById: async () => null
     } as any;
     const aiAgentsRepository = {
       getById: async () => ({
@@ -35,8 +31,7 @@ describe("MemoryWorkflowsRepository", () => {
       })
     } as any;
     const repository = new MemoryWorkflowsRepository(
-      applicationsRepository,
-      runtimesRepository,
+      targetsRepository,
       aiAgentsRepository
     );
 
@@ -44,8 +39,7 @@ describe("MemoryWorkflowsRepository", () => {
       name: "Pipeline Workflow",
       status: "active",
       description: "Runs one transparent pipeline.",
-      applicationId: "10000000-0000-0000-0000-000000000001",
-      runtimeId: null,
+      targetId: "10000000-0000-0000-0000-000000000001",
       agentId: "20000000-0000-0000-0000-000000000001",
       objective: "Collect evidence and stop through system tools.",
       allowedToolIds: ["tool:http-recon"],
@@ -72,22 +66,18 @@ describe("MemoryWorkflowsRepository", () => {
   });
 
   it("creates running workflow runs with an empty event stream", async () => {
-    const applicationsRepository = {
+    const targetsRepository = {
       getById: async () => ({
         id: "10000000-0000-0000-0000-000000000001",
-        name: "Demo App",
+        name: "Demo Target",
         baseUrl: "http://localhost:3000",
         environment: "development",
         status: "active",
         lastScannedAt: null,
-        targetAssets: [],
         constraintBindings: [],
         createdAt: "2026-04-24T10:00:00.000Z",
         updatedAt: "2026-04-24T10:00:00.000Z"
       })
-    } as any;
-    const runtimesRepository = {
-      getById: async () => null
     } as any;
     const aiAgentsRepository = {
       getById: async () => ({
@@ -104,16 +94,14 @@ describe("MemoryWorkflowsRepository", () => {
       })
     } as any;
     const repository = new MemoryWorkflowsRepository(
-      applicationsRepository,
-      runtimesRepository,
+      targetsRepository,
       aiAgentsRepository,
       [{
         id: "40000000-0000-0000-0000-000000000001",
         name: "Pipeline Workflow",
         status: "active",
         description: null,
-        applicationId: "10000000-0000-0000-0000-000000000001",
-        runtimeId: null,
+        targetId: "10000000-0000-0000-0000-000000000001",
         agentId: "20000000-0000-0000-0000-000000000001",
         objective: "Collect evidence and stop through system tools.",
         allowedToolIds: [],
@@ -136,7 +124,7 @@ describe("MemoryWorkflowsRepository", () => {
       }]
     );
 
-    const run = await repository.createRun("40000000-0000-0000-0000-000000000001", null);
+    const run = await repository.createRun("40000000-0000-0000-0000-000000000001");
 
     expect(run?.status).toBe("running");
     expect(run?.currentStepIndex).toBe(0);

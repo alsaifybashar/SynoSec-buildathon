@@ -321,10 +321,10 @@ export function BashEditor({
           <span
             aria-hidden
             className={cn(
-              "absolute top-0 w-[32px] select-none text-right tabular-nums",
+              "absolute top-0 flex w-[24px] select-none items-center justify-center tabular-nums",
               isActive ? "text-lime-300" : "text-slate-600"
             )}
-            style={{ left: -44 }}
+            style={{ left: -40 }}
           >
             {lineIdx + 1}
           </span>
@@ -432,12 +432,12 @@ export function BashEditor({
       <div className="relative" style={{ minHeight }}>
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-y-0 left-0 w-[44px] border-r border-[#1a223a] bg-[#080d1b]"
+          className="pointer-events-none absolute inset-y-0 left-0 w-[32px] border-r border-[#1a223a] bg-[#080d1b]"
         />
 
         <pre
           aria-hidden
-          className="pointer-events-none relative m-0 whitespace-pre-wrap break-words py-3 pl-[56px] pr-4 text-[13px] leading-[1.6] text-slate-200"
+          className="pointer-events-none relative m-0 whitespace-pre-wrap break-words py-3 pl-[44px] pr-4 text-[13px] leading-[1.6] text-slate-200"
           style={{ tabSize: 2, overflowWrap: "anywhere", minHeight }}
         >
           {renderedLines}
@@ -460,7 +460,7 @@ export function BashEditor({
           autoCapitalize="off"
           wrap="soft"
           aria-label={ariaLabel}
-          className="absolute inset-0 h-full w-full resize-none overflow-hidden whitespace-pre-wrap break-words bg-transparent py-3 pl-[56px] pr-4 text-[13px] leading-[1.6] text-transparent caret-lime-300 outline-none placeholder:text-slate-600 selection:bg-lime-400/20 selection:text-lime-50 disabled:cursor-not-allowed"
+          className="absolute inset-0 h-full w-full resize-none overflow-hidden whitespace-pre-wrap break-words bg-transparent py-3 pl-[44px] pr-4 text-[13px] leading-[1.6] text-transparent caret-lime-300 outline-none placeholder:text-slate-600 selection:bg-lime-400/20 selection:text-lime-50 disabled:cursor-not-allowed"
           style={{ tabSize: 2, WebkitTextFillColor: "transparent", overflowWrap: "anywhere" }}
         />
       </div>

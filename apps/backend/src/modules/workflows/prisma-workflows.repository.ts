@@ -41,7 +41,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
   async list(query: WorkflowsListQuery): Promise<PaginatedResult<Workflow>> {
     const where = {
       ...(query.status ? { status: query.status } : {}),
-      ...(query.applicationId ? { applicationId: query.applicationId } : {}),
+      ...(query.targetId ? { applicationId: query.targetId } : {}),
       ...(query.q
         ? {
             OR: [
@@ -51,7 +51,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
           }
         : {})
     };
-    const orderBy = query.sortBy === "applicationId"
+    const orderBy = query.sortBy === "targetId"
         ? { application: { name: query.sortDirection } }
         : { [query.sortBy ?? "name"]: query.sortDirection };
     const skip = (query.page - 1) * query.pageSize;
@@ -84,7 +84,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
   }
 
   async create(input: CreateWorkflowBody): Promise<Workflow> {
-    await this.assertReferences(input.applicationId, input.runtimeId, [input.agentId]);
+    await this.assertReferences(input.targetId, [input.agentId]);
 
     const workflow = await this.prisma.workflow.create({
       data: {
@@ -93,8 +93,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
         status: input.status,
         ...(input.executionKind ? { executionKind: input.executionKind } : { executionKind: "workflow" }),
         description: input.description,
-        applicationId: input.applicationId,
-        runtimeId: input.runtimeId,
+        applicationId: input.targetId,
         stages: {
           createMany: {
             data: [toWorkflowStageCreateManyInput({
@@ -138,8 +137,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
     };
 
     await this.assertReferences(
-      input.applicationId ?? current.applicationId,
-      input.runtimeId === undefined ? current.runtimeId : input.runtimeId,
+      input.targetId ?? current.applicationId,
       [nextStage.agentId]
     );
 
@@ -157,8 +155,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
             ? { executionKind: input.executionKind ?? current.executionKind }
             : {}),
           description: input.description === undefined ? current.description : input.description,
-          applicationId: input.applicationId ?? current.applicationId,
-          runtimeId: input.runtimeId === undefined ? current.runtimeId : input.runtimeId,
+          applicationId: input.targetId ?? current.applicationId,
           stages: {
             createMany: {
               data: [toWorkflowStageCreateManyInput({
@@ -227,7 +224,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
     return mapWorkflowRow(workflow);
   }
 
-  async createRun(workflowId: string, targetAssetId: string | null): Promise<WorkflowRun | null> {
+  async createRun(workflowId: string): Promise<WorkflowRun | null> {
     const workflow = await this.prisma.workflow.findUnique({ where: { id: workflowId } });
     if (!workflow) {
       return null;
@@ -237,7 +234,6 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
       data: {
         id: randomUUID(),
         workflowId,
-        targetAssetId,
         executionKind: workflow.executionKind ?? "workflow",
         status: "running"
       },
@@ -346,19 +342,14 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
     return mapWorkflowRunRow(updated as Parameters<typeof mapWorkflowRunRow>[0]);
   }
 
-  private async assertReferences(applicationId: string, runtimeId: string | null, agentIds: string[]) {
-    const [application, runtime, agents] = await Promise.all([
-      this.prisma.application.findUnique({ where: { id: applicationId } }),
-      runtimeId ? this.prisma.runtime.findUnique({ where: { id: runtimeId } }) : Promise.resolve(null),
+  private async assertReferences(targetId: string, agentIds: string[]) {
+    const [targetRecord, agents] = await Promise.all([
+      this.prisma.application.findUnique({ where: { id: targetId } }),
       this.prisma.aiAgent.findMany({ where: { id: { in: agentIds } } })
     ]);
 
-    if (!application) {
-      throw new RequestError(400, "Application not found.");
-    }
-
-    if (runtimeId && !runtime) {
-      throw new RequestError(400, "Runtime not found.");
+    if (!targetRecord) {
+      throw new RequestError(400, "Target not found.");
     }
 
     if (agents.length !== new Set(agentIds).size) {

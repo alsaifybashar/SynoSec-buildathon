@@ -2,65 +2,20 @@ import { z } from "zod";
 import { createPaginatedResponseSchema, executionKindSchema, jsonSchemaObjectSchema, paginatedMetaSchema, resourceListQuerySchema } from "./shared.js";
 import { toolCapabilityTagSchema, toolCategorySchema, toolRiskTierSchema } from "./tooling.js";
 
-export const applicationEnvironmentSchema = z.enum(["production", "staging", "development"]);
-export type ApplicationEnvironment = z.infer<typeof applicationEnvironmentSchema>;
+export const targetEnvironmentSchema = z.enum(["production", "staging", "development"]);
+export type TargetEnvironment = z.infer<typeof targetEnvironmentSchema>;
 
-export const applicationStatusSchema = z.enum(["active", "investigating", "archived"]);
-export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
+export const targetStatusSchema = z.enum(["active", "investigating", "archived"]);
+export type TargetStatus = z.infer<typeof targetStatusSchema>;
 
-export const targetAssetKindSchema = z.enum(["url", "hostname", "ip", "cidr"]);
-export type TargetAssetKind = z.infer<typeof targetAssetKindSchema>;
+export const applicationEnvironmentSchema = targetEnvironmentSchema;
+export type ApplicationEnvironment = TargetEnvironment;
 
-export const targetAssetOwnershipStatusSchema = z.enum(["verified", "pending", "unverified"]);
-export type TargetAssetOwnershipStatus = z.infer<typeof targetAssetOwnershipStatusSchema>;
+export const applicationStatusSchema = targetStatusSchema;
+export type ApplicationStatus = TargetStatus;
 
 export const executionConstraintKindSchema = z.enum(["provider_policy", "legal_scope", "workflow_gate"]);
 export type ExecutionConstraintKind = z.infer<typeof executionConstraintKindSchema>;
-
-export const targetAssetSchema = z.object({
-  id: z.string().uuid(),
-  applicationId: z.string().uuid(),
-  label: z.string().min(1),
-  kind: targetAssetKindSchema,
-  hostname: z.string().min(1).nullable(),
-  baseUrl: z.string().url().nullable(),
-  ipAddress: z.string().min(1).nullable(),
-  cidr: z.string().min(1).nullable(),
-  provider: z.string().min(1).nullable(),
-  ownershipStatus: targetAssetOwnershipStatusSchema,
-  isDefault: z.boolean(),
-  metadata: jsonSchemaObjectSchema.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
-});
-export type TargetAsset = z.infer<typeof targetAssetSchema>;
-
-const targetAssetBodyObjectSchema = z.object({
-  label: z.string().trim().min(1),
-  kind: targetAssetKindSchema,
-  hostname: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  baseUrl: z.union([z.string().trim().url(), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  ipAddress: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  cidr: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  provider: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  ownershipStatus: targetAssetOwnershipStatusSchema.default("unverified"),
-  isDefault: z.boolean().default(false),
-  metadata: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
-});
-
-const targetAssetBodyBaseSchema = targetAssetBodyObjectSchema.superRefine((value, ctx) => {
-  const hasOneLocator = [value.hostname, value.baseUrl, value.ipAddress, value.cidr].some((entry) => !!entry);
-  if (!hasOneLocator) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "A target asset must include at least one locator.",
-      path: ["hostname"]
-    });
-  }
-});
-
-export const targetAssetBodySchema = targetAssetBodyBaseSchema;
-export type TargetAssetBody = z.infer<typeof targetAssetBodySchema>;
 
 const excludedPathsSchema = z.array(z.string().trim().min(1)).transform((paths) => {
   const seen = new Set<string>();
@@ -157,115 +112,47 @@ export const applicationConstraintBindingSchema = z.object({
 });
 export type ApplicationConstraintBinding = z.infer<typeof applicationConstraintBindingSchema>;
 
-export const applicationSchema = z.object({
+export const targetSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
   baseUrl: z.string().url().nullable(),
-  environment: applicationEnvironmentSchema,
-  status: applicationStatusSchema,
+  environment: targetEnvironmentSchema,
+  status: targetStatusSchema,
   lastScannedAt: z.string().datetime().nullable(),
-  targetAssets: z.array(targetAssetSchema).optional(),
   constraintBindings: z.array(applicationConstraintBindingSchema).optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 });
-export type Application = z.infer<typeof applicationSchema>;
+export type Target = z.infer<typeof targetSchema>;
 
-export const applicationsListQuerySchema = resourceListQuerySchema.extend({
-  status: applicationStatusSchema.optional(),
-  environment: applicationEnvironmentSchema.optional(),
+export const targetsListQuerySchema = resourceListQuerySchema.extend({
+  status: targetStatusSchema.optional(),
+  environment: targetEnvironmentSchema.optional(),
   sortBy: z.enum(["name", "status", "environment", "lastScannedAt", "createdAt", "updatedAt"]).optional()
 });
-export type ApplicationsListQuery = z.infer<typeof applicationsListQuerySchema>;
+export type TargetsListQuery = z.infer<typeof targetsListQuerySchema>;
 
-export const listApplicationsResponseSchema = paginatedMetaSchema.extend({
-  applications: z.array(applicationSchema)
+export const listTargetsResponseSchema = paginatedMetaSchema.extend({
+  targets: z.array(targetSchema)
 });
-export type ListApplicationsResponse = z.infer<typeof listApplicationsResponseSchema>;
+export type ListTargetsResponse = z.infer<typeof listTargetsResponseSchema>;
 
-const applicationBodyBaseSchema = z.object({
+const targetBodyBaseSchema = z.object({
   name: z.string().trim().min(1),
   baseUrl: z.union([z.string().trim().url(), z.literal(""), z.null()]).transform((value) => value || null),
-  environment: applicationEnvironmentSchema,
-  status: applicationStatusSchema,
+  environment: targetEnvironmentSchema,
+  status: targetStatusSchema,
   lastScannedAt: z.union([z.string().datetime(), z.null()]),
-  targetAssets: z.array(targetAssetBodyObjectSchema.extend({
-    id: z.string().uuid().optional()
-  }).superRefine((value, ctx) => {
-    const hasOneLocator = [value.hostname, value.baseUrl, value.ipAddress, value.cidr].some((entry) => !!entry);
-    if (!hasOneLocator) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "A target asset must include at least one locator.",
-        path: ["hostname"]
-      });
-    }
-  })).optional(),
   constraintIds: z.array(z.string().min(1)).optional()
 });
 
-export const createApplicationBodySchema = applicationBodyBaseSchema;
-export type CreateApplicationBody = z.infer<typeof createApplicationBodySchema>;
+export const createTargetBodySchema = targetBodyBaseSchema;
+export type CreateTargetBody = z.infer<typeof createTargetBodySchema>;
 
-export const updateApplicationBodySchema = applicationBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
+export const updateTargetBodySchema = targetBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
   message: "At least one field is required."
 });
-export type UpdateApplicationBody = z.infer<typeof updateApplicationBodySchema>;
-
-export const runtimeServiceTypeSchema = z.enum(["gateway", "api", "worker", "database", "queue", "storage", "other"]);
-export type RuntimeServiceType = z.infer<typeof runtimeServiceTypeSchema>;
-
-export const runtimeProviderSchema = z.enum(["aws", "gcp", "azure", "on-prem", "docker", "vercel", "other"]);
-export type RuntimeProvider = z.infer<typeof runtimeProviderSchema>;
-
-export const runtimeStatusSchema = z.enum(["healthy", "degraded", "retired"]);
-export type RuntimeStatus = z.infer<typeof runtimeStatusSchema>;
-
-export const runtimeSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1),
-  serviceType: runtimeServiceTypeSchema,
-  provider: runtimeProviderSchema,
-  environment: applicationEnvironmentSchema,
-  region: z.string().min(1),
-  status: runtimeStatusSchema,
-  applicationId: z.string().uuid().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
-});
-export type Runtime = z.infer<typeof runtimeSchema>;
-
-export const runtimesListQuerySchema = resourceListQuerySchema.extend({
-  status: runtimeStatusSchema.optional(),
-  provider: runtimeProviderSchema.optional(),
-  environment: applicationEnvironmentSchema.optional(),
-  applicationId: z.string().uuid().optional(),
-  sortBy: z.enum(["name", "serviceType", "status", "provider", "environment", "region", "applicationId", "createdAt", "updatedAt"]).optional()
-});
-export type RuntimesListQuery = z.infer<typeof runtimesListQuerySchema>;
-
-export const listRuntimesResponseSchema = paginatedMetaSchema.extend({
-  runtimes: z.array(runtimeSchema)
-});
-export type ListRuntimesResponse = z.infer<typeof listRuntimesResponseSchema>;
-
-const runtimeBodyBaseSchema = z.object({
-  name: z.string().trim().min(1),
-  serviceType: runtimeServiceTypeSchema,
-  provider: runtimeProviderSchema,
-  environment: applicationEnvironmentSchema,
-  region: z.string().trim().min(1),
-  status: runtimeStatusSchema,
-  applicationId: z.union([z.string().uuid(), z.literal(""), z.null()]).transform((value) => value || null)
-});
-
-export const createRuntimeBodySchema = runtimeBodyBaseSchema;
-export type CreateRuntimeBody = z.infer<typeof createRuntimeBodySchema>;
-
-export const updateRuntimeBodySchema = runtimeBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
-  message: "At least one field is required."
-});
-export type UpdateRuntimeBody = z.infer<typeof updateRuntimeBodySchema>;
+export type UpdateTargetBody = z.infer<typeof updateTargetBodySchema>;
 
 export const aiProviderKindSchema = z.enum(["local", "anthropic"]);
 export type AiProviderKind = z.infer<typeof aiProviderKindSchema>;
@@ -346,7 +233,10 @@ export const toolExecutorTypeSchema = z.enum(["bash", "builtin"]);
 export type ToolExecutorType = z.infer<typeof toolExecutorTypeSchema>;
 
 export const toolBuiltinActionKeySchema = z.enum([
+  "log_progress",
   "report_finding",
+  "complete_run",
+  "fail_run",
   "deep_analysis",
   "attack_chain_correlation"
 ]);
@@ -393,16 +283,12 @@ export const aiToolSchema = z.object({
   status: aiToolStatusSchema,
   source: aiToolSourceSchema,
   description: z.string().nullable(),
-  binary: z.string().nullable(),
   executorType: toolExecutorTypeSchema.default("bash"),
   builtinActionKey: toolBuiltinActionKeySchema.nullable().optional(),
   bashSource: z.string().min(1).nullable(),
   capabilities: z.array(z.lazy(() => toolCapabilityTagSchema)).default([]),
   category: z.lazy(() => toolCategorySchema),
   riskTier: z.lazy(() => toolRiskTierSchema),
-  notes: z.string().nullable(),
-  sandboxProfile: toolSandboxProfileSchema,
-  privilegeProfile: toolPrivilegeProfileSchema,
   timeoutMs: z.number().int().min(1000).max(300000),
   constraintProfile: toolConstraintProfileSchema.optional(),
   inputSchema: z.lazy(() => jsonSchemaObjectSchema),
@@ -481,15 +367,10 @@ const aiToolBodyBaseSchema = z.object({
   status: aiToolStatusSchema,
   source: aiToolSourceSchema,
   description: z.string().trim().min(1),
-  binary: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
   executorType: z.literal("bash").default("bash"),
   bashSource: z.string().min(1),
-  capabilities: z.array(z.lazy(() => toolCapabilityTagSchema)).default([]),
   category: z.lazy(() => toolCategorySchema),
   riskTier: z.lazy(() => toolRiskTierSchema),
-  notes: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
-  sandboxProfile: z.lazy(() => toolSandboxProfileSchema),
-  privilegeProfile: z.lazy(() => toolPrivilegeProfileSchema),
   timeoutMs: z.number().int().min(1000).max(300000),
   constraintProfile: toolConstraintProfileSchema.optional(),
   inputSchema: z.lazy(() => jsonSchemaObjectSchema),
@@ -502,13 +383,6 @@ export const createAiToolBodySchema = aiToolBodyBaseSchema.superRefine((value, c
       code: z.ZodIssueCode.custom,
       message: "System tools are synchronized from the backend catalog and cannot be created manually.",
       path: ["source"]
-    });
-  }
-  if (value.capabilities.length === 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "At least one capability is required for bash tools.",
-      path: ["capabilities"]
     });
   }
   if (!value.bashSource.trim()) {
@@ -546,13 +420,6 @@ export const updateAiToolBodySchema = aiToolBodyBaseSchema
         code: z.ZodIssueCode.custom,
         message: "Bash source is required.",
         path: ["bashSource"]
-      });
-    }
-    if ("capabilities" in value && value.capabilities?.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "At least one capability is required for bash tools.",
-        path: ["capabilities"]
       });
     }
   });
@@ -622,8 +489,21 @@ export type WorkflowFindingType = z.infer<typeof workflowFindingTypeSchema>;
 export const workflowFindingEvidenceSchema = z.object({
   sourceTool: z.string().min(1),
   quote: z.string().min(1),
-  artifactRef: z.string().min(1).optional()
-});
+  artifactRef: z.string().min(1).optional(),
+  observationRef: z.string().min(1).optional(),
+  toolRunRef: z.string().min(1).optional(),
+  traceEventId: z.string().uuid().optional(),
+  externalUrl: z.string().url().optional()
+}).refine((value) =>
+  Boolean(
+    value.artifactRef
+    || value.observationRef
+    || value.toolRunRef
+    || value.traceEventId
+    || value.externalUrl
+  ), {
+    message: "Workflow finding evidence requires at least one evidence reference."
+  });
 export type WorkflowFindingEvidence = z.infer<typeof workflowFindingEvidenceSchema>;
 
 export const workflowFindingTargetSchema = z.object({
@@ -633,6 +513,9 @@ export const workflowFindingTargetSchema = z.object({
   path: z.string().min(1).optional()
 });
 export type WorkflowFindingTarget = z.infer<typeof workflowFindingTargetSchema>;
+
+export const workflowGraphRelationshipKindSchema = z.enum(["supports", "derived_from", "correlates_with", "enables"]);
+export type WorkflowGraphRelationshipKind = z.infer<typeof workflowGraphRelationshipKindSchema>;
 
 export const workflowFindingSubmissionSchema = z.object({
   type: workflowFindingTypeSchema,
@@ -658,6 +541,15 @@ export const workflowFindingSubmissionSchema = z.object({
   reproduction: z.object({
     commandPreview: z.string().min(1).optional(),
     steps: z.array(z.string().min(1)).min(1)
+  }).optional(),
+  derivedFromFindingIds: z.array(z.string().uuid()).default([]),
+  relatedFindingIds: z.array(z.string().uuid()).default([]),
+  enablesFindingIds: z.array(z.string().uuid()).default([]),
+  chain: z.object({
+    id: z.string().min(1).optional(),
+    title: z.string().min(1),
+    summary: z.string().min(1),
+    severity: z.enum(["info", "low", "medium", "high", "critical"]).optional()
   }).optional(),
   tags: z.array(z.string().min(1)).default([])
 });
@@ -735,8 +627,7 @@ export const workflowSchema = z.object({
   status: workflowStatusSchema,
   executionKind: executionKindSchema.optional(),
   description: z.string().nullable(),
-  applicationId: z.string().uuid(),
-  runtimeId: z.string().uuid().nullable(),
+  targetId: z.string().uuid(),
   agentId: z.string().uuid(),
   objective: z.string().min(1),
   allowedToolIds: z.array(z.string().min(1)).default([]),
@@ -761,8 +652,8 @@ export type Workflow = z.infer<typeof workflowSchema>;
 
 export const workflowsListQuerySchema = resourceListQuerySchema.extend({
   status: workflowStatusSchema.optional(),
-  applicationId: z.string().uuid().optional(),
-  sortBy: z.enum(["name", "status", "applicationId", "agentId", "createdAt", "updatedAt"]).optional()
+  targetId: z.string().uuid().optional(),
+  sortBy: z.enum(["name", "status", "targetId", "agentId", "createdAt", "updatedAt"]).optional()
 });
 export type WorkflowsListQuery = z.infer<typeof workflowsListQuerySchema>;
 
@@ -796,8 +687,7 @@ const workflowBodyBaseSchema = z.object({
   status: workflowStatusSchema,
   executionKind: executionKindSchema.optional(),
   description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
-  applicationId: z.string().uuid(),
-  runtimeId: z.union([z.string().uuid(), z.literal(""), z.null()]).transform((value) => value || null),
+  targetId: z.string().uuid(),
   agentId: z.string().uuid(),
   objective: z.string().trim().min(1),
   allowedToolIds: z.array(z.string().min(1)).default([]),
@@ -827,10 +717,7 @@ export type UpdateWorkflowBody = z.infer<typeof updateWorkflowBodySchema>;
 export const workflowRunStatusSchema = z.enum(["pending", "running", "completed", "failed"]);
 export type WorkflowRunStatus = z.infer<typeof workflowRunStatusSchema>;
 
-export const startWorkflowRunBodySchema = z.object({
-  targetAssetId: z.string().uuid().optional(),
-  coordinateEnvironment: z.boolean().default(false)
-});
+export const startWorkflowRunBodySchema = z.object({});
 export type StartWorkflowRunBody = z.infer<typeof startWorkflowRunBodySchema>;
 
 export const workflowTraceEntryStatusSchema = z.enum(["completed", "failed"]);
@@ -908,7 +795,6 @@ export const workflowRunSchema = z.object({
   id: z.string().uuid(),
   workflowId: z.string().uuid(),
   executionKind: executionKindSchema.optional(),
-  targetAssetId: z.string().uuid().nullable().optional(),
   status: workflowRunStatusSchema,
   currentStepIndex: z.number().int().min(0).default(0),
   startedAt: z.string().datetime(),

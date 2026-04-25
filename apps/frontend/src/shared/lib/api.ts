@@ -55,8 +55,7 @@ function inferRequestContext(url: string, init?: RequestInit): RequestContext {
   const resourceMatch = pathname.match(/\/api\/([^/]+)(?:\/[^/]+)?$/);
   const resource = resourceMatch?.[1] ?? "resource";
   const labels: Record<string, { singular: string; plural: string }> = {
-    applications: { singular: "Application", plural: "Applications" },
-    runtimes: { singular: "Runtime", plural: "Runtimes" },
+    targets: { singular: "Target", plural: "Targets" },
     "ai-providers": { singular: "AI provider", plural: "AI providers" },
     "ai-agents": { singular: "AI agent", plural: "AI agents" },
     "ai-tools": { singular: "AI tool", plural: "AI tools" },

@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
   apiRoutes,
@@ -7,19 +7,18 @@ import {
   type AiToolRunResult,
   type AiToolStatus,
   type CreateAiToolBody,
-  type ToolPrivilegeProfile,
-  type ToolSandboxProfile,
   type ToolCategory,
   type ToolRiskTier
 } from "@synosec/contracts";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { aiToolsResource } from "@/features/ai-tools/resource";
 import { aiToolTransfer } from "@/features/ai-tools/transfer";
 import { fetchJson } from "@/shared/lib/api";
 import { useResourceDetail } from "@/shared/hooks/use-resource-detail";
 import { useResourceList } from "@/shared/hooks/use-resource-list";
-import { listPageSizes, type ResourceClient, type AiToolsQuery } from "@/shared/lib/resource-client";
+import { type ResourceClient, type AiToolsQuery } from "@/shared/lib/resource-client";
 import { exportResourceRecords, importResourceRecords } from "@/shared/lib/resource-transfer";
-import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
+import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage } from "@/shared/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -33,14 +32,9 @@ type ToolFormValues = {
   status: AiToolStatus;
   source: "custom" | "system";
   description: string;
-  binary: string;
   bashSource: string;
-  capabilitiesText: string;
   category: ToolCategory;
   riskTier: ToolRiskTier;
-  notes: string;
-  sandboxProfile: ToolSandboxProfile;
-  privilegeProfile: ToolPrivilegeProfile;
   timeoutMsText: string;
   inputSchemaText: string;
   outputSchemaText: string;
@@ -55,8 +49,14 @@ const statusLabels: Record<AiToolStatus, string> = {
 
 const categoryOptions: ToolCategory[] = ["topology", "auth", "web", "network", "content", "dns", "subdomain", "cloud", "utility", "password", "windows", "kubernetes", "forensics", "reversing", "exploitation"];
 const riskTierOptions: ToolRiskTier[] = ["passive", "active", "controlled-exploit"];
-const sandboxProfileOptions: ToolSandboxProfile[] = ["network-recon", "read-only-parser", "active-recon", "controlled-exploit-lab"];
-const privilegeProfileOptions: ToolPrivilegeProfile[] = ["read-only-network", "active-network", "controlled-exploit"];
+
+function createDefaultInputSchemaText() {
+  return JSON.stringify({ type: "object", properties: {} }, null, 2);
+}
+
+function createDefaultOutputSchemaText() {
+  return JSON.stringify({ type: "object", properties: { output: { type: "string" } }, required: ["output"] }, null, 2);
+}
 
 function createEmptyFormValues(): ToolFormValues {
   return {
@@ -64,17 +64,12 @@ function createEmptyFormValues(): ToolFormValues {
     status: "active",
     source: "custom",
     description: "",
-    binary: "",
     bashSource: "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' 'Tool implementation is required before execution.' >&2\nexit 1\n",
-    capabilitiesText: "",
     category: "utility",
     riskTier: "passive",
-    notes: "",
-    sandboxProfile: "read-only-parser",
-    privilegeProfile: "read-only-network",
     timeoutMsText: "",
-    inputSchemaText: JSON.stringify({ type: "object", properties: {} }, null, 2),
-    outputSchemaText: JSON.stringify({ type: "object", properties: { output: { type: "string" } }, required: ["output"] }, null, 2)
+    inputSchemaText: createDefaultInputSchemaText(),
+    outputSchemaText: createDefaultOutputSchemaText()
   };
 }
 
@@ -84,14 +79,9 @@ function toFormValues(tool: AiTool): ToolFormValues {
     status: tool.status,
     source: tool.source,
     description: tool.description ?? "",
-    binary: tool.binary ?? "",
     bashSource: tool.bashSource ?? "",
-    capabilitiesText: tool.capabilities.join("\n"),
     category: tool.category,
     riskTier: tool.riskTier,
-    notes: tool.notes ?? "",
-    sandboxProfile: tool.sandboxProfile,
-    privilegeProfile: tool.privilegeProfile,
     timeoutMsText: String(tool.timeoutMs),
     inputSchemaText: JSON.stringify(tool.inputSchema, null, 2),
     outputSchemaText: JSON.stringify(tool.outputSchema, null, 2)
@@ -145,18 +135,10 @@ function parseRequestBody(values: ToolFormValues): { body?: CreateAiToolBody; er
       status: values.status,
       source: "custom",
       description: values.description.trim(),
-      binary: values.binary.trim() || null,
       executorType: "bash",
       bashSource: values.bashSource,
-      capabilities: values.capabilitiesText
-        .split("\n")
-        .map((value) => value.trim())
-        .filter(Boolean),
       category: values.category,
       riskTier: values.riskTier,
-      notes: values.notes.trim() || null,
-      sandboxProfile: values.sandboxProfile,
-      privilegeProfile: values.privilegeProfile,
       timeoutMs: timeoutMs ?? 30000,
       inputSchema: inputSchema as Record<string, unknown>,
       outputSchema: outputSchema as Record<string, unknown>
@@ -169,18 +151,6 @@ function formatTimestamp(value: string) {
   return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-function formatCrudCapability(value: boolean) {
-  return value ? "Allowed" : "Blocked";
-}
-
-function describeSourceBehavior(tool: AiTool) {
-  if (tool.source === "system") {
-    return "Built-in system actions are listed here but remain read-only.";
-  }
-
-  return "Edits remain on the custom tool record.";
-}
-
 function describeBuiltinAction(tool: AiTool) {
   const actionKey = tool.builtinActionKey;
   if (!actionKey) {
@@ -188,7 +158,10 @@ function describeBuiltinAction(tool: AiTool) {
   }
 
   const labels: Record<ToolBuiltinActionKey, string> = {
-    report_finding: "Workflow built-in: persists a structured workflow finding.",
+    log_progress: "Workflow built-in: persists a short operator-visible progress update into the workflow transcript.",
+    report_finding: "Workflow built-in: persists a structured finding and supplies the metadata used to project execution-report graph nodes and edges.",
+    complete_run: "Workflow built-in: marks the current workflow run as complete.",
+    fail_run: "Workflow built-in: marks the current workflow run as failed.",
     deep_analysis: "Attack map built-in: performs deeper orchestrator analysis on a significant finding.",
     attack_chain_correlation: "Attack map built-in: correlates confirmed findings into chained attack paths."
   };
@@ -271,6 +244,40 @@ function createExampleRunInput(tool: AiTool) {
   return example;
 }
 
+function CollapsibleSection({
+  title,
+  open,
+  onToggle,
+  children,
+  summary
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+  summary?: string;
+}) {
+  return (
+    <section className="rounded-[4px] border border-border/70 bg-card/50">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+        onClick={onToggle}
+        aria-expanded={open}
+      >
+        <div>
+          <div className="font-mono text-[0.62rem] font-medium uppercase tracking-[0.28em] text-muted-foreground">
+            {title}
+          </div>
+          {summary ? <div className="mt-1 text-xs text-muted-foreground">{summary}</div> : null}
+        </div>
+        {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+      </button>
+      {open ? <div className="border-t border-border/70 px-4 py-4">{children}</div> : null}
+    </section>
+  );
+}
+
 export function AiToolsPage({
   toolId,
   toolNameHint,
@@ -315,6 +322,9 @@ export function AiToolsPage({
       setFormValues(empty);
       setInitialValues(empty);
       setErrors({});
+      setRunInputText(JSON.stringify({}, null, 2));
+      setRunError(null);
+      setRunResult(null);
       return;
     }
 
@@ -388,14 +398,24 @@ export function AiToolsPage({
   const isDirty = JSON.stringify(formValues) !== JSON.stringify(initialValues);
   const canCreateTool = aiToolsResource.capabilities.canCreate;
   const canUpdateTool = !isCreateMode && tool ? aiToolsResource.capabilities.canUpdate(tool) : canCreateTool;
-  const canDeleteTool = tool ? aiToolsResource.capabilities.canDelete(tool) : false;
   const isToolEditable = isCreateMode ? canCreateTool : canUpdateTool;
   const isBuiltinTool = tool?.executorType === "builtin";
   const isToolRunnable = !isCreateMode && tool?.executorType === "bash";
+  const exampleRunInput = useMemo(() => (tool ? JSON.stringify(createExampleRunInput(tool), null, 2) : JSON.stringify({}, null, 2)), [tool]);
 
   function handleFieldChange<Key extends keyof ToolFormValues>(field: Key, value: ToolFormValues[Key]) {
     setFormValues((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
+  }
+
+  function handleUseExampleInput() {
+    setRunInputText(exampleRunInput);
+    setRunError(null);
+  }
+
+  function handleResetRunInput() {
+    setRunInputText(JSON.stringify({}, null, 2));
+    setRunError(null);
   }
 
   async function handleSave() {
@@ -550,228 +570,143 @@ export function AiToolsPage({
     );
   }
 
+  const currentToolName = isCreateMode ? "New AI tool" : tool?.name ?? "AI tool detail";
+
+  const detailPageProps = {
+    title: currentToolName,
+    breadcrumbs: ["Start", "AI Tools", isCreateMode ? "New" : tool?.name ?? "Detail"],
+    isDirty: isToolEditable ? isDirty : false,
+    isSaving: saving,
+    onBack: onNavigateToList,
+    onSave: handleSave,
+    onDismiss: () => {
+      setFormValues(initialValues);
+      setErrors({});
+      setRunError(null);
+    },
+    saveLabel: isToolEditable ? "Save" : "Read only"
+  };
+
   return (
     <DetailPage
-      title={isCreateMode ? "New AI tool" : tool?.name ?? "AI tool detail"}
-      breadcrumbs={["Start", "AI Tools", isCreateMode ? "New" : tool?.name ?? "Detail"]}
-      isDirty={isToolEditable ? isDirty : false}
-      isSaving={saving}
-      onBack={onNavigateToList}
-      onSave={handleSave}
-      onDismiss={() => {
-        setFormValues(initialValues);
-        setErrors({});
-      }}
-      onExportJson={!isCreateMode && tool?.source !== "system" ? handleExportJson : undefined}
-      saveLabel={isToolEditable ? "Save" : "Read only"}
-      sidebar={tool ? (
-        <>
-          <DetailSidebarItem label="Source">{tool.source}</DetailSidebarItem>
-          <DetailSidebarItem label="Source behavior">{describeSourceBehavior(tool)}</DetailSidebarItem>
-          <DetailSidebarItem label="Executor">{tool.executorType}</DetailSidebarItem>
-          {tool.builtinActionKey ? <DetailSidebarItem label="Built-in key">{tool.builtinActionKey}</DetailSidebarItem> : null}
-          <DetailSidebarItem label="Status">{statusLabels[tool.status]}</DetailSidebarItem>
-          <DetailSidebarItem label="Create">{formatCrudCapability(canCreateTool)}</DetailSidebarItem>
-          <DetailSidebarItem label="Update">{formatCrudCapability(canUpdateTool)}</DetailSidebarItem>
-          <DetailSidebarItem label="Delete">{formatCrudCapability(canDeleteTool)}</DetailSidebarItem>
-          <DetailSidebarItem label="Updated">{formatTimestamp(tool.updatedAt)}</DetailSidebarItem>
-        </>
-      ) : undefined}
+      {...detailPageProps}
+      {...(!isCreateMode && tool ? { subtitle: tool.id, timestamp: formatTimestamp(tool.updatedAt) } : {})}
+      {...(!isCreateMode && tool?.source !== "system" ? { onExportJson: handleExportJson } : {})}
     >
-      <DetailFieldGroup title="Definition" className="bg-card/70">
-        <DetailField label="Name" required {...definedString(errors.name)}>
-          <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" disabled={!isToolEditable} />
-        </DetailField>
-        <DetailField label="Category">
-          <Select value={formValues.category} onValueChange={(value) => handleFieldChange("category", value as ToolCategory)} disabled={!isToolEditable}>
-            <SelectTrigger aria-label="Category">
-              <SelectValue placeholder="Select category" />
-            </SelectTrigger>
-            <SelectContent>
-              {categoryOptions.map((category) => (
-                <SelectItem key={category} value={category}>{category}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </DetailField>
-        <DetailField label="Risk tier">
-          <Select value={formValues.riskTier} onValueChange={(value) => handleFieldChange("riskTier", value as ToolRiskTier)} disabled={!isToolEditable}>
-            <SelectTrigger aria-label="Risk tier">
-              <SelectValue placeholder="Select risk tier" />
-            </SelectTrigger>
-            <SelectContent>
-              {riskTierOptions.map((riskTier) => (
-                <SelectItem key={riskTier} value={riskTier}>{riskTier}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </DetailField>
-        <DetailField label="Description" required className="md:col-span-2" {...definedString(errors.description)}>
-          <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" disabled={!isToolEditable} />
-        </DetailField>
-        <DetailField label="Notes" className="md:col-span-2">
-          <Input value={formValues.notes} onChange={(event) => handleFieldChange("notes", event.target.value)} aria-label="Notes" disabled={!isToolEditable} />
-        </DetailField>
-      </DetailFieldGroup>
+      <section className="space-y-4">
+        <DetailFieldGroup title="Definition" className="bg-card/70">
+          <DetailField label="Name" required {...definedString(errors.name)}>
+            <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" disabled={!isToolEditable} />
+          </DetailField>
+          <DetailField label="Category">
+            <Select value={formValues.category} onValueChange={(value) => handleFieldChange("category", value as ToolCategory)} disabled={!isToolEditable}>
+              <SelectTrigger aria-label="Category">
+                <SelectValue placeholder="Select category" />
+              </SelectTrigger>
+              <SelectContent>
+                {categoryOptions.map((category) => (
+                  <SelectItem key={category} value={category}>{category}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </DetailField>
+          <DetailField label="Risk tier">
+            <Select value={formValues.riskTier} onValueChange={(value) => handleFieldChange("riskTier", value as ToolRiskTier)} disabled={!isToolEditable}>
+              <SelectTrigger aria-label="Risk tier">
+                <SelectValue placeholder="Select risk tier" />
+              </SelectTrigger>
+              <SelectContent>
+                {riskTierOptions.map((riskTier) => (
+                  <SelectItem key={riskTier} value={riskTier}>{riskTier}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </DetailField>
+          <DetailField label="Description" required className="md:col-span-2" {...definedString(errors.description)}>
+            <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" disabled={!isToolEditable} />
+          </DetailField>
+          {!isBuiltinTool ? (
+            <DetailField label="Timeout (ms)" hint="Integer duration. Values under 1000ms are rejected." {...definedString(errors.timeoutMsText)}>
+              <Input value={formValues.timeoutMsText} onChange={(event) => handleFieldChange("timeoutMsText", event.target.value)} aria-label="Timeout milliseconds" disabled={!isToolEditable} />
+            </DetailField>
+          ) : null}
+        </DetailFieldGroup>
 
-      {tool?.executorType === "builtin" ? (
-        <DetailFieldGroup title="Built-in Action" className="bg-card/70">
-          <DetailField label="Execution owner" className="md:col-span-2">
-            <div className="rounded-xl border border-border bg-background/40 p-4 text-sm text-foreground">
-              {describeBuiltinAction(tool) ?? "Built-in action provided by a backend execution engine."}
+        {!isBuiltinTool ? (
+          <>
+            <div className={cn("grid gap-4", isToolRunnable && tool ? "xl:grid-cols-[minmax(0,1.6fr)_minmax(22rem,1fr)]" : "")}>
+              <DetailFieldGroup title="Source Code" className="bg-card/70">
+                <DetailField label="Bash source" required className="md:col-span-2" {...definedString(errors.bashSource)}>
+                  <BashEditor
+                    value={formValues.bashSource}
+                    onChange={(next) => handleFieldChange("bashSource", next)}
+                    disabled={!isToolEditable}
+                    filename={formValues.name ? `${formValues.name.replace(/[^A-Za-z0-9._-]+/g, "-").toLowerCase()}.sh` : "tool.sh"}
+                    aria-label="Bash source"
+                  />
+                </DetailField>
+              </DetailFieldGroup>
+
+              {isToolRunnable && tool ? (
+                <DetailFieldGroup title="Run Tool" className="bg-card/70">
+                  <DetailField label="Input JSON" className="md:col-span-2">
+                    <Textarea
+                      value={runInputText}
+                      onChange={(event) => {
+                        setRunInputText(event.target.value);
+                        setRunError(null);
+                      }}
+                      aria-label="Run input JSON"
+                      rows={16}
+                      className="font-mono text-sm"
+                    />
+                  </DetailField>
+                  <div className="md:col-span-2 flex flex-wrap items-center gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={handleUseExampleInput} disabled={runningTool}>Use Example Input</Button>
+                    <Button type="button" variant="outline" size="sm" onClick={handleResetRunInput} disabled={runningTool}>Reset Input</Button>
+                    <Button type="button" onClick={() => void handleRunTool()} disabled={runningTool}>{runningTool ? "Running…" : "Run Tool"}</Button>
+                  </div>
+                  <div className={cn(
+                    "md:col-span-2 rounded-[4px] border p-4",
+                    runError
+                      ? "border-destructive/30 bg-destructive/10"
+                      : runResult
+                        ? (runResult.exitCode === 0 ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10")
+                        : "border-border/70 bg-background/70"
+                  )}>
+                    <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Run status</p>
+                    <p className="mt-2 text-sm text-foreground">
+                      {runError ? runError : (runResult ? describeRunStatus(runResult) : "No run executed yet.")}
+                    </p>
+                    {runResult ? (
+                      <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                        <span>exit code: {runResult.exitCode}</span>
+                        <span>duration: {runResult.durationMs}ms</span>
+                        {runResult.target ? <span>target: {runResult.target}</span> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </DetailFieldGroup>
+              ) : null}
             </div>
-          </DetailField>
-        </DetailFieldGroup>
-      ) : null}
+          </>
+        ) : null}
 
-      <DetailFieldGroup title="Evidence Contract" className="bg-card/70">
-        <DetailField label="Example input" className="md:col-span-2">
-          <Textarea
-            value={tool ? JSON.stringify(createExampleRunInput(tool), null, 2) : ""}
-            readOnly
-            aria-label="Example tool input"
-            rows={6}
-            className="font-mono text-sm"
-          />
-        </DetailField>
-        <DetailField label="Input schema" className="md:col-span-2" {...definedString(errors.inputSchemaText)}>
-          <Textarea value={formValues.inputSchemaText} onChange={(event) => handleFieldChange("inputSchemaText", event.target.value)} aria-label="Input schema" rows={10} className="font-mono text-sm" disabled={!isToolEditable} />
-        </DetailField>
-        <DetailField label="Structured result schema" className="md:col-span-2" {...definedString(errors.outputSchemaText)}>
-          <p className="mb-2 text-sm leading-6 text-muted-foreground">
-            Evidence tools return a structured result envelope. `output` is required. `observations` are optional evidence records and are not persisted findings.
-          </p>
-          <Textarea value={formValues.outputSchemaText} onChange={(event) => handleFieldChange("outputSchemaText", event.target.value)} aria-label="Output schema" rows={10} className="font-mono text-sm" disabled={!isToolEditable} />
-        </DetailField>
-      </DetailFieldGroup>
-
-      {isToolRunnable && tool ? (
-        <DetailFieldGroup title="Test Tool" className="bg-card/70">
-          <DetailField label="Input JSON" className="md:col-span-2">
-            <Textarea
-              value={runInputText}
-              onChange={(event) => {
-                setRunInputText(event.target.value);
-                setRunError(null);
-              }}
-              aria-label="Run input JSON"
-              rows={10}
-              className="font-mono text-sm"
-            />
-          </DetailField>
-          <div className="md:col-span-2 flex items-center gap-3">
-            <Button type="button" onClick={() => void handleRunTool()} disabled={runningTool}>
-              {runningTool ? "Running…" : "Run Tool"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                if (!tool) {
-                  return;
-                }
-                setRunInputText(JSON.stringify(createExampleRunInput(tool), null, 2));
-                setRunError(null);
-              }}
-              disabled={runningTool}
-            >
-              Use Example Input
-            </Button>
-            {runError ? <p className="text-sm text-destructive">{runError}</p> : null}
+        {isBuiltinTool && tool ? (
+          <div className="rounded-[4px] border border-border/70 bg-background/70 p-4">
+            <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Built-in action</p>
+            <p className="mt-2 text-sm text-foreground">{describeBuiltinAction(tool) ?? "Built-in action provided by a backend execution engine."}</p>
           </div>
-          <DetailField label="Last run status" className="md:col-span-2">
-            <Input
-              value={describeRunStatus(runResult)}
-              readOnly
-              aria-label="Tool last run status"
-            />
-          </DetailField>
-          <DetailField label="Command preview" className="md:col-span-2">
-            <Textarea
-              value={runResult?.commandPreview ?? ""}
-              readOnly
-              aria-label="Tool command preview"
-              rows={3}
-              className="font-mono text-sm"
-            />
-          </DetailField>
-          <DetailField label="Raw output" className="md:col-span-2">
-            <Textarea
-              value={runResult?.output ?? ""}
-              readOnly
-              aria-label="Tool raw output"
-              rows={8}
-              className="font-mono text-sm"
-            />
-          </DetailField>
-          <DetailField label="Parsed evidence result" className="md:col-span-2">
-            <p className="mb-2 text-sm leading-6 text-muted-foreground">
-              Parsed observations here become evidence artifacts. Findings are created separately by workflow system actions such as vulnerability reporting.
-            </p>
-            <Textarea
-              value={runResult ? JSON.stringify({
-                exitCode: runResult.exitCode,
-                statusReason: runResult.statusReason,
-                durationMs: runResult.durationMs,
-                target: runResult.target,
-                port: runResult.port,
-                observations: runResult.observations
-              }, null, 2) : ""}
-              readOnly
-              aria-label="Tool parsed result"
-              rows={12}
-              className="font-mono text-sm"
-            />
-          </DetailField>
-        </DetailFieldGroup>
-      ) : null}
+        ) : null}
 
-      {!isBuiltinTool ? (
-        <DetailFieldGroup title="Execution" className="bg-card/70">
-        <DetailField label="Binary">
-          <Input value={formValues.binary} onChange={(event) => handleFieldChange("binary", event.target.value)} aria-label="Binary" disabled={!isToolEditable} />
-        </DetailField>
-        <DetailField label="Timeout (ms)" {...definedString(errors.timeoutMsText)}>
-          <Input value={formValues.timeoutMsText} onChange={(event) => handleFieldChange("timeoutMsText", event.target.value)} aria-label="Timeout milliseconds" disabled={!isToolEditable} />
-        </DetailField>
-        <DetailField label="Sandbox profile">
-          <Select value={formValues.sandboxProfile} onValueChange={(value) => handleFieldChange("sandboxProfile", value as ToolSandboxProfile)} disabled={!isToolEditable}>
-            <SelectTrigger aria-label="Sandbox profile">
-              <SelectValue placeholder="Select sandbox profile" />
-            </SelectTrigger>
-            <SelectContent>
-              {sandboxProfileOptions.map((profile) => (
-                <SelectItem key={profile} value={profile}>{profile}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </DetailField>
-        <DetailField label="Privilege profile">
-          <Select value={formValues.privilegeProfile} onValueChange={(value) => handleFieldChange("privilegeProfile", value as ToolPrivilegeProfile)} disabled={!isToolEditable}>
-            <SelectTrigger aria-label="Privilege profile">
-              <SelectValue placeholder="Select privilege profile" />
-            </SelectTrigger>
-            <SelectContent>
-              {privilegeProfileOptions.map((profile) => (
-                <SelectItem key={profile} value={profile}>{profile}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </DetailField>
-        <DetailField label="Capabilities" className="md:col-span-2">
-          <Textarea value={formValues.capabilitiesText} onChange={(event) => handleFieldChange("capabilitiesText", event.target.value)} aria-label="Capabilities" rows={4} className="font-mono text-sm" disabled={!isToolEditable} />
-        </DetailField>
-        <DetailField label="Bash source" required className="md:col-span-2" {...definedString(errors.bashSource)}>
-          <BashEditor
-            value={formValues.bashSource}
-            onChange={(next) => handleFieldChange("bashSource", next)}
-            disabled={!isToolEditable}
-            filename={formValues.name ? `${formValues.name.replace(/[^A-Za-z0-9._-]+/g, "-").toLowerCase()}.sh` : "tool.sh"}
-            aria-label="Bash source"
-          />
-        </DetailField>
-        </DetailFieldGroup>
-      ) : null}
+        {isToolRunnable && tool ? null : (
+          <div className="rounded-[4px] border border-border/70 bg-background/70 p-4 text-sm text-muted-foreground">
+            {isBuiltinTool
+              ? "Built-in tools do not expose a runnable shell test console here."
+              : "Save a runnable bash tool to use the test console."}
+          </div>
+        )}
+      </section>
     </DetailPage>
   );
 }

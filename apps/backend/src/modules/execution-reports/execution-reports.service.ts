@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
   buildWorkflowRunReport,
+  executionReportGraphEdgeSchema,
+  executionReportGraphNodeSchema,
+  executionReportGraphSchema,
   executionReportDetailSchema,
   executionReportFindingFromWorkflowFinding,
   executionReportSummarySchema,
@@ -13,7 +16,8 @@ import {
   type ExecutionReportFinding,
   type ExecutionKind,
   type ExecutionReportSummary,
-  type ExecutionReportsListQuery
+  type ExecutionReportsListQuery,
+  type WorkflowReportedFinding
 } from "@synosec/contracts";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/shared/database/prisma-client.js";
@@ -25,6 +29,256 @@ type PersistedExecutionReportRow = Awaited<ReturnType<typeof prisma.executionRep
 type ExecutionReportSnapshot = Omit<ExecutionReportDetail, "id" | "archivedAt"> & {
   sourceDefinitionId: string | null;
 };
+
+function parseGraph(value: Prisma.JsonValue) {
+  const parsed = executionReportGraphSchema.safeParse(value);
+  return parsed.success ? parsed.data : { nodes: [], edges: [] };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function dedupeGraph(input: { nodes: unknown[]; edges: unknown[] }) {
+  const nodesById = new Map<string, ExecutionReportDetail["graph"]["nodes"][number]>();
+  const edgesById = new Map<string, ExecutionReportDetail["graph"]["edges"][number]>();
+
+  for (const candidate of input.nodes) {
+    const parsed = executionReportGraphNodeSchema.safeParse(candidate);
+    if (parsed.success) {
+      nodesById.set(parsed.data.id, parsed.data);
+    }
+  }
+
+  for (const candidate of input.edges) {
+    const parsed = executionReportGraphEdgeSchema.safeParse(candidate);
+    if (parsed.success) {
+      edgesById.set(parsed.data.id, parsed.data);
+    }
+  }
+
+  return {
+    nodes: [...nodesById.values()],
+    edges: [...edgesById.values()].filter((edge) => nodesById.has(edge.source) && nodesById.has(edge.target))
+  };
+}
+
+function createWorkflowFindingTargetLabel(finding: WorkflowReportedFinding) {
+  return [
+    finding.target.host,
+    finding.target.port ? `:${finding.target.port}` : "",
+    finding.target.path ?? ""
+  ].join("");
+}
+
+function buildWorkflowExecutionGraph(findings: WorkflowReportedFinding[]) {
+  const nodes: unknown[] = [];
+  const edges: unknown[] = [];
+  const findingIds = new Set(findings.map((finding) => finding.id));
+  const chainNodes = new Map<string, {
+    id: string;
+    kind: "chain";
+    title: string;
+    summary: string;
+    severity: WorkflowReportedFinding["severity"];
+    findingIds: string[];
+    createdAt: string;
+  }>();
+
+  for (const finding of findings) {
+    nodes.push({
+      id: finding.id,
+      kind: "finding",
+      findingId: finding.id,
+      title: finding.title,
+      summary: finding.impact,
+      severity: finding.severity,
+      confidence: finding.confidence,
+      targetLabel: createWorkflowFindingTargetLabel(finding),
+      createdAt: finding.createdAt
+    });
+
+    finding.evidence.forEach((evidence, index) => {
+      const evidenceNodeId = `${finding.id}:evidence:${index}`;
+      nodes.push({
+        id: evidenceNodeId,
+        kind: "evidence",
+        title: `${finding.title} evidence ${index + 1}`,
+        summary: evidence.quote,
+        sourceTool: evidence.sourceTool,
+        quote: evidence.quote,
+        severity: finding.severity,
+        refs: [{
+          ...(evidence.artifactRef ? { artifactRef: evidence.artifactRef } : {}),
+          ...(evidence.observationRef ? { observationRef: evidence.observationRef } : {}),
+          ...(evidence.toolRunRef ? { toolRunRef: evidence.toolRunRef } : {}),
+          ...(evidence.traceEventId ? { traceEventId: evidence.traceEventId } : {}),
+          ...(evidence.externalUrl ? { externalUrl: evidence.externalUrl } : {})
+        }],
+        createdAt: finding.createdAt
+      });
+      edges.push({
+        id: `${evidenceNodeId}:supports:${finding.id}`,
+        kind: "supports",
+        source: evidenceNodeId,
+        target: finding.id,
+        createdAt: finding.createdAt
+      });
+    });
+
+    for (const relatedFindingId of finding.derivedFromFindingIds) {
+      if (!findingIds.has(relatedFindingId)) {
+        continue;
+      }
+      edges.push({
+        id: `${relatedFindingId}:derived:${finding.id}`,
+        kind: "derived_from",
+        source: finding.id,
+        target: relatedFindingId,
+        createdAt: finding.createdAt
+      });
+    }
+
+    for (const relatedFindingId of finding.relatedFindingIds) {
+      if (!findingIds.has(relatedFindingId)) {
+        continue;
+      }
+      edges.push({
+        id: `${finding.id}:related:${relatedFindingId}`,
+        kind: "correlates_with",
+        source: finding.id,
+        target: relatedFindingId,
+        createdAt: finding.createdAt
+      });
+    }
+
+    for (const relatedFindingId of finding.enablesFindingIds) {
+      if (!findingIds.has(relatedFindingId)) {
+        continue;
+      }
+      edges.push({
+        id: `${finding.id}:enables:${relatedFindingId}`,
+        kind: "enables",
+        source: finding.id,
+        target: relatedFindingId,
+        createdAt: finding.createdAt
+      });
+    }
+
+    if (finding.chain) {
+      const chainNodeId = finding.chain.id?.trim().length ? finding.chain.id : `chain:${finding.chain.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+      const existingChain = chainNodes.get(chainNodeId);
+      if (existingChain) {
+        if (!existingChain.findingIds.includes(finding.id)) {
+          existingChain.findingIds.push(finding.id);
+        }
+      } else {
+        chainNodes.set(chainNodeId, {
+          id: chainNodeId,
+          kind: "chain",
+          title: finding.chain.title,
+          summary: finding.chain.summary,
+          severity: finding.chain.severity ?? finding.severity,
+          findingIds: [finding.id],
+          createdAt: finding.createdAt
+        });
+      }
+      edges.push({
+        id: `${finding.id}:chain:${chainNodeId}`,
+        kind: "enables",
+        source: finding.id,
+        target: chainNodeId,
+        createdAt: finding.createdAt
+      });
+    }
+  }
+
+  nodes.push(...chainNodes.values());
+  return dedupeGraph({ nodes, edges });
+}
+
+function buildAttackMapExecutionGraph(input: {
+  findings: ExecutionReportFinding[];
+  mapNodes: Array<Record<string, unknown>>;
+  mapEdges: Array<Record<string, unknown>>;
+}) {
+  const nodes: unknown[] = [];
+  const edges: unknown[] = [];
+
+  for (const finding of input.findings) {
+    nodes.push({
+      id: finding.id,
+      kind: "finding",
+      findingId: finding.id,
+      title: finding.title,
+      summary: finding.summary,
+      severity: finding.severity,
+      confidence: finding.confidence,
+      targetLabel: finding.targetLabel,
+      createdAt: finding.createdAt
+    });
+    finding.evidence.forEach((evidence, index) => {
+      const evidenceNodeId = `${finding.id}:evidence:${index}`;
+      nodes.push({
+        id: evidenceNodeId,
+        kind: "evidence",
+        title: `${finding.title} evidence ${index + 1}`,
+        summary: evidence.quote,
+        sourceTool: evidence.sourceTool,
+        quote: evidence.quote,
+        severity: finding.severity,
+        refs: [{
+          ...(evidence.artifactRef ? { artifactRef: evidence.artifactRef } : {}),
+          ...(evidence.observationRef ? { observationRef: evidence.observationRef } : {}),
+          ...(evidence.toolRunRef ? { toolRunRef: evidence.toolRunRef } : {})
+        }],
+        createdAt: finding.createdAt
+      });
+      edges.push({
+        id: `${evidenceNodeId}:supports:${finding.id}`,
+        kind: "supports",
+        source: evidenceNodeId,
+        target: finding.id,
+        createdAt: finding.createdAt
+      });
+    });
+  }
+
+  for (const node of input.mapNodes.filter((candidate) => candidate["type"] === "chain")) {
+    const chainId = typeof node["id"] === "string" ? node["id"] : null;
+    if (!chainId) {
+      continue;
+    }
+    const data = isRecord(node["data"]) ? node["data"] : {};
+    const findingIds = Array.isArray(data["findingIds"]) ? data["findingIds"].filter((value): value is string => typeof value === "string") : [];
+    nodes.push({
+      id: chainId,
+      kind: "chain",
+      title: typeof node["label"] === "string" ? node["label"] : "Attack chain",
+      summary: typeof data["description"] === "string" ? data["description"] : "Correlated attack path.",
+      severity: typeof node["severity"] === "string" ? node["severity"] : "medium",
+      findingIds,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  for (const edge of input.mapEdges.filter((candidate) => candidate["kind"] === "chain")) {
+    const source = typeof edge["source"] === "string" ? edge["source"] : null;
+    const target = typeof edge["target"] === "string" ? edge["target"] : null;
+    if (!source || !target) {
+      continue;
+    }
+    edges.push({
+      id: typeof edge["id"] === "string" ? edge["id"] : `${source}:${target}`,
+      kind: "enables",
+      source,
+      target,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  return dedupeGraph({ nodes, edges });
+}
 
 function compareSeverity(left: ExecutionReportSummary["highestSeverity"], right: ExecutionReportSummary["highestSeverity"]) {
   const order = { critical: 4, high: 3, medium: 2, low: 1, info: 0, null: -1 } as const;
@@ -197,7 +451,10 @@ export class ExecutionReportsService {
         toolActivity: snapshot.toolActivity as Prisma.InputJsonValue,
         coverageOverview: snapshot.coverageOverview as Prisma.InputJsonValue,
         sourceSummary: snapshot.sourceSummary as Prisma.InputJsonValue,
-        raw: snapshot.raw as Prisma.InputJsonValue,
+        raw: {
+          ...snapshot.raw,
+          graph: snapshot.graph
+        } as Prisma.InputJsonValue,
         generatedAt: new Date(snapshot.generatedAt)
       }
     });
@@ -227,6 +484,7 @@ export class ExecutionReportsService {
     return executionReportDetailSchema.parse({
       ...this.mapRowToSummary(row),
       executiveSummary: row.executiveSummary,
+      graph: parseGraph(isRecord(row.raw) ? row.raw["graph"] as Prisma.JsonValue : null),
       findings: parseFindings(row.findings),
       toolActivity: parseToolActivity(row.toolActivity),
       coverageOverview: row.coverageOverview,
@@ -240,7 +498,10 @@ export class ExecutionReportsService {
       where: { id: runId },
       include: {
         workflow: {
-          include: { stages: true }
+          include: {
+            application: true,
+            stages: true
+          }
         },
         traceEvents: true
       }
@@ -258,7 +519,8 @@ export class ExecutionReportsService {
       throw new RequestError(400, "Workflow run report could not be built at completion.");
     }
 
-    const findings = getWorkflowReportedFindings(workflowRun).map(executionReportFindingFromWorkflowFinding);
+    const workflowFindings = getWorkflowReportedFindings(workflowRun);
+    const findings = workflowFindings.map(executionReportFindingFromWorkflowFinding);
     const toolActivity = workflowRun.events
       .filter((event) => event.type === "tool_result")
       .map((event) => executionReportToolActivitySchema.parse({
@@ -296,6 +558,7 @@ export class ExecutionReportsService {
     const executionKind = normalizeExecutionKind(workflowRun.executionKind)
       ?? normalizeExecutionKind(run.workflow.executionKind)
       ?? "workflow";
+    const graph = buildWorkflowExecutionGraph(workflowFindings);
 
     return {
       executionId: workflowRun.id,
@@ -303,13 +566,14 @@ export class ExecutionReportsService {
       sourceDefinitionId: run.workflowId,
       status: normalizeExecutionReportStatus(workflowRun.status),
       title: run.workflow.name,
-      targetLabel: run.targetAssetId ?? run.workflow.applicationId,
+      targetLabel: run.workflow.application.name,
       sourceLabel: run.workflow.name,
       findingsCount: findings.length,
       highestSeverity: summarizeHighestSeverity(findings),
       generatedAt: run.completedAt.toISOString(),
       updatedAt: run.completedAt.toISOString(),
       executiveSummary: report.executiveSummary,
+      graph,
       findings,
       toolActivity,
       coverageOverview: report.coverageOverview,
@@ -331,7 +595,8 @@ export class ExecutionReportsService {
             topFindingIds: report.topFindings.map((item) => item.id)
           },
       raw: {
-        eventCount: workflowRun.events.length
+        eventCount: workflowRun.events.length,
+        graph
       }
     };
   }
@@ -349,6 +614,8 @@ export class ExecutionReportsService {
     const toolActivity = parseToolActivity(run.toolActivity ?? []);
     const plan = run.plan && typeof run.plan === "object" && !Array.isArray(run.plan) ? run.plan as Record<string, unknown> : null;
     const mapNodes = Array.isArray(run.mapNodes) ? run.mapNodes as Array<Record<string, unknown>> : [];
+    const mapEdges = Array.isArray(run.mapEdges) ? run.mapEdges as Array<Record<string, unknown>> : [];
+    const graph = buildAttackMapExecutionGraph({ findings, mapNodes, mapEdges });
 
     return {
       executionId: run.id,
@@ -363,6 +630,7 @@ export class ExecutionReportsService {
       generatedAt: run.updatedAt.toISOString(),
       updatedAt: run.updatedAt.toISOString(),
       executiveSummary: run.summary ?? "The attack-map run completed without a closeout summary.",
+      graph,
       findings,
       toolActivity,
       coverageOverview: {},
@@ -376,7 +644,8 @@ export class ExecutionReportsService {
       },
       raw: {
         mapNodeCount: mapNodes.length,
-        mapEdgeCount: Array.isArray(run.mapEdges) ? run.mapEdges.length : 0
+        mapEdgeCount: mapEdges.length,
+        graph
       }
     };
   }

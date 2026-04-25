@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import type { AiAgent, Application, ExecutionKind, Runtime, WorkflowStatus } from "@synosec/contracts";
+import type { AiAgent, ExecutionKind, Target, WorkflowStatus } from "@synosec/contracts";
 import { definedFieldError, type WorkflowFormValues } from "@/features/workflows/workflow-form";
 import { DetailField, DetailFieldGroup } from "@/shared/components/detail-page";
 import { Button } from "@/shared/ui/button";
@@ -18,23 +18,29 @@ export const workflowExecutionKindLabels: Record<ExecutionKind, string> = {
   "attack-map": "Attack-map"
 };
 
+const workflowFieldHints = {
+  executionKind: "Choose whether this run executes a standard workflow or produces an attack-map oriented output.",
+  agent: "The linked AI agent owns the base prompt, provider, and default tool grants used by this workflow.",
+  objective: "This is the mission brief sent with the run. It should tell the agent what outcome to achieve for the selected target.",
+  agentPrompt: "This prompt is inherited from the linked AI agent. Update it from the AI Agents page when the workflow needs different standing instructions.",
+  allowedTools: "Select a narrower tool set for this workflow. If nothing is selected, the workflow inherits every tool granted to the linked agent."
+} as const;
+
 export function WorkflowConfigEditor({
   formValues,
   errors,
-  applications,
+  targets,
   agents,
   agentLookup,
   toolLookup,
-  filteredRuntimes,
   onFieldChange
 }: {
   formValues: WorkflowFormValues;
   errors: Record<string, string>;
-  applications: Application[];
+  targets: Target[];
   agents: AiAgent[];
   agentLookup: Record<string, AiAgent>;
   toolLookup: Record<string, string>;
-  filteredRuntimes: Runtime[];
   onFieldChange: <Key extends keyof WorkflowFormValues>(field: Key, value: WorkflowFormValues[Key]) => void;
 }) {
   const selectedAgent = agentLookup[formValues.agentId];
@@ -45,10 +51,10 @@ export function WorkflowConfigEditor({
   return (
     <>
       <DetailFieldGroup title="Workflow Configuration" className="bg-card/70">
-        <DetailField label="Name" required {...definedFieldError(errors["name"])}>
+        <DetailField label="Name" required hint="Operator-facing workflow name shown in the run launcher and reports." {...definedFieldError(errors["name"])}>
           <Input value={formValues.name} onChange={(event) => onFieldChange("name", event.target.value)} aria-label="Name" />
         </DetailField>
-        <DetailField label="Execution kind">
+        <DetailField label="Execution kind" hint={workflowFieldHints.executionKind}>
           <Select value={formValues.executionKind} onValueChange={(value) => onFieldChange("executionKind", value as ExecutionKind)}>
             <SelectTrigger aria-label="Execution kind">
               <SelectValue placeholder="Select execution kind" />
@@ -60,38 +66,25 @@ export function WorkflowConfigEditor({
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Application" required {...definedFieldError(errors["applicationId"])}>
-          <Select value={formValues.applicationId} onValueChange={(value) => onFieldChange("applicationId", value)}>
-            <SelectTrigger aria-label="Application">
-              <SelectValue placeholder="Select application" />
+        <DetailField label="Target" required hint="Primary target context used to resolve target assets, constraints, and reporting." {...definedFieldError(errors["targetId"])}>
+          <Select value={formValues.targetId} onValueChange={(value) => onFieldChange("targetId", value)}>
+            <SelectTrigger aria-label="Target">
+              <SelectValue placeholder="Select target" />
             </SelectTrigger>
             <SelectContent>
-              {applications.map((application) => (
-                <SelectItem key={application.id} value={application.id}>{application.name}</SelectItem>
+              {targets.map((target) => (
+                <SelectItem key={target.id} value={target.id}>{target.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Runtime">
-          <Select value={formValues.runtimeId || "__none__"} onValueChange={(value) => onFieldChange("runtimeId", value === "__none__" ? "" : value)}>
-            <SelectTrigger aria-label="Runtime">
-              <SelectValue placeholder="Select runtime" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">No runtime</SelectItem>
-              {filteredRuntimes.map((runtime) => (
-                <SelectItem key={runtime.id} value={runtime.id}>{runtime.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </DetailField>
-        <DetailField label="Description" className="md:col-span-2">
+        <DetailField label="Description" hint="Optional internal summary of what this workflow is intended to do." className="md:col-span-2">
           <Textarea value={formValues.description} onChange={(event) => onFieldChange("description", event.target.value)} aria-label="Description" rows={4} />
         </DetailField>
       </DetailFieldGroup>
 
       <DetailFieldGroup title="Execution Contract" className="bg-card/70">
-        <DetailField label="Agent" required {...definedFieldError(errors["agentId"])}>
+        <DetailField label="Agent" required hint={workflowFieldHints.agent} {...definedFieldError(errors["agentId"])}>
           <Select value={formValues.agentId} onValueChange={(value) => onFieldChange("agentId", value)}>
             <SelectTrigger aria-label="Agent">
               <SelectValue placeholder="Select agent" />
@@ -103,18 +96,18 @@ export function WorkflowConfigEditor({
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Objective" required className="md:col-span-2" {...definedFieldError(errors["objective"])}>
+        <DetailField label="Objective" required hint={workflowFieldHints.objective} className="md:col-span-2" {...definedFieldError(errors["objective"])}>
           <Textarea value={formValues.objective} onChange={(event) => onFieldChange("objective", event.target.value)} aria-label="Objective" rows={4} />
         </DetailField>
-        <DetailField label="Agent prompt" className="md:col-span-2">
+        <DetailField label="Agent prompt" hint={workflowFieldHints.agentPrompt} className="md:col-span-2">
           <div className="space-y-2 rounded-xl border border-border bg-background/40 p-4">
-            <p className="text-sm leading-6 text-foreground">{selectedAgent?.systemPrompt ?? "Select an agent to inspect its prompt."}</p>
+            <p className="text-xs leading-6 text-foreground">{selectedAgent?.systemPrompt ?? "Select an agent to inspect its prompt."}</p>
             <p className="text-xs text-muted-foreground">
               Prompt and base tool grants are owned by the linked agent and edited from the AI Agents page.
             </p>
           </div>
         </DetailField>
-        <DetailField label="Allowed tools" className="md:col-span-2">
+        <DetailField label="Allowed tools" hint={workflowFieldHints.allowedTools} className="md:col-span-2">
           <div className="space-y-3 rounded-xl border border-border bg-background/40 p-4">
             <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
               <p className="text-xs font-medium text-foreground">

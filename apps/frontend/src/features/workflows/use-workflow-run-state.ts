@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { apiRoutes, type Application, type Workflow, type WorkflowLiveModelOutput, type WorkflowRun, type WorkflowRunStreamMessage, type WorkflowRunTranscriptResponse } from "@synosec/contracts";
+import { apiRoutes, type Target, type Workflow, type WorkflowLiveModelOutput, type WorkflowRun, type WorkflowRunStreamMessage, type WorkflowRunTranscriptResponse } from "@synosec/contracts";
 import { fetchJson } from "@/shared/lib/api";
 import { type RunStreamState, type TranscriptProjection } from "@/features/workflows/workflow-trace";
 
@@ -10,10 +10,10 @@ async function fetchLatestWorkflowRun(workflowId: string) {
 
 export function useWorkflowRunState({
   workflow,
-  applications
+  targets
 }: {
   workflow: Workflow | null;
-  applications: Application[];
+  targets: Target[];
 }) {
   const [currentRun, setCurrentRun] = useState<WorkflowRun | null>(null);
   const [liveModelOutput, setLiveModelOutput] = useState<WorkflowLiveModelOutput | null>(null);
@@ -23,23 +23,6 @@ export function useWorkflowRunState({
   const [latestRunError, setLatestRunError] = useState<string | null>(null);
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
-  const [selectedTargetAssetId, setSelectedTargetAssetId] = useState("");
-
-  useEffect(() => {
-    if (!workflow) {
-      setSelectedTargetAssetId("");
-      return;
-    }
-
-    const application = applications.find((item) => item.id === workflow.applicationId);
-    const targetAssets = application?.targetAssets ?? [];
-    const defaultTarget = targetAssets.find((asset) => asset.isDefault) ?? targetAssets[0];
-    setSelectedTargetAssetId((current) => (
-      current && targetAssets.some((asset) => asset.id === current)
-        ? current
-        : defaultTarget?.id ?? ""
-    ));
-  }, [applications, workflow]);
 
   useEffect(() => {
     if (!workflow) {
@@ -170,11 +153,10 @@ export function useWorkflowRunState({
       return;
     }
 
-    const application = applications.find((item) => item.id === workflow.applicationId);
-    const targetAssets = application?.targetAssets ?? [];
-    if (targetAssets.length === 0) {
-      toast.error("No registered targets", {
-        description: "This application needs at least one registered target asset before a workflow can run."
+    const targetRecord = targets.find((item) => item.id === workflow.targetId);
+    if (!targetRecord?.baseUrl?.trim()) {
+      toast.error("Target base URL required", {
+        description: "This target needs a base URL before a workflow can run."
       });
       return;
     }
@@ -187,7 +169,7 @@ export function useWorkflowRunState({
       const run = await fetchJson<WorkflowRun>(`${apiRoutes.workflows}/${workflow.id}/runs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(selectedTargetAssetId ? { targetAssetId: selectedTargetAssetId } : {})
+        body: JSON.stringify({})
       });
       setCurrentRun(run);
       toast.success("Workflow run started");
@@ -208,8 +190,6 @@ export function useWorkflowRunState({
     latestRunError,
     transcriptError,
     streamError,
-    selectedTargetAssetId,
-    setSelectedTargetAssetId,
     startRun
   };
 }

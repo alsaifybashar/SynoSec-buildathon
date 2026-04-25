@@ -1,37 +1,20 @@
 import { describe, expect, it } from "vitest";
-import type { AiTool, Application, ExecutionConstraint, ToolRequest } from "@synosec/contracts";
+import type { AiTool, ExecutionConstraint, Target, ToolRequest } from "@synosec/contracts";
 import {
   applyConstraintInputs,
   authorizeToolAgainstConstraints,
   resolveEffectiveExecutionConstraints,
-  resolveTargetAsset
+  resolveWorkflowTarget
 } from "./execution-constraints.js";
+import { derivePrivilegeProfile, deriveSandboxProfile } from "@/modules/ai-tools/tool-execution-config.js";
 
-const application: Application = {
+const target: Target = {
   id: "10000000-0000-0000-0000-000000000001",
   name: "Cloudflare app",
   baseUrl: "https://app.example.com",
   environment: "production",
   status: "active",
   lastScannedAt: null,
-  targetAssets: [
-    {
-      id: "20000000-0000-0000-0000-000000000001",
-      applicationId: "10000000-0000-0000-0000-000000000001",
-      label: "Primary site",
-      kind: "url",
-      hostname: "app.example.com",
-      baseUrl: "https://app.example.com",
-      ipAddress: null,
-      cidr: null,
-      provider: "cloudflare",
-      ownershipStatus: "verified",
-      isDefault: true,
-      metadata: null,
-      createdAt: "2026-04-25T00:00:00.000Z",
-      updatedAt: "2026-04-25T00:00:00.000Z"
-    }
-  ],
   constraintBindings: [
     {
       constraintId: "seed-constraint-cloudflare-v1",
@@ -52,7 +35,7 @@ const application: Application = {
         requireHostAllowlistSupport: true,
         requirePathExclusionSupport: true,
         documentationUrls: [
-          "https://developers.cloudflare.com/fundamentals/reference/policies-compliances/cloudflare-penetration-testing-policy/"
+          "https://developers.cloudflare.com/fundamentals/reference/scans-penetration/"
         ],
         excludedPaths: ["/cdn-cgi/"],
         createdAt: "2026-04-25T00:00:00.000Z",
@@ -70,15 +53,11 @@ const compatibleTool: AiTool = {
   status: "active",
   source: "system",
   description: null,
-  binary: "httpx",
   executorType: "bash",
   bashSource: "#!/usr/bin/env bash\ntrue",
   capabilities: ["web-recon"],
   category: "web",
   riskTier: "passive",
-  notes: null,
-  sandboxProfile: "network-recon",
-  privilegeProfile: "read-only-network",
   timeoutMs: 30000,
   constraintProfile: {
     enforced: true,
@@ -120,8 +99,8 @@ const request: ToolRequest = {
   layer: "L7",
   riskTier: "passive",
   justification: "collect evidence",
-  sandboxProfile: compatibleTool.sandboxProfile,
-  privilegeProfile: compatibleTool.privilegeProfile,
+  sandboxProfile: deriveSandboxProfile(compatibleTool.riskTier),
+  privilegeProfile: derivePrivilegeProfile(compatibleTool.riskTier),
   parameters: {
     bashSource: compatibleTool.bashSource ?? "",
     commandPreview: compatibleTool.name,
@@ -153,16 +132,13 @@ const localTargetBypassConstraint: ExecutionConstraint = {
   updatedAt: "2026-04-25T00:00:00.000Z"
 };
 
-const baseTargetAsset = application.targetAssets?.[0];
-
-if (!baseTargetAsset) {
-  throw new Error("Expected execution-constraints test fixture to include a target asset.");
-}
-
 describe("execution constraints", () => {
+  it("requires a base URL before workflow execution", () => {
+    expect(() => resolveWorkflowTarget({ ...target, baseUrl: null })).toThrowError(/base URL/);
+  });
+
   it("injects Cloudflare exclusions and throttling into compatible tools", () => {
-    const targetAsset = resolveTargetAsset(application);
-    const constraintSet = resolveEffectiveExecutionConstraints(application, targetAsset, 5);
+    const constraintSet = resolveEffectiveExecutionConstraints(target, 5);
     const decision = authorizeToolAgainstConstraints(constraintSet, compatibleTool, request);
 
     expect(decision.allowed).toBe(true);
@@ -175,8 +151,7 @@ describe("execution constraints", () => {
   });
 
   it("fails closed for tools that cannot enforce the active constraints", () => {
-    const targetAsset = resolveTargetAsset(application);
-    const constraintSet = resolveEffectiveExecutionConstraints(application, targetAsset, 5);
+    const constraintSet = resolveEffectiveExecutionConstraints(target, 5);
     const decision = authorizeToolAgainstConstraints(constraintSet, incompatibleTool, {
       ...request,
       toolId: incompatibleTool.id,
@@ -188,16 +163,10 @@ describe("execution constraints", () => {
   });
 
   it("allows local targets only when a bypass constraint is bound", () => {
-    const localApplication: Application = {
-      ...application,
-      targetAssets: [
-        {
-          ...baseTargetAsset,
-          hostname: "localhost",
-          baseUrl: "http://localhost:3000",
-          provider: "local"
-        }
-      ],
+    const localTarget: Target = {
+      ...target,
+      name: "Local target",
+      baseUrl: "http://localhost:3000",
       constraintBindings: [
         {
           constraintId: localTargetBypassConstraint.id,
@@ -207,8 +176,7 @@ describe("execution constraints", () => {
       ]
     };
 
-    const targetAsset = resolveTargetAsset(localApplication);
-    const constraintSet = resolveEffectiveExecutionConstraints(localApplication, targetAsset, 5);
+    const constraintSet = resolveEffectiveExecutionConstraints(localTarget, 5);
     const decision = authorizeToolAgainstConstraints(constraintSet, incompatibleTool, {
       ...request,
       toolId: incompatibleTool.id,
@@ -230,21 +198,14 @@ describe("execution constraints", () => {
   });
 
   it("does not auto-bypass local targets without the seeded bypass constraint", () => {
-    const localApplicationWithoutBypass: Application = {
-      ...application,
-      targetAssets: [
-        {
-          ...baseTargetAsset,
-          hostname: "localhost",
-          baseUrl: "http://localhost:3000",
-          provider: "local"
-        }
-      ],
+    const localTargetWithoutBypass: Target = {
+      ...target,
+      name: "Local target",
+      baseUrl: "http://localhost:3000",
       constraintBindings: []
     };
 
-    const targetAsset = resolveTargetAsset(localApplicationWithoutBypass);
-    const constraintSet = resolveEffectiveExecutionConstraints(localApplicationWithoutBypass, targetAsset, 5);
+    const constraintSet = resolveEffectiveExecutionConstraints(localTargetWithoutBypass, 5);
     const decision = authorizeToolAgainstConstraints(constraintSet, incompatibleTool, {
       ...request,
       toolId: incompatibleTool.id,

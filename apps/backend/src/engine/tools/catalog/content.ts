@@ -9,5 +9,8 @@ export const contentTools: ToolCatalogEntry[] = [
   { id: "gobuster", displayName: "Gobuster", binary: "gobuster", category: "content", riskTier: "passive", phase: "enum", osiLayers: ["L7"], tags: ["content", "directory", "dns"] },
   { id: "hakrawler", displayName: "Hakrawler", binary: "hakrawler", category: "content", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["content", "crawl", "urls"] },
   { id: "katana", displayName: "Katana", binary: "katana", category: "content", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["content", "crawl", "spider"] },
-  { id: "waybackurls", displayName: "Waybackurls", binary: "waybackurls", category: "content", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["content", "archive", "urls"] }
+  { id: "waybackurls", displayName: "Waybackurls", binary: "waybackurls", category: "content", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["content", "archive", "urls"] },
+  { id: "urlhunter", displayName: "urlhunter", binary: "urlhunter", category: "content", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["content", "archive", "urls", "secrets"] },
+  { id: "scrapy", displayName: "Scrapy", binary: "scrapy", category: "content", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["content", "crawl", "spider"] },
+  { id: "dirbuster", displayName: "DirBuster", binary: "dirbuster", category: "content", riskTier: "passive", phase: "enum", osiLayers: ["L7"], tags: ["content", "directory", "bruteforce"] }
 ];

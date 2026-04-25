@@ -1,6 +1,9 @@
 import type {
   AiTool,
   CreateAiToolBody,
+  ToolPrivilegeProfile,
+  ToolRiskTier,
+  ToolSandboxProfile,
   UpdateAiToolBody
 } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
@@ -13,8 +16,8 @@ type JsonRecord = Record<string, unknown>;
 interface StoredExecutionConfig {
   executorType?: "bash";
   bashSource?: string;
-  sandboxProfile?: AiTool["sandboxProfile"];
-  privilegeProfile?: AiTool["privilegeProfile"];
+  sandboxProfile?: ToolSandboxProfile;
+  privilegeProfile?: ToolPrivilegeProfile;
   timeoutMs?: AiTool["timeoutMs"];
   capabilities?: AiTool["capabilities"];
   constraintProfile?: AiTool["constraintProfile"];
@@ -23,15 +26,33 @@ interface StoredExecutionConfig {
 type ToolExecutionFields = {
   executorType: "bash";
   bashSource: string;
-  sandboxProfile: AiTool["sandboxProfile"];
-  privilegeProfile: AiTool["privilegeProfile"];
+  sandboxProfile: ToolSandboxProfile;
+  privilegeProfile: ToolPrivilegeProfile;
   timeoutMs: AiTool["timeoutMs"];
   capabilities: AiTool["capabilities"];
   constraintProfile?: AiTool["constraintProfile"];
 };
 
 type ExecutionConfigLookup = Pick<AiTool, "id" | "name" | "category" | "riskTier"> & {
-  binary?: string | null;
+  capabilities?: string[];
+};
+
+const categoryCapabilities: Record<AiTool["category"], string[]> = {
+  network: ["network-recon"],
+  web: ["web-recon"],
+  content: ["content-discovery"],
+  dns: ["dns-recon"],
+  subdomain: ["subdomain-recon"],
+  password: ["password-audit"],
+  cloud: ["cloud-audit"],
+  kubernetes: ["kubernetes-audit"],
+  windows: ["windows-enum"],
+  forensics: ["forensics-analysis"],
+  reversing: ["binary-analysis"],
+  exploitation: ["exploit-validation"],
+  utility: ["utility"],
+  topology: ["topology-analysis"],
+  auth: ["auth-audit"]
 };
 
 function asJsonRecord(value: unknown): JsonRecord {
@@ -51,10 +72,10 @@ function readStoredExecutionConfig(schema: unknown): StoredExecutionConfig {
     legacyConfigNormalized.bashSource = legacyConfig["scriptSource"];
   }
   if (legacyConfig["sandboxProfile"] != null) {
-    legacyConfigNormalized.sandboxProfile = legacyConfig["sandboxProfile"] as AiTool["sandboxProfile"];
+    legacyConfigNormalized.sandboxProfile = legacyConfig["sandboxProfile"] as ToolSandboxProfile;
   }
   if (legacyConfig["privilegeProfile"] != null) {
-    legacyConfigNormalized.privilegeProfile = legacyConfig["privilegeProfile"] as AiTool["privilegeProfile"];
+    legacyConfigNormalized.privilegeProfile = legacyConfig["privilegeProfile"] as ToolPrivilegeProfile;
   }
   if (typeof legacyConfig["timeoutMs"] === "number") {
     legacyConfigNormalized.timeoutMs = legacyConfig["timeoutMs"];
@@ -71,40 +92,46 @@ function readStoredExecutionConfig(schema: unknown): StoredExecutionConfig {
   return legacyConfigNormalized;
 }
 
-function isCompleteExecutionConfig(config: StoredExecutionConfig): config is ToolExecutionFields {
+function isCompleteExecutionConfig(config: StoredExecutionConfig): config is Omit<ToolExecutionFields, "sandboxProfile" | "privilegeProfile"> & StoredExecutionConfig {
   return (
     config.executorType === "bash"
     && typeof config.bashSource === "string"
     && config.bashSource.trim().length > 0
-    && !!config.sandboxProfile
-    && !!config.privilegeProfile
     && typeof config.timeoutMs === "number"
   );
 }
 
-function defaultSandboxProfile(tool: Pick<AiTool, "category" | "riskTier">): AiTool["sandboxProfile"] {
-  if (tool.riskTier === "controlled-exploit") {
+export function deriveSandboxProfile(riskTier: ToolRiskTier): ToolSandboxProfile {
+  if (riskTier === "controlled-exploit") {
     return "controlled-exploit-lab";
   }
-  if (tool.riskTier === "active") {
+  if (riskTier === "active") {
     return "active-recon";
-  }
-  if (tool.category === "utility" || tool.category === "forensics" || tool.category === "reversing") {
-    return "read-only-parser";
   }
 
   return "network-recon";
 }
 
-function defaultPrivilegeProfile(tool: Pick<AiTool, "riskTier">): AiTool["privilegeProfile"] {
-  if (tool.riskTier === "controlled-exploit") {
+export function derivePrivilegeProfile(riskTier: ToolRiskTier): ToolPrivilegeProfile {
+  if (riskTier === "controlled-exploit") {
     return "controlled-exploit";
   }
-  if (tool.riskTier === "active") {
+  if (riskTier === "active") {
     return "active-network";
   }
 
   return "read-only-network";
+}
+
+function deriveExecutionPolicy(riskTier: ToolRiskTier) {
+  return {
+    sandboxProfile: deriveSandboxProfile(riskTier),
+    privilegeProfile: derivePrivilegeProfile(riskTier)
+  };
+}
+
+export function deriveCapabilities(category: AiTool["category"]) {
+  return [...(categoryCapabilities[category] ?? [`${category}-tool`])];
 }
 
 function createLegacyFallbackBashSource(tool: ExecutionConfigLookup) {
@@ -141,10 +168,9 @@ function resolveFallbackExecutionConfig(tool: ExecutionConfigLookup): ToolExecut
   return {
     executorType: "bash",
     bashSource: createLegacyFallbackBashSource(tool),
-    sandboxProfile: defaultSandboxProfile(tool),
-    privilegeProfile: defaultPrivilegeProfile(tool),
+    ...deriveExecutionPolicy(tool.riskTier),
     timeoutMs: 30000,
-    capabilities: [tool.binary?.trim() || `${tool.category}-tool`],
+    capabilities: tool.capabilities?.length ? [...tool.capabilities] : deriveCapabilities(tool.category),
     constraintProfile: {
       enforced: false,
       targetKinds: [],
@@ -192,6 +218,7 @@ export function attachExecutionConfig<T>(
 }
 
 export function mapToolExecutionFields(
+  tool: Pick<AiTool, "riskTier" | "category">,
   inputSchema: unknown
 ): ToolExecutionFields {
   const stored = readStoredExecutionConfig(inputSchema);
@@ -205,19 +232,20 @@ export function mapToolExecutionFields(
   return {
     executorType: "bash",
     bashSource: stored.bashSource,
-    sandboxProfile: stored.sandboxProfile,
-    privilegeProfile: stored.privilegeProfile,
+    ...deriveExecutionPolicy(tool.riskTier),
     timeoutMs: stored.timeoutMs,
     capabilities: Array.isArray(stored.capabilities)
-      ? stored.capabilities.filter((value): value is string => typeof value === "string")
-      : [],
+      ? (stored.capabilities.filter((value): value is string => typeof value === "string").length > 0
+          ? stored.capabilities.filter((value): value is string => typeof value === "string")
+          : deriveCapabilities(tool.category))
+      : deriveCapabilities(tool.category),
     ...(stored.constraintProfile ? { constraintProfile: stored.constraintProfile } : {})
   };
 }
 
 export function resolveToolExecutionFields(tool: ExecutionConfigLookup, inputSchema: unknown): ToolExecutionFields {
   try {
-    return mapToolExecutionFields(inputSchema);
+    return mapToolExecutionFields(tool, inputSchema);
   } catch (error) {
     if (error instanceof RequestError && error.code === "AI_TOOL_EXECUTION_CONFIG_MISSING") {
       return resolveFallbackExecutionConfig(tool);
@@ -239,15 +267,15 @@ export function resolveToolExecutionFields(tool: ExecutionConfigLookup, inputSch
 }
 
 export function encodeCreateToolInput(input: CreateAiToolBody) {
+  const capabilities = deriveCapabilities(input.category);
   return {
     ...input,
     inputSchema: attachExecutionConfig(input.inputSchema, {
       executorType: input.executorType,
       bashSource: input.bashSource,
-      sandboxProfile: input.sandboxProfile,
-      privilegeProfile: input.privilegeProfile,
+      ...deriveExecutionPolicy(input.riskTier),
       timeoutMs: input.timeoutMs,
-      capabilities: input.capabilities,
+      capabilities,
       ...(input.constraintProfile ? { constraintProfile: input.constraintProfile } : {})
     })
   };
@@ -258,10 +286,9 @@ export function encodeUpdateToolInput(input: UpdateAiToolBody, current: AiTool) 
     input.inputSchema !== undefined ||
     input.executorType !== undefined ||
     input.bashSource !== undefined ||
-    input.sandboxProfile !== undefined ||
-    input.privilegeProfile !== undefined ||
+    input.riskTier !== undefined ||
     input.timeoutMs !== undefined ||
-    input.capabilities !== undefined ||
+    input.category !== undefined ||
     input.constraintProfile !== undefined
   );
 
@@ -272,10 +299,9 @@ export function encodeUpdateToolInput(input: UpdateAiToolBody, current: AiTool) 
       : attachExecutionConfig(input.inputSchema ?? current.inputSchema, {
           executorType: "bash",
           bashSource: input.bashSource ?? current.bashSource ?? "",
-          sandboxProfile: input.sandboxProfile ?? current.sandboxProfile,
-          privilegeProfile: input.privilegeProfile ?? current.privilegeProfile,
+          ...deriveExecutionPolicy(input.riskTier ?? current.riskTier),
           timeoutMs: input.timeoutMs ?? current.timeoutMs,
-          capabilities: input.capabilities ?? current.capabilities,
+          capabilities: deriveCapabilities(input.category ?? current.category),
           ...(input.constraintProfile ?? current.constraintProfile
             ? { constraintProfile: input.constraintProfile ?? current.constraintProfile }
             : {})

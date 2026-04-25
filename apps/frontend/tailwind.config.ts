@@ -73,6 +73,9 @@ const config = {
         sans: ['"Manrope"', '"Segoe UI"', "sans-serif"],
         mono: ['"JetBrains Mono"', "monospace"]
       },
+      fontSize: {
+        eyebrow: ["0.625rem", { lineHeight: "1rem" }]
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },

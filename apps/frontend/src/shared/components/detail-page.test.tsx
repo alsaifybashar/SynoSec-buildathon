@@ -1,19 +1,19 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { DetailPage } from "@/shared/components/detail-page";
+import { DetailField, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
 
 describe("DetailPage", () => {
   it("renders related content below the main detail content", () => {
     render(
       <DetailPage
-        title="Application detail"
-        breadcrumbs={["Start", "Applications", "Application detail"]}
+        title="Target detail"
+        breadcrumbs={["Start", "Targets", "Target detail"]}
         isDirty={false}
         onBack={() => {}}
         onSave={async () => {}}
         onDismiss={() => {}}
         sidebar={<div>Sidebar metadata</div>}
-        relatedContent={<div>Related runtimes section</div>}
+        relatedContent={<div>Related target assets section</div>}
       >
         <div>Main detail form</div>
       </DetailPage>
@@ -21,7 +21,7 @@ describe("DetailPage", () => {
 
     const mainContent = screen.getByText("Main detail form");
     const sidebar = screen.getByText("Sidebar metadata");
-    const relatedContent = screen.getByText("Related runtimes section");
+    const relatedContent = screen.getByText("Related target assets section");
 
     expect(mainContent).toBeInTheDocument();
     expect(sidebar).toBeInTheDocument();
@@ -32,8 +32,8 @@ describe("DetailPage", () => {
   it("does not render a related content container when omitted", () => {
     render(
       <DetailPage
-        title="Application detail"
-        breadcrumbs={["Start", "Applications", "Application detail"]}
+        title="Target detail"
+        breadcrumbs={["Start", "Targets", "Target detail"]}
         isDirty={false}
         onBack={() => {}}
         onSave={async () => {}}
@@ -44,7 +44,7 @@ describe("DetailPage", () => {
     );
 
     expect(screen.getByText("Main detail form")).toBeInTheDocument();
-    expect(screen.queryByText("Related runtimes section")).not.toBeInTheDocument();
+    expect(screen.queryByText("Related target assets section")).not.toBeInTheDocument();
   });
 
   it("renders an export button when json export is enabled", () => {
@@ -52,8 +52,8 @@ describe("DetailPage", () => {
 
     render(
       <DetailPage
-        title="Application detail"
-        breadcrumbs={["Start", "Applications", "Application detail"]}
+        title="Target detail"
+        breadcrumbs={["Start", "Targets", "Target detail"]}
         isDirty={false}
         onBack={() => {}}
         onSave={async () => {}}
@@ -71,8 +71,8 @@ describe("DetailPage", () => {
   it("hides save and dismiss actions until the detail becomes dirty", () => {
     render(
       <DetailPage
-        title="Application detail"
-        breadcrumbs={["Start", "Applications", "Application detail"]}
+        title="Target detail"
+        breadcrumbs={["Start", "Targets", "Target detail"]}
         isDirty={false}
         onBack={() => {}}
         onSave={async () => {}}
@@ -84,5 +84,35 @@ describe("DetailPage", () => {
 
     expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
+  });
+
+  it("shows a field hint on hover when guidance is provided", async () => {
+    render(
+      <DetailField label="Target" hint="Helpful target guidance.">
+        <input aria-label="Target" />
+      </DetailField>
+    );
+
+    fireEvent.focus(screen.getByRole("button", { name: "Show guidance for Target" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Helpful target guidance.");
+  });
+
+  it("shows a sidebar hint when guidance is provided", async () => {
+    render(
+      <DetailPage
+        title="Target detail"
+        breadcrumbs={["Start", "Targets", "Target detail"]}
+        isDirty={false}
+        onBack={() => {}}
+        onSave={async () => {}}
+        onDismiss={() => {}}
+        sidebar={<DetailSidebarItem label="Status" hint="Helpful status guidance.">Active</DetailSidebarItem>}
+      >
+        <div>Main detail form</div>
+      </DetailPage>
+    );
+
+    fireEvent.focus(screen.getByRole("button", { name: "Show guidance for Status" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Helpful status guidance.");
   });
 });

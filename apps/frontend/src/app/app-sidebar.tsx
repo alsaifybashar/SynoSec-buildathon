@@ -84,7 +84,7 @@ function ThemeToggle({ value, onValueChange }: { value: ThemeId; onValueChange: 
             type="button"
             aria-pressed={isActive}
             className={cn(
-              "flex items-center justify-center gap-1 rounded-sm px-1.5 py-1.5 text-[0.66rem] font-medium leading-none transition-colors",
+              "flex items-center justify-center gap-1 rounded-sm px-1.5 py-1.5 text-xs font-medium leading-none transition-colors",
               isActive
                 ? "bg-sidebar text-sidebar-foreground shadow-sm ring-1 ring-sidebar-border/70"
                 : "text-sidebar-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
@@ -145,7 +145,7 @@ function SettingsPopover({
         aria-label="Open settings"
         aria-expanded={isOpen}
         title="Settings"
-        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-sidebar-border/60 bg-sidebar-accent/40 text-[0.75rem] leading-none text-sidebar-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-foreground [&_svg]:h-[1em] [&_svg]:w-[1em]"
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-sidebar-border/60 bg-sidebar-accent/40 text-xs leading-none text-sidebar-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-foreground [&_svg]:h-[1em] [&_svg]:w-[1em]"
         onClick={() => setIsOpen((current) => !current)}
       >
         <Settings />
@@ -155,7 +155,7 @@ function SettingsPopover({
         <div className="absolute bottom-0 right-0 z-[80] mb-2 ml-2 w-44 translate-x-full rounded-md border border-sidebar-border/70 bg-sidebar px-2.5 py-2.5 shadow-xl">
           <div className="space-y-2.5">
             <div className="space-y-1.5">
-              <div className="font-mono text-[0.56rem] uppercase tracking-[0.24em] text-sidebar-muted-foreground/70">
+              <div className="font-mono text-eyebrow uppercase tracking-[0.24em] text-sidebar-muted-foreground/70">
                 Theme
               </div>
               <ThemeToggle value={theme} onValueChange={onThemeChange} />
@@ -166,7 +166,7 @@ function SettingsPopover({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8 w-full justify-between border-sidebar-border/70 bg-sidebar-accent/20 px-2.5 text-[0.66rem] uppercase tracking-[0.16em] text-sidebar-foreground hover:bg-sidebar-accent/60"
+                className="h-8 w-full justify-between border-sidebar-border/70 bg-sidebar-accent/20 px-2.5 text-xs uppercase tracking-[0.16em] text-sidebar-foreground hover:bg-sidebar-accent/60"
                 onClick={() => {
                   setIsOpen(false);
                   onLogout();
@@ -286,7 +286,7 @@ function SidebarNav({
     const isExpanded = expandedGroups[group.id] ?? false;
 
     return (
-      <div key={group.id} className="grid gap-0.5">
+      <div key={group.id} className="grid gap-1.5">
         <SidebarMenuItem
           aria-expanded={isExpanded}
           onClick={() => setExpandedGroups((prev) => ({ ...prev, [group.id]: !isExpanded }))}
@@ -303,7 +303,7 @@ function SidebarNav({
           />
         </SidebarMenuItem>
         {isExpanded ? (
-          <div className="ml-5 grid gap-0.5 border-l border-sidebar-border/60 pl-1">
+          <div className="ml-5 grid gap-1.5 border-l border-sidebar-border/60 pl-1">
             {group.items.map((item) => {
               const Icon = item.icon;
               const isActive = isNavigationItemActive(item, pathname);
@@ -332,13 +332,25 @@ function SidebarNav({
     );
   }
 
+  function renderBottomEntry(entry: (typeof navigationTree)[number]) {
+    if (entry.kind === "item") {
+      return renderEntry(entry);
+    }
+
+    return (
+      <SidebarGroup key={entry.group.id}>
+        <SidebarMenu>{renderEntry(entry)}</SidebarMenu>
+      </SidebarGroup>
+    );
+  }
+
   return (
     <SidebarContent className="mt-4 flex-1 justify-between">
       <SidebarGroup>
         <SidebarMenu>{topEntries.map(renderEntry)}</SidebarMenu>
       </SidebarGroup>
       <SidebarGroup>
-        <SidebarMenu>{bottomEntries.map(renderEntry)}</SidebarMenu>
+        {bottomEntries.map(renderBottomEntry)}
       </SidebarGroup>
     </SidebarContent>
   );
@@ -360,14 +372,14 @@ function SidebarFooter({
     <div className="mt-2 border-t border-sidebar-border/60">
       {user ? (
         <div className="flex items-center gap-2 px-3 py-2">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent/60 font-mono text-[0.625rem] font-semibold text-sidebar-foreground">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent/60 font-mono text-eyebrow font-semibold text-sidebar-foreground">
             {pickInitials(user.displayName ?? user.email)}
           </div>
           <div className="min-w-0 flex-1 leading-tight">
-            <p className="truncate text-[0.72rem] font-medium text-sidebar-foreground">
+            <p className="truncate text-xs font-medium text-sidebar-foreground">
               {user.displayName ?? "Authorized"}
             </p>
-            <p className="truncate font-mono text-[0.58rem] text-sidebar-muted-foreground/80">
+            <p className="truncate font-mono text-eyebrow text-sidebar-muted-foreground/80">
               {user.email}
             </p>
           </div>
@@ -386,12 +398,12 @@ function SidebarFooter({
       ) : showSignIn ? (
         <Link
           to={`/login?redirectTo=${encodeURIComponent(currentPathWithQuery)}`}
-          className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[0.72rem] font-medium leading-none text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50 [&_svg]:h-[1em] [&_svg]:w-[1em]"
+          className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-medium leading-none text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50 [&_svg]:h-[1em] [&_svg]:w-[1em]"
           onClick={onNavigate}
         >
           <LogIn className="text-sidebar-muted-foreground" />
           <span>Sign in</span>
-          <span className="ml-auto font-mono text-[0.58rem] uppercase tracking-[0.22em] text-sidebar-muted-foreground/70">
+          <span className="ml-auto font-mono text-eyebrow uppercase tracking-[0.22em] text-sidebar-muted-foreground/70">
             google
           </span>
         </Link>

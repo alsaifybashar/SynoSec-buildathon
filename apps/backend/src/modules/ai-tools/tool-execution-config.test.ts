@@ -6,7 +6,6 @@ describe("resolveToolExecutionFields", () => {
     const result = resolveToolExecutionFields({
       id: "seed-http-headers",
       name: "HTTP Headers",
-      binary: "curl",
       category: "web",
       riskTier: "passive"
     }, {

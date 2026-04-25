@@ -8,18 +8,16 @@ import { RequestError } from "@/shared/http/request-error.js";
 import { attachAuthContext, loadAuthConfig } from "@/modules/auth/index.js";
 import { createErrorHandler } from "@/shared/http/error-handler.js";
 import { registerRoutes } from "@/app/register-routes.js";
-import type { ApplicationsRepository } from "@/modules/applications/index.js";
 import type { ExecutionConstraintsRepository } from "@/modules/execution-constraints/index.js";
-import type { RuntimesRepository } from "@/modules/runtimes/index.js";
 import type { AiProvidersRepository } from "@/modules/ai-providers/index.js";
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
+import type { TargetsRepository } from "@/modules/targets/index.js";
 import type { WorkflowsRepository } from "@/modules/workflows/index.js";
 
 export type AppDependencies = {
-  applicationsRepository: ApplicationsRepository;
+  targetsRepository: TargetsRepository;
   executionConstraintsRepository: ExecutionConstraintsRepository;
-  runtimesRepository: RuntimesRepository;
   aiProvidersRepository: AiProvidersRepository;
   aiAgentsRepository: AiAgentsRepository;
   aiToolsRepository: AiToolsRepository;

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type { AiAgent, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
+import type { AiAgent, AiTool, Target, Workflow, WorkflowRun } from "@synosec/contracts";
 import { WorkflowTraceSection } from "@/features/workflows/workflow-trace-section";
 
 const workflow: Workflow = {
@@ -8,8 +8,7 @@ const workflow: Workflow = {
   name: "OSI Single-Agent",
   status: "active",
   description: "Workflow debug transcript test",
-  applicationId: "20000000-0000-0000-0000-000000000001",
-  runtimeId: "30000000-0000-0000-0000-000000000001",
+  targetId: "20000000-0000-0000-0000-000000000001",
   agentId: "50000000-0000-0000-0000-000000000001",
   objective: "Run one evidence-backed workflow pass.",
   allowedToolIds: ["tool-1"],
@@ -152,6 +151,7 @@ const run: WorkflowRun = {
         "",
         "Built-in actions",
         "",
+        "log_progress: Persist one short operator-visible progress update for the workflow transcript.",
         "report_finding: Persist one evidence-backed workflow finding.",
         "complete_run: Finish the workflow pipeline successfully.",
         "fail_run: Finish the workflow pipeline as failed."
@@ -166,6 +166,7 @@ const run: WorkflowRun = {
           "",
           "Built-in actions",
           "",
+          "log_progress: Persist one short operator-visible progress update for the workflow transcript.",
           "report_finding: Persist one evidence-backed workflow finding.",
           "complete_run: Finish the workflow pipeline successfully.",
           "fail_run: Finish the workflow pipeline as failed."
@@ -350,26 +351,13 @@ const run: WorkflowRun = {
   ]
 };
 
-const applications: Application[] = [{
-  id: workflow.applicationId,
-  name: "Demo App",
+const targets: Target[] = [{
+  id: workflow.targetId,
+  name: "Demo Target",
   baseUrl: "http://localhost:8888",
   environment: "development",
   status: "active",
   lastScannedAt: null,
-  createdAt: "2026-04-21T00:00:00.000Z",
-  updatedAt: "2026-04-21T00:00:00.000Z"
-}];
-
-const runtimes: Runtime[] = [{
-  id: workflow.runtimeId ?? "",
-  name: "Demo Runtime",
-  serviceType: "api",
-  provider: "docker",
-  environment: "development",
-  region: "local",
-  status: "healthy",
-  applicationId: workflow.applicationId,
   createdAt: "2026-04-21T00:00:00.000Z",
   updatedAt: "2026-04-21T00:00:00.000Z"
 }];
@@ -424,6 +412,110 @@ const activeRun: WorkflowRun = {
   ...run,
   status: "running",
   completedAt: null
+};
+
+const streamedNarrationRun: WorkflowRun = {
+  id: "60000000-0000-0000-0000-000000000010",
+  workflowId: workflow.id,
+  status: "running",
+  currentStepIndex: 1,
+  startedAt: "2026-04-21T00:00:00.000Z",
+  completedAt: null,
+  trace: [],
+  events: [
+    {
+      id: "stream-1",
+      workflowRunId: "60000000-0000-0000-0000-000000000010",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 0,
+      type: "system_message",
+      status: "completed",
+      title: "Model step started",
+      summary: "Started a new model step.",
+      detail: null,
+      payload: {
+        rawStreamPartType: "start-step"
+      },
+      createdAt: "2026-04-21T00:00:00.100Z"
+    },
+    {
+      id: "stream-2",
+      workflowRunId: "60000000-0000-0000-0000-000000000010",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 1,
+      type: "model_decision",
+      status: "running",
+      title: "Model streamed text",
+      summary: "Checking the web entrypoint before expanding coverage.",
+      detail: "Checking the web entrypoint before expanding coverage.",
+      payload: {
+        rawStreamPartType: "text",
+        text: "Checking the web entrypoint before expanding coverage."
+      },
+      createdAt: "2026-04-21T00:00:00.200Z"
+    },
+    {
+      id: "stream-3",
+      workflowRunId: "60000000-0000-0000-0000-000000000010",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 2,
+      type: "tool_call",
+      status: "running",
+      title: "Calling Web Probe",
+      summary: "Invoked Web Probe.",
+      detail: "{\"url\":\"http://localhost:8888\"}",
+      payload: {
+        rawStreamPartType: "tool-call",
+        toolName: "Web Probe",
+        input: "{\"url\":\"http://localhost:8888\"}"
+      },
+      createdAt: "2026-04-21T00:00:00.300Z"
+    },
+    {
+      id: "stream-4",
+      workflowRunId: "60000000-0000-0000-0000-000000000010",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 3,
+      type: "tool_result",
+      status: "completed",
+      title: "Web Probe returned",
+      summary: "HTTP 200 confirmed.",
+      detail: "HTTP/1.1 200 OK",
+      payload: {
+        rawStreamPartType: "tool-result",
+        toolName: "Web Probe",
+        summary: "HTTP 200 confirmed.",
+        observations: ["HTTP service responded with 200 OK."]
+      },
+      createdAt: "2026-04-21T00:00:00.400Z"
+    },
+    {
+      id: "stream-5",
+      workflowRunId: "60000000-0000-0000-0000-000000000010",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 4,
+      type: "model_decision",
+      status: "running",
+      title: "Model streamed text",
+      summary: "The surface is reachable, so the next step is header-focused validation.",
+      detail: "The surface is reachable, so the next step is header-focused validation.",
+      payload: {
+        rawStreamPartType: "text",
+        text: "The surface is reachable, so the next step is header-focused validation."
+      },
+      createdAt: "2026-04-21T00:00:00.500Z"
+    }
+  ]
 };
 
 const rejectedModelRun: WorkflowRun = {
@@ -618,8 +710,7 @@ describe("WorkflowTraceSection", () => {
     const { container } = render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={run}
@@ -642,9 +733,10 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getByText("Probe the exposed web surface first.")).toBeInTheDocument();
     expect(screen.getByText(/Called Web Probe/)).toBeInTheDocument();
     expect(screen.getByText(/\{ "url": "http:\/\/localhost.../)).toBeInTheDocument();
-    expect(screen.getByText("The web probe returned a live HTTP service.")).toBeInTheDocument();
+    expect(screen.getByText("HTTP service responded with 200 OK.")).toBeInTheDocument();
+    expect(screen.getByText("Headers were returned immediately.")).toBeInTheDocument();
+    expect(screen.queryByText("HTTP/1.1 200 OK")).not.toBeInTheDocument();
     expect(screen.getByText("Evidence checkpoint after Web Probe")).toBeInTheDocument();
-    expect(screen.getAllByText("Missing security headers").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Findings").length).toBeGreaterThan(0);
     expect(screen.getByText("Run sealed")).toBeInTheDocument();
     expect(screen.queryByText("{\"url\":\"http://localhost:8888\"}")).not.toBeInTheDocument();
@@ -655,8 +747,7 @@ describe("WorkflowTraceSection", () => {
     render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={run}
@@ -670,16 +761,19 @@ describe("WorkflowTraceSection", () => {
     );
 
     expect(screen.getAllByText(/http:\/\/localhost:8888/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Output")).toBeInTheDocument();
+    expect(screen.getByText("Input")).toBeInTheDocument();
     expect(screen.getByText("HTTP/1.1 200 OK")).toBeInTheDocument();
     expect(screen.getByText("Observations")).toBeInTheDocument();
+    expect(screen.getByText("HTTP service responded with 200 OK.")).toBeInTheDocument();
+    expect(screen.getByText("Headers were returned immediately.")).toBeInTheDocument();
   });
 
   it("renders reconstructed structured tool context behind a disclosure", () => {
     render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={run}
@@ -692,11 +786,12 @@ describe("WorkflowTraceSection", () => {
       />
     );
 
-    expect(screen.getByText("4 tools and actions available to the model.")).toBeInTheDocument();
+    expect(screen.getByText("5 tools and actions available to the model.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Structured tool segment"));
 
     expect(screen.getByText("Web Probe")).toBeInTheDocument();
+    expect(screen.getByText("log_progress")).toBeInTheDocument();
     expect(screen.getByText("report_finding")).toBeInTheDocument();
     expect(screen.getByText("complete_run")).toBeInTheDocument();
     expect(screen.getByText("fail_run")).toBeInTheDocument();
@@ -709,8 +804,7 @@ describe("WorkflowTraceSection", () => {
     render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={summaryOnlyToolRun}
@@ -730,8 +824,7 @@ describe("WorkflowTraceSection", () => {
     render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={activeRun}
@@ -747,15 +840,37 @@ describe("WorkflowTraceSection", () => {
     expect(screen.queryByText("Thread · Workflow Transcript · Duplex Flow")).not.toBeInTheDocument();
     expect(screen.getByText("Prompt context")).toBeInTheDocument();
     expect(screen.getAllByText("Agent typing").length).toBeGreaterThan(0);
-    expect(screen.queryByText("No findings reported yet.")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Findings").length).toBeGreaterThan(0);
+  });
+
+  it("renders streamed narration separately from tool activity for active runs", () => {
+    render(
+      <WorkflowTraceSection
+        workflow={workflow}
+        targets={targets}
+        agents={agents}
+        tools={tools}
+        run={streamedNarrationRun}
+        running={true}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails={false}
+      />
+    );
+
+    expect(screen.getByText(/Checking the web entrypoint before expanding coverage\./)).toBeInTheDocument();
+    expect(screen.getByText(/The surface is reachable, so the next step is header-focused validation\./)).toBeInTheDocument();
+    expect(screen.getByText(/Called Web Probe/)).toBeInTheDocument();
+    expect(screen.getByText("HTTP service responded with 200 OK.")).toBeInTheDocument();
   });
 
   it("renders standardized model and tool error atoms with retry guidance", () => {
     const { rerender } = render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={rejectedModelRun}
@@ -774,8 +889,7 @@ describe("WorkflowTraceSection", () => {
     rerender(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={failedToolRun}
@@ -797,8 +911,7 @@ describe("WorkflowTraceSection", () => {
     render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={null}

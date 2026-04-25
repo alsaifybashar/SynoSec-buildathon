@@ -1,48 +1,43 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiAgent, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
+import type { AiAgent, AiTool, Target, Workflow, WorkflowRun } from "@synosec/contracts";
 import { WorkflowDetailPage } from "@/features/workflows/detail-page";
 import { WorkflowsPage } from "@/features/workflows/page";
 
-const application: Application = {
-  id: "app-1",
+const target: Target = {
+  id: "target-1",
   name: "Local Vulnerable Target",
   baseUrl: "http://127.0.0.1:3000",
   environment: "development",
   status: "active",
   lastScannedAt: null,
-  targetAssets: [
+  constraintBindings: [
     {
-      id: "target-1",
-      applicationId: "app-1",
-      label: "Primary target",
-      kind: "url",
-      hostname: "127.0.0.1",
-      baseUrl: "http://127.0.0.1:3000",
-      ipAddress: null,
-      cidr: null,
-      provider: null,
-      ownershipStatus: "verified",
-      isDefault: true,
-      metadata: null,
+      constraintId: "seed-constraint-cloudflare-v1",
       createdAt: "2026-04-21T00:00:00.000Z",
-      updatedAt: "2026-04-21T00:00:00.000Z"
+      constraint: {
+        id: "seed-constraint-cloudflare-v1",
+        name: "Cloudflare Owned Asset Policy",
+        kind: "provider_policy",
+        provider: "cloudflare",
+        version: 1,
+        description: "Review the Cloudflare scans and penetration-testing policy before running this workflow.",
+        bypassForLocalTargets: false,
+        denyProviderOwnedTargets: true,
+        requireVerifiedOwnership: true,
+        allowActiveExploit: false,
+        requireRateLimitSupport: true,
+        rateLimitRps: 5,
+        requireHostAllowlistSupport: true,
+        requirePathExclusionSupport: true,
+        documentationUrls: ["https://developers.cloudflare.com/fundamentals/reference/scans-penetration/"],
+        excludedPaths: ["/cdn-cgi/"],
+        createdAt: "2026-04-21T00:00:00.000Z",
+        updatedAt: "2026-04-21T00:00:00.000Z"
+      }
     }
   ],
-  createdAt: "2026-04-21T00:00:00.000Z",
-  updatedAt: "2026-04-21T00:00:00.000Z"
-};
-
-const runtime: Runtime = {
-  id: "runtime-1",
-  name: "Local Runtime",
-  serviceType: "api",
-  provider: "docker",
-  environment: "development",
-  region: "local",
-  status: "healthy",
-  applicationId: application.id,
   createdAt: "2026-04-21T00:00:00.000Z",
   updatedAt: "2026-04-21T00:00:00.000Z"
 };
@@ -88,8 +83,7 @@ const workflow: Workflow = {
   status: "active",
   executionKind: "attack-map",
   description: "Stage timeline test",
-  applicationId: application.id,
-  runtimeId: runtime.id,
+  targetId: target.id,
   agentId: agent.id,
   objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
   allowedToolIds: [tool.id],
@@ -254,11 +248,8 @@ function createFetchMock() {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
 
-    if (url.startsWith("/api/applications?")) {
-      return new Response(JSON.stringify(paginatedResponse("applications", [application])));
-    }
-    if (url.startsWith("/api/runtimes?")) {
-      return new Response(JSON.stringify(paginatedResponse("runtimes", [runtime])));
+    if (url.startsWith("/api/targets?")) {
+      return new Response(JSON.stringify(paginatedResponse("targets", [target])));
     }
     if (url.startsWith("/api/ai-agents?")) {
       return new Response(JSON.stringify(paginatedResponse("agents", [agent])));
@@ -271,6 +262,9 @@ function createFetchMock() {
     }
     if (url === `/api/workflows/${workflow.id}`) {
       return new Response(JSON.stringify(workflow));
+    }
+    if (url === `/api/ai-agents/${agent.id}` && (!init?.method || init.method === "GET")) {
+      return new Response(JSON.stringify(agent));
     }
     if (url === `/api/workflows/${workflow.id}/runs/latest`) {
       return new Response(JSON.stringify(run));
@@ -288,6 +282,12 @@ function createFetchMock() {
     if (url === `/api/workflows/${workflow.id}` && init?.method === "PATCH") {
       return new Response(JSON.stringify({
         ...workflow,
+        ...JSON.parse(String(init.body))
+      }));
+    }
+    if (url === `/api/ai-agents/${agent.id}` && init?.method === "PATCH") {
+      return new Response(JSON.stringify({
+        ...agent,
         ...JSON.parse(String(init.body))
       }));
     }
@@ -369,6 +369,8 @@ describe("WorkflowDetailPage", () => {
 
     expect(await screen.findByRole("button", { name: "Start Run" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Show Full Details" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Show guidance for Status" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Current Run" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show Full Details" }));
     expect(await screen.findByRole("button", { name: "Hide Full Details" })).toBeInTheDocument();
     expect(screen.getByText(/Server: demo/)).toBeInTheDocument();
@@ -384,13 +386,20 @@ describe("WorkflowDetailPage", () => {
     renderWorkflowDetailPage();
     fireEvent.click(await screen.findByRole("button", { name: "Start Run" }));
 
-    const postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST");
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "https://developers.cloudflare.com/fundamentals/reference/scans-penetration/" })).toBeInTheDocument();
+
+    let postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST");
+    expect(postCall).toBeUndefined();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to Run" }));
+
     await waitFor(() => {
+      postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST");
       expect(postCall).toBeDefined();
     });
-    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
-      targetAssetId: "target-1"
-    });
+    expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({});
   });
 
   it("keeps the existing SSE workflow channel active for running runs", async () => {
@@ -403,6 +412,42 @@ describe("WorkflowDetailPage", () => {
     });
 
     expect(eventSourceInstances[0]?.onmessage).toBeTypeOf("function");
+  });
+
+  it("saves workflow and agent prompts from the modal before starting a run", async () => {
+    const fetchMock = createFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWorkflowDetailPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Prompts" }));
+
+    expect(await screen.findByRole("dialog", { name: "Edit Prompts" })).toBeInTheDocument();
+    expect(screen.getByText("Workflow context")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Workflow objective"), {
+      target: { value: "Collect high-signal HTTP evidence and complete the workflow cleanly." }
+    });
+    fireEvent.change(screen.getByLabelText("Agent system prompt"), {
+      target: { value: "Drive the workflow decisively and report evidence-backed findings." }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save and Run" }));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}` && init?.method === "PATCH")).toBeDefined();
+      expect(fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/ai-agents/${agent.id}` && init?.method === "PATCH")).toBeDefined();
+      expect(fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST")).toBeDefined();
+    });
+
+    const workflowPatchCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}` && init?.method === "PATCH");
+    const agentPatchCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/ai-agents/${agent.id}` && init?.method === "PATCH");
+
+    expect(JSON.parse(String(workflowPatchCall?.[1]?.body))).toEqual({
+      objective: "Collect high-signal HTTP evidence and complete the workflow cleanly."
+    });
+    expect(JSON.parse(String(agentPatchCall?.[1]?.body))).toEqual({
+      systemPrompt: "Drive the workflow decisively and report evidence-backed findings."
+    });
   });
 });
 
@@ -432,6 +477,20 @@ describe("WorkflowsPage", () => {
       executionKind: "workflow"
     });
     expect(onNavigateToDetail).toHaveBeenCalledWith("workflow-created", "New Workflow");
+  });
+
+  it("renders helper triggers for guided workflow fields", async () => {
+    vi.stubGlobal("fetch", createFetchMock());
+
+    renderWorkflowConfigPage();
+
+    expect(await screen.findByText("Workflow Configuration")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Execution kind" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Target" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Agent" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Objective" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Agent prompt" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Allowed tools" })).toBeInTheDocument();
   });
 
   it("updates an existing workflow from the config edit page", async () => {

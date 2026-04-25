@@ -11,7 +11,7 @@ import { RequestError } from "@/shared/http/request-error.js";
 
 function parseRedirectTarget(rawRedirectTo: unknown) {
   if (rawRedirectTo === undefined) {
-    return "/applications";
+    return "/targets";
   }
 
   if (typeof rawRedirectTo !== "string" || !rawRedirectTo.startsWith("/") || rawRedirectTo.startsWith("//")) {

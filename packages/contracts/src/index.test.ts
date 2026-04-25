@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  applicationSchema,
-  applicationsListQuerySchema,
   connectorPollResponseSchema,
   connectorRegistrationRequestSchema,
   connectorTestDispatchRequestSchema,
   createAiToolBodySchema,
-  createScanRequestSchema,
-  createApplicationBodySchema,
   createAiProviderBodySchema,
+  createTargetBodySchema,
   defensiveIterationRecordSchema,
   defensiveLoopContract,
   defensiveLoopStages,
@@ -17,16 +14,17 @@ import {
   executionReportsListQuerySchema,
   prioritizeDefensiveAction,
   healthResponseSchema,
-  listApplicationsResponseSchema,
-  listScansResponseSchema,
+  listTargetsResponseSchema,
   scanLayerCoverageSchema,
-  scansListQuerySchema,
   securityVulnerabilitySchema,
   aiToolSchema,
+  targetSchema,
+  targetsListQuerySchema,
   toolRequestSchema,
   toolRunSchema,
+  workflowFindingSubmissionSchema,
   updateAiProviderBodySchema,
-  updateApplicationBodySchema
+  updateTargetBodySchema
 } from "./index.js";
 import { workflowTraceEventSchema } from "./index.js";
 
@@ -41,8 +39,8 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
-  it("accepts a valid application payload", () => {
-    const result = applicationSchema.safeParse({
+  it("accepts a valid target payload", () => {
+    const result = targetSchema.safeParse({
       id: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
       name: "Operator Portal",
       baseUrl: "https://portal.synosec.local",
@@ -56,8 +54,8 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
-  it("applies defaults for application list queries", () => {
-    const result = applicationsListQuerySchema.safeParse({});
+  it("applies defaults for target list queries", () => {
+    const result = targetsListQuerySchema.safeParse({});
 
     expect(result.success).toBe(true);
 
@@ -69,14 +67,14 @@ describe("contracts", () => {
   });
 
   it("rejects invalid page sizes for list queries", () => {
-    const result = applicationsListQuerySchema.safeParse({ pageSize: 15 });
+    const result = targetsListQuerySchema.safeParse({ pageSize: 15 });
 
     expect(result.success).toBe(false);
   });
 
-  it("accepts paginated application responses", () => {
-    const result = listApplicationsResponseSchema.safeParse({
-      applications: [
+  it("accepts paginated target responses", () => {
+    const result = listTargetsResponseSchema.safeParse({
+      targets: [
         {
           id: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
           name: "Operator Portal",
@@ -98,7 +96,7 @@ describe("contracts", () => {
   });
 
   it("normalizes empty create payload values", () => {
-    const result = createApplicationBodySchema.safeParse({
+    const result = createTargetBodySchema.safeParse({
       name: "Report Builder",
       baseUrl: "",
       environment: "staging",
@@ -114,7 +112,7 @@ describe("contracts", () => {
   });
 
   it("rejects an empty update payload", () => {
-    const result = updateApplicationBodySchema.safeParse({});
+    const result = updateTargetBodySchema.safeParse({});
 
     expect(result.success).toBe(false);
   });
@@ -135,72 +133,6 @@ describe("contracts", () => {
   it("accepts partial AI provider updates", () => {
     const result = updateAiProviderBodySchema.safeParse({
       model: "claude-sonnet-4"
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts a scan request with local llm overrides", () => {
-    const result = createScanRequestSchema.safeParse({
-      scope: {
-        targets: ["localhost:8888"],
-        exclusions: [],
-        layers: ["L3", "L4", "L7"],
-        maxDepth: 2,
-        maxDurationMinutes: 5,
-        rateLimitRps: 5,
-        allowActiveExploits: false
-      },
-      llm: {
-        provider: "local",
-        model: "Qwen/Qwen3-4B",
-        baseUrl: "http://127.0.0.1:8000",
-        apiPath: "/api/chat/raw"
-      }
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it("applies defaults for scan list queries", () => {
-    const result = scansListQuerySchema.safeParse({});
-
-    expect(result.success).toBe(true);
-
-    if (result.success) {
-      expect(result.data.sortBy).toBe("createdAt");
-      expect(result.data.sortDirection).toBe("desc");
-    }
-  });
-
-  it("accepts paginated scan responses", () => {
-    const result = listScansResponseSchema.safeParse({
-      scans: [
-        {
-          id: "scan-1",
-          scope: {
-            targets: ["localhost:8888"],
-            exclusions: [],
-            layers: ["L4", "L7"],
-            maxDepth: 2,
-            maxDurationMinutes: 5,
-            rateLimitRps: 5,
-            allowActiveExploits: false,
-            graceEnabled: true,
-            graceRoundInterval: 3,
-            cyberRangeMode: "simulation"
-          },
-          status: "running",
-          currentRound: 1,
-          tacticsTotal: 3,
-          tacticsComplete: 1,
-          createdAt: "2026-04-12T12:00:00.000Z"
-        }
-      ],
-      page: 1,
-      pageSize: 25,
-      total: 1,
-      totalPages: 1
     });
 
     expect(result.success).toBe(true);
@@ -352,6 +284,40 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts workflow finding submissions with inline graph relationship metadata and linked evidence", () => {
+    const result = workflowFindingSubmissionSchema.safeParse({
+      type: "auth_weakness",
+      title: "Admin surface exposed",
+      severity: "high",
+      confidence: 0.92,
+      target: {
+        host: "target.local",
+        url: "https://target.local/admin"
+      },
+      evidence: [
+        {
+          sourceTool: "httpx",
+          quote: "GET /admin returned 200",
+          toolRunRef: "tool-run-1"
+        }
+      ],
+      impact: "An administrative entrypoint is reachable without the expected front-door controls.",
+      recommendation: "Restrict access to the admin surface.",
+      derivedFromFindingIds: ["11111111-1111-4111-8111-111111111111"],
+      relatedFindingIds: ["22222222-2222-4222-8222-222222222222"],
+      enablesFindingIds: ["33333333-3333-4333-8333-333333333333"],
+      chain: {
+        id: "admin-path",
+        title: "Admin exposure path",
+        summary: "This finding contributes to a broader privilege escalation chain.",
+        severity: "high"
+      },
+      tags: ["admin"]
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("accepts scan layer coverage for L1 through L7 values", () => {
     const result = scanLayerCoverageSchema.safeParse({
       scanId: "scan-1",
@@ -384,6 +350,41 @@ describe("contracts", () => {
       updatedAt: "2026-04-25T12:05:00.000Z",
       archivedAt: null,
       executiveSummary: "One meaningful attack path was confirmed.",
+      graph: {
+        nodes: [
+          {
+            id: "evidence-1",
+            kind: "evidence",
+            title: "Admin panel response",
+            summary: "Passive HTTP evidence showing an admin surface.",
+            sourceTool: "httpx",
+            quote: "/admin returned 200 OK",
+            severity: "high",
+            refs: [{ toolRunRef: "tool-run-1" }],
+            createdAt: "2026-04-25T12:02:00.000Z"
+          },
+          {
+            id: "finding-1",
+            kind: "finding",
+            findingId: "finding-1",
+            title: "Admin surface exposed",
+            summary: "The attack map confirmed an exposed admin surface.",
+            severity: "high",
+            confidence: null,
+            targetLabel: "https://target.local/admin",
+            createdAt: "2026-04-25T12:03:00.000Z"
+          }
+        ],
+        edges: [
+          {
+            id: "edge-1",
+            kind: "supports",
+            source: "evidence-1",
+            target: "finding-1",
+            createdAt: "2026-04-25T12:03:30.000Z"
+          }
+        ]
+      },
       findings: [
         {
           id: "finding-1",
@@ -484,22 +485,18 @@ describe("contracts", () => {
     }
   });
 
-  it("accepts executable ai tools with sandbox and privilege policy", () => {
+  it("accepts executable ai tools with the simplified custom tool shape", () => {
     const result = aiToolSchema.safeParse({
       id: "tool-1",
       name: "HTTP Recon",
       status: "active",
       source: "custom",
       description: "Bash-backed HTTP probe",
-      binary: "httpx",
       executorType: "bash",
       bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
       capabilities: ["web-recon"],
       category: "web",
       riskTier: "passive",
-      notes: null,
-      sandboxProfile: "network-recon",
-      privilegeProfile: "read-only-network",
       timeoutMs: 30000,
       inputSchema: { type: "object", properties: { target: { type: "string" } } },
       outputSchema: { type: "object", properties: { summary: { type: "string" } } },
@@ -512,24 +509,20 @@ describe("contracts", () => {
 
   it("accepts builtin ai tools without bash source", () => {
     const result = aiToolSchema.safeParse({
-      id: "builtin-report-finding",
-      name: "Report Finding",
+      id: "builtin-complete-run",
+      name: "Complete Run",
       status: "active",
       source: "system",
-      description: "Workflow built-in action for persisting a structured finding.",
-      binary: null,
+      description: "Workflow built-in action for completing a run successfully.",
       executorType: "builtin",
-      builtinActionKey: "report_finding",
+      builtinActionKey: "complete_run",
       bashSource: null,
-      capabilities: ["workflow-reporting"],
+      capabilities: ["workflow-control"],
       category: "utility",
       riskTier: "passive",
-      notes: "Executed by the workflow engine.",
-      sandboxProfile: "read-only-parser",
-      privilegeProfile: "read-only-network",
       timeoutMs: 1000,
-      inputSchema: { type: "object", properties: { title: { type: "string" } } },
-      outputSchema: { type: "object", properties: { findingId: { type: "string" } } },
+      inputSchema: { type: "object", properties: { summary: { type: "string" } } },
+      outputSchema: { type: "object", properties: { accepted: { type: "boolean" } } },
       createdAt: "2026-04-21T12:00:00.000Z",
       updatedAt: "2026-04-21T12:00:00.000Z"
     });
@@ -537,24 +530,23 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects executable ai tools without sandbox metadata", () => {
+  it("accepts executable ai tools without explicit sandbox metadata in the CRUD body", () => {
     const result = createAiToolBodySchema.safeParse({
       name: "Unsafe Custom Tool",
       status: "active",
       source: "custom",
-      description: "Missing sandbox policy",
-      binary: "curl",
+      description: "Simplified custom tool body",
       executorType: "bash",
       bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
       capabilities: ["web-recon"],
       category: "utility",
       riskTier: "passive",
-      notes: null,
+      timeoutMs: 30000,
       inputSchema: { type: "object", properties: {} },
       outputSchema: { type: "object", properties: {} }
     });
 
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it("requires bash tool requests to carry runtime execution metadata", () => {

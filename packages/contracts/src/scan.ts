@@ -3,14 +3,12 @@ import {
   escalationRouteSchema,
   environmentGraphSchema,
   findingSchema,
-  scanLlmConfigSchema,
   scanScopeSchema,
   scanTacticSchema,
   severitySchema,
   validationStatusSchema
 } from "./scan-core.js";
 import { agentNoteSchema, observationSchema, toolRunSchema } from "./tooling.js";
-import { paginatedMetaSchema, resourceListQuerySchema, sortDirectionSchema } from "./shared.js";
 export const scanStatusSchema = z.enum(["pending", "running", "complete", "aborted", "failed"]);
 export type ScanStatus = z.infer<typeof scanStatusSchema>;
 
@@ -25,11 +23,6 @@ export const scanSchema = z.object({
   completedAt: z.string().datetime().optional()
 });
 export type Scan = z.infer<typeof scanSchema>;
-
-export const listScansResponseSchema = paginatedMetaSchema.extend({
-  scans: z.array(scanSchema)
-});
-export type ListScansResponse = z.infer<typeof listScansResponseSchema>;
 
 export const auditEntrySchema = z.object({
   id: z.string(),
@@ -75,30 +68,6 @@ export const reportSchema = z.object({
   generatedAt: z.string().datetime()
 });
 export type Report = z.infer<typeof reportSchema>;
-
-export const createScanRequestSchema = z.object({
-  scope: scanScopeSchema,
-  llm: scanLlmConfigSchema.optional()
-});
-export type CreateScanRequest = z.infer<typeof createScanRequestSchema>;
-
-export const scansListQuerySchema = resourceListQuerySchema.extend({
-  status: scanStatusSchema.optional(),
-  sortBy: z.enum(["createdAt", "status", "currentRound"]).optional().default("createdAt"),
-  sortDirection: sortDirectionSchema.default("desc")
-});
-export type ScansListQuery = z.infer<typeof scansListQuerySchema>;
-
-export const strategyMapResponseSchema = z.object({
-  tactics: z.array(scanTacticSchema),
-  relationships: z.array(
-    z.object({
-      source: z.string(),
-      target: z.string()
-    })
-  )
-});
-export type StrategyMapResponse = z.infer<typeof strategyMapResponseSchema>;
 
 export const wsEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("tactic_updated"), tactic: scanTacticSchema }),

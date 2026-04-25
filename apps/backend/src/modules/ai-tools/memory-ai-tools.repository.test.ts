@@ -9,16 +9,12 @@ function createTool(overrides: Partial<AiTool> = {}): AiTool {
     status: "active",
     source: "system",
     description: "Persisted bash tool",
-    binary: "httpx",
     executorType: "bash",
     builtinActionKey: null,
     bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
     capabilities: ["web-recon"],
     category: "web",
     riskTier: "passive",
-    notes: null,
-    sandboxProfile: "network-recon",
-    privilegeProfile: "read-only-network",
     timeoutMs: 1000,
     inputSchema: {
       type: "object",
@@ -64,7 +60,10 @@ describe("MemoryAiToolsRepository", () => {
 
     expect(builtinOnly.items.map((tool) => tool.id)).toEqual([
       "builtin-attack-chain-correlation",
+      "builtin-complete-run",
       "builtin-deep-analysis",
+      "builtin-fail-run",
+      "builtin-log-progress",
       "builtin-report-finding"
     ]);
     expect(allTools.items.some((tool) => tool.id === "builtin-deep-analysis" && tool.source === "system")).toBe(true);

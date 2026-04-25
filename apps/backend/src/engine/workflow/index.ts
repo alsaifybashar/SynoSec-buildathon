@@ -2,6 +2,14 @@ export { WorkflowExecutionService as WorkflowExecutionEngineService } from "./wo
 export { WorkflowRunEventPublisher } from "./workflow-run-event-publisher.js";
 export { WorkflowRunStream } from "./workflow-run-stream.js";
 export {
+  WorkflowRuntimeService,
+  type WorkflowArtifactReader,
+  type WorkflowKindHandler,
+  type WorkflowRuntime,
+  type WorkflowRuntimePorts,
+  type WorkflowStageRunner
+} from "./workflow-runtime.js";
+export {
   createToolSelectionSummary,
   inferLayer,
   normalizeToolInput,

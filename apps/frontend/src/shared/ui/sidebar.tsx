@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/shared/lib/utils";
 
 export const sidebarMenuItemClassName =
-  "relative flex w-full items-center gap-2 rounded-none px-3 py-2 text-left text-[0.8125rem] font-medium leading-none text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground [&_svg]:h-[1em] [&_svg]:w-[1em] [&_svg]:shrink-0";
+  "relative flex w-full items-center gap-2 rounded-none px-3 py-2 text-left text-sm font-medium leading-none text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground [&_svg]:h-[1em] [&_svg]:w-[1em] [&_svg]:shrink-0";
 
 export function SidebarProvider({ children }: { children: ReactNode }) {
   return <>{children}</>;
@@ -37,7 +37,7 @@ export function SidebarGroupLabel({ className, ...props }: HTMLAttributes<HTMLPa
   return (
     <p
       className={cn(
-        "px-3 font-mono text-[0.625rem] font-medium uppercase tracking-[0.3em] text-sidebar-muted-foreground/80",
+        "px-3 font-mono text-eyebrow font-medium uppercase tracking-[0.3em] text-sidebar-muted-foreground/80",
         className
       )}
       {...props}
@@ -46,7 +46,7 @@ export function SidebarGroupLabel({ className, ...props }: HTMLAttributes<HTMLPa
 }
 
 export function SidebarMenu({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("grid gap-0.5", className)} {...props} />;
+  return <div className={cn("grid gap-1.5", className)} {...props} />;
 }
 
 export function SidebarMenuItem({ className, ...props }: HTMLAttributes<HTMLButtonElement>) {

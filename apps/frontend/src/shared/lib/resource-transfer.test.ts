@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { applicationTransfer } from "@/features/applications/transfer";
+import { targetTransfer } from "@/features/targets/transfer";
 import { importResourceRecords } from "@/shared/lib/resource-transfer";
 
 const fetchJsonMock = vi.fn();
@@ -17,7 +17,7 @@ describe("resource transfer", () => {
     const file = new File([
       JSON.stringify({
         version: 1,
-        table: "runtimes",
+        table: "ai-tools",
         exportedAt: "2026-04-21T08:00:00.000Z",
         records: [
           {
@@ -32,10 +32,10 @@ describe("resource transfer", () => {
           }
         ]
       })
-    ], "runtimes.json", { type: "application/json" });
+    ], "wrong-table.json", { type: "application/json" });
 
-    await expect(importResourceRecords(applicationTransfer, file)).rejects.toThrow(
-      'Import file targets table "runtimes", but this view expects "applications".'
+    await expect(importResourceRecords(targetTransfer, file)).rejects.toThrow(
+      'Import file targets table "ai-tools", but this view expects "targets".'
     );
     expect(fetchJsonMock).not.toHaveBeenCalled();
   });
@@ -46,7 +46,7 @@ describe("resource transfer", () => {
     const file = new File([
       JSON.stringify({
         version: 1,
-        table: "applications",
+        table: "targets",
         exportedAt: "2026-04-21T08:00:00.000Z",
         records: [
           {
@@ -61,12 +61,12 @@ describe("resource transfer", () => {
           }
         ]
       })
-    ], "applications.json", { type: "application/json" });
+    ], "targets.json", { type: "application/json" });
 
-    const created = await importResourceRecords(applicationTransfer, file);
+    const created = await importResourceRecords(targetTransfer, file);
 
     expect(created).toEqual([{ id: "created-app" }]);
-    expect(fetchJsonMock).toHaveBeenCalledWith("/api/applications", {
+    expect(fetchJsonMock).toHaveBeenCalledWith("/api/targets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

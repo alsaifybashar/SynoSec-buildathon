@@ -35,25 +35,13 @@ export type ResourceClient<TItem, TQuery extends ListQueryState> = {
 };
 
 type OptionalString = string | undefined;
-export type ApplicationsQuery = {
+export type TargetsQuery = {
   page: number;
   pageSize: number;
   q: string;
   sortBy: "name" | "status" | "environment" | "lastScannedAt" | "createdAt" | "updatedAt";
   sortDirection: SortDirection;
   status: OptionalString;
-  environment: OptionalString;
-  [key: string]: number | string | undefined;
-};
-
-export type RuntimesQuery = {
-  page: number;
-  pageSize: number;
-  q: string;
-  sortBy: "name" | "serviceType" | "status" | "provider" | "environment" | "region" | "applicationId" | "createdAt" | "updatedAt";
-  sortDirection: SortDirection;
-  status: OptionalString;
-  provider: OptionalString;
   environment: OptionalString;
   [key: string]: number | string | undefined;
 };
@@ -97,10 +85,10 @@ export type WorkflowsQuery = {
   page: number;
   pageSize: number;
   q: string;
-  sortBy: "name" | "status" | "applicationId" | "agentId" | "createdAt" | "updatedAt";
+  sortBy: "name" | "status" | "targetId" | "agentId" | "createdAt" | "updatedAt";
   sortDirection: SortDirection;
   status: OptionalString;
-  applicationId: OptionalString;
+  targetId: OptionalString;
   [key: string]: number | string | undefined;
 };
 

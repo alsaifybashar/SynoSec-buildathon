@@ -38,34 +38,34 @@ export const workflowsDefinition: CrudFeatureDefinition<
         return;
       }
 
-      const nextApplicationId = formValues.applicationId || context.defaultApplicationId;
+      const nextTargetId = formValues.targetId || context.defaultTargetId;
       const nextAgentId = formValues.agentId || context.defaultAgentId;
 
-      if (nextApplicationId === formValues.applicationId && nextAgentId === formValues.agentId) {
+      if (nextTargetId === formValues.targetId && nextAgentId === formValues.agentId) {
         return;
       }
 
       const nextValues = {
         ...formValues,
-        applicationId: nextApplicationId,
+        targetId: nextTargetId,
         agentId: nextAgentId
       };
       setFormValues(nextValues);
       setInitialValues((current) => ({
         ...current,
-        applicationId: nextApplicationId,
+        targetId: nextTargetId,
         agentId: nextAgentId
       }));
     }, [
       context.defaultAgentId,
-      context.defaultApplicationId,
+      context.defaultTargetId,
       formValues,
       recordId,
       setFormValues,
       setInitialValues
     ]);
   },
-  createEmptyFormValues: (context) => createEmptyFormValues(context.defaultApplicationId, "", context.defaultAgentId),
+  createEmptyFormValues: (context) => createEmptyFormValues(context.defaultTargetId, context.defaultAgentId),
   toFormValues: toWorkflowFormValues,
   parseRequestBody: (formValues) => {
     const errors = validateWorkflowForm(formValues);
@@ -84,7 +84,7 @@ export const workflowsDefinition: CrudFeatureDefinition<
     emptyMessage: "No workflows have been configured yet.",
     columns: (context) => [
       { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
-      { id: "applicationId", header: "Target", cell: (row) => <span className="text-muted-foreground">{context.applicationLookup[row.applicationId] ?? "Unknown"}</span> },
+      { id: "targetId", header: "Target", cell: (row) => <span className="text-muted-foreground">{context.targetLookup[row.targetId] ?? "Unknown"}</span> },
       { id: "agentId", header: "Agent", cell: (row) => <span className="text-muted-foreground">{context.agentLookup[row.agentId]?.name ?? "Unknown"}</span> }
     ],
     filters: () => []
@@ -96,7 +96,7 @@ export const workflowsDefinition: CrudFeatureDefinition<
     renderSidebar: ({ item, context }) => (
       <>
         <DetailSidebarItem label="Status">{workflowStatusLabels[item.status]}</DetailSidebarItem>
-        <DetailSidebarItem label="Application">{context.applicationLookup[item.applicationId] ?? "Unknown"}</DetailSidebarItem>
+        <DetailSidebarItem label="Target">{context.targetLookup[item.targetId] ?? "Unknown"}</DetailSidebarItem>
         <DetailSidebarItem label="Agent">{context.agentLookup[item.agentId]?.name ?? "Unknown"}</DetailSidebarItem>
         <DetailSidebarItem label="Allowed tools">
           {item.allowedToolIds.length > 0 ? item.allowedToolIds.length : context.agentLookup[item.agentId]?.toolIds.length ?? 0}
@@ -104,23 +104,16 @@ export const workflowsDefinition: CrudFeatureDefinition<
         <DetailSidebarItem label="Updated">{formatTimestamp(item.updatedAt)}</DetailSidebarItem>
       </>
     ),
-    renderContent: ({ formValues, errors, context, handleFieldChange }) => {
-      const filteredRuntimes = context.runtimes.filter(
-        (runtime) => !formValues.applicationId || runtime.applicationId === formValues.applicationId
-      );
-
-      return (
-        <WorkflowConfigEditor
-          formValues={formValues}
-          errors={errors as Record<string, string>}
-          applications={context.applications}
-          agents={context.agents}
-          agentLookup={context.agentLookup}
-          toolLookup={context.toolLookup}
-          filteredRuntimes={filteredRuntimes}
-          onFieldChange={handleFieldChange}
-        />
-      );
-    }
+    renderContent: ({ formValues, errors, context, handleFieldChange }) => (
+      <WorkflowConfigEditor
+        formValues={formValues}
+        errors={errors as Record<string, string>}
+        targets={context.targets}
+        agents={context.agents}
+        agentLookup={context.agentLookup}
+        toolLookup={context.toolLookup}
+        onFieldChange={handleFieldChange}
+      />
+    )
   }
 };

@@ -224,20 +224,20 @@ export const executionConstraintsDefinition: CrudFeatureDefinition<
     createTitle: "New execution constraint",
     renderSidebar: ({ item }) => (
       <>
-        <DetailSidebarItem label="Kind">{kindLabels[item.kind]}</DetailSidebarItem>
-        <DetailSidebarItem label="Provider">{item.provider ?? "Generic"}</DetailSidebarItem>
-        <DetailSidebarItem label="Version">v{item.version}</DetailSidebarItem>
-        <DetailSidebarItem label="Documentation sources">{item.documentationUrls.length}</DetailSidebarItem>
+        <DetailSidebarItem label="Kind" hint="The policy layer this constraint belongs to.">{kindLabels[item.kind]}</DetailSidebarItem>
+        <DetailSidebarItem label="Provider" hint="Optional provider scope. Generic constraints apply across providers.">{item.provider ?? "Generic"}</DetailSidebarItem>
+        <DetailSidebarItem label="Version" hint="Monotonic policy version for change tracking and audits.">v{item.version}</DetailSidebarItem>
+        <DetailSidebarItem label="Documentation sources" hint="How many external policy documents are attached as evidence for this constraint.">{item.documentationUrls.length}</DetailSidebarItem>
         <DetailSidebarItem label="Updated">{formatTimestamp(item.updatedAt)}</DetailSidebarItem>
       </>
     ),
     renderContent: ({ item, formValues, errors, handleFieldChange }) => (
       <>
         <DetailFieldGroup title="Constraint">
-          <DetailField label="Name" required {...definedString(errors["name"] as string | undefined)}>
+          <DetailField label="Name" required hint="Short policy label used in operator reviews and workflow gates." {...definedString(errors["name"] as string | undefined)}>
             <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
           </DetailField>
-          <DetailField label="Kind" required>
+          <DetailField label="Kind" required hint="Choose whether this rule represents provider policy, legal scope, or an internal workflow gate.">
             <Select value={formValues.kind} onValueChange={(value) => handleFieldChange("kind", value as ExecutionConstraintKind)}>
               <SelectTrigger aria-label="Kind">
                 <SelectValue placeholder="Select kind" />
@@ -249,13 +249,13 @@ export const executionConstraintsDefinition: CrudFeatureDefinition<
               </SelectContent>
             </Select>
           </DetailField>
-          <DetailField label="Provider">
+          <DetailField label="Provider" hint="Optional provider slug such as `cloudflare`. Leave empty to make the rule generic.">
             <Input value={formValues.provider} onChange={(event) => handleFieldChange("provider", event.target.value)} aria-label="Provider" placeholder="cloudflare" />
           </DetailField>
-          <DetailField label="Version" required {...definedString(errors["version"] as string | undefined)}>
+          <DetailField label="Version" required hint="Increment this when the underlying policy interpretation changes." {...definedString(errors["version"] as string | undefined)}>
             <Input value={formValues.version} onChange={(event) => handleFieldChange("version", event.target.value)} aria-label="Version" />
           </DetailField>
-          <DetailField label="Description">
+          <DetailField label="Description" hint="Optional explanation of why this rule exists or how operators should interpret it.">
             <Textarea value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" rows={4} />
           </DetailField>
         </DetailFieldGroup>

@@ -5,21 +5,19 @@ export type WorkflowFormValues = {
   status: WorkflowStatus;
   executionKind: ExecutionKind;
   description: string;
-  applicationId: string;
-  runtimeId: string;
+  targetId: string;
   agentId: string;
   objective: string;
   allowedToolIds: string[];
 };
 
-export function createEmptyFormValues(defaultApplicationId = "", defaultRuntimeId = "", defaultAgentId = ""): WorkflowFormValues {
+export function createEmptyFormValues(defaultTargetId = "", defaultAgentId = ""): WorkflowFormValues {
   return {
     name: "",
     status: "draft",
     executionKind: "workflow",
     description: "",
-    applicationId: defaultApplicationId,
-    runtimeId: defaultRuntimeId,
+    targetId: defaultTargetId,
     agentId: defaultAgentId,
     objective: "",
     allowedToolIds: []
@@ -32,8 +30,7 @@ export function toWorkflowFormValues(workflow: Workflow): WorkflowFormValues {
     status: workflow.status,
     executionKind: workflow.executionKind ?? "workflow",
     description: workflow.description ?? "",
-    applicationId: workflow.applicationId,
-    runtimeId: workflow.runtimeId ?? "",
+    targetId: workflow.targetId,
     agentId: workflow.agentId,
     objective: workflow.objective,
     allowedToolIds: workflow.allowedToolIds
@@ -46,8 +43,7 @@ export function toWorkflowRequestBody(values: WorkflowFormValues): CreateWorkflo
     status: values.status,
     executionKind: values.executionKind,
     description: values.description.trim() || null,
-    applicationId: values.applicationId,
-    runtimeId: values.runtimeId || null,
+    targetId: values.targetId,
     agentId: values.agentId,
     objective: values.objective.trim() || "Run the configured workflow using the linked agent, allowed tools, and structured reporting.",
     allowedToolIds: values.allowedToolIds,
@@ -83,8 +79,8 @@ export function validateWorkflowForm(values: WorkflowFormValues) {
   if (!values.name.trim()) {
     errors["name"] = "Name is required.";
   }
-  if (!values.applicationId) {
-    errors["applicationId"] = "Application is required.";
+  if (!values.targetId) {
+    errors["targetId"] = "Target is required.";
   }
   if (!values.agentId) {
     errors["agentId"] = "Agent is required.";

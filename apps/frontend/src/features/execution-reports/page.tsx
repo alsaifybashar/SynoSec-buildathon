@@ -1,12 +1,19 @@
 import { useState } from "react";
 import { Archive, ArrowLeft, Download, Trash2 } from "lucide-react";
-import { apiRoutes, type ExecutionReportDetail, type ExecutionReportFinding, type ExecutionReportStatus } from "@synosec/contracts";
+import {
+  apiRoutes,
+  type ExecutionReportDetail,
+  type ExecutionReportFinding,
+  type ExecutionReportStatus
+} from "@synosec/contracts";
 import { toast } from "sonner";
 import { useResourceDetail } from "@/shared/hooks/use-resource-detail";
 import { useResourceList } from "@/shared/hooks/use-resource-list";
 import { DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Button } from "@/shared/ui/button";
+import { ExecutionReportGraphMap } from "@/features/execution-reports/execution-report-graph";
 import { executionReportsResource } from "@/features/execution-reports/resource";
 import { fetchJson } from "@/shared/lib/api";
 
@@ -24,10 +31,68 @@ function downloadJson(filename: string, value: unknown) {
 
 const statusOptions: ExecutionReportStatus[] = ["pending", "running", "completed", "failed", "aborted"];
 
+const statusBadgeStyles: Record<ExecutionReportStatus, string> = {
+  pending: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300",
+  running: "border-sky-500/40 bg-sky-500/10 text-sky-600 dark:text-sky-300",
+  completed: "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
+  failed: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-300",
+  aborted: "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
+};
+
+function StatusBadge({ status }: { status: ExecutionReportStatus }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[0.65rem] uppercase tracking-[0.16em] ${statusBadgeStyles[status]}`}
+    >
+      {status}
+    </span>
+  );
+}
+
+function SectionTitleWithHint({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span>{title}</span>
+      <TooltipProvider delayDuration={150}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex items-center text-muted-foreground transition hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+              aria-label={`Show guidance for ${title}`}
+            >
+              ?
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{hint}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+  );
+}
+
+function GraphSection({ report }: { report: ExecutionReportDetail }) {
+  return (
+    <DetailFieldGroup title="Execution Graph" className="bg-card/70">
+      <div className="col-span-full space-y-4">
+        <SectionTitleWithHint
+          title="Graph structure"
+          hint="Nodes capture persisted evidence or findings. Edges explain how one node supports or relates to another."
+        />
+        <ExecutionReportGraphMap graph={report.graph} />
+      </div>
+    </DetailFieldGroup>
+  );
+}
+
 function FindingsSection({ findings }: { findings: ExecutionReportFinding[] }) {
   return (
     <DetailFieldGroup title="Findings" className="bg-card/70">
       <div className="col-span-full space-y-3">
+        <SectionTitleWithHint
+          title="Persisted findings"
+          hint="These are the structured issues saved to the report, not every intermediate observation the tools produced."
+        />
         {findings.length === 0 ? <p className="text-sm text-muted-foreground">No structured findings were reported for this execution.</p> : null}
         {findings.map((finding) => (
           <div key={finding.id} className="rounded-xl border border-border bg-background/50 px-4 py-4">
@@ -55,6 +120,10 @@ function ToolActivitySection({ report }: { report: ExecutionReportDetail }) {
   return (
     <DetailFieldGroup title="Tool Activity" className="bg-card/70">
       <div className="col-span-full space-y-3">
+        <SectionTitleWithHint
+          title="Persisted tool activity"
+          hint="This shows the tool invocations and output previews the backend kept for the report. It is not guaranteed to include every raw log line."
+        />
         {report.toolActivity.length === 0 ? <p className="text-sm text-muted-foreground">No persisted tool activity is available for this execution.</p> : null}
         {report.toolActivity.map((activity) => (
           <div key={activity.id} className="rounded-xl border border-border bg-background/50 px-4 py-4">
@@ -125,8 +194,9 @@ export function ExecutionReportsPage({
   if (!reportId) {
     const columns: ListPageColumn<ExecutionReportDetail>[] = [
       { id: "title", header: "Report", sortable: true, cell: (row) => row.title },
-      { id: "executionKind", header: "Kind", sortable: true, cell: (row) => row.executionKind },
-      { id: "status", header: "Status", sortable: true, cell: (row) => row.status },
+      { id: "executionKind", header: "Workflow type", sortable: true, cell: (row) => row.executionKind },
+      { id: "status", header: "Status", sortable: true, cell: (row) => <StatusBadge status={row.status} /> },
+      { id: "targetLabel", header: "Target", sortable: false, cell: (row) => row.targetLabel },
       { id: "findingsCount", header: "Findings", sortable: true, cell: (row) => row.findingsCount },
       { id: "highestSeverity", header: "Highest", sortable: true, cell: (row) => row.highestSeverity ?? "none" },
       { id: "generatedAt", header: "Generated", sortable: true, cell: (row) => new Date(row.generatedAt).toLocaleString() }
@@ -149,22 +219,12 @@ export function ExecutionReportsPage({
         allLabel: "All statuses",
         options: statusOptions.map((status) => ({ label: status, value: status }))
       },
-      {
-        id: "archived",
-        label: "Report state",
-        placeholder: "Filter reports",
-        allLabel: "Active only",
-        options: [
-          { label: "All reports", value: "include" },
-          { label: "Archived only", value: "only" }
-        ]
-      }
     ];
 
     return (
       <ListPage
-        title="Execution Reports"
-        recordLabel="Execution report"
+        title="Reports"
+        recordLabel="Report"
         columns={columns}
         query={list.query}
         dataState={list.dataState}
@@ -193,7 +253,7 @@ export function ExecutionReportsPage({
     return (
       <DetailLoadingState
         title="Execution report"
-        breadcrumbs={["Start", "Execution Reports", "Loading"]}
+        breadcrumbs={["Start", "Reports", "Loading"]}
         onBack={onNavigateToList}
         message="Loading execution report..."
       />
@@ -205,7 +265,7 @@ export function ExecutionReportsPage({
   return (
     <DetailPage
       title={report.title}
-      breadcrumbs={["Start", "Execution Reports", report.title]}
+      breadcrumbs={["Start", "Reports", report.title]}
       subtitle={report.executionId}
       timestamp={new Date(report.updatedAt).toLocaleString()}
       isDirty={false}
@@ -253,12 +313,12 @@ export function ExecutionReportsPage({
       )}
       sidebar={(
         <>
-          <DetailSidebarItem label="Execution kind">{report.executionKind}</DetailSidebarItem>
-          <DetailSidebarItem label="Status">{report.status}</DetailSidebarItem>
-          <DetailSidebarItem label="Target">{report.targetLabel}</DetailSidebarItem>
-          <DetailSidebarItem label="Findings">{report.findingsCount}</DetailSidebarItem>
-          <DetailSidebarItem label="Highest severity">{report.highestSeverity ?? "none"}</DetailSidebarItem>
-          <DetailSidebarItem label="Archived">{isArchived ? new Date(report.archivedAt as string).toLocaleString() : "Active"}</DetailSidebarItem>
+          <DetailSidebarItem label="Execution kind" hint="Whether this report came from a workflow run or an attack-map style execution.">{report.executionKind}</DetailSidebarItem>
+          <DetailSidebarItem label="Status" hint="Terminal or in-flight state recorded for the report lifecycle.">{report.status}</DetailSidebarItem>
+          <DetailSidebarItem label="Target" hint="Human-readable label of the target asset or scope this report is about.">{report.targetLabel}</DetailSidebarItem>
+          <DetailSidebarItem label="Findings" hint="Count of persisted structured findings attached to this report.">{report.findingsCount}</DetailSidebarItem>
+          <DetailSidebarItem label="Highest severity" hint="Worst severity among persisted findings.">{report.highestSeverity ?? "none"}</DetailSidebarItem>
+          <DetailSidebarItem label="Archived" hint="Archive status only affects list visibility and retention workflow; it does not rewrite report contents.">{isArchived ? new Date(report.archivedAt as string).toLocaleString() : "Active"}</DetailSidebarItem>
         </>
       )}
     >
@@ -271,6 +331,7 @@ export function ExecutionReportsPage({
           </div>
         </div>
       </DetailFieldGroup>
+      <GraphSection report={report} />
       <FindingsSection findings={report.findings} />
       <ToolActivitySection report={report} />
     </DetailPage>

@@ -82,12 +82,12 @@ flowchart LR
 
 ### Main Components
 
-- apps/frontend: React and Tailwind interface for applications, agents, tools, workflows, runtimes, scan traces, and the attack map.
-- apps/backend: Express API, scan orchestration, workflow execution, AI-provider integration, tool brokerage, scan storage, and attack-chain correlation.
-- apps/connector: Worker process for executing tool jobs from a different network position than the backend.
-- packages/contracts: Shared TypeScript contracts and Zod schemas for scans, vulnerabilities, OSI coverage, tool runs, observations, workflow events, reports, and escalation routes.
-- scripts/tools: Bash-backed tool implementations used by the broker and seeded AI-tool definitions.
-- demos/vulnerable-app: Controlled vulnerable target used as the cyber range for safe validation.
+- `apps/frontend`: React and Tailwind interface for targets, agents, tools, workflows, execution reports, and the attack map.
+- `apps/backend`: Express API, scan orchestration, workflow execution, AI-provider integration, tool brokerage, scan storage, and attack-chain correlation.
+- `apps/connector`: Worker process for executing tool jobs from a different network position than the backend.
+- `packages/contracts`: Shared TypeScript contracts and Zod schemas for scans, vulnerabilities, OSI coverage, tool runs, observations, workflow events, reports, and escalation routes.
+- `scripts/tools`: Bash-backed tool implementations used by the broker and seeded AI-tool definitions.
+- `demos/vulnerable-app`: Controlled vulnerable target used as the cyber range for safe validation.
 
 ## Vulnerability Discovery Method
 
@@ -110,18 +110,7 @@ stateDiagram-v2
     Complete --> [*]
 ```
 
-The discovery method has two complementary execution paths.
-
-### Single-Agent Defensive Loop
-
-The single-agent scan path focuses on layer-aware vulnerability discovery. It creates a scan, initializes requested OSI-layer coverage, loads the approved agent tools, and asks the selected model to act through constrained tool calls.
-
-The agent can perform four structured actions:
-
-- call_tool: Execute one approved tool against a normalized target.
-- report_vulnerability: Persist one evidence-backed vulnerability.
-- update_layer_coverage: Mark a layer as covered, partially covered, or not covered, with evidence and gaps.
-- submit_scan_completion: Close the scan with a summary, residual risk, next step, and stop reason.
+The current execution path is the attack-map orchestrator.
 
 ### Attack-Map Orchestrator
 
@@ -243,7 +232,6 @@ The repository includes a safe target under demos/vulnerable-app. It is an inten
 ```bash
 cp .env.example .env
 make docker-up
-make smoke-e2e
 ```
 
 ### Local Development
@@ -265,12 +253,12 @@ make dev
 ### Common Commands
 
 ```bash
-make docker-up       # Start the Docker Compose stack
-make docker-down     # Stop and remove Docker services
-make dev             # Start host-mode development
-make smoke-e2e       # Run the Docker smoke evaluation
-make test            # Run workspace tests
-pnpm build           # Build all workspace packages
+make docker-up                # Start the Docker Compose stack
+make docker-down              # Stop and remove Docker services
+make dev                      # Start host-mode development
+make smoke-seeded-sandbox     # Run the seeded connector sandbox smoke validation
+make test                     # Run workspace tests
+pnpm build                    # Build all workspace packages
 ```
 
 ## Repository Structure

@@ -41,7 +41,7 @@ Use this structure when adding a new feature to the catalog:
 ### Backend API And Resource Management
 
 - Status: Active
-- Purpose: Provide the backend HTTP surface for health, applications, runtimes, AI providers, AI agents, AI tools, workflows, and related control-plane operations.
+- Purpose: Provide the backend HTTP surface for health, targets, AI providers, AI agents, AI tools, workflows, execution reports, and related control-plane operations.
 - Value: Gives the frontend and developers stable endpoints for configuration, inspection, and platform management.
 - Main components: `apps/backend/src/platform/app`, route modules under `apps/backend/src/features/modules`, shared contracts in `packages/contracts`.
 - How it is tested: Route tests under `apps/backend/src/features/modules/**/*routes.test.ts` and contract validation tests in `packages/contracts/src/index.test.ts`.
@@ -67,7 +67,7 @@ Use this structure when adding a new feature to the catalog:
 - Value: Prevents false confidence from a tool being present in the seeded catalog or installed on the machine without a real execution path behind it.
 - Main components: `apps/backend/prisma/seed-data/ai-builder-defaults.ts`, `apps/backend/src/features/modules/ai-tools/tool-execution-config.ts`, `scripts/tools/*.sh`.
 - How it is tested: Manual worker validation by checking `PATH`, confirming the expected binary family, and running the shell wrappers with JSON payloads through `scripts/tools/run-tool.sh`.
-- Local validation: Confirm `bash`, `node`, `curl`, `httpx`, `katana`, `nmap`, `ffuf`, `nuclei`, and `sqlmap` resolve on `PATH`. Then exercise `scripts/tools/http-recon.sh`, `web-crawl.sh`, `service-scan.sh`, `content-discovery.sh`, `vulnerability-audit.sh`, and `sql-injection-check.sh` with a minimal JSON payload that supplies `scriptArgs`.
+- Local validation: Confirm `bash`, `node`, `curl`, `httpx`, `katana`, `nmap`, `ffuf`, `nuclei`, and `sqlmap` resolve on `PATH`. Then exercise `scripts/tools/web/http-recon.sh`, `scripts/tools/content/web-crawl.sh`, `scripts/tools/network/service-scan.sh`, `scripts/tools/content/content-discovery.sh`, `scripts/tools/web/vuln-audit.sh`, and `scripts/tools/web/sql-injection-check.sh` with a minimal JSON payload that supplies `scriptArgs`.
 - Contribution notes: Treat dependency installation and seeded-tool implementation as separate concerns. The worker environment currently has the required binaries installed, including ProjectDiscovery `httpx`, `katana`, and `nuclei`, plus `ffuf`, `nmap`, and `sqlmap`. Before claiming a seeded tool is usable, verify both that the binary is available and that the seeded `bashSource` is wired to a real wrapper or execution script.
 - Current limits or non-goals: The seeded records for `seed-web-crawl`, `seed-service-scan`, `seed-content-discovery`, `seed-vuln-audit`, and `seed-sql-injection-check` still use `createBinaryMissingScript(...)` placeholder bash in `apps/backend/prisma/seed-data/ai-builder-defaults.ts`. Because `resolveToolExecutionFields(...)` falls back to those seeded definitions, those tools will still return an unimplemented placeholder response even though the binaries are installed. Only the environment dependency gap has been closed so far; the seeded runtime wiring still needs to be updated if those tools should execute real scans through the seeded path.
 

@@ -201,8 +201,8 @@ export function ListPage<T extends { id: string }>({
           <div className="inline-flex items-start gap-2 rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-left">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
             <div className="space-y-0.5">
-              <p className="text-[0.7rem] font-medium text-foreground">Delete {rowLabel}?</p>
-              <p className="text-[0.68rem] leading-5 text-muted-foreground">This action cannot be undone.</p>
+              <p className="text-xs font-medium text-foreground">Delete {rowLabel}?</p>
+              <p className="text-xs leading-5 text-muted-foreground">This action cannot be undone.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -291,7 +291,7 @@ export function ListPage<T extends { id: string }>({
       <div className="sticky top-0 z-10 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="flex flex-col gap-2.5 px-3 py-2.5">
           <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
-            <Button onClick={onAddRecord ?? handleDefaultAddRecord} className="h-8 text-[0.72rem]">
+            <Button onClick={onAddRecord ?? handleDefaultAddRecord} className="h-9 text-sm">
               <Plus className="h-4 w-4" />
               Add {recordLabel}
             </Button>
@@ -344,7 +344,7 @@ export function ListPage<T extends { id: string }>({
                   startTransition(() => onSearchChange(value));
                 }}
                 placeholder={`search ${recordLabel.toLowerCase()}s`}
-                className="h-9 pl-9 font-mono text-[0.75rem] placeholder:normal-case placeholder:text-muted-foreground/70"
+                className="h-9 pl-9 font-mono text-xs placeholder:normal-case placeholder:text-muted-foreground/70"
               />
             </div>
 
@@ -363,7 +363,7 @@ export function ListPage<T extends { id: string }>({
                           startTransition(() => onFilterChange(filter.id, value === CLEAR_FILTER_VALUE ? undefined : value));
                         }}
                       >
-                        <SelectTrigger aria-label={filter.label} className="h-9 text-[0.75rem]">
+                        <SelectTrigger aria-label={filter.label} className="h-9 text-xs">
                           <SelectValue placeholder={filter.placeholder} />
                         </SelectTrigger>
                         <SelectContent>
@@ -401,12 +401,12 @@ export function ListPage<T extends { id: string }>({
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       {columns.map((column) => (
-                        <TableHead key={column.id} className={cn("border-b border-b-border border-t border-t-border bg-muted/40 font-mono text-[0.625rem] font-medium uppercase tracking-[0.24em] text-muted-foreground", column.className)}>
+                        <TableHead key={column.id} className={cn("border-b border-b-border border-t border-t-border bg-muted/40 font-mono text-eyebrow font-medium uppercase tracking-[0.24em] text-muted-foreground", column.className)}>
                           {column.header}
                         </TableHead>
                       ))}
                       {showRowActions ? (
-                        <TableHead className="border-b border-b-border border-t border-t-border bg-muted/40 text-right font-mono text-[0.625rem] font-medium uppercase tracking-[0.24em] text-muted-foreground">
+                        <TableHead className="border-b border-b-border border-t border-t-border bg-muted/40 text-right font-mono text-eyebrow font-medium uppercase tracking-[0.24em] text-muted-foreground">
                           Actions
                         </TableHead>
                       ) : null}
@@ -454,10 +454,10 @@ export function ListPage<T extends { id: string }>({
                     <CardContent className="space-y-4 px-4 py-4">
                       {columns.map((column) => (
                         <div key={column.id} className="space-y-1.5">
-                          <p className="text-[0.625rem] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                          <p className="text-eyebrow font-medium uppercase tracking-[0.18em] text-muted-foreground">
                             {column.header}
                           </p>
-                          <div className="text-sm text-foreground">
+                          <div className="text-xs text-foreground">
                             {column.cell(row)}
                           </div>
                         </div>
@@ -477,11 +477,11 @@ export function ListPage<T extends { id: string }>({
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       {columns.map((column) => (
-                        <TableHead key={column.id} className={cn("border-b border-b-border border-t border-t-border bg-muted/40 font-mono text-[0.625rem] font-medium uppercase tracking-[0.24em] text-muted-foreground", column.className)}>
+                        <TableHead key={column.id} className={cn("border-b border-b-border border-t border-t-border bg-muted/40 font-mono text-eyebrow font-medium uppercase tracking-[0.24em] text-muted-foreground", column.className)}>
                           {column.sortable === false ? (
                             column.header
                           ) : (
-                            <button className="group/sort inline-flex items-center gap-1.5 font-mono text-[0.625rem] font-medium uppercase tracking-[0.24em]" type="button" onClick={() => onSortChange(column.id)}>
+                            <button className="group/sort inline-flex items-center gap-1.5 font-mono text-eyebrow font-medium uppercase tracking-[0.24em]" type="button" onClick={() => onSortChange(column.id)}>
                               {column.header}
                               {query.sortBy === column.id ? (
                                 query.sortDirection === "asc" ? (
@@ -497,7 +497,7 @@ export function ListPage<T extends { id: string }>({
                         </TableHead>
                       ))}
                       {showRowActions ? (
-                        <TableHead className="border-b border-b-border border-t border-t-border bg-muted/40 text-right font-mono text-[0.625rem] font-medium uppercase tracking-[0.24em] text-muted-foreground">
+                        <TableHead className="border-b border-b-border border-t border-t-border bg-muted/40 text-right font-mono text-eyebrow font-medium uppercase tracking-[0.24em] text-muted-foreground">
                           Actions
                         </TableHead>
                       ) : null}
@@ -513,12 +513,12 @@ export function ListPage<T extends { id: string }>({
                         onClick={() => (onRowClick ? onRowClick(row) : handleDefaultRowClick())}
                       >
                         {columns.map((column) => (
-                          <TableCell key={column.id} className={cn("text-[0.75rem]", column.className)}>
+                          <TableCell key={column.id} className={cn("text-xs", column.className)}>
                             {column.cell(row)}
                           </TableCell>
                         ))}
                         {showRowActions ? (
-                          <TableCell className="w-[1%] min-w-[13rem] align-top text-[0.75rem]">
+                          <TableCell className="w-[1%] min-w-[13rem] align-top text-xs">
                             <div onClick={stopRowClick}>
                               {renderRowActions(row)}
                             </div>
@@ -530,7 +530,7 @@ export function ListPage<T extends { id: string }>({
                 </Table>
               </div>
 
-              <div className="grid gap-4 border-t border-border/70 px-4 py-4 text-[0.75rem] text-muted-foreground md:px-6 md:grid-cols-3 md:items-center">
+              <div className="grid gap-4 border-t border-border/70 px-4 py-4 text-xs text-muted-foreground md:px-6 md:grid-cols-3 md:items-center">
                 <div className="flex flex-wrap items-center justify-start gap-3">
                   <div className="w-full shrink-0 md:w-[9.375rem]">
                     <Select
@@ -539,7 +539,7 @@ export function ListPage<T extends { id: string }>({
                         startTransition(() => onPageSizeChange(Number(value)));
                       }}
                     >
-                      <SelectTrigger aria-label="Page size" className="h-9 text-[0.75rem]">
+                      <SelectTrigger aria-label="Page size" className="h-9 text-xs">
                         <SelectValue placeholder="Page size" />
                       </SelectTrigger>
                       <SelectContent>
@@ -554,11 +554,11 @@ export function ListPage<T extends { id: string }>({
                 </div>
 
                 <div className="flex flex-wrap items-center justify-start gap-2 md:justify-center">
-                  <Button type="button" variant="outline" className="h-8 text-[0.72rem]" onClick={() => onPageChange(1)} disabled={meta.page <= 1}>
+                  <Button type="button" variant="outline" className="h-9 text-sm" onClick={() => onPageChange(1)} disabled={meta.page <= 1}>
                     <ChevronsLeft className="h-4 w-4" />
                     <span className="hidden sm:inline">First</span>
                   </Button>
-                  <Button type="button" variant="outline" className="h-8 text-[0.72rem]" onClick={() => onPageChange(Math.max(1, meta.page - 1))} disabled={meta.page <= 1}>
+                  <Button type="button" variant="outline" className="h-9 text-sm" onClick={() => onPageChange(Math.max(1, meta.page - 1))} disabled={meta.page <= 1}>
                     <ArrowLeft className="h-4 w-4" />
                     <span className="hidden sm:inline">Previous</span>
                   </Button>
@@ -567,7 +567,7 @@ export function ListPage<T extends { id: string }>({
                       key={pageNumber}
                       type="button"
                       variant={pageNumber === meta.page ? "default" : "outline"}
-                      className="h-8 min-w-8 text-[0.72rem]"
+                      className="h-9 min-w-9 text-sm"
                       onClick={() => onPageChange(pageNumber)}
                     >
                       {pageNumber}
@@ -576,7 +576,7 @@ export function ListPage<T extends { id: string }>({
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-8 text-[0.72rem]"
+                    className="h-9 text-sm"
                     onClick={() => onPageChange(meta.page + 1)}
                     disabled={meta.totalPages === 0 || meta.page >= meta.totalPages}
                   >
@@ -586,7 +586,7 @@ export function ListPage<T extends { id: string }>({
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-8 text-[0.72rem]"
+                    className="h-9 text-sm"
                     onClick={() => onPageChange(meta.totalPages)}
                     disabled={meta.totalPages === 0 || meta.page >= meta.totalPages}
                   >
