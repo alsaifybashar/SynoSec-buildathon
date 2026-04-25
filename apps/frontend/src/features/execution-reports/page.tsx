@@ -4,8 +4,6 @@ import {
   apiRoutes,
   type ExecutionReportDetail,
   type ExecutionReportFinding,
-  type ExecutionReportGraphEdge,
-  type ExecutionReportGraphNode,
   type ExecutionReportStatus
 } from "@synosec/contracts";
 import { toast } from "sonner";
@@ -15,6 +13,7 @@ import { DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } f
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Button } from "@/shared/ui/button";
+import { ExecutionReportGraphMap } from "@/features/execution-reports/execution-report-graph";
 import { executionReportsResource } from "@/features/execution-reports/resource";
 import { fetchJson } from "@/shared/lib/api";
 
@@ -54,83 +53,7 @@ function SectionTitleWithHint({ title, hint }: { title: string; hint: string }) 
   );
 }
 
-function GraphNodeCard({
-  node,
-  inbound,
-  outbound
-}: {
-  node: ExecutionReportGraphNode;
-  inbound: ExecutionReportGraphEdge[];
-  outbound: ExecutionReportGraphEdge[];
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-background/50 px-4 py-4">
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span className="rounded-full border border-border/70 px-2 py-1 font-mono uppercase tracking-[0.16em]">{node.kind}</span>
-        {"severity" in node ? <span className="rounded-full border border-border/70 px-2 py-1 font-mono uppercase tracking-[0.16em]">{node.severity}</span> : null}
-        {"sourceTool" in node ? <span>{node.sourceTool}</span> : null}
-        {"targetLabel" in node ? <span>{node.targetLabel}</span> : null}
-      </div>
-      <p className="mt-3 text-sm font-semibold text-foreground">{node.title}</p>
-      <p className="mt-1 text-sm leading-6 text-muted-foreground">{node.summary}</p>
-      {"quote" in node ? <pre className="mt-3 overflow-x-auto rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">{node.quote}</pre> : null}
-      {"refs" in node ? (
-        <div className="mt-3 flex flex-wrap gap-2 text-[0.7rem] text-muted-foreground">
-          {node.refs.flatMap((ref, index) => [
-            ref.traceEventId ? <span key={`${index}:trace`} className="rounded-full border border-border/70 px-2 py-1">trace:{ref.traceEventId.slice(0, 8)}</span> : null,
-            ref.toolRunRef ? <span key={`${index}:tool`} className="rounded-full border border-border/70 px-2 py-1">tool:{ref.toolRunRef}</span> : null,
-            ref.observationRef ? <span key={`${index}:obs`} className="rounded-full border border-border/70 px-2 py-1">obs:{ref.observationRef}</span> : null,
-            ref.artifactRef ? <span key={`${index}:artifact`} className="rounded-full border border-border/70 px-2 py-1">artifact:{ref.artifactRef}</span> : null,
-            ref.externalUrl ? <span key={`${index}:url`} className="rounded-full border border-border/70 px-2 py-1">{ref.externalUrl}</span> : null
-          ])}
-        </div>
-      ) : null}
-      {"findingIds" in node ? (
-        <div className="mt-3 flex flex-wrap gap-2 text-[0.7rem] text-muted-foreground">
-          {node.findingIds.map((findingId) => (
-            <span key={findingId} className="rounded-full border border-border/70 px-2 py-1">{findingId}</span>
-          ))}
-        </div>
-      ) : null}
-      {inbound.length > 0 || outbound.length > 0 ? (
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <div>
-            <p className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">Inbound</p>
-            <div className="mt-2 space-y-2 text-xs text-muted-foreground">
-              {inbound.map((edge) => (
-                <div key={edge.id} className="rounded-lg border border-border/70 px-3 py-2">
-                  <span className="font-mono">{edge.kind}</span>
-                  <span className="ml-2">{edge.source}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">Outbound</p>
-            <div className="mt-2 space-y-2 text-xs text-muted-foreground">
-              {outbound.map((edge) => (
-                <div key={edge.id} className="rounded-lg border border-border/70 px-3 py-2">
-                  <span className="font-mono">{edge.kind}</span>
-                  <span className="ml-2">{edge.target}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function GraphSection({ report }: { report: ExecutionReportDetail }) {
-  const inboundByNode = new Map<string, ExecutionReportGraphEdge[]>();
-  const outboundByNode = new Map<string, ExecutionReportGraphEdge[]>();
-
-  for (const edge of report.graph.edges) {
-    inboundByNode.set(edge.target, [...(inboundByNode.get(edge.target) ?? []), edge]);
-    outboundByNode.set(edge.source, [...(outboundByNode.get(edge.source) ?? []), edge]);
-  }
-
   return (
     <DetailFieldGroup title="Execution Graph" className="bg-card/70">
       <div className="col-span-full space-y-4">
@@ -138,21 +61,7 @@ function GraphSection({ report }: { report: ExecutionReportDetail }) {
           title="Graph structure"
           hint="Nodes capture persisted evidence or findings. Edges explain how one node supports or relates to another."
         />
-        <div className="rounded-xl border border-border bg-background/50 px-4 py-4">
-          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-            <span className="rounded-full border border-border/70 px-2 py-1">{report.graph.nodes.length} nodes</span>
-            <span className="rounded-full border border-border/70 px-2 py-1">{report.graph.edges.length} edges</span>
-          </div>
-        </div>
-        {report.graph.nodes.length === 0 ? <p className="text-sm text-muted-foreground">No execution graph was persisted for this report.</p> : null}
-        {report.graph.nodes.map((node) => (
-          <GraphNodeCard
-            key={node.id}
-            node={node}
-            inbound={inboundByNode.get(node.id) ?? []}
-            outbound={outboundByNode.get(node.id) ?? []}
-          />
-        ))}
+        <ExecutionReportGraphMap graph={report.graph} />
       </div>
     </DetailFieldGroup>
   );
