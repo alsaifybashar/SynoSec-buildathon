@@ -1,5 +1,5 @@
 import { localDemoTargetDefaults } from "@synosec/contracts";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import {
   getSeededProviderDefinitions,
   getSeededWorkflowDefinitions,
@@ -350,7 +350,9 @@ async function main() {
           findingPolicy: stage.findingPolicy,
           completionRule: stage.completionRule,
           resultSchemaVersion: stage.resultSchemaVersion,
-          handoffSchema: stage.handoffSchema
+          handoffSchema: stage.handoffSchema === null
+            ? Prisma.JsonNull
+            : stage.handoffSchema as Prisma.InputJsonValue
         }))
       });
     })
