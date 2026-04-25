@@ -883,15 +883,27 @@ export const workflowRunSchema = z.object({
 });
 export type WorkflowRun = z.infer<typeof workflowRunSchema>;
 
+export const workflowLiveModelOutputSchema = z.object({
+  runId: z.string().uuid(),
+  source: z.enum(["local", "hosted"]),
+  text: z.string(),
+  reasoning: z.string().nullable().default(null),
+  final: z.boolean().default(false),
+  createdAt: z.string().datetime()
+});
+export type WorkflowLiveModelOutput = z.infer<typeof workflowLiveModelOutputSchema>;
+
 export const workflowRunStreamMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("snapshot"),
-    run: workflowRunSchema
+    run: workflowRunSchema,
+    liveModelOutput: workflowLiveModelOutputSchema.nullable().optional()
   }),
   z.object({
     type: z.literal("run_event"),
     run: workflowRunSchema,
-    event: workflowTraceEventSchema
+    event: workflowTraceEventSchema,
+    liveModelOutput: workflowLiveModelOutputSchema.nullable().optional()
   })
 ]);
 export type WorkflowRunStreamMessage = z.infer<typeof workflowRunStreamMessageSchema>;

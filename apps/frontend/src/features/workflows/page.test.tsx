@@ -1,7 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiAgent, AiProvider, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
+import type { AiAgent, AiProvider, AiTool, Application, Runtime, Workflow, WorkflowRun, WorkflowRunStreamMessage } from "@synosec/contracts";
 import { WorkflowsPage } from "@/features/workflows/page";
 
 const application: Application = {
@@ -52,7 +52,7 @@ const tool: AiTool = {
 
 const agent: AiAgent = {
   id: "agent-1",
-  name: "Single-Agent Security Runner",
+  name: "Local Orchestrator",
   status: "active",
   description: "Local workflow orchestrator",
   providerId: "provider-1",
@@ -389,13 +389,23 @@ function renderWorkflowsPage() {
 }
 
 describe("WorkflowsPage", () => {
+  let eventSourceInstances: Array<{
+    onopen: (() => void) | null;
+    onmessage: ((event: MessageEvent<string>) => void) | null;
+    onerror: (() => void) | null;
+    close: () => void;
+  }>;
+
   beforeEach(() => {
+    eventSourceInstances = [];
     vi.stubGlobal("EventSource", class {
       onopen: (() => void) | null = null;
       onmessage: ((event: MessageEvent<string>) => void) | null = null;
       onerror: (() => void) | null = null;
 
-      constructor(_url: string) {}
+      constructor(_url: string) {
+        eventSourceInstances.push(this);
+      }
 
       close() {}
     });
@@ -442,7 +452,7 @@ describe("WorkflowsPage", () => {
     expect(await screen.findByRole("button", { name: "Start Run" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Show Full Details" })).toBeEnabled();
     expect(screen.queryByText("Run Snapshot")).not.toBeInTheDocument();
-    expect(screen.getAllByText(/single-agent security runner/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/local orchestrator/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/HTTP Recon/i).length).toBeGreaterThan(0);
     expect(screen.queryByText("200 OK\nServer: demo")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show Full Details" }));
@@ -533,5 +543,67 @@ describe("WorkflowsPage", () => {
     expect(await screen.findByText("No run yet")).toBeInTheDocument();
     expect(screen.getByText("Start the first Duplex session")).toBeInTheDocument();
     expect(screen.queryByText("Run sealed")).not.toBeInTheDocument();
+  });
+
+  it("renders live streamed workflow text from the existing SSE channel", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.startsWith("/api/applications?")) {
+        return new Response(JSON.stringify(paginatedResponse("applications", [application])));
+      }
+      if (url.startsWith("/api/runtimes?")) {
+        return new Response(JSON.stringify(paginatedResponse("runtimes", [runtime])));
+      }
+      if (url.startsWith("/api/ai-agents?")) {
+        return new Response(JSON.stringify(paginatedResponse("agents", [agent])));
+      }
+      if (url.startsWith("/api/ai-providers?")) {
+        return new Response(JSON.stringify(paginatedResponse("providers", [provider])));
+      }
+      if (url.startsWith("/api/ai-tools?")) {
+        return new Response(JSON.stringify(paginatedResponse("tools", [tool])));
+      }
+      if (url.startsWith("/api/workflows?")) {
+        return new Response(JSON.stringify(paginatedResponse("workflows", [workflow])));
+      }
+      if (url === `/api/workflows/${workflow.id}`) {
+        return new Response(JSON.stringify(workflow));
+      }
+      if (url === `/api/workflows/${workflow.id}/runs/latest`) {
+        return new Response(JSON.stringify(run));
+      }
+
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    renderWorkflowsPage();
+
+    await waitFor(() => {
+      expect(eventSourceInstances).toHaveLength(1);
+    });
+
+    const message: WorkflowRunStreamMessage = {
+      type: "run_event",
+      run,
+      event: run.events[0]!,
+      liveModelOutput: {
+        runId: run.id,
+        source: "hosted",
+        text: "Live streamed assistant text",
+        reasoning: "Reasoning in progress",
+        final: false,
+        createdAt: "2026-04-21T00:00:02.200Z"
+      }
+    };
+
+    await act(async () => {
+      eventSourceInstances[0]?.onmessage?.({
+        data: JSON.stringify(message)
+      } as MessageEvent<string>);
+    });
+
+    expect(await screen.findByText("Live streamed assistant text")).toBeInTheDocument();
+    expect(screen.getByText("Reasoning in progress")).toBeInTheDocument();
   });
 });

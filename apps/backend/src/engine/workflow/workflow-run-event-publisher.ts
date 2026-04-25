@@ -1,4 +1,4 @@
-import type { WorkflowRun, WorkflowTraceEvent } from "@synosec/contracts";
+import type { WorkflowLiveModelOutput, WorkflowRun, WorkflowTraceEvent } from "@synosec/contracts";
 import { WorkflowRunStream } from "@/engine/workflow/workflow-run-stream.js";
 import type { WorkflowsRepository } from "@/modules/workflows/workflows.repository.js";
 
@@ -11,20 +11,22 @@ export class WorkflowRunEventPublisher {
   async appendEvent(run: WorkflowRun, event: WorkflowTraceEvent, patch?: {
     status?: WorkflowRun["status"];
     completedAt?: string | null;
-  }) {
+  }, liveModelOutput?: WorkflowLiveModelOutput | null) {
     const updatedRun = await this.workflowsRepository.appendRunEvent(run.id, event, patch);
     this.workflowRunStream.publish(updatedRun.id, {
       type: "run_event",
       run: updatedRun,
-      event
+      event,
+      ...(liveModelOutput === undefined ? {} : { liveModelOutput })
     });
     return updatedRun;
   }
 
-  publishSnapshot(run: WorkflowRun) {
+  publishSnapshot(run: WorkflowRun, liveModelOutput?: WorkflowLiveModelOutput | null) {
     this.workflowRunStream.publish(run.id, {
       type: "snapshot",
-      run
+      run,
+      ...(liveModelOutput === undefined ? {} : { liveModelOutput })
     });
   }
 }

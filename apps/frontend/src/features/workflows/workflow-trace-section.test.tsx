@@ -11,7 +11,7 @@ const workflow: Workflow = {
   applicationId: "20000000-0000-0000-0000-000000000001",
   runtimeId: "30000000-0000-0000-0000-000000000001",
   agentId: "50000000-0000-0000-0000-000000000001",
-  objective: "Run one evidence-backed single-agent pass.",
+  objective: "Run one evidence-backed workflow pass.",
   allowedToolIds: ["tool-1"],
   requiredEvidenceTypes: [],
   findingPolicy: {
@@ -32,7 +32,7 @@ const workflow: Workflow = {
       label: "OSI Security Pass",
       agentId: "50000000-0000-0000-0000-000000000001",
       ord: 0,
-      objective: "Run one evidence-backed single-agent pass.",
+      objective: "Run one evidence-backed workflow pass.",
       allowedToolIds: ["tool-1"],
       requiredEvidenceTypes: [],
       findingPolicy: {
@@ -72,7 +72,7 @@ const run: WorkflowRun = {
       type: "stage_started",
       status: "running",
       title: "OSI Security Pass started",
-      summary: "Started the single-agent stage.",
+      summary: "Started the workflow stage.",
       detail: null,
       payload: {},
       createdAt: "2026-04-21T00:00:00.000Z"
@@ -105,7 +105,7 @@ const run: WorkflowRun = {
       type: "system_message",
       status: "completed",
       title: "Rendered system prompt",
-      summary: "Persisted the exact system instruction payload used to drive the single-agent loop.",
+      summary: "Persisted the exact system instruction payload used to drive the workflow pipeline.",
       detail: "system prompt text",
       payload: {
         lane: "system",
@@ -303,7 +303,7 @@ const run: WorkflowRun = {
       type: "stage_completed",
       status: "completed",
       title: "OSI Security Pass completed",
-      summary: "The single-agent workflow finished and persisted its latest report artifacts.",
+      summary: "The workflow finished and persisted its latest report artifacts.",
       detail: "Run completed successfully.",
       payload: {},
       createdAt: "2026-04-21T00:00:04.000Z"
@@ -337,7 +337,7 @@ const runtimes: Runtime[] = [{
 
 const agents: AiAgent[] = [{
   id: workflow.agentId,
-  name: "Single-Agent Security Runner",
+  name: "Local Orchestrator",
   status: "active",
   description: "Execution agent",
   providerId: "provider-1",
@@ -589,7 +589,9 @@ describe("WorkflowTraceSection", () => {
     );
 
     expect(screen.queryByText("Thread · Workflow Transcript · Duplex Flow")).not.toBeInTheDocument();
-    expect(screen.getByText("Rendered system prompt")).toBeInTheDocument();
+    expect(screen.getByText("Prompt context")).toBeInTheDocument();
+    expect(screen.getByText("System prompt")).toBeInTheDocument();
+    expect(screen.queryByText("Rendered system prompt")).not.toBeInTheDocument();
     expect(screen.getByText("Probe the exposed web surface first.")).toBeInTheDocument();
     expect(screen.getByText(/Called Web Probe/)).toBeInTheDocument();
     expect(screen.getByText(/\{ "url": "http:\/\/localhost.../)).toBeInTheDocument();
@@ -665,7 +667,7 @@ describe("WorkflowTraceSection", () => {
     );
 
     expect(screen.queryByText("Thread · Workflow Transcript · Duplex Flow")).not.toBeInTheDocument();
-    expect(screen.getByText("Rendered system prompt")).toBeInTheDocument();
+    expect(screen.getByText("Prompt context")).toBeInTheDocument();
     expect(screen.getAllByText("Agent typing").length).toBeGreaterThan(0);
     expect(screen.queryByText("No findings reported yet.")).not.toBeInTheDocument();
   });

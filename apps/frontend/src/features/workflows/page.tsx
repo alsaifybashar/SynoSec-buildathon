@@ -9,6 +9,7 @@ import {
   type Application,
   type Runtime,
   type Workflow,
+  type WorkflowLiveModelOutput,
   type WorkflowRun,
   type WorkflowRunTranscriptResponse,
   type WorkflowRunStreamMessage,
@@ -284,13 +285,7 @@ export function WorkflowsPage({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [currentRun, setCurrentRun] = useState<WorkflowRun | null>(null);
-  const [liveModelOutput, setLiveModelOutput] = useState<{
-    runId: string;
-    source: "local" | "hosted";
-    text: string;
-    final: boolean;
-    createdAt: string;
-  } | null>(null);
+  const [liveModelOutput, setLiveModelOutput] = useState<WorkflowLiveModelOutput | null>(null);
   const [runPending, setRunPending] = useState(false);
   const [, setRunStreamState] = useState<RunStreamState>("idle");
   const [persistedTranscript, setPersistedTranscript] = useState<TranscriptProjection | null>(null);
@@ -461,6 +456,7 @@ export function WorkflowsPage({
     if (!currentRun || currentRun.status !== "running") {
       setRunStreamState("idle");
       setStreamError(null);
+      setLiveModelOutput(null);
       return;
     }
 
@@ -476,6 +472,7 @@ export function WorkflowsPage({
       try {
         const payload = JSON.parse(event.data) as WorkflowRunStreamMessage;
         setCurrentRun(payload.run);
+        setLiveModelOutput(payload.liveModelOutput && !payload.liveModelOutput.final ? payload.liveModelOutput : null);
         setStreamError(null);
       } catch {
         setRunStreamState("disconnected");
@@ -501,8 +498,12 @@ export function WorkflowsPage({
       return;
     }
 
-    setLiveModelOutput((existing) => existing?.runId === currentRun.id ? existing : null);
-  }, [currentRun?.id]);
+    setLiveModelOutput((existing) => (
+      currentRun.status === "running" && existing?.runId === currentRun.id
+        ? existing
+        : null
+    ));
+  }, [currentRun?.id, currentRun?.status]);
 
   useEffect(() => {
     if (!currentRun || currentRun.status === "running") {

@@ -8,6 +8,7 @@ import type {
   ToolRequest,
   ToolRun,
   Workflow,
+  WorkflowLiveModelOutput,
   WorkflowReportedFinding,
   WorkflowRun,
   WorkflowTraceEvent
@@ -43,6 +44,7 @@ type ExecutedToolResult = {
   toolInput: Record<string, string | number | boolean | string[]>;
   toolRequest: ToolRequest;
   toolRun: ToolRun;
+  status: ToolRun["status"];
   observations: string[];
   outputPreview: string;
   fullOutput: string;
@@ -316,13 +318,10 @@ export class WorkflowExecutionService {
   private buildSystemPrompt(input: PipelineContext) {
     return [
       input.agent.systemPrompt,
-      "You are executing a single transparent security data pipeline.",
-      "Use approved evidence tools to collect facts.",
-      "Register every concrete finding with the report_finding tool.",
-      "End the run with complete_run when finished or fail_run when blocked or invalid.",
-      "Do not emit JSON action envelopes in plain text.",
-      "Do not claim a finding unless it is backed by tool evidence.",
-      "Prefer concise updates and explicit evidence-backed conclusions."
+      "Use only approved tools and stay in scope.",
+      "Report concrete findings with report_finding.",
+      "Use complete_run or fail_run to stop.",
+      "Emit short plain-text progress updates before tool bursts and closeout."
     ].join("\n\n");
   }
 
@@ -378,6 +377,17 @@ export class WorkflowExecutionService {
     };
   }
 
+  private decorateTracePayloadWithRawType(
+    type: WorkflowTraceEvent["type"],
+    payload: Record<string, unknown>,
+    rawStreamPartType?: string
+  ) {
+    return {
+      ...this.decorateTracePayload(type, payload),
+      ...(rawStreamPartType ? { rawStreamPartType } : {})
+    };
+  }
+
   private async ensureWorkflowScan(scan: Scan, context: PipelineContext) {
     const existing = await getScan(scan.id);
     if (existing) {
@@ -403,7 +413,8 @@ export class WorkflowExecutionService {
     payload: Record<string, unknown>,
     title: string,
     summary: string,
-    detail: string | null = null
+    detail: string | null = null,
+    rawStreamPartType?: string
   ): WorkflowTraceEvent {
     return {
       id: randomUUID(),
@@ -417,7 +428,7 @@ export class WorkflowExecutionService {
       title,
       summary,
       detail,
-      payload: this.decorateTracePayload(type, payload),
+      payload: this.decorateTracePayloadWithRawType(type, payload, rawStreamPartType),
       createdAt: new Date().toISOString()
     };
   }
@@ -531,12 +542,17 @@ export class WorkflowExecutionService {
       title: string,
       summary: string,
       detail?: string | null,
-      patch?: { status?: WorkflowRun["status"]; completedAt?: string | null }
+      patch?: { status?: WorkflowRun["status"]; completedAt?: string | null },
+      options?: {
+        rawStreamPartType?: string;
+        liveModelOutput?: WorkflowLiveModelOutput | null;
+      }
     ) => {
       currentRun = await this.eventPublisher.appendEvent(
         currentRun,
-        this.createEvent(currentRun, workflow.id, ord++, type, status, payload, title, summary, detail),
-        patch
+        this.createEvent(currentRun, workflow.id, ord++, type, status, payload, title, summary, detail, options?.rawStreamPartType),
+        patch,
+        options?.liveModelOutput
       );
       return currentRun;
     };
@@ -860,12 +876,17 @@ export class WorkflowExecutionService {
       title: string,
       summary: string,
       detail?: string | null,
-      patch?: { status?: WorkflowRun["status"]; completedAt?: string | null }
+      patch?: { status?: WorkflowRun["status"]; completedAt?: string | null },
+      options?: {
+        rawStreamPartType?: string;
+        liveModelOutput?: WorkflowLiveModelOutput | null;
+      }
     ) => {
       currentRun = await this.eventPublisher.appendEvent(
         currentRun,
-        this.createEvent(currentRun, workflow.id, ord++, type, status, payload, title, summary, detail),
-        patch
+        this.createEvent(currentRun, workflow.id, ord++, type, status, payload, title, summary, detail, options?.rawStreamPartType),
+        patch,
+        options?.liveModelOutput
       );
       return currentRun;
     };
@@ -892,7 +913,62 @@ export class WorkflowExecutionService {
     const executedResults: ExecutedToolResult[] = [];
     const reportedFindings = new Map<string, WorkflowReportedFinding>();
     let terminalState: PipelineTerminalState | null = null;
+    let liveModelOutput: WorkflowLiveModelOutput | null = null;
     const abortController = new AbortController();
+    const liveOutputSource: WorkflowLiveModelOutput["source"] = provider.kind === "local" ? "local" : "hosted";
+
+    const appendLiveText = (delta: string) => {
+      if (!liveModelOutput) {
+        liveModelOutput = {
+          runId: currentRun.id,
+          source: liveOutputSource,
+          text: "",
+          reasoning: null,
+          final: false,
+          createdAt: new Date().toISOString()
+        };
+      }
+      liveModelOutput = {
+        ...liveModelOutput,
+        text: `${liveModelOutput.text}${delta}`,
+        final: false,
+        createdAt: new Date().toISOString()
+      };
+      return liveModelOutput;
+    };
+
+    const appendLiveReasoning = (delta: string) => {
+      if (!liveModelOutput) {
+        liveModelOutput = {
+          runId: currentRun.id,
+          source: liveOutputSource,
+          text: "",
+          reasoning: null,
+          final: false,
+          createdAt: new Date().toISOString()
+        };
+      }
+      liveModelOutput = {
+        ...liveModelOutput,
+        reasoning: `${liveModelOutput.reasoning ?? ""}${delta}`,
+        final: false,
+        createdAt: new Date().toISOString()
+      };
+      return liveModelOutput;
+    };
+
+    const finalizeLiveModelOutput = () => {
+      if (!liveModelOutput) {
+        return null;
+      }
+      const finalOutput: WorkflowLiveModelOutput = {
+        ...liveModelOutput,
+        final: true,
+        createdAt: new Date().toISOString()
+      };
+      liveModelOutput = null;
+      return finalOutput;
+    };
 
     const bashTools = context.tools.filter((tool) => tool.executorType === "bash" && Boolean(tool.bashSource));
     const evidenceTools = Object.fromEntries(bashTools.map((tool) => [
@@ -931,13 +1007,20 @@ export class WorkflowExecutionService {
             toolInput,
             toolRequest: request,
             toolRun,
+            status: toolRun.status,
             observations: brokerResult.observations.map((observation) => observation.summary),
-            outputPreview: truncate(toolRun.output ?? toolRun.statusReason ?? `${tool.name} completed.`),
+            outputPreview: truncate(
+              brokerResult.observations[0]?.summary
+                ?? toolRun.statusReason
+                ?? toolRun.output
+                ?? `${tool.name} ${toolRun.status}.`
+            ),
             fullOutput: toolRun.output ?? toolRun.statusReason ?? ""
           };
           executedResults.push(result);
 
           return {
+            toolRunId: toolRun.id,
             toolId: tool.id,
             toolName: tool.name,
             status: toolRun.status,
@@ -1063,30 +1146,48 @@ export class WorkflowExecutionService {
             await appendEvent("system_message", "completed", {
               request: part.request.body,
               warnings: part.warnings
-            }, "Model step started", "Started a new model step.");
+            }, "Model step started", "Started a new model step.", null, undefined, {
+              rawStreamPartType: part.type
+            });
             break;
           case "text":
+            {
+              const nextLiveModelOutput = appendLiveText(part.text);
             await appendEvent("model_decision", "running", {
               text: part.text
-            }, "Model streamed text", truncate(part.text, 80), part.text);
+            }, "Model streamed text", truncate(part.text, 80), part.text, undefined, {
+              rawStreamPartType: part.type,
+              liveModelOutput: nextLiveModelOutput
+            });
+            }
             break;
           case "reasoning":
+            {
+              const nextLiveModelOutput = appendLiveReasoning(part.text);
             await appendEvent("model_decision", "running", {
               text: part.text
-            }, "Model streamed reasoning", truncate(part.text, 80), part.text);
+            }, "Model streamed reasoning", truncate(part.text, 80), part.text, undefined, {
+              rawStreamPartType: part.type,
+              liveModelOutput: nextLiveModelOutput
+            });
+            }
             break;
           case "tool-call-streaming-start":
             await appendEvent("tool_call", "running", {
               toolCallId: part.toolCallId,
               toolName: part.toolName
-            }, `Calling ${part.toolName}`, `Started streaming arguments for ${part.toolName}.`);
+            }, `Calling ${part.toolName}`, `Started streaming arguments for ${part.toolName}.`, null, undefined, {
+              rawStreamPartType: part.type
+            });
             break;
           case "tool-call-delta":
             await appendEvent("tool_call", "running", {
               toolCallId: part.toolCallId,
               toolName: part.toolName,
               argsTextDelta: part.argsTextDelta
-            }, `Calling ${part.toolName}`, `Streaming arguments for ${part.toolName}.`, part.argsTextDelta);
+            }, `Calling ${part.toolName}`, `Streaming arguments for ${part.toolName}.`, part.argsTextDelta, undefined, {
+              rawStreamPartType: part.type
+            });
             break;
           case "tool-call":
             await appendEvent("tool_call", "running", {
@@ -1094,45 +1195,81 @@ export class WorkflowExecutionService {
               toolName: part.toolName,
               toolId: part.toolName in evidenceTools ? part.toolName : null,
               input: JSON.stringify(part.input, null, 2)
-            }, `Calling ${part.toolName}`, `Invoked ${part.toolName}.`, JSON.stringify(part.input, null, 2));
+            }, `Calling ${part.toolName}`, `Invoked ${part.toolName}.`, JSON.stringify(part.input, null, 2), undefined, {
+              rawStreamPartType: part.type
+            });
             break;
           case "tool-result": {
-            const matchingResult = executedResults.find((candidate) => candidate.toolName === part.toolName && candidate.toolId === part.toolName)
+            const toolRunId = typeof part.output === "object" && part.output !== null && "toolRunId" in part.output && typeof part.output.toolRunId === "string"
+              ? part.output.toolRunId
+              : null;
+            const matchingResult = (toolRunId ? executedResults.find((candidate) => candidate.toolRun.id === toolRunId) : null)
               ?? executedResults.find((candidate) => candidate.toolName === part.toolName);
-            await appendEvent("tool_result", part.toolName === "fail_run" ? "failed" : "completed", {
+            const resultStatus = part.toolName === "fail_run"
+              ? "failed"
+              : matchingResult?.status === "failed"
+                ? "failed"
+                : "completed";
+            await appendEvent("tool_result", resultStatus, {
               toolCallId: part.toolCallId,
               toolName: part.toolName,
               toolId: matchingResult?.toolId ?? null,
               output: part.output,
               summary: matchingResult?.outputPreview ?? `${part.toolName} completed.`,
               observations: matchingResult?.observations ?? []
-            }, `${part.toolName} returned`, matchingResult?.outputPreview ?? `${part.toolName} completed.`, matchingResult?.fullOutput ?? null);
+            }, `${part.toolName} returned`, matchingResult?.outputPreview ?? `${part.toolName} completed.`, matchingResult?.fullOutput ?? null, undefined, {
+              rawStreamPartType: part.type
+            });
             break;
           }
           case "finish-step":
+            {
+              const finalLiveModelOutput = finalizeLiveModelOutput();
             await appendEvent("system_message", part.finishReason === "error" ? "failed" : "completed", {
               finishReason: part.finishReason,
               rawFinishReason: part.rawFinishReason,
               usage: part.usage
-            }, "Model step finished", `Step finished with reason: ${part.finishReason}.`);
+            }, "Model step finished", `Step finished with reason: ${part.finishReason}.`, null, undefined, {
+              rawStreamPartType: part.type,
+              liveModelOutput: finalLiveModelOutput
+            });
+            }
             break;
           case "finish":
+            {
+              const finalLiveModelOutput = finalizeLiveModelOutput();
             await appendEvent("system_message", part.finishReason === "error" ? "failed" : "completed", {
               finishReason: part.finishReason,
               rawFinishReason: part.rawFinishReason,
               totalUsage: part.totalUsage
-            }, "Model stream finished", `Stream finished with reason: ${part.finishReason}.`);
+            }, "Model stream finished", `Stream finished with reason: ${part.finishReason}.`, null, undefined, {
+              rawStreamPartType: part.type,
+              liveModelOutput: finalLiveModelOutput
+            });
+            }
             break;
           case "error":
+            {
+              const finalLiveModelOutput = finalizeLiveModelOutput();
             await appendEvent("verification", "failed", {
               message: part.error instanceof Error ? part.error.message : String(part.error),
               detail: part.error instanceof Error ? part.error.stack ?? part.error.message : String(part.error)
-            }, "Model stream error", part.error instanceof Error ? part.error.message : String(part.error), part.error instanceof Error ? part.error.stack ?? part.error.message : String(part.error));
+            }, "Model stream error", part.error instanceof Error ? part.error.message : String(part.error), part.error instanceof Error ? part.error.stack ?? part.error.message : String(part.error), undefined, {
+              rawStreamPartType: part.type,
+              liveModelOutput: finalLiveModelOutput
+            });
+            }
             break;
           case "abort":
+            {
+              const finalLiveModelOutput = finalizeLiveModelOutput();
             await appendEvent("verification", "completed", {
               message: typeof part.reason === "string" ? part.reason : "workflow-aborted"
-            }, "Model stream aborted", typeof part.reason === "string" ? part.reason : "workflow-aborted");
+            }, "Model stream aborted", typeof part.reason === "string" ? part.reason : "workflow-aborted", null, undefined, {
+              rawStreamPartType: part.type,
+              liveModelOutput: finalLiveModelOutput
+            });
+            }
             break;
           default:
             break;

@@ -8,20 +8,13 @@ import {
   type AiAgent,
   type AiTool,
   type Workflow,
+  type WorkflowLiveModelOutput,
   type WorkflowReportedFinding,
   type WorkflowRun,
   type WorkflowTraceEvent,
+  workflowLiveModelOutputSchema,
   workflowReportedFindingSchema
 } from "./resources.js";
-
-export const workflowLiveModelOutputSchema = z.object({
-  runId: z.string().uuid(),
-  source: z.enum(["local", "hosted"]),
-  text: z.string(),
-  final: z.boolean().default(false),
-  createdAt: z.string().datetime()
-});
-export type WorkflowLiveModelOutput = z.infer<typeof workflowLiveModelOutputSchema>;
 
 export const workflowTranscriptSystemMessageSchema = z.object({
   kind: z.literal("system_message"),
@@ -39,6 +32,7 @@ export const workflowTranscriptToolCallDetailSchema = z.object({
   id: z.string().min(1),
   ord: z.number().int(),
   title: z.string().min(1),
+  toolCallId: z.string().nullable(),
   toolId: z.string().nullable(),
   toolName: z.string().min(1),
   body: z.string().nullable()
@@ -50,6 +44,7 @@ export const workflowTranscriptToolResultDetailSchema = z.object({
   id: z.string().min(1),
   ord: z.number().int(),
   title: z.string().min(1),
+  toolCallId: z.string().nullable(),
   toolId: z.string().nullable(),
   toolName: z.string().min(1),
   summary: z.string().min(1),
@@ -191,13 +186,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function getPayloadString(payload: Record<string, unknown> | null | undefined, key: string) {
+function getPayloadRawString(payload: Record<string, unknown> | null | undefined, key: string) {
   const value = payload?.[key];
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+  return typeof value === "string" ? value : null;
+}
+
+function getPayloadString(payload: Record<string, unknown> | null | undefined, key: string) {
+  const value = getPayloadRawString(payload, key);
+  return value !== null && value.trim().length > 0 ? value.trim() : null;
 }
 
 function getTraceKind(event: WorkflowTraceEvent) {
-  return getPayloadString(event.payload ?? {}, "streamPartType") ?? event.type;
+  const kind = getPayloadString(event.payload ?? {}, "rawStreamPartType")
+    ?? getPayloadString(event.payload ?? {}, "streamPartType")
+    ?? event.type;
+  switch (kind) {
+    case "tool-call":
+      return "tool_call";
+    case "tool-call-delta":
+      return "tool_call_delta";
+    case "tool-call-streaming-start":
+      return "tool_call_streaming_start";
+    case "tool-result":
+      return "tool_result";
+    default:
+      return kind;
+  }
 }
 
 function getPayloadStringList(payload: Record<string, unknown> | null | undefined, key: string) {
@@ -252,6 +266,36 @@ function createSystemMessage(event: WorkflowTraceEvent): WorkflowTranscriptSyste
   };
 }
 
+function isPromptSystemMessage(event: WorkflowTraceEvent) {
+  return event.type === "system_message" && getPayloadString(event.payload ?? {}, "messageKind") === "prompt";
+}
+
+function mergePromptMessages(events: WorkflowTraceEvent[]): WorkflowTranscriptSystemMessage {
+  const firstEvent = events[0]!;
+  const renderedParts = events
+    .map((event) => {
+      const payload = event.payload ?? {};
+      const promptKind = getPayloadString(payload, "promptKind") ?? "system";
+      const label = promptKind === "task" ? "Task prompt" : "System prompt";
+      const body = getPayloadString(payload, "body")
+        ?? getPayloadString(payload, "fullPrompt")
+        ?? event.detail
+        ?? "";
+      return `${label}\n\n${body}`.trimEnd();
+    })
+    .filter((part) => part.trim().length > 0);
+
+  return {
+    kind: "system_message",
+    id: firstEvent.id,
+    ord: firstEvent.ord,
+    createdAt: firstEvent.createdAt,
+    title: "Prompt context",
+    summary: "Persisted the exact system and task prompt context for this run.",
+    body: renderedParts.join("\n\n")
+  };
+}
+
 function createAssistantTurnShell(input: {
   id: string;
   ord: number;
@@ -278,18 +322,63 @@ function appendText(target: string | null, next: string) {
   return target ? `${target}${next}` : next;
 }
 
+function isGenericToolSummary(toolName: string, summary: string) {
+  const normalizedSummary = summary.trim().toLowerCase();
+  const normalizedToolName = toolName.trim().toLowerCase();
+  return normalizedSummary === `${normalizedToolName} completed.`
+    || normalizedSummary === `${normalizedToolName} completed`
+    || normalizedSummary === `${normalizedToolName} failed.`
+    || normalizedSummary === `${normalizedToolName} failed`;
+}
+
+function synthesizeAssistantBody(turn: WorkflowTranscriptAssistantTurn) {
+  const toolResults = turn.details.filter((detail): detail is WorkflowTranscriptToolResultDetail => detail.kind === "tool_result");
+  if (toolResults.length === 0 && turn.findingIds.length === 0) {
+    return null;
+  }
+
+  const completedResults = toolResults.filter((detail) => detail.status === "completed");
+  const failedResults = toolResults.filter((detail) => detail.status === "failed");
+  const meaningfulSummaries = completedResults
+    .map((detail) => detail.summary.trim())
+    .filter((summary, index) => summary.length > 0 && !isGenericToolSummary(completedResults[index]?.toolName ?? "", summary))
+    .slice(0, 3);
+
+  const clauses: string[] = [];
+  if (turn.findingIds.length > 0) {
+    clauses.push(`Reported ${turn.findingIds.length} finding${turn.findingIds.length === 1 ? "" : "s"} from the collected evidence.`);
+  }
+
+  if (meaningfulSummaries.length > 0) {
+    clauses.push(meaningfulSummaries.join(" "));
+  } else if (completedResults.length > 0) {
+    clauses.push(`Collected evidence with ${completedResults.slice(0, 3).map((detail) => detail.toolName).join(", ")}.`);
+  }
+
+  if (failedResults.length > 0 && completedResults.length === 0 && turn.findingIds.length === 0) {
+    clauses.push(`Tool failures: ${failedResults.slice(0, 3).map((detail) => detail.toolName).join(", ")}.`);
+  }
+
+  return clauses.length > 0 ? clauses.join(" ") : null;
+}
+
 function getLegacyToolInput(payload: Record<string, unknown>) {
   const toolInput = payload["toolInput"];
   return isRecord(toolInput) ? JSON.stringify(toolInput, null, 2) : null;
 }
 
 function getLegacyToolOutput(payload: Record<string, unknown>, event: WorkflowTraceEvent) {
+  const fullOutput = getPayloadString(payload, "fullOutput") ?? event.detail;
+  if (fullOutput) {
+    return fullOutput;
+  }
+
   const output = payload["output"];
   if (output !== undefined) {
     return JSON.stringify(output, null, 2);
   }
 
-  return getPayloadString(payload, "fullOutput") ?? event.detail;
+  return null;
 }
 
 function getLegacyVerificationTone(event: WorkflowTraceEvent) {
@@ -461,6 +550,15 @@ export function buildWorkflowTranscript(input: {
   const orderedEvents = input.run.events.slice().sort((left, right) => left.ord - right.ord);
   let currentTurn: WorkflowTranscriptAssistantTurn | null = null;
   let closeoutEvent: WorkflowTranscriptCloseout | null = null;
+  let pendingPromptEvents: WorkflowTraceEvent[] = [];
+
+  const flushPromptMessages = () => {
+    if (pendingPromptEvents.length === 0) {
+      return;
+    }
+    items.push(mergePromptMessages(pendingPromptEvents));
+    pendingPromptEvents = [];
+  };
 
   const flushTurn = () => {
     if (!currentTurn) {
@@ -468,11 +566,11 @@ export function buildWorkflowTranscript(input: {
     }
 
     const body = currentTurn.body?.trim() ?? "";
-    currentTurn.body = body || null;
+    currentTurn.body = body || synthesizeAssistantBody(currentTurn);
     currentTurn.reasoning = currentTurn.reasoning?.trim() || null;
     currentTurn.summary = currentTurn.summary.trim() || (
-      body
-        ? body.split("\n").map((line) => line.trim()).find(Boolean) ?? ""
+      currentTurn.body
+        ? currentTurn.body.split("\n").map((line) => line.trim()).find(Boolean) ?? ""
         : ""
     );
     items.push(currentTurn);
@@ -484,6 +582,13 @@ export function buildWorkflowTranscript(input: {
     const traceKind = getTraceKind(event);
 
     if (event.type === "system_message") {
+      if (isPromptSystemMessage(event)) {
+        pendingPromptEvents.push(event);
+        continue;
+      }
+
+      flushPromptMessages();
+
       if (traceKind === "start" || traceKind === "start-step") {
         flushTurn();
         currentTurn = createAssistantTurnShell({
@@ -504,6 +609,8 @@ export function buildWorkflowTranscript(input: {
       items.push(createSystemMessage(event));
       continue;
     }
+
+    flushPromptMessages();
 
     if (traceKind === "start" || traceKind === "start-step") {
       flushTurn();
@@ -526,7 +633,7 @@ export function buildWorkflowTranscript(input: {
     }
 
     if (traceKind === "text") {
-      const text = getPayloadString(payload, "text");
+      const text = getPayloadRawString(payload, "text");
       if (text && currentTurn) {
         currentTurn.body = appendText(currentTurn.body, text);
       }
@@ -534,7 +641,7 @@ export function buildWorkflowTranscript(input: {
     }
 
     if (traceKind === "reasoning") {
-      const text = getPayloadString(payload, "text");
+      const text = getPayloadRawString(payload, "text");
       if (text && currentTurn) {
         currentTurn.reasoning = appendText(currentTurn.reasoning, text);
       }
@@ -561,6 +668,7 @@ export function buildWorkflowTranscript(input: {
         id: event.id,
         ord: event.ord,
         title: `Called ${getToolName(event, input.toolLookup)}`,
+        toolCallId: getPayloadString(payload, "toolCallId"),
         toolId: getPayloadString(payload, "toolId"),
         toolName: getToolName(event, input.toolLookup),
         body: getPayloadString(payload, "input") ?? getLegacyToolInput(payload) ?? event.detail
@@ -574,7 +682,7 @@ export function buildWorkflowTranscript(input: {
         id: event.id,
         ord: event.ord,
         title: `Streaming arguments for ${getToolName(event, input.toolLookup)}`,
-        summary: getPayloadString(payload, "argsTextDelta") ?? "Argument delta",
+        summary: getPayloadRawString(payload, "argsTextDelta") ?? "Argument delta",
         body: null
       });
       continue;
@@ -588,6 +696,7 @@ export function buildWorkflowTranscript(input: {
         id: event.id,
         ord: event.ord,
         title: `${getToolName(event, input.toolLookup)} returned`,
+        toolCallId: getPayloadString(payload, "toolCallId"),
         toolId: getPayloadString(payload, "toolId"),
         toolName: getToolName(event, input.toolLookup),
         summary: getPayloadString(payload, "summary") ?? getPayloadString(payload, "outputPreview") ?? event.summary,
@@ -668,9 +777,11 @@ export function buildWorkflowTranscript(input: {
     }
   }
 
+  flushPromptMessages();
   flushTurn();
 
   const liveModelText = input.liveModelOutput?.text.trim() ?? "";
+  const liveReasoningText = input.liveModelOutput?.reasoning?.trim() ?? "";
   if (liveModelText.length > 0) {
     items.push({
       kind: "assistant_turn",
@@ -680,7 +791,7 @@ export function buildWorkflowTranscript(input: {
       title: agentName,
       summary: "",
       body: liveModelText,
-      reasoning: null,
+      reasoning: liveReasoningText || null,
       agentName,
       details: [],
       findingIds: [],

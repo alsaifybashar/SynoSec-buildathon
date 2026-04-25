@@ -1,12 +1,30 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkflowRun, WorkflowTraceEvent } from "@synosec/contracts";
 import { WorkflowExecutionService } from "./workflow-execution.service.js";
 import { WorkflowRunStream } from "./workflow-run-stream.js";
+
+const { streamTextMock } = vi.hoisted(() => ({
+  streamTextMock: vi.fn()
+}));
+
+vi.mock("ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("ai")>();
+  return {
+    ...actual,
+    streamText: streamTextMock
+  };
+});
+
+vi.mock("@/engine/scans/index.js", () => ({
+  createScan: vi.fn(async () => undefined),
+  getScan: vi.fn(async () => null)
+}));
 
 function createService(overrides: {
   workflow?: Record<string, unknown> | null;
   agent?: Record<string, unknown> | null;
   provider?: Record<string, unknown> | null;
+  workflowRunStream?: WorkflowRunStream;
 } = {}) {
   const workflow = overrides.workflow ?? {
     id: "10000000-0000-0000-0000-000000000001",
@@ -61,6 +79,7 @@ function createService(overrides: {
     updatedAt: "2026-04-24T10:00:00.000Z"
   };
   const createdRuns: Array<Record<string, unknown>> = [];
+  const workflowRunStream = overrides.workflowRunStream ?? new WorkflowRunStream();
 
   const service = new WorkflowExecutionService(
     {
@@ -89,14 +108,24 @@ function createService(overrides: {
       getRunById: async () => createdRuns[0] as any,
       getLatestRunByWorkflowId: async () => createdRuns[0] as any,
       appendRunEvent: async (_runId: string, event: WorkflowTraceEvent, patch: Partial<WorkflowRun> = {}) => ({
-        ...(createdRuns[0] as any),
-        ...patch,
-        events: [...(((createdRuns[0] as any)?.events ?? [])), event]
+        ...(() => {
+          const updated = {
+            ...(createdRuns[0] as any),
+            ...patch,
+            events: [...(((createdRuns[0] as any)?.events ?? [])), event]
+          };
+          createdRuns[0] = updated;
+          return updated;
+        })()
       }),
-      updateRunState: async (_runId: string, patch: Partial<WorkflowRun>) => ({
-        ...(createdRuns[0] as any),
-        ...patch
-      }),
+      updateRunState: async (_runId: string, patch: Partial<WorkflowRun>) => {
+        const updated = {
+          ...(createdRuns[0] as any),
+          ...patch
+        };
+        createdRuns[0] = updated;
+        return updated;
+      },
       updateRun: async (run: WorkflowRun) => run as any
     },
     {
@@ -146,14 +175,18 @@ function createService(overrides: {
     {
       getById: async () => null
     } as any,
-    new WorkflowRunStream(),
+    workflowRunStream,
     {} as any
   );
 
-  return { service };
+  return { service, createdRuns, workflowRunStream };
 }
 
 describe("WorkflowExecutionService", () => {
+  beforeEach(() => {
+    streamTextMock.mockReset();
+  });
+
   it("does not allow manual stepping for pipeline runs", async () => {
     const { service } = createService();
 
@@ -245,5 +278,85 @@ describe("WorkflowExecutionService", () => {
     const run = await service.startRun("10000000-0000-0000-0000-000000000001");
 
     expect(run.executionKind).toBe("attack-map");
+  });
+
+  it("persists raw stream part types and publishes live model output from streamed workflow text", async () => {
+    async function* fullStream() {
+      yield {
+        type: "start-step",
+        request: {
+          body: {
+            messages: []
+          }
+        },
+        warnings: []
+      };
+      yield {
+        type: "text",
+        text: "Hello "
+      };
+      yield {
+        type: "text",
+        text: "world"
+      };
+      yield {
+        type: "reasoning",
+        text: "Think "
+      };
+      yield {
+        type: "reasoning",
+        text: "carefully"
+      };
+      yield {
+        type: "finish-step",
+        finishReason: "stop",
+        rawFinishReason: "end_turn",
+        usage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          totalTokens: 2
+        }
+      };
+      yield {
+        type: "finish",
+        finishReason: "stop",
+        rawFinishReason: "end_turn",
+        totalUsage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          totalTokens: 2
+        }
+      };
+    }
+
+    streamTextMock.mockReturnValue({
+      fullStream: fullStream()
+    });
+
+    const messages: Array<Record<string, unknown>> = [];
+    const workflowRunStream = new WorkflowRunStream();
+    workflowRunStream.subscribe("50000000-0000-0000-0000-000000000001", (message) => {
+      messages.push(message as Record<string, unknown>);
+    });
+
+    const { service, createdRuns } = createService({ workflowRunStream });
+
+    await service.startRun("10000000-0000-0000-0000-000000000001");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const persistedEvents = (createdRuns[0]?.["events"] ?? []) as WorkflowTraceEvent[];
+    const textEvents = persistedEvents.filter((event) => event.payload?.["rawStreamPartType"] === "text");
+    const reasoningEvents = persistedEvents.filter((event) => event.payload?.["rawStreamPartType"] === "reasoning");
+    expect(textEvents).toHaveLength(2);
+    expect(reasoningEvents).toHaveLength(2);
+    expect(textEvents[0]?.detail).toBe("Hello ");
+    expect(textEvents[1]?.detail).toBe("world");
+
+    const liveMessages = messages.filter((message) => message["type"] === "run_event" && message["liveModelOutput"]) as Array<{
+      liveModelOutput: { text: string; reasoning: string | null; final: boolean };
+    }>;
+    expect(liveMessages.some((message) => message["liveModelOutput"].text === "Hello world")).toBe(true);
+    expect(liveMessages.some((message) => message["liveModelOutput"].reasoning === "Think carefully")).toBe(true);
+    expect(liveMessages.some((message) => message["liveModelOutput"].final)).toBe(true);
   });
 });

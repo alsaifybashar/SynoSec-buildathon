@@ -40,6 +40,7 @@ type DuplexAtom = {
   side: "left" | "right";
   kind: DuplexAtomKind;
   label: string;
+  toolCallId?: string | null;
   title?: string;
   summaryText?: string;
   body?: string;
@@ -183,17 +184,6 @@ function buildDuplexAtoms(input: {
     meta: input.workflow.name
   });
 
-  if (input.agent?.systemPrompt) {
-    atoms.push({
-      key: `${input.workflow.id}:system-prompt`,
-      side: "right",
-      kind: "system-prompt",
-      label: "System prompt",
-      body: input.agent.systemPrompt,
-      meta: input.agent.name
-    });
-  }
-
   for (const error of input.errors) {
     atoms.push({
       key: `error:${error}`,
@@ -252,6 +242,7 @@ function buildDuplexAtoms(input: {
             side: "left",
             kind: "tool-call",
             label: detail.toolName,
+            toolCallId: detail.toolCallId,
             title: detail.title,
             meta: "requested",
             ...(detail.body ? { code: detail.body } : {})
@@ -261,7 +252,12 @@ function buildDuplexAtoms(input: {
 
         if (detail.kind === "tool_result") {
           const existingToolAtom = [...toolAtoms].reverse().find((atom) =>
-            atom.kind === "tool-call" && atom.label === detail.toolName && atom.status === undefined
+            atom.kind === "tool-call"
+              && atom.status === undefined
+              && (
+                (detail.toolCallId && atom.toolCallId === detail.toolCallId)
+                || (!detail.toolCallId && atom.label === detail.toolName)
+              )
           );
 
           if (existingToolAtom) {
@@ -276,6 +272,7 @@ function buildDuplexAtoms(input: {
               side: "left",
               kind: "tool-call",
               label: detail.toolName,
+              toolCallId: detail.toolCallId,
               title: `${detail.toolName} returned`,
               summaryText: detail.summary,
               body: detail.body ?? detail.summary,
