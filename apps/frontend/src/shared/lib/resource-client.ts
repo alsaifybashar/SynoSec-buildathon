@@ -112,6 +112,7 @@ export type ExecutionReportsQuery = {
   sortDirection: SortDirection;
   executionKind: OptionalString;
   status: OptionalString;
+  archived: "exclude" | "only" | "include";
   [key: string]: number | string | undefined;
 };
 

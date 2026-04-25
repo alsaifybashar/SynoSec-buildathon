@@ -13,13 +13,16 @@ export function createRouteServices(dependencies: Pick<
   | "aiToolsRepository"
   | "workflowsRepository"
 >) {
-  const executionServices = createEngineServices(dependencies);
+  const executionReportsService = new ExecutionReportsService();
+  const executionServices = createEngineServices({
+    ...dependencies,
+    executionReportsService
+  });
   const workflowRunArtifactsService = new WorkflowRunArtifactsService(
     dependencies.workflowsRepository,
     dependencies.aiAgentsRepository,
     dependencies.aiToolsRepository
   );
-  const executionReportsService = new ExecutionReportsService();
 
   return {
     ...executionServices,

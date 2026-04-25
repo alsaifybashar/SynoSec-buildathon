@@ -11,7 +11,8 @@ type ResourceDetailState<T> =
 
 export function useResourceDetail<TItem, TQuery extends ListQueryState>(
   client: ResourceClient<TItem, TQuery>,
-  id: string | null
+  id: string | null,
+  reloadToken = 0
 ) {
   const [state, setState] = useState<ResourceDetailState<TItem>>({ state: "idle", item: null });
 
@@ -46,7 +47,7 @@ export function useResourceDetail<TItem, TQuery extends ListQueryState>(
     return () => {
       active = false;
     };
-  }, [client, id]);
+  }, [client, id, reloadToken]);
 
   return state;
 }

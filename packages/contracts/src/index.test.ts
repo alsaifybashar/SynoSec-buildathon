@@ -19,13 +19,11 @@ import {
   healthResponseSchema,
   listApplicationsResponseSchema,
   listScansResponseSchema,
-  parseExecutionReportId,
   scanLayerCoverageSchema,
   scansListQuerySchema,
   securityVulnerabilitySchema,
   aiToolSchema,
   singleAgentScanReportSchema,
-  toExecutionReportId,
   toolRequestSchema,
   toolRunSchema,
   updateAiProviderBodySchema,
@@ -425,20 +423,12 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
-  it("round-trips canonical execution report ids", () => {
-    const id = toExecutionReportId("workflow", "run-123");
-    expect(id).toBe("workflow~run-123");
-    expect(parseExecutionReportId(id)).toEqual({
-      executionKind: "workflow",
-      executionId: "run-123"
-    });
-  });
-
   it("accepts execution report detail payloads", () => {
     const result = executionReportDetailSchema.safeParse({
-      id: "attack-map~run-1",
+      id: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
       executionId: "run-1",
       executionKind: "attack-map",
+      sourceDefinitionId: null,
       status: "completed",
       title: "Attack map run",
       targetLabel: "https://target.local",
@@ -447,6 +437,7 @@ describe("contracts", () => {
       highestSeverity: "high",
       generatedAt: "2026-04-25T12:00:00.000Z",
       updatedAt: "2026-04-25T12:05:00.000Z",
+      archivedAt: null,
       executiveSummary: "One meaningful attack path was confirmed.",
       findings: [
         {
@@ -489,6 +480,7 @@ describe("contracts", () => {
     if (result.success) {
       expect(result.data.sortBy).toBe("generatedAt");
       expect(result.data.sortDirection).toBe("desc");
+      expect(result.data.archived).toBe("exclude");
     }
   });
 

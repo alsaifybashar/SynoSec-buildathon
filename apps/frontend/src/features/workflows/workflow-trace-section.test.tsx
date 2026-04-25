@@ -548,6 +548,27 @@ const failedToolRun: WorkflowRun = {
   ]
 };
 
+const summaryOnlyToolRun: WorkflowRun = {
+  ...run,
+  id: "60000000-0000-0000-0000-000000000101",
+  events: run.events.map((event) => {
+    if (event.type !== "tool_result") {
+      return { ...event, workflowRunId: "60000000-0000-0000-0000-000000000101" };
+    }
+
+    return {
+      ...event,
+      workflowRunId: "60000000-0000-0000-0000-000000000101",
+      summary: "Web Probe completed.",
+      detail: null,
+      payload: {
+        toolId: "tool-1",
+        toolName: "Web Probe"
+      }
+    };
+  })
+};
+
 describe("WorkflowTraceSection", () => {
   it("renders the Duplex workflow thread as inline reading flow with compact tool subtitles", () => {
     const { container } = render(
@@ -602,6 +623,27 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getAllByText(/http:\/\/localhost:8888/).length).toBeGreaterThan(0);
     expect(screen.getByText("HTTP/1.1 200 OK")).toBeInTheDocument();
     expect(screen.getByText("Observations")).toBeInTheDocument();
+  });
+
+  it("renders a fallback compact output line when a completed tool has no non-redundant output preview", () => {
+    render(
+      <WorkflowTraceSection
+        workflow={workflow}
+        applications={applications}
+        runtimes={runtimes}
+        agents={agents}
+        tools={tools}
+        run={summaryOnlyToolRun}
+        running={false}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails={false}
+      />
+    );
+
+    expect(screen.getByText("completed with no summarized output.")).toBeInTheDocument();
   });
 
   it("keeps the Duplex workflow thread visible while the workflow run is still active", () => {

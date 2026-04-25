@@ -23,6 +23,7 @@ import type {
 import { OrchestratorStream } from "@/engine/orchestrator/orchestrator-stream.js";
 import { executeScriptedTool } from "@/engine/tools/script-executor.js";
 import { compileToolRequestFromDefinition } from "@/modules/ai-tools/tool-definition.compiler.js";
+import { ExecutionReportsService } from "@/modules/execution-reports/index.js";
 import { prisma } from "@/shared/database/prisma-client.js";
 import { RequestError } from "@/shared/http/request-error.js";
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
@@ -154,7 +155,8 @@ export class OrchestratorExecutionEngineService {
   constructor(
     private readonly stream: OrchestratorStream,
     private readonly aiProvidersRepository: AiProvidersRepository,
-    private readonly aiToolsRepository: AiToolsRepository
+    private readonly aiToolsRepository: AiToolsRepository,
+    private readonly executionReportsService: ExecutionReportsService = new ExecutionReportsService()
   ) {}
 
   async createRun(targetUrl: string, providerId: string): Promise<OrchestratorRunRecord> {
@@ -235,11 +237,17 @@ export class OrchestratorExecutionEngineService {
   startAsync(runId: string, targetUrl: string, providerId: string) {
     void this.execute(runId, targetUrl, providerId).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
-      void prisma.orchestratorRun.update({
-        where: { id: runId },
-        data: { status: "failed", error: message }
+      void (async () => {
+        await prisma.orchestratorRun.update({
+          where: { id: runId },
+          data: { status: "failed", error: message }
+        });
+        await this.executionReportsService.createForAttackMapRun(runId);
+        this.stream.publish(runId, { type: "failed", error: message });
+      })().catch((reportError) => {
+        console.error("Failed to persist attack-map failure report.", reportError);
+        this.stream.publish(runId, { type: "failed", error: message });
       });
-      this.stream.publish(runId, { type: "failed", error: message });
     });
   }
 
@@ -625,6 +633,7 @@ export class OrchestratorExecutionEngineService {
         toolActivity: toJson(toolActivity)
       }
     });
+    await this.executionReportsService.createForAttackMapRun(runId);
     emit({ type: "phase_changed", phase: "complete", status: "completed" });
     emit({ type: "completed", summary });
   }

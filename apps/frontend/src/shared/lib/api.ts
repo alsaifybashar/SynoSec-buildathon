@@ -45,6 +45,12 @@ function inferRequestContext(url: string, init?: RequestInit): RequestContext {
   if (pathname.match(/\/api\/workflow-runs\/[^/]+\/step$/) && method === "POST") {
     return { method, action: "advance workflow run", singularLabel: "workflow run", pluralLabel: "workflow runs" };
   }
+  if (pathname.match(/\/api\/execution-reports\/[^/]+\/archive$/) && method === "POST") {
+    return { method, action: "archive execution report", singularLabel: "execution report", pluralLabel: "execution reports" };
+  }
+  if (pathname.match(/\/api\/execution-reports\/[^/]+\/unarchive$/) && method === "POST") {
+    return { method, action: "unarchive execution report", singularLabel: "execution report", pluralLabel: "execution reports" };
+  }
 
   const resourceMatch = pathname.match(/\/api\/([^/]+)(?:\/[^/]+)?$/);
   const resource = resourceMatch?.[1] ?? "resource";
@@ -55,7 +61,8 @@ function inferRequestContext(url: string, init?: RequestInit): RequestContext {
     "ai-agents": { singular: "AI agent", plural: "AI agents" },
     "ai-tools": { singular: "AI tool", plural: "AI tools" },
     workflows: { singular: "Workflow", plural: "Workflows" },
-    "workflow-runs": { singular: "Workflow run", plural: "Workflow runs" }
+    "workflow-runs": { singular: "Workflow run", plural: "Workflow runs" },
+    "execution-reports": { singular: "Execution report", plural: "Execution reports" }
   };
   const label = labels[resource] ?? { singular: "Resource", plural: "Resources" };
   const isCollectionRequest = !pathname.match(/\/api\/[^/]+\/[^/]+$/);

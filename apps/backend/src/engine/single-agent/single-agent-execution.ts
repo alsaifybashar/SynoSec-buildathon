@@ -34,6 +34,7 @@ import {
 import { ToolBroker } from "@/engine/workflow/broker/tool-broker.js";
 import { normalizeToolInput, parseExecutionTarget, parseTarget, truncate } from "@/engine/workflow/workflow-execution.utils.js";
 import { compileToolRequestFromDefinition } from "@/modules/ai-tools/index.js";
+import type { ExecutionReportsService } from "@/modules/execution-reports/index.js";
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
 import type { AiProvidersRepository, StoredAiProvider } from "@/modules/ai-providers/index.js";
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
@@ -251,6 +252,7 @@ export type SingleAgentExecutionDependencies = {
   aiAgentsRepository: AiAgentsRepository;
   aiProvidersRepository: AiProvidersRepository;
   aiToolsRepository: AiToolsRepository;
+  executionReportsService: ExecutionReportsService;
 };
 
 export class SingleAgentExecutionFacade {
@@ -535,6 +537,9 @@ export class SingleAgentExecutionFacade {
         vulnerabilityCount: state.vulnerabilities.length,
         coverageLayers: [...state.coverageByLayer.keys()]
       });
+      if (context.mode === "single-agent") {
+        await this.dependencies.executionReportsService.createForSingleAgentScan(scanId);
+      }
     } catch (error) {
       const failureDetail = error instanceof Error ? error.message : String(error);
       const reason = error instanceof Error && error.cause instanceof Error ? error.cause.message : failureDetail;
@@ -550,6 +555,9 @@ export class SingleAgentExecutionFacade {
         }
       });
       await this.audit(context, "single-agent-scan-failed", { reason: failureDetail });
+      if (context.mode === "single-agent") {
+        await this.dependencies.executionReportsService.createForSingleAgentScan(scanId);
+      }
 
       if (context.mode === "workflow") {
         await this.emitWorkflowEvent(context, {

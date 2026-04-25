@@ -384,7 +384,7 @@ function getCompactToolInput(atom: DuplexAtom) {
 function getCompactToolOutput(atom: DuplexAtom, labelText: string) {
   const preferredSource = collapseWhitespace(atom.body) || collapseWhitespace(atom.summaryText);
   if (!preferredSource) {
-    return null;
+    return atom.status ? `${atom.status} with no summarized output.` : null;
   }
 
   const normalizedSummary = normalizeInlineText(preferredSource);
@@ -397,7 +397,7 @@ function getCompactToolOutput(atom: DuplexAtom, labelText: string) {
   const repeatsStatus = normalizedStatus.length > 0 && normalizedSummary.includes(normalizedStatus);
 
   if (repeatsLabel || (repeatsName && repeatsStatus)) {
-    return null;
+    return atom.status ? `${atom.status} with no summarized output.` : null;
   }
 
   const lines = preferredSource.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);

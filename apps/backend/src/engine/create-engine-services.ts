@@ -1,5 +1,6 @@
 import { OrchestratorExecutionEngineService, OrchestratorStream } from "@/engine/orchestrator/index.js";
 import { WorkflowExecutionEngineService, WorkflowRunStream } from "@/engine/workflow/index.js";
+import type { ExecutionReportsService } from "@/modules/execution-reports/index.js";
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
 import type { AiProvidersRepository } from "@/modules/ai-providers/index.js";
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
@@ -14,6 +15,7 @@ export type EngineDependencies = {
   aiAgentsRepository: AiAgentsRepository;
   aiToolsRepository: AiToolsRepository;
   workflowsRepository: WorkflowsRepository;
+  executionReportsService: ExecutionReportsService;
 };
 
 export function createEngineServices(dependencies: EngineDependencies) {
@@ -21,7 +23,8 @@ export function createEngineServices(dependencies: EngineDependencies) {
   const orchestratorExecutionEngine = new OrchestratorExecutionEngineService(
     orchestratorEventStream,
     dependencies.aiProvidersRepository,
-    dependencies.aiToolsRepository
+    dependencies.aiToolsRepository,
+    dependencies.executionReportsService
   );
 
   const workflowRunEventStream = new WorkflowRunStream();
@@ -33,7 +36,8 @@ export function createEngineServices(dependencies: EngineDependencies) {
     dependencies.aiProvidersRepository,
     dependencies.aiToolsRepository,
     workflowRunEventStream,
-    orchestratorExecutionEngine
+    orchestratorExecutionEngine,
+    dependencies.executionReportsService
   );
 
   return {

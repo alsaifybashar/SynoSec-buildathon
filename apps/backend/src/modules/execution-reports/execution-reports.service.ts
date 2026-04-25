@@ -12,6 +12,7 @@ import {
   summarizeHighestSeverity,
   type ExecutionReportDetail,
   type ExecutionReportFinding,
+  type ExecutionKind,
   type ExecutionReportSummary,
   type ExecutionReportsListQuery
 } from "@synosec/contracts";
@@ -61,6 +62,14 @@ function parseToolActivity(value: Prisma.JsonValue) {
     .map((entry) => executionReportToolActivitySchema.safeParse(entry))
     .filter((entry): entry is { success: true; data: ExecutionReportDetail["toolActivity"][number] } => entry.success)
     .map((entry) => entry.data);
+}
+
+function normalizeExecutionKind(value: string | null | undefined): ExecutionKind | null {
+  if (value === "single-agent" || value === "workflow" || value === "attack-map") {
+    return value;
+  }
+
+  return null;
 }
 
 export class ExecutionReportsService {
@@ -347,10 +356,13 @@ export class ExecutionReportsService {
       && typeof ((planEvent.payload as Record<string, unknown>)["plan"] as Record<string, unknown>)["overallRisk"] === "string"
       ? ((planEvent.payload as Record<string, unknown>)["plan"] as Record<string, unknown>)["overallRisk"] as "critical" | "high" | "medium" | "low"
       : null;
+    const executionKind = normalizeExecutionKind(workflowRun.executionKind)
+      ?? normalizeExecutionKind(run.workflow.executionKind)
+      ?? "workflow";
 
     return {
       executionId: workflowRun.id,
-      executionKind: workflowRun.executionKind,
+      executionKind,
       sourceDefinitionId: run.workflowId,
       status: normalizeExecutionReportStatus(workflowRun.status),
       title: run.workflow.name,
@@ -364,7 +376,7 @@ export class ExecutionReportsService {
       findings,
       toolActivity,
       coverageOverview: report.coverageOverview,
-      sourceSummary: workflowRun.executionKind === "attack-map"
+      sourceSummary: executionKind === "attack-map"
         ? {
             executionKind: "attack-map",
             runId: workflowRun.id,

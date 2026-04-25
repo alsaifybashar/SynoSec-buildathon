@@ -6,6 +6,7 @@ import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
 import type { AiProvidersRepository } from "@/modules/ai-providers/index.js";
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
 import type { ApplicationsRepository } from "@/modules/applications/index.js";
+import { ExecutionReportsService } from "@/modules/execution-reports/index.js";
 import {
   SingleAgentExecutionFacade,
   type SingleAgentExecutionDependencies,
@@ -27,11 +28,20 @@ export class SingleAgentScanService {
     aiToolsRepository: AiToolsRepository
   );
   constructor(
+    applicationsRepository: ApplicationsRepository,
+    runtimesRepository: RuntimesRepository,
+    aiAgentsRepository: AiAgentsRepository,
+    aiProvidersRepository: AiProvidersRepository,
+    aiToolsRepository: AiToolsRepository,
+    executionReportsService: ExecutionReportsService
+  );
+  constructor(
     executionFacadeOrApplicationsRepository: SingleAgentExecutionFacade | ApplicationsRepository,
     runtimesRepository?: RuntimesRepository,
     aiAgentsRepository?: AiAgentsRepository,
     aiProvidersRepository?: AiProvidersRepository,
-    aiToolsRepository?: AiToolsRepository
+    aiToolsRepository?: AiToolsRepository,
+    executionReportsService?: ExecutionReportsService
   ) {
     if (executionFacadeOrApplicationsRepository instanceof SingleAgentExecutionFacade) {
       this.executionFacade = executionFacadeOrApplicationsRepository;
@@ -44,7 +54,8 @@ export class SingleAgentScanService {
       runtimesRepository: runtimesRepository!,
       aiAgentsRepository: aiAgentsRepository!,
       aiProvidersRepository: aiProvidersRepository!,
-      aiToolsRepository: aiToolsRepository!
+      aiToolsRepository: aiToolsRepository!,
+      executionReportsService: executionReportsService ?? new ExecutionReportsService()
     } satisfies SingleAgentExecutionDependencies);
     (this as unknown as { broker: unknown }).broker = (this.executionFacade as unknown as { broker: unknown }).broker;
   }

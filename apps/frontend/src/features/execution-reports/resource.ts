@@ -11,11 +11,12 @@ export const executionReportsResource = createResourceClient<ExecutionReportDeta
     sortBy: "generatedAt",
     sortDirection: "desc",
     executionKind: undefined,
-    status: undefined
+    status: undefined,
+    archived: "exclude"
   },
   capabilities: {
     canCreate: false,
     canUpdate: () => false,
-    canDelete: () => false
+    canDelete: () => true
   }
 });

@@ -17,6 +17,7 @@ import { z } from "zod";
 import type { WorkflowRunStream } from "@/engine/workflow/workflow-run-stream.js";
 import { RequestError } from "@/shared/http/request-error.js";
 import { compileToolRequestFromDefinition } from "@/modules/ai-tools/index.js";
+import { ExecutionReportsService } from "@/modules/execution-reports/index.js";
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
 import type { AiProvidersRepository, StoredAiProvider } from "@/modules/ai-providers/index.js";
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
@@ -118,7 +119,8 @@ export class WorkflowExecutionService {
     private readonly aiProvidersRepository: AiProvidersRepository,
     private readonly aiToolsRepository: AiToolsRepository,
     private readonly workflowRunStream: WorkflowRunStream,
-    private readonly orchestratorExecutionEngine: OrchestratorExecutionEngineService
+    private readonly orchestratorExecutionEngine: OrchestratorExecutionEngineService,
+    private readonly executionReportsService: ExecutionReportsService = new ExecutionReportsService()
   ) {
     this.broker = new ToolBroker({ broadcast: () => undefined });
     this.eventPublisher = new WorkflowRunEventPublisher(this.workflowsRepository, this.workflowRunStream);
@@ -215,6 +217,7 @@ export class WorkflowExecutionService {
         completedAt: new Date().toISOString()
       });
       this.eventPublisher.publishSnapshot(failedRun);
+      await this.executionReportsService.createForWorkflowRun(runId);
     } catch (updateError) {
       console.error("Failed to persist workflow run failure state.", updateError);
     }
@@ -996,6 +999,7 @@ export class WorkflowExecutionService {
             status: "completed",
             completedAt: new Date().toISOString()
           });
+          await this.executionReportsService.createForWorkflowRun(currentRun.id);
           abortController.abort("workflow-completed");
           return { accepted: true };
         }
@@ -1025,6 +1029,7 @@ export class WorkflowExecutionService {
             status: "failed",
             completedAt: new Date().toISOString()
           });
+          await this.executionReportsService.createForWorkflowRun(currentRun.id);
           abortController.abort("workflow-failed");
           return { accepted: true };
         }

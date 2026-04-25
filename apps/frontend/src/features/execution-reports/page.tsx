@@ -1,11 +1,14 @@
-import { ArrowLeft, Download } from "lucide-react";
-import type { ExecutionReportDetail, ExecutionReportFinding, ExecutionReportStatus } from "@synosec/contracts";
+import { useState } from "react";
+import { Archive, ArrowLeft, Download, Trash2 } from "lucide-react";
+import { apiRoutes, type ExecutionReportDetail, type ExecutionReportFinding, type ExecutionReportStatus } from "@synosec/contracts";
+import { toast } from "sonner";
 import { useResourceDetail } from "@/shared/hooks/use-resource-detail";
 import { useResourceList } from "@/shared/hooks/use-resource-list";
 import { DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Button } from "@/shared/ui/button";
 import { executionReportsResource } from "@/features/execution-reports/resource";
+import { fetchJson } from "@/shared/lib/api";
 
 function downloadJson(filename: string, value: unknown) {
   const blob = new Blob([JSON.stringify(value, null, 2)], { type: "application/json;charset=utf-8" });
@@ -79,7 +82,45 @@ export function ExecutionReportsPage({
   onNavigateToDetail: (id: string, label?: string) => void;
 }) {
   const list = useResourceList(executionReportsResource);
-  const detail = useResourceDetail(executionReportsResource, reportId ?? null);
+  const [detailReloadToken, setDetailReloadToken] = useState(0);
+  const [mutating, setMutating] = useState(false);
+  const detail = useResourceDetail(executionReportsResource, reportId ?? null, detailReloadToken);
+
+  async function archiveReport(id: string) {
+    setMutating(true);
+    try {
+      await fetchJson<ExecutionReportDetail>(apiRoutes.executionReportArchive.replace(":id", id), { method: "POST" });
+      toast.success("Execution report archived");
+      list.refetch();
+      setDetailReloadToken((current) => current + 1);
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function unarchiveReport(id: string) {
+    setMutating(true);
+    try {
+      await fetchJson<ExecutionReportDetail>(apiRoutes.executionReportUnarchive.replace(":id", id), { method: "POST" });
+      toast.success("Execution report restored");
+      list.refetch();
+      setDetailReloadToken((current) => current + 1);
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function deleteReport(id: string) {
+    setMutating(true);
+    try {
+      await fetchJson<void>(`${apiRoutes.executionReports}/${id}`, { method: "DELETE" });
+      toast.success("Execution report deleted");
+      list.refetch();
+      onNavigateToList();
+    } finally {
+      setMutating(false);
+    }
+  }
 
   if (!reportId) {
     const columns: ListPageColumn<ExecutionReportDetail>[] = [
@@ -108,6 +149,16 @@ export function ExecutionReportsPage({
         placeholder: "Filter status",
         allLabel: "All statuses",
         options: statusOptions.map((status) => ({ label: status, value: status }))
+      },
+      {
+        id: "archived",
+        label: "Report state",
+        placeholder: "Filter reports",
+        allLabel: "Active only",
+        options: [
+          { label: "All reports", value: "include" },
+          { label: "Archived only", value: "only" }
+        ]
       }
     ];
 
@@ -130,7 +181,11 @@ export function ExecutionReportsPage({
         onRetry={list.refetch}
         onRowClick={(row) => onNavigateToDetail(row.id, row.title)}
         onExportRowJson={(row) => downloadJson(`${row.id}.json`, row)}
-        canDeleteRow={() => false}
+        onDeleteRow={async (row) => {
+          await fetchJson<void>(`${apiRoutes.executionReports}/${row.id}`, { method: "DELETE" });
+          list.refetch();
+        }}
+        canDeleteRow={() => true}
       />
     );
   }
@@ -147,6 +202,7 @@ export function ExecutionReportsPage({
   }
 
   const report = detail.item;
+  const isArchived = report.archivedAt !== null;
   return (
     <DetailPage
       title={report.title}
@@ -164,6 +220,30 @@ export function ExecutionReportsPage({
             <ArrowLeft className="h-4 w-4" />
             Back
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              void (isArchived ? unarchiveReport(report.id) : archiveReport(report.id));
+            }}
+            disabled={mutating}
+            className="h-8 text-[0.72rem]"
+          >
+            <Archive className="h-4 w-4" />
+            {isArchived ? "Unarchive" : "Archive"}
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={() => {
+              void deleteReport(report.id);
+            }}
+            disabled={mutating}
+            className="h-8 text-[0.72rem]"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </Button>
           <div className="ml-auto">
             <Button type="button" variant="outline" onClick={() => downloadJson(`${report.id}.json`, report)} className="h-8 text-[0.72rem]">
               <Download className="h-4 w-4" />
@@ -179,6 +259,7 @@ export function ExecutionReportsPage({
           <DetailSidebarItem label="Target">{report.targetLabel}</DetailSidebarItem>
           <DetailSidebarItem label="Findings">{report.findingsCount}</DetailSidebarItem>
           <DetailSidebarItem label="Highest severity">{report.highestSeverity ?? "none"}</DetailSidebarItem>
+          <DetailSidebarItem label="Archived">{isArchived ? new Date(report.archivedAt as string).toLocaleString() : "Active"}</DetailSidebarItem>
         </>
       )}
     >
