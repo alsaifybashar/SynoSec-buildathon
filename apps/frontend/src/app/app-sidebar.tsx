@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, LogIn, LogOut, Settings, X } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { isNavigationItemActive, navigationTree } from "@/app/navigation";
 import { logout } from "@/features/auth/auth-store";
@@ -12,7 +12,8 @@ import {
   SidebarGroup,
   SidebarMenu,
   SidebarMenuItem,
-  SidebarMenuText
+  SidebarMenuText,
+  sidebarMenuItemClassName
 } from "@/shared/ui/sidebar";
 
 type ThemeId = "synosec" | "dark";
@@ -217,9 +218,9 @@ function SidebarBrand() {
 }
 
 function SidebarNav({
-  pathname
-}: Pick<AppSidebarProps, "pathname">) {
-  const navigate = useNavigate();
+  pathname,
+  onNavigate
+}: Pick<AppSidebarProps, "pathname"> & { onNavigate?: () => void }) {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const groupActiveMap = useMemo(() => {
     const map: Record<string, boolean> = {};
@@ -263,19 +264,21 @@ function SidebarNav({
               const isActive = isNavigationItemActive(item, pathname);
 
               return (
-                <SidebarMenuItem
+                <Link
                   key={item.id}
+                  to={item.path}
                   className={cn(
+                    sidebarMenuItemClassName,
                     isActive &&
                       "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border))] before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-sidebar-primary before:content-['']"
                   )}
-                  onClick={() => navigate(item.path)}
+                  onClick={onNavigate}
                 >
                   <Icon
                     className={cn("transition-colors", isActive ? "text-sidebar-primary" : "text-sidebar-muted-foreground")}
                   />
                   <SidebarMenuText>{item.label}</SidebarMenuText>
-                </SidebarMenuItem>
+                </Link>
               );
             }
 
@@ -308,19 +311,21 @@ function SidebarNav({
                       const isActive = isNavigationItemActive(item, pathname);
 
                       return (
-                        <SidebarMenuItem
+                        <Link
                           key={item.id}
+                          to={item.path}
                           className={cn(
+                            sidebarMenuItemClassName,
                             isActive &&
                               "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border))] before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-sidebar-primary before:content-['']"
                           )}
-                          onClick={() => navigate(item.path)}
+                          onClick={onNavigate}
                         >
                           <Icon
                             className={cn("transition-colors", isActive ? "text-sidebar-primary" : "text-sidebar-muted-foreground")}
                           />
                           <SidebarMenuText>{item.label}</SidebarMenuText>
-                        </SidebarMenuItem>
+                        </Link>
                       );
                     })}
                   </div>
@@ -339,12 +344,12 @@ function SidebarFooter({
   onThemeChange,
   user,
   showSignIn,
-  currentPathWithQuery
+  currentPathWithQuery,
+  onNavigate
 }: Pick<
   AppSidebarProps,
   "theme" | "onThemeChange" | "user" | "showSignIn" | "currentPathWithQuery"
->) {
-  const navigate = useNavigate();
+> & { onNavigate?: () => void }) {
 
   return (
     <div className="mt-2 border-t border-sidebar-border/60">
@@ -374,17 +379,17 @@ function SidebarFooter({
           />
         </div>
       ) : showSignIn ? (
-        <button
-          type="button"
+        <Link
+          to={`/login?redirectTo=${encodeURIComponent(currentPathWithQuery)}`}
           className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[0.72rem] font-medium leading-none text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50 [&_svg]:h-[1em] [&_svg]:w-[1em]"
-          onClick={() => navigate(`/login?redirectTo=${encodeURIComponent(currentPathWithQuery)}`)}
+          onClick={onNavigate}
         >
           <LogIn className="text-sidebar-muted-foreground" />
           <span>Sign in</span>
           <span className="ml-auto font-mono text-[0.58rem] uppercase tracking-[0.22em] text-sidebar-muted-foreground/70">
             google
           </span>
-        </button>
+        </Link>
       ) : null}
     </div>
   );
@@ -427,13 +432,14 @@ export function AppSidebar(props: AppSidebarProps) {
             </button>
           </div>
           <div aria-hidden className="border-t border-sidebar-border/60" />
-          <SidebarNav pathname={props.pathname} />
+          <SidebarNav pathname={props.pathname} onNavigate={props.onCloseMobileNav} />
           <SidebarFooter
             theme={props.theme}
             onThemeChange={props.onThemeChange}
             user={props.user}
             showSignIn={props.showSignIn}
             currentPathWithQuery={props.currentPathWithQuery}
+            onNavigate={props.onCloseMobileNav}
           />
         </div>
       </div>

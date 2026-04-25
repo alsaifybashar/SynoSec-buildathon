@@ -320,16 +320,17 @@ describe("App", () => {
     render(<App />);
 
     await screen.findByRole("heading", { name: "Applications" });
-    fireEvent.click(screen.getAllByRole("button", { name: "AI Providers" })[0]!);
+    expect(screen.getAllByRole("link", { name: "AI Providers" })[0]).toHaveAttribute("href", "/ai/providers");
+    fireEvent.click(screen.getAllByRole("link", { name: "AI Providers" })[0]!);
     expect(await screen.findByRole("heading", { name: "AI Providers" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "AI Agents" })[0]!);
+    fireEvent.click(screen.getAllByRole("link", { name: "AI Agents" })[0]!);
     expect(await screen.findByRole("heading", { name: "AI Agents" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "AI Tools" })[0]!);
+    fireEvent.click(screen.getAllByRole("link", { name: "AI Tools" })[0]!);
     expect(await screen.findByRole("heading", { name: "AI Tools" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Workflows" })[0]!);
+    fireEvent.click(screen.getAllByRole("link", { name: "Workflows" })[0]!);
     expect(await screen.findByRole("heading", { name: "Workflows" })).toBeInTheDocument();
 
     expect(screen.queryByText("Templates")).not.toBeInTheDocument();
@@ -339,7 +340,7 @@ describe("App", () => {
     render(<App />);
 
     await screen.findByRole("heading", { name: "Applications" });
-    fireEvent.click(screen.getAllByRole("button", { name: "AI Providers" })[0]!);
+    fireEvent.click(screen.getAllByRole("link", { name: "AI Providers" })[0]!);
     fireEvent.click((await screen.findAllByText("Primary Anthropic"))[0]!);
 
     expect(await screen.findByRole("heading", { name: "Primary Anthropic" })).toBeInTheDocument();
@@ -347,11 +348,27 @@ describe("App", () => {
     expect(await screen.findByPlaceholderText("Configured; leave blank to keep current value")).toBeInTheDocument();
   });
 
+  it("loads the AI agent detail page without refetch loops", async () => {
+    window.history.replaceState({}, "", "/ai/agents/67043e91-4017-47b8-ac3f-81eb19f51538");
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Recon Agent" })).toBeInTheDocument();
+
+    const fetchMock = vi.mocked(fetch);
+    const requestedUrls = fetchMock.mock.calls.map(([input]) => String(input));
+
+    expect(requestedUrls.filter((url) => url === "/api/ai-agents/67043e91-4017-47b8-ac3f-81eb19f51538").length).toBeLessThanOrEqual(2);
+    expect(requestedUrls.filter((url) => url.startsWith("/api/ai-agents?")).length).toBeLessThanOrEqual(3);
+    expect(requestedUrls.filter((url) => url.startsWith("/api/ai-providers?")).length).toBeLessThanOrEqual(2);
+    expect(requestedUrls.filter((url) => url.startsWith("/api/ai-tools?")).length).toBeLessThanOrEqual(2);
+  });
+
   it("opens the AI provider create page from the list add-record action", async () => {
     render(<App />);
 
     await screen.findByRole("heading", { name: "Applications" });
-    fireEvent.click(screen.getAllByRole("button", { name: "AI Providers" })[0]!);
+    fireEvent.click(screen.getAllByRole("link", { name: "AI Providers" })[0]!);
     fireEvent.click(await screen.findByRole("button", { name: "Add AI Provider" }));
 
     expect(window.location.pathname).toBe("/ai/providers/new");

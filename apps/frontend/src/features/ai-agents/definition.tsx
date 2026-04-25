@@ -137,12 +137,15 @@ function useAiAgentDefinitionContext(): AiAgentDefinitionContext {
     [providers]
   );
 
-  return {
-    providers,
-    tools,
-    providerLookup,
-    defaultProviderId: providers[0]?.id ?? ""
-  };
+  return useMemo(
+    () => ({
+      providers,
+      tools,
+      providerLookup,
+      defaultProviderId: providers[0]?.id ?? ""
+    }),
+    [providerLookup, providers, tools]
+  );
 }
 
 export const aiAgentsDefinition: CrudFeatureDefinition<
