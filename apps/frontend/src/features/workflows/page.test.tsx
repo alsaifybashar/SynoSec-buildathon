@@ -434,6 +434,20 @@ describe("WorkflowsPage", () => {
     expect(onNavigateToDetail).toHaveBeenCalledWith("workflow-created", "New Workflow");
   });
 
+  it("renders helper triggers for guided workflow fields", async () => {
+    vi.stubGlobal("fetch", createFetchMock());
+
+    renderWorkflowConfigPage();
+
+    expect(await screen.findByText("Workflow Configuration")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Execution kind" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Runtime" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Agent" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Objective" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Agent prompt" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Allowed tools" })).toBeInTheDocument();
+  });
+
   it("updates an existing workflow from the config edit page", async () => {
     const fetchMock = createFetchMock();
     vi.stubGlobal("fetch", fetchMock);

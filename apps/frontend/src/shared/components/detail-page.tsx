@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { forwardRef, useEffect, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, Check, Download, Undo2 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { PageHeader } from "@/shared/components/page-header";
@@ -207,13 +207,20 @@ export function DetailSidebarItem({
   );
 }
 
-const DetailHintTrigger = forwardRef<HTMLButtonElement, { label: string }>(function DetailHintTrigger({ label }, ref) {
+const DetailHintTrigger = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { label: string }>(function DetailHintTrigger(
+  { label, className, ...props },
+  ref
+) {
   return (
     <button
       ref={ref}
       type="button"
-      className="inline-flex cursor-default items-center font-mono text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-primary/80 transition hover:text-primary focus-visible:text-primary focus-visible:outline-none"
+      className={[
+        "inline-flex items-center font-mono text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-primary/80 transition hover:text-primary focus-visible:text-primary focus-visible:outline-none",
+        className
+      ].filter(Boolean).join(" ")}
       aria-label={`Show guidance for ${label}`}
+      {...props}
     >
       ?
     </button>

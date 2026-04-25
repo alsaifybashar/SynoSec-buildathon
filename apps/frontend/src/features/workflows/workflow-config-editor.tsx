@@ -18,6 +18,15 @@ export const workflowExecutionKindLabels: Record<ExecutionKind, string> = {
   "attack-map": "Attack-map"
 };
 
+const workflowFieldHints = {
+  executionKind: "Choose whether this run executes a standard workflow or produces an attack-map oriented output.",
+  runtime: "Optional. Bind a runtime when this workflow should execute against a specific application runtime. Leave empty when the agent does not need one.",
+  agent: "The linked AI agent owns the base prompt, provider, and default tool grants used by this workflow.",
+  objective: "This is the mission brief sent with the run. It should tell the agent what outcome to achieve for the selected target.",
+  agentPrompt: "This prompt is inherited from the linked AI agent. Update it from the AI Agents page when the workflow needs different standing instructions.",
+  allowedTools: "Select a narrower tool set for this workflow. If nothing is selected, the workflow inherits every tool granted to the linked agent."
+} as const;
+
 export function WorkflowConfigEditor({
   formValues,
   errors,
@@ -48,7 +57,7 @@ export function WorkflowConfigEditor({
         <DetailField label="Name" required {...definedFieldError(errors["name"])}>
           <Input value={formValues.name} onChange={(event) => onFieldChange("name", event.target.value)} aria-label="Name" />
         </DetailField>
-        <DetailField label="Execution kind">
+        <DetailField label="Execution kind" hint={workflowFieldHints.executionKind}>
           <Select value={formValues.executionKind} onValueChange={(value) => onFieldChange("executionKind", value as ExecutionKind)}>
             <SelectTrigger aria-label="Execution kind">
               <SelectValue placeholder="Select execution kind" />
@@ -72,7 +81,7 @@ export function WorkflowConfigEditor({
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Runtime">
+        <DetailField label="Runtime" hint={workflowFieldHints.runtime}>
           <Select value={formValues.runtimeId || "__none__"} onValueChange={(value) => onFieldChange("runtimeId", value === "__none__" ? "" : value)}>
             <SelectTrigger aria-label="Runtime">
               <SelectValue placeholder="Select runtime" />
@@ -91,7 +100,7 @@ export function WorkflowConfigEditor({
       </DetailFieldGroup>
 
       <DetailFieldGroup title="Execution Contract" className="bg-card/70">
-        <DetailField label="Agent" required {...definedFieldError(errors["agentId"])}>
+        <DetailField label="Agent" required hint={workflowFieldHints.agent} {...definedFieldError(errors["agentId"])}>
           <Select value={formValues.agentId} onValueChange={(value) => onFieldChange("agentId", value)}>
             <SelectTrigger aria-label="Agent">
               <SelectValue placeholder="Select agent" />
@@ -103,10 +112,10 @@ export function WorkflowConfigEditor({
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Objective" required className="md:col-span-2" {...definedFieldError(errors["objective"])}>
+        <DetailField label="Objective" required hint={workflowFieldHints.objective} className="md:col-span-2" {...definedFieldError(errors["objective"])}>
           <Textarea value={formValues.objective} onChange={(event) => onFieldChange("objective", event.target.value)} aria-label="Objective" rows={4} />
         </DetailField>
-        <DetailField label="Agent prompt" className="md:col-span-2">
+        <DetailField label="Agent prompt" hint={workflowFieldHints.agentPrompt} className="md:col-span-2">
           <div className="space-y-2 rounded-xl border border-border bg-background/40 p-4">
             <p className="text-sm leading-6 text-foreground">{selectedAgent?.systemPrompt ?? "Select an agent to inspect its prompt."}</p>
             <p className="text-xs text-muted-foreground">
@@ -114,7 +123,7 @@ export function WorkflowConfigEditor({
             </p>
           </div>
         </DetailField>
-        <DetailField label="Allowed tools" className="md:col-span-2">
+        <DetailField label="Allowed tools" hint={workflowFieldHints.allowedTools} className="md:col-span-2">
           <div className="space-y-3 rounded-xl border border-border bg-background/40 p-4">
             <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
               <p className="text-xs font-medium text-foreground">

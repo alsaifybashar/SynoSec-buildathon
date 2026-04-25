@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { DetailPage } from "@/shared/components/detail-page";
+import { DetailField, DetailPage } from "@/shared/components/detail-page";
 
 describe("DetailPage", () => {
   it("renders related content below the main detail content", () => {
@@ -84,5 +84,16 @@ describe("DetailPage", () => {
 
     expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
+  });
+
+  it("shows a field hint on hover when guidance is provided", async () => {
+    render(
+      <DetailField label="Runtime" hint="Helpful runtime guidance.">
+        <input aria-label="Runtime" />
+      </DetailField>
+    );
+
+    fireEvent.focus(screen.getByRole("button", { name: "Show guidance for Runtime" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Helpful runtime guidance.");
   });
 });
