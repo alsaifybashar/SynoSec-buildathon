@@ -9,6 +9,7 @@ import {
   ScrollText,
   Shapes,
   Sparkles,
+  ListChecks,
   Wrench,
   type LucideIcon
 } from "lucide-react";
@@ -23,7 +24,8 @@ export type NavigationId =
   | "execution-reports"
   | "attack-map"
   | "design-stream"
-  | "design-duplex";
+  | "design-duplex"
+  | "design-report-finding-map";
 
 export type NavigationState = {
   detailLabel?: string;
@@ -205,6 +207,12 @@ export const navigationTree: NavigationTreeEntry[] = [
           label: "Duplex Stream",
           path: "/designs/duplex",
           icon: Columns2
+        }),
+        createNavigationItem({
+          id: "design-report-finding-map",
+          label: "Finding map",
+          path: "/designs/report-finding-map",
+          icon: ListChecks
         })
       ]
     }

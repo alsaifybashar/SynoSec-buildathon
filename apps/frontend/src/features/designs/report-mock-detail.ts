@@ -14,8 +14,29 @@ export const mockReportDetail: ExecutionReportDetail = {
   generatedAt: "2026-04-22T14:08:00.000Z",
   updatedAt: "2026-04-22T16:42:00.000Z",
   archivedAt: null,
-  executiveSummary:
-    "An external posture sweep against the Black Pine identity surface identified a chain of three high-impact issues: a permissive CORS policy on the legacy SSO bridge, a leaked refresh token in a public artifact, and a missing audience claim check on the staging audience proxy. Together they enable a cross-account session graft against any tenant that authenticated via the legacy bridge in the prior 90 days.",
+  executiveSummary: `## Executive summary
+
+An external posture sweep against the **Black Pine identity surface** surfaced a chain of three high-impact issues that, in isolation, would each have shipped to backlog — but together enable a **cross-tenant session graft**.
+
+### What I found
+
+- A permissive \`Access-Control-Allow-Origin: *\` on the legacy SSO bridge with \`Allow-Credentials: true\`
+- A long-lived refresh token (\`ATLAS_RT\`, 89 days remaining) leaked in the public \`atlas-release.tar.gz\` artifact
+- A missing \`aud\` claim check on the staging audience proxy, which accepts JWTs minted for unrelated tenants
+- A cookie scoped to \`.blackpine.internal\`, exposing the prod identity cookie to weaker staging subdomains
+
+### Why it matters
+
+Combined, these turn a stale release artifact into a working session for **any tenant that authenticated via the legacy bridge in the last 90 days** — roughly *12 tenants in 1 region*.
+
+### Recommended order of operations
+
+1. **Revoke** \`ATLAS_RT\` and rotate the seed-env signing key today
+2. **Tighten** the audience proxy validator to enforce \`aud == staging-aud-proxy\`
+3. **Replace** the wildcard CORS policy with an explicit tenant allowlist
+4. **Re-scope** the auth cookie to the \`auth.\` subdomain and introduce host-bound session tokens
+
+> The chain is the story here. Steps 1–2 close the live exposure window; steps 3–4 prevent the same shape of finding from re-appearing.`,
   graph: {
     nodes: [
       {

@@ -5,6 +5,7 @@ import { ExecutionReportsPage } from "@/features/execution-reports/page";
 import { LoginPage } from "@/features/auth/login-page";
 import { DesignDuplex } from "@/features/designs/design-duplex";
 import { DesignStream } from "@/features/designs/design-stream";
+import { DesignReportFindingMap } from "@/features/designs/design-report-finding-map";
 import { crudRouteRegistry, legacyCrudRedirects } from "@/app/crud-route-registry";
 import {
   crudRouteConfigs,
@@ -177,6 +178,7 @@ export function AppContentRoutes({
       <Route path="/execution-reports/:reportId" element={protect(<ExecutionReportsRouteAdapter />)} />
       <Route path="/designs/stream" element={protect(<DesignStream />)} />
       <Route path="/designs/duplex" element={protect(<DesignDuplex />)} />
+      <Route path="/designs/report-finding-map" element={protect(<DesignReportFindingMap />)} />
 
       {legacyCrudRedirects.map((redirect) => (
         "redirectTo" in redirect
