@@ -30,10 +30,12 @@ The analysis is grounded in the current codebase and the main commit clusters fr
 - [Workflow Execution and Trace Architecture](./workflows-architecture.md)
 - [Tools, Registries, and Runtime Catalogs](./tools-registries-architecture.md)
 - [Backend Composition, Modules, and Resource Boundaries](./backend-architecture.md)
+- [Agent Runtime Hardening Direction](./agent-runtime-hardening.md)
 
 ## Existing Docs This Complements
 
 - `docs/repo-restructure-plan.md` remains the target-state restructuring document.
 - `docs/features.md` remains the feature inventory and maturity guide.
+- `docs/analysis/agent-runtime-hardening.md` locks the near-term direction for agent, tool, and prompt hardening work.
 
 This analysis set is narrower: it explains what changed in the last two days, where the new seams are, and how to break the follow-up into manageable architectural work.
