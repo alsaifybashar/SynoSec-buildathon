@@ -38,18 +38,32 @@ export const workflowsDefinition: CrudFeatureDefinition<
         return;
       }
 
-      if (!context.defaultApplicationId && !context.defaultAgentId) {
+      const nextApplicationId = formValues.applicationId || context.defaultApplicationId;
+      const nextAgentId = formValues.agentId || context.defaultAgentId;
+
+      if (nextApplicationId === formValues.applicationId && nextAgentId === formValues.agentId) {
         return;
       }
 
-      if (formValues.applicationId || formValues.agentId) {
-        return;
-      }
-
-      const nextValues = createEmptyFormValues(context.defaultApplicationId, "", context.defaultAgentId);
+      const nextValues = {
+        ...formValues,
+        applicationId: nextApplicationId,
+        agentId: nextAgentId
+      };
       setFormValues(nextValues);
-      setInitialValues(nextValues);
-    }, [context.defaultAgentId, context.defaultApplicationId, formValues.agentId, formValues.applicationId, recordId, setFormValues, setInitialValues]);
+      setInitialValues((current) => ({
+        ...current,
+        applicationId: nextApplicationId,
+        agentId: nextAgentId
+      }));
+    }, [
+      context.defaultAgentId,
+      context.defaultApplicationId,
+      formValues,
+      recordId,
+      setFormValues,
+      setInitialValues
+    ]);
   },
   createEmptyFormValues: (context) => createEmptyFormValues(context.defaultApplicationId, "", context.defaultAgentId),
   toFormValues: toWorkflowFormValues,
