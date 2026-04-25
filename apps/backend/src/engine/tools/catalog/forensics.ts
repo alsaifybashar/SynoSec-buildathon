@@ -9,5 +9,7 @@ export const forensicsTools: ToolCatalogEntry[] = [
   { id: "volatility3", displayName: "Volatility3", binary: "vol", category: "forensics", riskTier: "passive", phase: "post", osiLayers: ["L7"], tags: ["forensics", "memory", "analysis"] },
   { id: "trufflehog", displayName: "TruffleHog", binary: "trufflehog", category: "forensics", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["forensics", "secrets", "git"] },
   { id: "foca", displayName: "FOCA", binary: null, category: "forensics", riskTier: "passive", notes: "Windows GUI tool; use Metagoofil as CLI equivalent.", phase: "recon", osiLayers: ["L7"], tags: ["forensics", "metadata", "osint"] },
-  { id: "file-scraper", displayName: "File Scraper", binary: "file-scraper", category: "forensics", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["forensics", "metadata", "files", "osint"] }
+  { id: "file-scraper", displayName: "File Scraper", binary: "file-scraper", category: "forensics", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["forensics", "metadata", "files", "osint"] },
+  { id: "dshell", displayName: "Dshell", binary: "dshell", category: "forensics", riskTier: "passive", phase: "post", osiLayers: ["L3", "L4", "L7"], tags: ["forensics", "network", "pcap", "analysis"] },
+  { id: "metagoofil", displayName: "Metagoofil", binary: "metagoofil", category: "forensics", riskTier: "passive", phase: "recon", osiLayers: ["L7"], tags: ["forensics", "metadata", "documents", "osint"] }
 ];

@@ -35,6 +35,23 @@ const deprecatedSeededAgentIds = [
 async function main() {
   const providerDefinitions = getSeededProviderDefinitions();
   const seededAgentProviders = providerDefinitions.filter((provider) => provider.key === "anthropic");
+  await prisma.workflow.deleteMany({
+    where: {
+      application: {
+        id: { not: localApplicationId },
+        name: {
+          in: [
+            "Nils Wickman Portfolio",
+            "Operator Portal",
+            "Report Builder",
+            "Queue Reconciler",
+            "External Validation Slot"
+          ]
+        }
+      }
+    }
+  });
+
   await prisma.application.deleteMany({
     where: {
       id: { not: localApplicationId },
