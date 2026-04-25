@@ -1,4 +1,4 @@
-import type { AuthConfig } from "@/features/auth/auth-config.js";
+import type { AuthConfig } from "@/modules/auth/auth-config.js";
 
 declare global {
   namespace Express {

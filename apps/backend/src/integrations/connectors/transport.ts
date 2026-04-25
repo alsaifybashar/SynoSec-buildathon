@@ -1,5 +1,5 @@
 import type { ConnectorExecutionResult, ToolRequest, ToolRun } from "@synosec/contracts";
-import { executeScriptedTool, type ScriptExecutionResult } from "@/execution-engine/tools/script-executor.js";
+import { executeScriptedTool, type ScriptExecutionResult } from "@/engine/tools/script-executor.js";
 import { connectorControlPlane } from "@/integrations/connectors/control-plane.js";
 
 export interface ToolExecutionInput {

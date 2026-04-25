@@ -13,9 +13,11 @@ import {
   targetRuntimeId
 } from "./seed-data/ai-builder-defaults.js";
 import "@/shared/config/load-env.js";
-import { attachExecutionConfig } from "@/features/ai-tools/tool-execution-config.js";
+import { attachExecutionConfig } from "@/modules/ai-tools/tool-execution-config.js";
 
 const prisma = new PrismaClient();
+const localTargetAssetId = "7e8d6ec5-2d8b-4d41-9a46-8d5d8bff7a31";
+const cloudflareConstraintId = "seed-constraint-cloudflare-v1";
 
 async function main() {
   const providerDefinitions = getSeededProviderDefinitions();
@@ -62,6 +64,74 @@ async function main() {
       environment: "development",
       status: "active",
       lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
+    }
+  });
+
+  await prisma.targetAsset.upsert({
+    where: { id: localTargetAssetId },
+    update: {
+      applicationId: localApplicationId,
+      label: "Local vulnerable app",
+      kind: "url",
+      hostname: "localhost",
+      baseUrl: localDemoTargetDefaults.hostUrl,
+      ipAddress: "127.0.0.1",
+      cidr: null,
+      provider: "local",
+      ownershipStatus: "verified",
+      isDefault: true,
+      metadata: {
+        lab: true,
+        internalHost: localDemoTargetDefaults.internalHost
+      }
+    },
+    create: {
+      id: localTargetAssetId,
+      applicationId: localApplicationId,
+      label: "Local vulnerable app",
+      kind: "url",
+      hostname: "localhost",
+      baseUrl: localDemoTargetDefaults.hostUrl,
+      ipAddress: "127.0.0.1",
+      cidr: null,
+      provider: "local",
+      ownershipStatus: "verified",
+      isDefault: true,
+      metadata: {
+        lab: true,
+        internalHost: localDemoTargetDefaults.internalHost
+      }
+    }
+  });
+
+  await prisma.executionConstraint.upsert({
+    where: { id: cloudflareConstraintId },
+    update: {
+      name: "Cloudflare Owned Asset Policy",
+      kind: "provider_policy",
+      provider: "cloudflare",
+      version: 1,
+      description: "Restricts testing to customer-owned assets behind Cloudflare and enforces Cloudflare-specific scan exclusions and throttling.",
+      ruleSpec: {
+        excludedPaths: ["/cdn-cgi/"],
+        requireRateLimitSupport: true,
+        denyCloudflareOwnedTargets: true,
+        allowActiveExploit: false
+      }
+    },
+    create: {
+      id: cloudflareConstraintId,
+      name: "Cloudflare Owned Asset Policy",
+      kind: "provider_policy",
+      provider: "cloudflare",
+      version: 1,
+      description: "Restricts testing to customer-owned assets behind Cloudflare and enforces Cloudflare-specific scan exclusions and throttling.",
+      ruleSpec: {
+        excludedPaths: ["/cdn-cgi/"],
+        requireRateLimitSupport: true,
+        denyCloudflareOwnedTargets: true,
+        allowActiveExploit: false
+      }
     }
   });
 
@@ -135,7 +205,8 @@ async function main() {
             sandboxProfile: tool.sandboxProfile,
             privilegeProfile: tool.privilegeProfile,
             timeoutMs: tool.timeoutMs,
-            capabilities: [...tool.capabilities]
+            capabilities: [...tool.capabilities],
+            ...(tool.constraintProfile ? { constraintProfile: tool.constraintProfile } : {})
           }),
           outputSchema: tool.outputSchema
         },
@@ -156,7 +227,8 @@ async function main() {
             sandboxProfile: tool.sandboxProfile,
             privilegeProfile: tool.privilegeProfile,
             timeoutMs: tool.timeoutMs,
-            capabilities: [...tool.capabilities]
+            capabilities: [...tool.capabilities],
+            ...(tool.constraintProfile ? { constraintProfile: tool.constraintProfile } : {})
           }),
           outputSchema: tool.outputSchema
         }
@@ -245,6 +317,7 @@ async function main() {
         update: {
           name: workflow.name,
           status: workflow.status,
+          executionKind: workflow.executionKind,
           description: workflow.description,
           applicationId: workflow.applicationId,
           runtimeId: workflow.runtimeId
@@ -253,6 +326,7 @@ async function main() {
           id: workflow.id,
           name: workflow.name,
           status: workflow.status,
+          executionKind: workflow.executionKind,
           description: workflow.description,
           applicationId: workflow.applicationId,
           runtimeId: workflow.runtimeId

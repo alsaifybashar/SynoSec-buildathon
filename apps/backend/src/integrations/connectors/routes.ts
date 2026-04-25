@@ -6,10 +6,10 @@ import {
   type Scan
 } from "@synosec/contracts";
 import { Router, type Request, type Response } from "express";
-import { ToolBroker } from "@/execution-engine/workflow/broker/tool-broker.js";
+import { ToolBroker } from "@/engine/workflow/broker/tool-broker.js";
 import { assertConnectorAuth } from "@/integrations/connectors/auth.js";
 import { connectorControlPlane } from "@/integrations/connectors/control-plane.js";
-import { ensureScanRecord } from "@/features/scans/scan-records.js";
+import { ensureScanRecord } from "@/engine/scans/scan-records.js";
 
 function getSinglePathParam(value: string | string[] | undefined): string | null {
   if (typeof value === "string") {

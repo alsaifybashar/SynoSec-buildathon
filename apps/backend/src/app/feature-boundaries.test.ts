@@ -4,9 +4,8 @@ import { describe, expect, it } from "vitest";
 
 const backendRoot = path.resolve(__dirname, "..");
 const appRoot = path.join(backendRoot, "app");
-const featuresRoot = path.join(backendRoot, "features");
+const engineRoot = path.join(backendRoot, "engine");
 const modulesRoot = path.join(backendRoot, "modules");
-const workflowEngineRoot = path.join(backendRoot, "workflow-engine");
 const sharedRoot = path.join(backendRoot, "shared");
 
 async function collectTypeScriptFiles(directory: string): Promise<string[]> {
@@ -36,8 +35,8 @@ function isPublicModuleSpecifier(specifier: string) {
   return /^@\/modules\/[^/]+(?:\/index\.js)?$/.test(specifier);
 }
 
-function isPublicWorkflowEngineSpecifier(specifier: string) {
-  return specifier === "@/workflow-engine/index.js";
+function isPublicEngineSpecifier(specifier: string) {
+  return specifier === "@/engine/index.js";
 }
 
 function resolveImportedModule(filePath: string, specifier: string) {
@@ -67,14 +66,17 @@ function resolveImportedModule(filePath: string, specifier: string) {
 }
 
 describe("backend feature boundaries", () => {
-  it("prevents app code from importing legacy feature or execution-engine paths", async () => {
+  it("prevents app code from importing legacy feature or deep engine paths", async () => {
     const files = await collectTypeScriptFiles(appRoot);
     const violations: string[] = [];
 
     for (const filePath of files) {
       const source = await readFile(filePath, "utf8");
       for (const specifier of findImports(source)) {
-        if (specifier.startsWith("@/features/") || specifier.startsWith("@/execution-engine/")) {
+        if (specifier.startsWith("@/features/")) {
+          violations.push(`${path.relative(backendRoot, filePath)} -> ${specifier}`);
+        }
+        if (specifier.startsWith("@/engine/") && !isPublicEngineSpecifier(specifier)) {
           violations.push(`${path.relative(backendRoot, filePath)} -> ${specifier}`);
         }
       }
@@ -83,7 +85,7 @@ describe("backend feature boundaries", () => {
     expect(violations).toEqual([]);
   });
 
-  it("prevents app code from deep-importing module or workflow-engine internals", async () => {
+  it("prevents app code from deep-importing module internals", async () => {
     const files = await collectTypeScriptFiles(appRoot);
     const violations: string[] = [];
 
@@ -91,9 +93,6 @@ describe("backend feature boundaries", () => {
       const source = await readFile(filePath, "utf8");
       for (const specifier of findImports(source)) {
         if (specifier.startsWith("@/modules/") && !isPublicModuleSpecifier(specifier)) {
-          violations.push(`${path.relative(backendRoot, filePath)} -> ${specifier}`);
-        }
-        if (specifier.startsWith("@/workflow-engine/") && !isPublicWorkflowEngineSpecifier(specifier)) {
           violations.push(`${path.relative(backendRoot, filePath)} -> ${specifier}`);
         }
       }
@@ -122,14 +121,14 @@ describe("backend feature boundaries", () => {
     expect(violations).toEqual([]);
   });
 
-  it("prevents shared code from importing modules or workflow-engine internals", async () => {
+  it("prevents shared code from importing modules or engine internals", async () => {
     const files = await collectTypeScriptFiles(sharedRoot);
     const violations: string[] = [];
 
     for (const filePath of files) {
       const source = await readFile(filePath, "utf8");
       for (const specifier of findImports(source)) {
-        if (specifier.startsWith("@/modules/") || specifier.startsWith("@/workflow-engine/")) {
+        if (specifier.startsWith("@/modules/") || specifier.startsWith("@/engine/")) {
           violations.push(`${path.relative(backendRoot, filePath)} -> ${specifier}`);
         }
       }
@@ -138,8 +137,8 @@ describe("backend feature boundaries", () => {
     expect(violations).toEqual([]);
   });
 
-  it("prevents workflow-engine code from importing app internals", async () => {
-    const files = await collectTypeScriptFiles(workflowEngineRoot);
+  it("prevents engine code from importing app internals", async () => {
+    const files = await collectTypeScriptFiles(engineRoot);
     const violations: string[] = [];
 
     for (const filePath of files) {

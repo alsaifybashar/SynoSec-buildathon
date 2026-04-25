@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { executionKindSchema } from "./shared.js";
 import {
   coverageStatusSchema,
   scanLayerCoverageSchema
@@ -169,6 +170,7 @@ export type WorkflowRunCoverageResponse = z.infer<typeof workflowRunCoverageResp
 
 export const workflowRunReportSchema = z.object({
   runId: z.string().uuid(),
+  executionKind: executionKindSchema.default("workflow"),
   executiveSummary: z.string(),
   stopReason: z.string().nullable(),
   totalFindings: z.number().int().min(0),
@@ -422,6 +424,7 @@ export function buildWorkflowRunReport(run: WorkflowRun | null): WorkflowRunRepo
 
   return workflowRunReportSchema.parse({
     runId: run.id,
+    executionKind: run.executionKind,
     executiveSummary,
     stopReason: run.status === "failed"
       ? getPayloadString(closeoutPayload, "reason") ?? "Workflow run failed."

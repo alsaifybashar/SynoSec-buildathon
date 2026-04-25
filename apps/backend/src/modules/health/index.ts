@@ -1,1 +1,1 @@
-export * from "@/features/health/index.js";
+export { registerHealthRoutes } from "./health.routes.js";

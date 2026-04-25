@@ -1,5 +1,5 @@
 import type { ToolCategory, ToolRiskTier } from "@synosec/contracts";
-import type { ToolPhase } from "@/execution-engine/tools/index.js";
+import type { ToolPhase } from "@/engine/tools/index.js";
 
 export interface AgentToolPolicy {
   agentId: string;

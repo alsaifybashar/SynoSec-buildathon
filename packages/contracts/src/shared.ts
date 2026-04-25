@@ -6,10 +6,12 @@ export const apiRoutes = {
   authLogout: "/api/auth/logout",
   authSession: "/api/auth/session",
   applications: "/api/applications",
+  applicationTargets: "/api/applications/:id/targets",
   runtimes: "/api/runtimes",
   aiProviders: "/api/ai-providers",
   aiAgents: "/api/ai-agents",
   aiTools: "/api/ai-tools",
+  executionConstraints: "/api/execution-constraints",
   workflows: "/api/workflows",
   workflowRuns: "/api/workflow-runs",
   workflowRunEvents: "/api/workflow-runs/:id/events",
@@ -17,6 +19,9 @@ export const apiRoutes = {
   workflowRunFindings: "/api/workflow-runs/:id/findings",
   workflowRunCoverage: "/api/workflow-runs/:id/coverage",
   workflowRunReport: "/api/workflow-runs/:id/report",
+  executionReports: "/api/execution-reports",
+  executionReportArchive: "/api/execution-reports/:id/archive",
+  executionReportUnarchive: "/api/execution-reports/:id/unarchive",
   toolCapabilities: "/api/tools/capabilities",
   connectorRegister: "/api/connectors/register",
   connectorPoll: "/api/connectors/:connectorId/poll",
@@ -74,6 +79,9 @@ export type GoogleLoginBody = z.infer<typeof googleLoginBodySchema>;
 
 export const sortDirectionSchema = z.enum(["asc", "desc"]);
 export type SortDirection = z.infer<typeof sortDirectionSchema>;
+
+export const executionKindSchema = z.enum(["single-agent", "workflow", "attack-map"]);
+export type ExecutionKind = z.infer<typeof executionKindSchema>;
 
 export const pageSchema = z.coerce.number().int().min(1).default(1);
 export const pageSizeSchema = z.coerce.number().int().refine((value) => [10, 25, 50, 100].includes(value), {

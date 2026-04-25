@@ -1,0 +1,216 @@
+import { z } from "zod";
+import { workflowReportedFindingSchema } from "./resources.js";
+import { securityVulnerabilitySchema, severitySchema, type SecurityVulnerability } from "./scan-core.js";
+import { createPaginatedResponseSchema, executionKindSchema, resourceListQuerySchema, sortDirectionSchema } from "./shared.js";
+
+export const executionReportStatusSchema = z.enum(["pending", "running", "completed", "failed", "aborted"]);
+export type ExecutionReportStatus = z.infer<typeof executionReportStatusSchema>;
+
+export const executionReportFindingSourceSchema = z.enum(["single-agent-vulnerability", "workflow-finding", "attack-map-finding"]);
+export type ExecutionReportFindingSource = z.infer<typeof executionReportFindingSourceSchema>;
+
+export const executionReportFindingSchema = z.object({
+  id: z.string().min(1),
+  executionId: z.string().min(1),
+  executionKind: executionKindSchema,
+  source: executionReportFindingSourceSchema,
+  severity: severitySchema,
+  title: z.string().min(1),
+  type: z.string().min(1),
+  summary: z.string().min(1),
+  recommendation: z.string().nullable(),
+  confidence: z.number().min(0).max(1).nullable(),
+  targetLabel: z.string().min(1),
+  evidence: z.array(z.object({
+    sourceTool: z.string().min(1),
+    quote: z.string().min(1),
+    artifactRef: z.string().min(1).optional(),
+    observationRef: z.string().min(1).optional(),
+    toolRunRef: z.string().min(1).optional()
+  })).default([]),
+  sourceToolIds: z.array(z.string().min(1)).default([]),
+  sourceToolRunIds: z.array(z.string().min(1)).default([]),
+  createdAt: z.string().datetime()
+});
+export type ExecutionReportFinding = z.infer<typeof executionReportFindingSchema>;
+
+export const executionReportToolActivitySchema = z.object({
+  id: z.string().min(1),
+  executionId: z.string().min(1),
+  executionKind: executionKindSchema,
+  phase: z.string().min(1),
+  toolId: z.string().min(1).nullable(),
+  toolName: z.string().min(1),
+  command: z.string().min(1),
+  status: z.enum(["running", "completed", "failed"]),
+  outputPreview: z.string().nullable(),
+  exitCode: z.number().int().nullable(),
+  startedAt: z.string().datetime(),
+  completedAt: z.string().datetime().nullable()
+});
+export type ExecutionReportToolActivity = z.infer<typeof executionReportToolActivitySchema>;
+
+export const executionReportSummarySchema = z.object({
+  id: z.string().uuid(),
+  executionId: z.string().min(1),
+  executionKind: executionKindSchema,
+  sourceDefinitionId: z.string().uuid().nullable().default(null),
+  status: executionReportStatusSchema,
+  title: z.string().min(1),
+  targetLabel: z.string().min(1),
+  sourceLabel: z.string().min(1),
+  findingsCount: z.number().int().min(0),
+  highestSeverity: severitySchema.nullable(),
+  generatedAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  archivedAt: z.string().datetime().nullable().default(null)
+});
+export type ExecutionReportSummary = z.infer<typeof executionReportSummarySchema>;
+
+export const executionReportSourceSummarySchema = z.discriminatedUnion("executionKind", [
+  z.object({
+    executionKind: z.literal("single-agent"),
+    scanId: z.string().min(1),
+    applicationId: z.string().uuid().nullable(),
+    runtimeId: z.string().uuid().nullable(),
+    stopReason: z.string().nullable(),
+    totalVulnerabilities: z.number().int().min(0),
+    topVulnerabilityIds: z.array(z.string().min(1)).default([])
+  }),
+  z.object({
+    executionKind: z.literal("workflow"),
+    runId: z.string().uuid(),
+    workflowId: z.string().uuid(),
+    stopReason: z.string().nullable(),
+    totalFindings: z.number().int().min(0),
+    topFindingIds: z.array(z.string().min(1)).default([])
+  }),
+  z.object({
+    executionKind: z.literal("attack-map"),
+    runId: z.string().uuid(),
+    phase: z.string().min(1),
+    overallRisk: z.enum(["critical", "high", "medium", "low"]).nullable(),
+    chainCount: z.number().int().min(0),
+    findingNodeCount: z.number().int().min(0)
+  })
+]);
+export type ExecutionReportSourceSummary = z.infer<typeof executionReportSourceSummarySchema>;
+
+export const executionReportDetailSchema = executionReportSummarySchema.extend({
+  executiveSummary: z.string().min(1),
+  findings: z.array(executionReportFindingSchema),
+  toolActivity: z.array(executionReportToolActivitySchema),
+  coverageOverview: z.record(z.string()).default({}),
+  sourceSummary: executionReportSourceSummarySchema,
+  raw: z.record(z.unknown()).default({})
+});
+export type ExecutionReportDetail = z.infer<typeof executionReportDetailSchema>;
+
+export const executionReportArchiveFilterSchema = z.enum(["exclude", "only", "include"]);
+export type ExecutionReportArchiveFilter = z.infer<typeof executionReportArchiveFilterSchema>;
+
+export const executionReportsListQuerySchema = resourceListQuerySchema.extend({
+  executionKind: executionKindSchema.optional(),
+  status: executionReportStatusSchema.optional(),
+  archived: executionReportArchiveFilterSchema.default("exclude"),
+  sortBy: z.enum(["generatedAt", "updatedAt", "findingsCount", "highestSeverity", "executionKind", "status", "title"]).optional().default("generatedAt"),
+  sortDirection: sortDirectionSchema.default("desc")
+});
+export type ExecutionReportsListQuery = z.infer<typeof executionReportsListQuerySchema>;
+
+export const listExecutionReportsResponseSchema = createPaginatedResponseSchema("reports", executionReportSummarySchema);
+export type ListExecutionReportsResponse = z.infer<typeof listExecutionReportsResponseSchema>;
+
+export function uniqueExecutionReportValues(values: string[]) {
+  return [...new Set(values.filter((value) => value.trim().length > 0))];
+}
+
+export function normalizeExecutionReportStatus(status: string): ExecutionReportStatus {
+  switch (status) {
+    case "complete":
+      return "completed";
+    case "aborted":
+      return "aborted";
+    case "pending":
+    case "running":
+    case "completed":
+    case "failed":
+      return status;
+    default:
+      return "failed";
+  }
+}
+
+export function severityRank(value: SecurityVulnerability["severity"] | null) {
+  switch (value) {
+    case "critical":
+      return 4;
+    case "high":
+      return 3;
+    case "medium":
+      return 2;
+    case "low":
+      return 1;
+    case "info":
+      return 0;
+    default:
+      return -1;
+  }
+}
+
+export function summarizeHighestSeverity(findings: Array<{ severity: SecurityVulnerability["severity"] }>) {
+  const ordered = findings
+    .map((finding) => finding.severity)
+    .sort((left, right) => severityRank(right) - severityRank(left));
+  return ordered[0] ?? null;
+}
+
+export function executionReportFindingFromVulnerability(vulnerability: SecurityVulnerability): ExecutionReportFinding {
+  return executionReportFindingSchema.parse({
+    id: vulnerability.id,
+    executionId: vulnerability.scanId,
+    executionKind: "single-agent",
+    source: "single-agent-vulnerability",
+    severity: vulnerability.severity,
+    title: vulnerability.title,
+    type: vulnerability.category,
+    summary: vulnerability.impact,
+    recommendation: vulnerability.recommendation,
+    confidence: vulnerability.confidence,
+    targetLabel: [
+      vulnerability.target.host,
+      vulnerability.target.port ? `:${vulnerability.target.port}` : "",
+      vulnerability.target.path ?? ""
+    ].join(""),
+    evidence: vulnerability.evidence,
+    sourceToolIds: uniqueExecutionReportValues(vulnerability.evidence.map((item) => item.sourceTool)),
+    sourceToolRunIds: uniqueExecutionReportValues(vulnerability.evidence.flatMap((item) => item.toolRunRef ? [item.toolRunRef] : [])),
+    createdAt: vulnerability.createdAt
+  });
+}
+
+export function executionReportFindingFromWorkflowFinding(
+  finding: z.infer<typeof workflowReportedFindingSchema>
+): ExecutionReportFinding {
+  return executionReportFindingSchema.parse({
+    id: finding.id,
+    executionId: finding.workflowRunId,
+    executionKind: "workflow",
+    source: "workflow-finding",
+    severity: finding.severity,
+    title: finding.title,
+    type: finding.type,
+    summary: finding.impact,
+    recommendation: finding.recommendation,
+    confidence: finding.confidence,
+    targetLabel: [
+      finding.target.host,
+      finding.target.port ? `:${finding.target.port}` : "",
+      finding.target.path ?? ""
+    ].join(""),
+    evidence: finding.evidence,
+    sourceToolIds: uniqueExecutionReportValues(finding.evidence.map((item) => item.sourceTool)),
+    sourceToolRunIds: [],
+    createdAt: finding.createdAt
+  });
+}

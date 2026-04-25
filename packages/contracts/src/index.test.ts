@@ -13,15 +13,19 @@ import {
   defensiveLoopContract,
   defensiveLoopStages,
   executeDefensiveIteration,
+  executionReportDetailSchema,
+  executionReportsListQuerySchema,
   prioritizeDefensiveAction,
   healthResponseSchema,
   listApplicationsResponseSchema,
   listScansResponseSchema,
+  parseExecutionReportId,
   scanLayerCoverageSchema,
   scansListQuerySchema,
   securityVulnerabilitySchema,
   aiToolSchema,
   singleAgentScanReportSchema,
+  toExecutionReportId,
   toolRequestSchema,
   toolRunSchema,
   updateAiProviderBodySchema,
@@ -370,6 +374,7 @@ describe("contracts", () => {
   it("accepts a single-agent scan report with coverage overview", () => {
     const result = singleAgentScanReportSchema.safeParse({
       scanId: "scan-1",
+      executionKind: "single-agent",
       executiveSummary: "The scan found one evidence-backed web vulnerability and partial transport coverage.",
       stopReason: "submitted_completion",
       totalVulnerabilities: 1,
@@ -418,6 +423,73 @@ describe("contracts", () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it("round-trips canonical execution report ids", () => {
+    const id = toExecutionReportId("workflow", "run-123");
+    expect(id).toBe("workflow~run-123");
+    expect(parseExecutionReportId(id)).toEqual({
+      executionKind: "workflow",
+      executionId: "run-123"
+    });
+  });
+
+  it("accepts execution report detail payloads", () => {
+    const result = executionReportDetailSchema.safeParse({
+      id: "attack-map~run-1",
+      executionId: "run-1",
+      executionKind: "attack-map",
+      status: "completed",
+      title: "Attack map run",
+      targetLabel: "https://target.local",
+      sourceLabel: "Attack map",
+      findingsCount: 1,
+      highestSeverity: "high",
+      generatedAt: "2026-04-25T12:00:00.000Z",
+      updatedAt: "2026-04-25T12:05:00.000Z",
+      executiveSummary: "One meaningful attack path was confirmed.",
+      findings: [
+        {
+          id: "finding-1",
+          executionId: "run-1",
+          executionKind: "attack-map",
+          source: "attack-map-finding",
+          severity: "high",
+          title: "Admin surface exposed",
+          type: "phase-finding",
+          summary: "The attack map confirmed an exposed admin surface.",
+          recommendation: null,
+          confidence: null,
+          targetLabel: "https://target.local/admin",
+          evidence: [],
+          sourceToolIds: ["tool-httpx"],
+          sourceToolRunIds: ["tool-run-1"],
+          createdAt: "2026-04-25T12:03:00.000Z"
+        }
+      ],
+      toolActivity: [],
+      coverageOverview: {},
+      sourceSummary: {
+        executionKind: "attack-map",
+        runId: "11111111-1111-4111-8111-111111111111",
+        phase: "complete",
+        overallRisk: "high",
+        chainCount: 1,
+        findingNodeCount: 1
+      },
+      raw: {}
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("applies defaults for execution report list queries", () => {
+    const result = executionReportsListQuerySchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.sortBy).toBe("generatedAt");
+      expect(result.data.sortDirection).toBe("desc");
+    }
   });
 
   it("requires UUID scan and tactic ids for connector test dispatch", () => {

@@ -12,7 +12,7 @@ import {
   validationStatusSchema
 } from "./scan-core.js";
 import { agentNoteSchema, observationSchema, toolRunSchema } from "./tooling.js";
-import { createPaginatedResponseSchema, paginatedMetaSchema, resourceListQuerySchema, sortDirectionSchema } from "./shared.js";
+import { createPaginatedResponseSchema, executionKindSchema, paginatedMetaSchema, resourceListQuerySchema, sortDirectionSchema } from "./shared.js";
 export const scanStatusSchema = z.enum(["pending", "running", "complete", "aborted", "failed"]);
 export type ScanStatus = z.infer<typeof scanStatusSchema>;
 
@@ -137,6 +137,7 @@ export type SingleAgentScanTraceResponse = z.infer<typeof singleAgentScanTraceRe
 
 export const singleAgentScanReportSchema = z.object({
   scanId: z.string(),
+  executionKind: executionKindSchema.default("single-agent"),
   executiveSummary: z.string(),
   stopReason: z.string().nullable(),
   totalVulnerabilities: z.number().int().min(0),

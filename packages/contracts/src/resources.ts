@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createPaginatedResponseSchema, jsonSchemaObjectSchema, paginatedMetaSchema, resourceListQuerySchema } from "./shared.js";
+import { createPaginatedResponseSchema, executionKindSchema, jsonSchemaObjectSchema, paginatedMetaSchema, resourceListQuerySchema } from "./shared.js";
 import { toolCapabilityTagSchema, toolCategorySchema, toolRiskTierSchema } from "./tooling.js";
 
 export const applicationEnvironmentSchema = z.enum(["production", "staging", "development"]);
@@ -8,6 +8,109 @@ export type ApplicationEnvironment = z.infer<typeof applicationEnvironmentSchema
 export const applicationStatusSchema = z.enum(["active", "investigating", "archived"]);
 export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
 
+export const targetAssetKindSchema = z.enum(["url", "hostname", "ip", "cidr"]);
+export type TargetAssetKind = z.infer<typeof targetAssetKindSchema>;
+
+export const targetAssetOwnershipStatusSchema = z.enum(["verified", "pending", "unverified"]);
+export type TargetAssetOwnershipStatus = z.infer<typeof targetAssetOwnershipStatusSchema>;
+
+export const executionConstraintKindSchema = z.enum(["provider_policy", "legal_scope", "workflow_gate"]);
+export type ExecutionConstraintKind = z.infer<typeof executionConstraintKindSchema>;
+
+export const targetAssetSchema = z.object({
+  id: z.string().uuid(),
+  applicationId: z.string().uuid(),
+  label: z.string().min(1),
+  kind: targetAssetKindSchema,
+  hostname: z.string().min(1).nullable(),
+  baseUrl: z.string().url().nullable(),
+  ipAddress: z.string().min(1).nullable(),
+  cidr: z.string().min(1).nullable(),
+  provider: z.string().min(1).nullable(),
+  ownershipStatus: targetAssetOwnershipStatusSchema,
+  isDefault: z.boolean(),
+  metadata: jsonSchemaObjectSchema.nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type TargetAsset = z.infer<typeof targetAssetSchema>;
+
+const targetAssetBodyObjectSchema = z.object({
+  label: z.string().trim().min(1),
+  kind: targetAssetKindSchema,
+  hostname: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
+  baseUrl: z.union([z.string().trim().url(), z.literal(""), z.null()]).transform((value) => value || null).optional(),
+  ipAddress: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
+  cidr: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
+  provider: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
+  ownershipStatus: targetAssetOwnershipStatusSchema.default("unverified"),
+  isDefault: z.boolean().default(false),
+  metadata: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
+});
+
+const targetAssetBodyBaseSchema = targetAssetBodyObjectSchema.superRefine((value, ctx) => {
+  const hasOneLocator = [value.hostname, value.baseUrl, value.ipAddress, value.cidr].some((entry) => !!entry);
+  if (!hasOneLocator) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "A target asset must include at least one locator.",
+      path: ["hostname"]
+    });
+  }
+});
+
+export const targetAssetBodySchema = targetAssetBodyBaseSchema;
+export type TargetAssetBody = z.infer<typeof targetAssetBodySchema>;
+
+export const executionConstraintSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  kind: executionConstraintKindSchema,
+  provider: z.string().min(1).nullable(),
+  version: z.number().int().min(1),
+  description: z.string().nullable(),
+  ruleSpec: jsonSchemaObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type ExecutionConstraint = z.infer<typeof executionConstraintSchema>;
+
+export const executionConstraintsListQuerySchema = resourceListQuerySchema.extend({
+  kind: executionConstraintKindSchema.optional(),
+  provider: z.string().trim().min(1).optional(),
+  sortBy: z.enum(["name", "kind", "provider", "version", "createdAt", "updatedAt"]).optional()
+});
+export type ExecutionConstraintsListQuery = z.infer<typeof executionConstraintsListQuerySchema>;
+
+export const listExecutionConstraintsResponseSchema = paginatedMetaSchema.extend({
+  constraints: z.array(executionConstraintSchema)
+});
+export type ListExecutionConstraintsResponse = z.infer<typeof listExecutionConstraintsResponseSchema>;
+
+const executionConstraintBodyBaseSchema = z.object({
+  name: z.string().trim().min(1),
+  kind: executionConstraintKindSchema,
+  provider: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null),
+  version: z.number().int().min(1),
+  description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
+  ruleSpec: jsonSchemaObjectSchema
+});
+
+export const createExecutionConstraintBodySchema = executionConstraintBodyBaseSchema;
+export type CreateExecutionConstraintBody = z.infer<typeof createExecutionConstraintBodySchema>;
+
+export const updateExecutionConstraintBodySchema = executionConstraintBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
+  message: "At least one field is required."
+});
+export type UpdateExecutionConstraintBody = z.infer<typeof updateExecutionConstraintBodySchema>;
+
+export const applicationConstraintBindingSchema = z.object({
+  constraintId: z.string().min(1),
+  createdAt: z.string().datetime().optional(),
+  constraint: executionConstraintSchema.optional()
+});
+export type ApplicationConstraintBinding = z.infer<typeof applicationConstraintBindingSchema>;
+
 export const applicationSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
@@ -15,6 +118,8 @@ export const applicationSchema = z.object({
   environment: applicationEnvironmentSchema,
   status: applicationStatusSchema,
   lastScannedAt: z.string().datetime().nullable(),
+  targetAssets: z.array(targetAssetSchema).optional(),
+  constraintBindings: z.array(applicationConstraintBindingSchema).optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 });
@@ -37,7 +142,20 @@ const applicationBodyBaseSchema = z.object({
   baseUrl: z.union([z.string().trim().url(), z.literal(""), z.null()]).transform((value) => value || null),
   environment: applicationEnvironmentSchema,
   status: applicationStatusSchema,
-  lastScannedAt: z.union([z.string().datetime(), z.null()])
+  lastScannedAt: z.union([z.string().datetime(), z.null()]),
+  targetAssets: z.array(targetAssetBodyObjectSchema.extend({
+    id: z.string().uuid().optional()
+  }).superRefine((value, ctx) => {
+    const hasOneLocator = [value.hostname, value.baseUrl, value.ipAddress, value.cidr].some((entry) => !!entry);
+    if (!hasOneLocator) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "A target asset must include at least one locator.",
+        path: ["hostname"]
+      });
+    }
+  })).optional(),
+  constraintIds: z.array(z.string().min(1)).optional()
 });
 
 export const createApplicationBodySchema = applicationBodyBaseSchema;
@@ -204,6 +322,26 @@ export const toolPrivilegeProfileSchema = z.enum([
 ]);
 export type ToolPrivilegeProfile = z.infer<typeof toolPrivilegeProfileSchema>;
 
+export const toolConstraintTargetKindSchema = z.enum(["host", "domain", "url", "cidr"]);
+export type ToolConstraintTargetKind = z.infer<typeof toolConstraintTargetKindSchema>;
+
+export const toolConstraintNetworkBehaviorSchema = z.enum(["none", "outbound-read", "outbound-active"]);
+export type ToolConstraintNetworkBehavior = z.infer<typeof toolConstraintNetworkBehaviorSchema>;
+
+export const toolConstraintMutationClassSchema = z.enum(["none", "content-enumeration", "active-validation", "exploit"]);
+export type ToolConstraintMutationClass = z.infer<typeof toolConstraintMutationClassSchema>;
+
+export const toolConstraintProfileSchema = z.object({
+  enforced: z.boolean().default(false),
+  targetKinds: z.array(toolConstraintTargetKindSchema).default([]),
+  networkBehavior: toolConstraintNetworkBehaviorSchema.default("outbound-read"),
+  mutationClass: toolConstraintMutationClassSchema.default("none"),
+  supportsHostAllowlist: z.boolean().default(false),
+  supportsPathExclusions: z.boolean().default(false),
+  supportsRateLimit: z.boolean().default(false)
+});
+export type ToolConstraintProfile = z.infer<typeof toolConstraintProfileSchema>;
+
 export const aiToolSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -221,6 +359,7 @@ export const aiToolSchema = z.object({
   sandboxProfile: toolSandboxProfileSchema,
   privilegeProfile: toolPrivilegeProfileSchema,
   timeoutMs: z.number().int().min(1000).max(300000),
+  constraintProfile: toolConstraintProfileSchema.optional(),
   inputSchema: z.lazy(() => jsonSchemaObjectSchema),
   outputSchema: z.lazy(() => jsonSchemaObjectSchema),
   createdAt: z.string().datetime(),
@@ -307,6 +446,7 @@ const aiToolBodyBaseSchema = z.object({
   sandboxProfile: z.lazy(() => toolSandboxProfileSchema),
   privilegeProfile: z.lazy(() => toolPrivilegeProfileSchema),
   timeoutMs: z.number().int().min(1000).max(300000),
+  constraintProfile: toolConstraintProfileSchema.optional(),
   inputSchema: z.lazy(() => jsonSchemaObjectSchema),
   outputSchema: z.lazy(() => jsonSchemaObjectSchema)
 });
@@ -538,6 +678,7 @@ export const workflowSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
   status: workflowStatusSchema,
+  executionKind: executionKindSchema.optional(),
   description: z.string().nullable(),
   applicationId: z.string().uuid(),
   runtimeId: z.string().uuid().nullable(),
@@ -598,6 +739,7 @@ export type WorkflowStageBody = z.infer<typeof workflowStageBodySchema>;
 const workflowBodyBaseSchema = z.object({
   name: z.string().trim().min(1),
   status: workflowStatusSchema,
+  executionKind: executionKindSchema.optional(),
   description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
   applicationId: z.string().uuid(),
   runtimeId: z.union([z.string().uuid(), z.literal(""), z.null()]).transform((value) => value || null),
@@ -629,6 +771,11 @@ export type UpdateWorkflowBody = z.infer<typeof updateWorkflowBodySchema>;
 
 export const workflowRunStatusSchema = z.enum(["pending", "running", "completed", "failed"]);
 export type WorkflowRunStatus = z.infer<typeof workflowRunStatusSchema>;
+
+export const startWorkflowRunBodySchema = z.object({
+  targetAssetId: z.string().uuid().optional()
+});
+export type StartWorkflowRunBody = z.infer<typeof startWorkflowRunBodySchema>;
 
 export const workflowTraceEntryStatusSchema = z.enum(["completed", "failed"]);
 export type WorkflowTraceEntryStatus = z.infer<typeof workflowTraceEntryStatusSchema>;
@@ -704,6 +851,8 @@ export type WorkflowTraceEntry = z.infer<typeof workflowTraceEntrySchema>;
 export const workflowRunSchema = z.object({
   id: z.string().uuid(),
   workflowId: z.string().uuid(),
+  executionKind: executionKindSchema.optional(),
+  targetAssetId: z.string().uuid().nullable().optional(),
   status: workflowRunStatusSchema,
   currentStepIndex: z.number().int().min(0).default(0),
   startedAt: z.string().datetime(),
