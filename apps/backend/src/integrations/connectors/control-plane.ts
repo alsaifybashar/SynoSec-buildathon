@@ -9,6 +9,8 @@ import type {
   ToolRequest,
   ToolRun
 } from "@synosec/contracts";
+import { evaluateConnectorToolSupport } from "@synosec/contracts";
+import { seededToolDefinitions } from "@/shared/seed-data/ai-builder-defaults.js";
 
 interface DispatchRequest {
   scanId: string;
@@ -45,6 +47,38 @@ const defaultPollIntervalMs = Number(process.env["CONNECTOR_POLL_INTERVAL_MS"] ?
 const defaultLeaseDurationMs = Number(process.env["CONNECTOR_LEASE_DURATION_MS"] ?? "15000");
 const defaultDispatchTimeoutMs = Number(process.env["CONNECTOR_DISPATCH_TIMEOUT_MS"] ?? "30000");
 
+function connectorSupportsRequest(connector: ConnectorDescriptor, request: ToolRequest) {
+  return evaluateConnectorToolSupport(request, {
+    allowedCapabilities: connector.allowedCapabilities,
+    allowedSandboxProfiles: connector.allowedSandboxProfiles,
+    allowedPrivilegeProfiles: connector.allowedPrivilegeProfiles,
+    installedBinaries: connector.installedBinaries
+  }).supported;
+}
+
+function computeSupportedToolIds(connector: Omit<ConnectorDescriptor, "supportedToolIds">): string[] {
+  return seededToolDefinitions
+    .filter((tool) => evaluateConnectorToolSupport({
+      toolId: tool.id,
+      tool: tool.name,
+      capabilities: [...tool.capabilities],
+      sandboxProfile: tool.sandboxProfile,
+      privilegeProfile: tool.privilegeProfile,
+      parameters: {
+        bashSource: tool.bashSource,
+        commandPreview: tool.name,
+        toolInput: {}
+      }
+    }, {
+      allowedCapabilities: connector.allowedCapabilities,
+      allowedSandboxProfiles: connector.allowedSandboxProfiles,
+      allowedPrivilegeProfiles: connector.allowedPrivilegeProfiles,
+      installedBinaries: connector.installedBinaries
+    }).supported)
+    .map((tool) => tool.id)
+    .sort((left, right) => left.localeCompare(right));
+}
+
 class ConnectorControlPlane {
   private connectors = new Map<string, ConnectorDescriptor>();
   private pendingJobs: PendingDispatch[] = [];
@@ -54,18 +88,24 @@ class ConnectorControlPlane {
     const connectorId = randomUUID();
     const timestamp = new Date().toISOString();
 
-    this.connectors.set(connectorId, {
+    const descriptor = {
       connectorId,
       name: input.name,
       version: input.version,
       allowedCapabilities: input.allowedCapabilities,
       allowedSandboxProfiles: input.allowedSandboxProfiles,
       allowedPrivilegeProfiles: input.allowedPrivilegeProfiles,
+      installedBinaries: input.installedBinaries,
       runMode: input.runMode,
       concurrency: input.concurrency,
       capabilities: input.capabilities,
       registeredAt: timestamp,
       lastSeenAt: timestamp
+    } as const;
+
+    this.connectors.set(connectorId, {
+      ...descriptor,
+      supportedToolIds: computeSupportedToolIds(descriptor)
     });
 
     return {
@@ -78,6 +118,11 @@ class ConnectorControlPlane {
 
   async dispatch(input: DispatchRequest): Promise<DispatchResolution> {
     return new Promise<DispatchResolution>((resolve, reject) => {
+      if (![...this.connectors.values()].some((connector) => connectorSupportsRequest(connector, input.request))) {
+        reject(new Error(`No registered connector supports tool ${input.request.toolId ?? input.request.tool}.`));
+        return;
+      }
+
       const jobId = randomUUID();
       const timeout = setTimeout(() => {
         this.pendingJobs = this.pendingJobs.filter((candidate) => candidate.jobId !== jobId);
@@ -119,9 +164,7 @@ class ConnectorControlPlane {
       return null;
     }
 
-    const pendingIndex = this.pendingJobs.findIndex((job) =>
-      job.request.capabilities.some((capability) => connector.allowedCapabilities.includes(capability))
-    );
+    const pendingIndex = this.pendingJobs.findIndex((job) => connectorSupportsRequest(connector, job.request));
 
     this.connectors.set(connectorId, { ...connector, lastSeenAt: now });
 

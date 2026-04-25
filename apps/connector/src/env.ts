@@ -1,3 +1,8 @@
+import {
+  DEFAULT_CONNECTOR_ALLOWED_CAPABILITIES,
+  DEFAULT_CONNECTOR_ALLOWED_PRIVILEGE_PROFILES,
+  DEFAULT_CONNECTOR_ALLOWED_SANDBOX_PROFILES
+} from "@synosec/contracts";
 import { z } from "zod";
 
 const connectorEnvSchema = z.object({
@@ -17,6 +22,10 @@ const connectorEnvSchema = z.object({
 export type ConnectorEnv = z.infer<typeof connectorEnvSchema>;
 
 function parseCsv(value: string | undefined, fallback: string[]) {
+  if (value?.trim() === "*" || value?.trim().toLowerCase() === "all") {
+    return [...fallback];
+  }
+
   return (value ?? fallback.join(","))
     .split(",")
     .map((entry) => entry.trim())
@@ -32,9 +41,9 @@ export function loadConnectorEnv(): ConnectorEnv {
     name: process.env["CONNECTOR_NAME"] ?? "local-dev-connector",
     version: process.env["CONNECTOR_VERSION"] ?? "0.1.0",
     runMode: process.env["CONNECTOR_RUN_MODE"] ?? "dry-run",
-    allowedCapabilities: parseCsv(process.env["CONNECTOR_ALLOWED_CAPABILITIES"], ["passive", "web-recon", "network-recon", "content-discovery", "active-recon"]),
-    allowedSandboxProfiles: parseCsv(process.env["CONNECTOR_ALLOWED_SANDBOX_PROFILES"], ["network-recon", "read-only-parser", "active-recon"]),
-    allowedPrivilegeProfiles: parseCsv(process.env["CONNECTOR_ALLOWED_PRIVILEGE_PROFILES"], ["read-only-network", "active-network"]),
+    allowedCapabilities: parseCsv(process.env["CONNECTOR_ALLOWED_CAPABILITIES"], [...DEFAULT_CONNECTOR_ALLOWED_CAPABILITIES]),
+    allowedSandboxProfiles: parseCsv(process.env["CONNECTOR_ALLOWED_SANDBOX_PROFILES"], [...DEFAULT_CONNECTOR_ALLOWED_SANDBOX_PROFILES]),
+    allowedPrivilegeProfiles: parseCsv(process.env["CONNECTOR_ALLOWED_PRIVILEGE_PROFILES"], [...DEFAULT_CONNECTOR_ALLOWED_PRIVILEGE_PROFILES]),
     hostname: process.env["HOSTNAME"] ?? "unknown"
   });
 }

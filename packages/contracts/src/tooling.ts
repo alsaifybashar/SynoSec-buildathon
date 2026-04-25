@@ -147,6 +147,7 @@ export const connectorRegistrationRequestSchema = z.object({
   allowedCapabilities: z.array(toolCapabilityTagSchema).min(1),
   allowedSandboxProfiles: z.array(toolSandboxProfileSchema).default([]),
   allowedPrivilegeProfiles: z.array(toolPrivilegeProfileSchema).default([]),
+  installedBinaries: z.array(z.string().trim().min(1)).default([]),
   runMode: connectorRunModeSchema.default("dry-run"),
   concurrency: z.number().int().min(1).max(10).default(1),
   capabilities: z.array(connectorCapabilitySchema).default([])
@@ -168,6 +169,8 @@ export const connectorDescriptorSchema = z.object({
   allowedCapabilities: z.array(toolCapabilityTagSchema).min(1),
   allowedSandboxProfiles: z.array(toolSandboxProfileSchema).default([]),
   allowedPrivilegeProfiles: z.array(toolPrivilegeProfileSchema).default([]),
+  installedBinaries: z.array(z.string().trim().min(1)).default([]),
+  supportedToolIds: z.array(z.string().min(1)).default([]),
   runMode: connectorRunModeSchema,
   concurrency: z.number().int().min(1).max(10),
   capabilities: z.array(connectorCapabilitySchema).default([]),

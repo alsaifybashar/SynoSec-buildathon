@@ -1,6 +1,7 @@
 import {
   connectorPollResponseSchema,
   connectorRegistrationResponseSchema,
+  evaluateConnectorToolSupport,
   type ConnectorExecutionJob,
   type ConnectorExecutionResult,
   type ConnectorRegistrationRequest
@@ -78,15 +79,22 @@ export async function executeConnectorJob(
     allowedCapabilities: ConnectorRegistrationRequest["allowedCapabilities"];
     allowedSandboxProfiles: ConnectorRegistrationRequest["allowedSandboxProfiles"];
     allowedPrivilegeProfiles: ConnectorRegistrationRequest["allowedPrivilegeProfiles"];
+    installedBinaries?: ConnectorRegistrationRequest["installedBinaries"];
     commandTimeoutMs?: number;
   }
 ): Promise<ConnectorExecutionResult> {
-  if (!job.request.capabilities.some((capability) => options.allowedCapabilities.includes(capability))) {
+  const support = evaluateConnectorToolSupport(job.request, {
+    allowedCapabilities: options.allowedCapabilities,
+    allowedSandboxProfiles: options.allowedSandboxProfiles,
+    allowedPrivilegeProfiles: options.allowedPrivilegeProfiles,
+    installedBinaries: thisInstalledBinaries(options)
+  });
+  if (!support.supported) {
     return {
       output: "",
       exitCode: 1,
       observations: [],
-      statusReason: `Capabilities ${job.request.capabilities.join(", ")} are not allowed by this connector.`
+      statusReason: support.statusReason
     };
   }
 
@@ -106,4 +114,10 @@ export async function executeConnectorJob(
     case "execute":
       return executeSandboxedConnectorJob(job, options);
   }
+}
+
+function thisInstalledBinaries(options: {
+  installedBinaries?: ConnectorRegistrationRequest["installedBinaries"];
+}) {
+  return options.installedBinaries ?? [];
 }

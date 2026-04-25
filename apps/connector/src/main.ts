@@ -1,6 +1,7 @@
 import { toolCapabilityTagSchema, toolPrivilegeProfileSchema, toolSandboxProfileSchema } from "@synosec/contracts";
 import { SynoSecConnectorClient } from "./index.js";
 import { loadConnectorEnv } from "./env.js";
+import { detectInstalledBinaries } from "./installed-binaries.js";
 
 function parseAllowedCapabilities(values: string[]): Array<ReturnType<typeof toolCapabilityTagSchema.parse>> {
   return values.map((value) => toolCapabilityTagSchema.parse(value));
@@ -16,6 +17,7 @@ function parseAllowedPrivilegeProfiles(values: string[]): Array<ReturnType<typeo
 
 async function main() {
   const env = loadConnectorEnv();
+  const installedBinaries = detectInstalledBinaries();
   const client = new SynoSecConnectorClient({
     baseUrl: env.controlPlaneUrl,
     token: env.sharedToken,
@@ -26,6 +28,7 @@ async function main() {
       allowedCapabilities: parseAllowedCapabilities(env.allowedCapabilities),
       allowedSandboxProfiles: parseAllowedSandboxProfiles(env.allowedSandboxProfiles),
       allowedPrivilegeProfiles: parseAllowedPrivilegeProfiles(env.allowedPrivilegeProfiles),
+      installedBinaries,
       runMode: env.runMode,
       concurrency: 1,
       capabilities: [

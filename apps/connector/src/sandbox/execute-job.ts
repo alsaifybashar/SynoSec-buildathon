@@ -7,11 +7,13 @@ import type {
   ConnectorExecutionResult,
   ConnectorRegistrationRequest
 } from "@synosec/contracts";
+import { evaluateConnectorToolSupport } from "@synosec/contracts";
 
 interface SandboxExecutionOptions {
   allowedCapabilities: ConnectorRegistrationRequest["allowedCapabilities"];
   allowedSandboxProfiles: ConnectorRegistrationRequest["allowedSandboxProfiles"];
   allowedPrivilegeProfiles: ConnectorRegistrationRequest["allowedPrivilegeProfiles"];
+  installedBinaries?: readonly string[];
   commandTimeoutMs?: number;
 }
 
@@ -19,45 +21,24 @@ function validateSandboxedJob(
   job: ConnectorExecutionJob,
   options: SandboxExecutionOptions
 ): ConnectorExecutionResult | { bashSource: string } {
-  if (!job.request.capabilities.some((capability) => options.allowedCapabilities.includes(capability))) {
+  const support = evaluateConnectorToolSupport(job.request, {
+    allowedCapabilities: options.allowedCapabilities,
+    allowedSandboxProfiles: options.allowedSandboxProfiles,
+    allowedPrivilegeProfiles: options.allowedPrivilegeProfiles,
+    installedBinaries: options.installedBinaries ?? []
+  });
+  if (!support.supported) {
     return {
       output: "",
       exitCode: 1,
       observations: [],
-      statusReason: `Capabilities ${job.request.capabilities.join(", ")} are not allowed by this connector.`
-    };
-  }
-
-  if (!options.allowedSandboxProfiles.includes(job.request.sandboxProfile)) {
-    return {
-      output: "",
-      exitCode: 1,
-      observations: [],
-      statusReason: `Sandbox profile ${job.request.sandboxProfile} is not allowed by this connector.`
-    };
-  }
-
-  if (!options.allowedPrivilegeProfiles.includes(job.request.privilegeProfile)) {
-    return {
-      output: "",
-      exitCode: 1,
-      observations: [],
-      statusReason: `Privilege profile ${job.request.privilegeProfile} is not allowed by this connector.`
+      statusReason: support.statusReason
     };
   }
 
   const bashSource = typeof job.request.parameters["bashSource"] === "string"
     ? job.request.parameters["bashSource"]
     : null;
-
-  if (!bashSource) {
-    return {
-      output: "",
-      exitCode: 1,
-      observations: [],
-      statusReason: "Structured bash source is required for connector execution."
-    };
-  }
 
   return { bashSource };
 }

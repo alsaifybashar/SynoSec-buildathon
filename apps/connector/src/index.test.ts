@@ -95,8 +95,9 @@ describe("connector client", () => {
   it("returns a dry-run result for allowed capabilities", async () => {
     const result = await executeConnectorJob(makeJob(), {
       allowedCapabilities: ["web-recon"],
-      allowedSandboxProfiles: [],
-      allowedPrivilegeProfiles: []
+      allowedSandboxProfiles: ["network-recon"],
+      allowedPrivilegeProfiles: ["read-only-network"],
+      installedBinaries: []
     });
 
     expect(result.exitCode).toBe(0);
@@ -118,7 +119,8 @@ describe("connector client", () => {
       {
         allowedCapabilities: ["web-recon"],
         allowedSandboxProfiles: [],
-        allowedPrivilegeProfiles: []
+        allowedPrivilegeProfiles: [],
+        installedBinaries: []
       }
     );
 
@@ -154,6 +156,7 @@ describe("connector client", () => {
           allowedCapabilities: ["web-recon"],
           allowedSandboxProfiles: [],
           allowedPrivilegeProfiles: [],
+          installedBinaries: [],
         runMode: "dry-run",
         concurrency: 1,
         capabilities: []
@@ -190,7 +193,8 @@ describe("connector client", () => {
       {
         allowedCapabilities: ["web-recon"],
         allowedSandboxProfiles: ["network-recon"],
-        allowedPrivilegeProfiles: ["read-only-network"]
+        allowedPrivilegeProfiles: ["read-only-network"],
+        installedBinaries: []
       }
     );
 
@@ -224,7 +228,8 @@ describe("connector client", () => {
       {
         allowedCapabilities: ["web-recon"],
         allowedSandboxProfiles: ["network-recon"],
-        allowedPrivilegeProfiles: ["read-only-network"]
+        allowedPrivilegeProfiles: ["read-only-network"],
+        installedBinaries: []
       }
     );
 
@@ -257,7 +262,8 @@ describe("connector client", () => {
         {
           allowedCapabilities: ["web-recon", "network-recon", "content-discovery", "active-recon", "database-security", "controlled-exploit", "passive", "vulnerability-audit"],
           allowedSandboxProfiles: ["network-recon", "active-recon", "controlled-exploit-lab"],
-          allowedPrivilegeProfiles: ["read-only-network", "active-network", "controlled-exploit"]
+          allowedPrivilegeProfiles: ["read-only-network", "active-network", "controlled-exploit"],
+          installedBinaries: []
         }
       );
 
@@ -304,7 +310,8 @@ describe("connector client", () => {
       {
         allowedCapabilities: ["web-recon", "passive"],
         allowedSandboxProfiles: ["network-recon"],
-        allowedPrivilegeProfiles: ["read-only-network"]
+        allowedPrivilegeProfiles: ["read-only-network"],
+        installedBinaries: []
       }
     );
 

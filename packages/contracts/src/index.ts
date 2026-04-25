@@ -1,6 +1,7 @@
 export * from "./shared.js";
 export * from "./scan-core.js";
 export * from "./tooling.js";
+export * from "./connector-support.js";
 export * from "./resources.js";
 export * from "./workflow-lifecycle.js";
 export * from "./workflow-presentation.js";
