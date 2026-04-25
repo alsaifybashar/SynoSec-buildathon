@@ -37,7 +37,7 @@ Each navigation item owns a label, slug, icon, and render callback. That keeps t
 
 ### 2. Product IA and design/demo IA are mixed in one tree
 
-The current navigation tree contains stable resources such as applications, runtimes, providers, agents, tools, and workflows, but it also contains grouped chat-design pages. That makes the sidebar serve two different audiences:
+The current navigation tree contains stable resources such as targets, providers, agents, tools, and workflows, but it also contains grouped chat-design pages. That makes the sidebar serve two different audiences:
 
 - operators using the control plane
 - builders reviewing UX experiments

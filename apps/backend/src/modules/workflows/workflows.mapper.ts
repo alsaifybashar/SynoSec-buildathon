@@ -95,7 +95,6 @@ export function mapWorkflowRunRow(
     id: row.id,
     workflowId: row.workflowId,
     executionKind: row.executionKind as WorkflowRun["executionKind"],
-    targetAssetId: row.targetAssetId,
     status: row.status,
     currentStepIndex: row.currentStepIndex,
     startedAt: row.startedAt.toISOString(),

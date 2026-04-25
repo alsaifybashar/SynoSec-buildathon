@@ -17,7 +17,6 @@ export const targetTransfer = {
     baseUrl: target.baseUrl,
     environment: target.environment,
     status: target.status,
-    lastScannedAt: target.lastScannedAt,
-    deployments: target.deployments
+    lastScannedAt: target.lastScannedAt
   })
 } satisfies ResourceTransferConfig<Target, CreateTargetBody>;

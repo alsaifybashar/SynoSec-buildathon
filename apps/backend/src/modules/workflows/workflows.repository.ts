@@ -21,7 +21,7 @@ export interface WorkflowsRepository {
   update(id: string, input: UpdateWorkflowBody): Promise<Workflow | null>;
   remove(id: string): Promise<boolean>;
   migrateWorkflowStageContracts(workflowId: string, fallbackToolIdsByAgentId?: Record<string, string[]>): Promise<Workflow | null>;
-  createRun(workflowId: string, targetAssetId: string | null): Promise<WorkflowRun | null>;
+  createRun(workflowId: string): Promise<WorkflowRun | null>;
   getRunById(runId: string): Promise<WorkflowRun | null>;
   getLatestRunByWorkflowId(workflowId: string): Promise<WorkflowRun | null>;
   appendRunEvent(runId: string, event: WorkflowTraceEvent, patch?: WorkflowRunStatePatch): Promise<WorkflowRun>;

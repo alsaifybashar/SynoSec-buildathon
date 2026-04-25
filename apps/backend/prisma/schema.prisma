@@ -19,49 +19,10 @@ enum ApplicationStatus {
   archived
 }
 
-enum TargetAssetKind {
-  url
-  hostname
-  ip
-  cidr
-}
-
-enum TargetAssetOwnershipStatus {
-  verified
-  pending
-  unverified
-}
-
 enum ExecutionConstraintKind {
   provider_policy
   legal_scope
   workflow_gate
-}
-
-enum RuntimeServiceType {
-  gateway
-  api
-  worker
-  database
-  queue
-  storage
-  other
-}
-
-enum RuntimeProvider {
-  aws
-  gcp
-  azure
-  on_prem
-  docker
-  vercel
-  other
-}
-
-enum RuntimeStatus {
-  healthy
-  degraded
-  retired
 }
 
 enum AiProviderKind {
@@ -157,9 +118,7 @@ model Application {
   lastScannedAt DateTime?              @map("last_scanned_at")
   createdAt     DateTime               @default(now()) @map("created_at")
   updatedAt     DateTime               @updatedAt @map("updated_at")
-  runtimes      Runtime[]
   workflows     Workflow[]
-  targetAssets  TargetAsset[]
   constraintBindings ApplicationConstraintBinding[]
 
   @@index([name])
@@ -168,32 +127,6 @@ model Application {
   @@index([updatedAt])
   @@index([lastScannedAt])
   @@map("applications")
-}
-
-model TargetAsset {
-  id              String                     @id @db.Uuid
-  applicationId   String                     @map("application_id") @db.Uuid
-  label           String
-  kind            TargetAssetKind
-  hostname        String?
-  baseUrl         String?                    @map("base_url")
-  ipAddress       String?                    @map("ip_address")
-  cidr            String?
-  provider        String?
-  ownershipStatus TargetAssetOwnershipStatus @default(unverified) @map("ownership_status")
-  isDefault       Boolean                    @default(false) @map("is_default")
-  metadata        Json?
-  createdAt       DateTime                   @default(now()) @map("created_at")
-  updatedAt       DateTime                   @updatedAt @map("updated_at")
-  application     Application                @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  workflowRuns    WorkflowRun[]
-
-  @@index([applicationId])
-  @@index([provider])
-  @@index([hostname])
-  @@index([ipAddress])
-  @@index([isDefault])
-  @@map("target_assets")
 }
 
 model ExecutionConstraint {
@@ -231,29 +164,6 @@ model ApplicationConstraintBinding {
   @@id([applicationId, constraintId])
   @@index([constraintId])
   @@map("application_constraint_bindings")
-}
-
-model Runtime {
-  id            String                 @id @db.Uuid
-  name          String
-  serviceType   RuntimeServiceType     @map("service_type")
-  provider      RuntimeProvider
-  environment   ApplicationEnvironment
-  region        String
-  status        RuntimeStatus
-  applicationId String?                @map("application_id") @db.Uuid
-  createdAt     DateTime               @default(now()) @map("created_at")
-  updatedAt     DateTime               @updatedAt @map("updated_at")
-  application   Application?           @relation(fields: [applicationId], references: [id], onDelete: SetNull)
-  workflows     Workflow[]
-
-  @@index([applicationId])
-  @@index([name])
-  @@index([status, provider, environment])
-  @@index([createdAt])
-  @@index([updatedAt])
-  @@index([region])
-  @@map("runtimes")
 }
 
 model AiProvider {
@@ -342,18 +252,15 @@ model Workflow {
   executionKind String               @default("workflow") @map("execution_kind")
   description   String?
   applicationId String               @map("application_id") @db.Uuid
-  runtimeId     String?              @map("runtime_id") @db.Uuid
   createdAt     DateTime             @default(now()) @map("created_at")
   updatedAt     DateTime             @updatedAt @map("updated_at")
   application   Application          @relation(fields: [applicationId], references: [id], onDelete: Restrict)
-  runtime       Runtime?             @relation(fields: [runtimeId], references: [id], onDelete: SetNull)
   stages        WorkflowStage[]
   runs          WorkflowRun[]
   traceEntries  WorkflowTraceEntry[]
   traceEvents   WorkflowTraceEvent[]
 
   @@index([applicationId])
-  @@index([runtimeId])
   @@index([name])
   @@index([status, applicationId])
   @@index([createdAt])
@@ -388,19 +295,16 @@ model WorkflowStage {
 model WorkflowRun {
   id               String               @id @db.Uuid
   workflowId       String               @map("workflow_id") @db.Uuid
-  targetAssetId    String?              @map("target_asset_id") @db.Uuid
   executionKind    String               @default("workflow") @map("execution_kind")
   status           WorkflowRunStatus
   currentStepIndex Int                  @default(0) @map("current_step_index")
   startedAt        DateTime             @default(now()) @map("started_at")
   completedAt      DateTime?            @map("completed_at")
   workflow         Workflow             @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  targetAsset      TargetAsset?         @relation(fields: [targetAssetId], references: [id], onDelete: SetNull)
   traceEntries     WorkflowTraceEntry[]
   traceEvents      WorkflowTraceEvent[]
 
   @@index([workflowId])
-  @@index([targetAssetId])
   @@map("workflow_runs")
 }
 
@@ -516,7 +420,6 @@ model ScanRun {
   id               String              @id @db.Uuid
   mode             String              @default("legacy")
   applicationId    String?             @map("application_id") @db.Uuid
-  runtimeId        String?             @map("runtime_id") @db.Uuid
   agentId          String?             @map("agent_id") @db.Uuid
   scope            Json
   llmConfig        Json?               @map("llm_config")

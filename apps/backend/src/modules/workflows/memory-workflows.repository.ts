@@ -172,7 +172,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     return updated;
   }
 
-  async createRun(workflowId: string, targetAssetId: string | null): Promise<WorkflowRun | null> {
+  async createRun(workflowId: string): Promise<WorkflowRun | null> {
     const workflow = this.workflows.get(workflowId);
     if (!workflow) {
       return null;
@@ -182,7 +182,6 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       id: randomUUID(),
       workflowId,
       executionKind: workflow.executionKind,
-      targetAssetId,
       status: "running",
       currentStepIndex: 0,
       startedAt: new Date().toISOString(),

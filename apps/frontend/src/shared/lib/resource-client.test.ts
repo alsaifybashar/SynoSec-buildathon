@@ -11,7 +11,7 @@ describe("resources url state", () => {
   };
 
   beforeEach(() => {
-    window.history.replaceState({}, "", "/applications");
+    window.history.replaceState({}, "", "/targets");
     vi.restoreAllMocks();
   });
 
@@ -29,12 +29,12 @@ describe("resources url state", () => {
       "replace"
     );
 
-    expect(replaceSpy).toHaveBeenCalledWith(window.history.state, "", "/applications?page=2&q=portal");
+    expect(replaceSpy).toHaveBeenCalledWith(window.history.state, "", "/targets?page=2&q=portal");
     expect(pushSpy).not.toHaveBeenCalled();
   });
 
   it("does not touch history when the next url matches the current one", () => {
-    window.history.replaceState({}, "", "/applications?page=2&q=portal");
+    window.history.replaceState({}, "", "/targets?page=2&q=portal");
     const replaceSpy = vi.spyOn(window.history, "replaceState");
     const pushSpy = vi.spyOn(window.history, "pushState");
 

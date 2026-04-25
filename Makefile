@@ -1,4 +1,4 @@
-.PHONY: help dev build test database dev-services docker-up docker-down docker-logs smoke-e2e smoke-seeded-sandbox free-dev-ports wait-for-postgres check-docker-compose
+.PHONY: help dev build test database dev-services docker-up docker-down docker-logs smoke-seeded-sandbox free-dev-ports wait-for-postgres check-docker-compose
 
 ifneq (,$(wildcard .env))
 include .env
@@ -21,7 +21,6 @@ help:
 	@printf "\033[36m  make test\033[0m        Run workspace tests plus seeded sandbox smoke validation\n"
 	@printf "\033[33m  make dev\033[0m         Start local dev against Docker-backed infra without auto-enabling local Ollama\n"
 	@printf "\033[33m  make build\033[0m       Build all workspace packages\n"
-	@printf "\033[33m  make smoke-e2e\033[0m  Run the Docker E2E smoke scan and print workflow evidence\n"
 	@printf "\033[33m  make smoke-seeded-sandbox\033[0m  Run seeded DB-backed tools through connector execute-mode sandbox\n"
 
 DOCKER_COMPOSE := $(shell \
@@ -137,9 +136,6 @@ build:
 test:
 	pnpm test
 	$(MAKE) smoke-seeded-sandbox
-
-smoke-e2e:
-	bash scripts/e2e-smoke.sh
 
 smoke-seeded-sandbox:
 	bash scripts/seeded-sandbox-smoke.sh

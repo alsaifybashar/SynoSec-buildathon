@@ -89,8 +89,8 @@ describe("ListPage", () => {
   it("exports the current list view as a csv file that excel can open cleanly", async () => {
     render(
       <ListPage
-        title="Applications"
-        recordLabel="Application"
+        title="Targets"
+        recordLabel="Target"
         columns={columns}
         query={{
           page: 1,
@@ -102,7 +102,7 @@ describe("ListPage", () => {
         dataState={{ state: "loaded", data: meta }}
         items={items}
         meta={meta}
-        emptyMessage="No applications found."
+        emptyMessage="No targets found."
         onSearchChange={() => {}}
         onFilterChange={() => {}}
         onSortChange={() => {}}
@@ -115,7 +115,7 @@ describe("ListPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
 
     expect(createObjectURLMock).toHaveBeenCalledTimes(1);
-    expect(createdLink?.download).toBe("applications.csv");
+    expect(createdLink?.download).toBe("targets.csv");
     expect(createdLink?.href).toBe("blob:test-export");
     expect(clickSpy).toHaveBeenCalledTimes(1);
     expect(revokeObjectURLMock).toHaveBeenCalledWith("blob:test-export");
@@ -135,8 +135,8 @@ describe("ListPage", () => {
     const handleImportJson = vi.fn();
     const { container } = render(
       <ListPage
-        title="Applications"
-        recordLabel="Application"
+        title="Targets"
+        recordLabel="Target"
         columns={columns}
         query={{
           page: 1,
@@ -148,7 +148,7 @@ describe("ListPage", () => {
         dataState={{ state: "loaded", data: meta }}
         items={items}
         meta={meta}
-        emptyMessage="No applications found."
+        emptyMessage="No targets found."
         onSearchChange={() => {}}
         onFilterChange={() => {}}
         onSortChange={() => {}}
@@ -164,7 +164,7 @@ describe("ListPage", () => {
     const fileInput = container.querySelector("input[type='file']");
     expect(fileInput).not.toBeNull();
 
-    const file = new File(["{}"], "applications.json", { type: "application/json" });
+    const file = new File(["{}"], "targets.json", { type: "application/json" });
     fireEvent.change(fileInput as HTMLInputElement, {
       target: { files: [file] }
     });
@@ -179,8 +179,8 @@ describe("ListPage", () => {
 
     render(
       <ListPage
-        title="Applications"
-        recordLabel="Application"
+        title="Targets"
+        recordLabel="Target"
         columns={columns}
         query={{
           page: 1,
@@ -192,7 +192,7 @@ describe("ListPage", () => {
         dataState={{ state: "loaded", data: meta }}
         items={items}
         meta={meta}
-        emptyMessage="No applications found."
+        emptyMessage="No targets found."
         onSearchChange={() => {}}
         onFilterChange={() => {}}
         onSortChange={() => {}}

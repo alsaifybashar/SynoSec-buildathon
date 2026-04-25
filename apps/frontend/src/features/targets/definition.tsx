@@ -2,10 +2,6 @@ import {
   apiRoutes,
   type CreateTargetBody,
   type Target,
-  type TargetDeployment,
-  type TargetDeploymentProvider,
-  type TargetDeploymentServiceType,
-  type TargetDeploymentStatus,
   type TargetEnvironment,
   type TargetStatus
 } from "@synosec/contracts";
@@ -14,19 +10,8 @@ import { targetTransfer } from "@/features/targets/transfer";
 import type { CrudFeatureDefinition } from "@/shared/crud/crud-feature";
 import { DetailField, DetailFieldGroup, DetailSidebarItem } from "@/shared/components/detail-page";
 import type { TargetsQuery } from "@/shared/lib/resource-client";
-import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
-
-type DeploymentFormValue = {
-  id?: string;
-  name: string;
-  serviceType: TargetDeploymentServiceType;
-  provider: TargetDeploymentProvider;
-  environment: TargetEnvironment;
-  region: string;
-  status: TargetDeploymentStatus;
-};
 
 type TargetFormValues = {
   name: string;
@@ -34,7 +19,6 @@ type TargetFormValues = {
   environment: TargetEnvironment;
   status: TargetStatus;
   lastScannedAt: string;
-  deployments: DeploymentFormValue[];
 };
 
 const environmentLabels: Record<TargetEnvironment, string> = {
@@ -47,32 +31,6 @@ const statusLabels: Record<TargetStatus, string> = {
   active: "Active",
   investigating: "Investigating",
   archived: "Archived"
-};
-
-const deploymentStatusLabels: Record<TargetDeploymentStatus, string> = {
-  healthy: "Healthy",
-  degraded: "Degraded",
-  retired: "Retired"
-};
-
-const serviceTypeLabels: Record<TargetDeploymentServiceType, string> = {
-  gateway: "Gateway",
-  api: "API",
-  worker: "Worker",
-  database: "Database",
-  queue: "Queue",
-  storage: "Storage",
-  other: "Other"
-};
-
-const providerLabels: Record<TargetDeploymentProvider, string> = {
-  aws: "AWS",
-  gcp: "GCP",
-  azure: "Azure",
-  "on-prem": "On-prem",
-  docker: "Docker",
-  vercel: "Vercel",
-  other: "Other"
 };
 
 const environmentBadgeStyles: Record<TargetEnvironment, string> = {
@@ -95,37 +53,13 @@ function StatusBadge({ label, className }: { label: string; className: string })
   );
 }
 
-function createEmptyDeployment(): DeploymentFormValue {
-  return {
-    name: "",
-    serviceType: "gateway",
-    provider: "docker",
-    environment: "production",
-    region: "",
-    status: "healthy"
-  };
-}
-
 function createEmptyFormValues(): TargetFormValues {
   return {
     name: "",
     baseUrl: "",
     environment: "production",
     status: "active",
-    lastScannedAt: "",
-    deployments: []
-  };
-}
-
-function toDeploymentFormValue(deployment: TargetDeployment): DeploymentFormValue {
-  return {
-    id: deployment.id,
-    name: deployment.name,
-    serviceType: deployment.serviceType,
-    provider: deployment.provider,
-    environment: deployment.environment,
-    region: deployment.region,
-    status: deployment.status
+    lastScannedAt: ""
   };
 }
 
@@ -135,8 +69,7 @@ function toFormValues(target: Target): TargetFormValues {
     baseUrl: target.baseUrl ?? "",
     environment: target.environment,
     status: target.status,
-    lastScannedAt: target.lastScannedAt ? target.lastScannedAt.slice(0, 16) : "",
-    deployments: target.deployments?.map(toDeploymentFormValue) ?? []
+    lastScannedAt: target.lastScannedAt ? target.lastScannedAt.slice(0, 16) : ""
   };
 }
 
@@ -146,18 +79,7 @@ function toRequestBody(values: TargetFormValues): CreateTargetBody {
     baseUrl: values.baseUrl.trim(),
     environment: values.environment,
     status: values.status,
-    lastScannedAt: values.lastScannedAt ? new Date(values.lastScannedAt).toISOString() : null,
-    deployments: values.deployments
-      .filter((deployment) => deployment.name.trim() || deployment.region.trim())
-      .map((deployment) => ({
-        ...(deployment.id ? { id: deployment.id } : {}),
-        name: deployment.name.trim(),
-        serviceType: deployment.serviceType,
-        provider: deployment.provider,
-        environment: deployment.environment,
-        region: deployment.region.trim(),
-        status: deployment.status
-      }))
+    lastScannedAt: values.lastScannedAt ? new Date(values.lastScannedAt).toISOString() : null
   };
 }
 
@@ -174,13 +96,6 @@ function validateForm(values: TargetFormValues) {
     } catch {
       errors.baseUrl = "Base URL must be a valid absolute URL.";
     }
-  }
-
-  const invalidDeployment = values.deployments.find((deployment) =>
-    (deployment.name.trim() && !deployment.region.trim()) || (!deployment.name.trim() && deployment.region.trim())
-  );
-  if (invalidDeployment) {
-    errors.deployments = "Each deployment needs both a name and region.";
   }
 
   return errors;
@@ -232,8 +147,7 @@ export const targetsDefinition: CrudFeatureDefinition<
     columns: () => [
       { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
       { id: "baseUrl", header: "Base URL", cell: (row) => <span className="text-muted-foreground">{row.baseUrl ?? "Not set"}</span> },
-      { id: "environment", header: "Environment", cell: (row) => <StatusBadge label={environmentLabels[row.environment]} className={environmentBadgeStyles[row.environment]} /> },
-      { id: "deployments", header: "Deployments", cell: (row) => <span className="text-muted-foreground">{row.deployments?.length ?? 0}</span>, className: "text-right" }
+      { id: "environment", header: "Environment", cell: (row) => <StatusBadge label={environmentLabels[row.environment]} className={environmentBadgeStyles[row.environment]} /> }
     ],
     filters: () => [
       {
@@ -261,9 +175,6 @@ export const targetsDefinition: CrudFeatureDefinition<
         <DetailSidebarItem label="Environment" hint="The deployment tier this target record represents.">
           <StatusBadge label={environmentLabels[item.environment]} className={environmentBadgeStyles[item.environment]} />
         </DetailSidebarItem>
-        <DetailSidebarItem label="Deployments" hint="Embedded deployment inventory now owned directly by the target.">
-          {item.deployments?.length ?? 0}
-        </DetailSidebarItem>
         <DetailSidebarItem label="Last scanned">
           {formatTimestamp(item.lastScannedAt)}
         </DetailSidebarItem>
@@ -275,7 +186,7 @@ export const targetsDefinition: CrudFeatureDefinition<
         </DetailSidebarItem>
       </>
     ),
-    renderContent: ({ item, formValues, errors, handleFieldChange, setFormValues }) => (
+    renderContent: ({ formValues, errors, handleFieldChange }) => (
       <>
         <DetailFieldGroup title="General">
           <DetailField label="Name" required hint="Operator-facing target label used across workflows and reports." {...definedString(errors["name"] as string | undefined)}>
@@ -284,7 +195,7 @@ export const targetsDefinition: CrudFeatureDefinition<
 
           <DetailField
             label="Base URL"
-            hint="Optional. Include the primary absolute URL when this target exposes a reachable web surface."
+            hint="The target's own base URL is the scan surface used by workflows."
             {...definedString(errors["baseUrl"] as string | undefined)}
           >
             <Input value={formValues.baseUrl} onChange={(event) => handleFieldChange("baseUrl", event.target.value)} aria-label="Base URL" />
@@ -314,122 +225,6 @@ export const targetsDefinition: CrudFeatureDefinition<
               onChange={(event) => handleFieldChange("lastScannedAt", event.target.value)}
               aria-label="Last scanned"
             />
-          </DetailField>
-        </DetailFieldGroup>
-
-        <DetailFieldGroup title="Deployments">
-          <DetailField label="Embedded deployments" hint="Add the deployment/runtime inventory that belongs to this target." className="md:col-span-2" {...definedString(errors["deployments"] as string | undefined)}>
-            <div className="space-y-3 rounded-xl border border-border bg-background/40 p-4">
-              {formValues.deployments.length === 0 ? <p className="text-sm text-muted-foreground">No deployments configured.</p> : null}
-              {formValues.deployments.map((deployment, index) => (
-                <div key={deployment.id ?? `deployment-${index}`} className="grid gap-3 rounded-xl border border-border/70 bg-background/70 p-3 md:grid-cols-2 xl:grid-cols-3">
-                  <Input
-                    value={deployment.name}
-                    onChange={(event) => setFormValues((current) => ({
-                      ...current,
-                      deployments: current.deployments.map((entry, entryIndex) => entryIndex === index ? { ...entry, name: event.target.value } : entry)
-                    }))}
-                    aria-label={`Deployment name ${index + 1}`}
-                    placeholder="Deployment name"
-                  />
-                  <Input
-                    value={deployment.region}
-                    onChange={(event) => setFormValues((current) => ({
-                      ...current,
-                      deployments: current.deployments.map((entry, entryIndex) => entryIndex === index ? { ...entry, region: event.target.value } : entry)
-                    }))}
-                    aria-label={`Deployment region ${index + 1}`}
-                    placeholder="Region"
-                  />
-                  <Select value={deployment.serviceType} onValueChange={(value: TargetDeploymentServiceType) => setFormValues((current) => ({
-                    ...current,
-                    deployments: current.deployments.map((entry, entryIndex) => entryIndex === index ? { ...entry, serviceType: value } : entry)
-                  }))}>
-                    <SelectTrigger aria-label={`Deployment service type ${index + 1}`}>
-                      <SelectValue placeholder="Service type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(serviceTypeLabels).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={deployment.provider} onValueChange={(value: TargetDeploymentProvider) => setFormValues((current) => ({
-                    ...current,
-                    deployments: current.deployments.map((entry, entryIndex) => entryIndex === index ? { ...entry, provider: value } : entry)
-                  }))}>
-                    <SelectTrigger aria-label={`Deployment provider ${index + 1}`}>
-                      <SelectValue placeholder="Provider" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(providerLabels).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={deployment.environment} onValueChange={(value: TargetEnvironment) => setFormValues((current) => ({
-                    ...current,
-                    deployments: current.deployments.map((entry, entryIndex) => entryIndex === index ? { ...entry, environment: value } : entry)
-                  }))}>
-                    <SelectTrigger aria-label={`Deployment environment ${index + 1}`}>
-                      <SelectValue placeholder="Environment" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(environmentLabels).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={deployment.status} onValueChange={(value: TargetDeploymentStatus) => setFormValues((current) => ({
-                    ...current,
-                    deployments: current.deployments.map((entry, entryIndex) => entryIndex === index ? { ...entry, status: value } : entry)
-                  }))}>
-                    <SelectTrigger aria-label={`Deployment status ${index + 1}`}>
-                      <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(deploymentStatusLabels).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <div className="md:col-span-2 xl:col-span-3">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setFormValues((current) => ({
-                        ...current,
-                        deployments: current.deployments.filter((_, entryIndex) => entryIndex !== index)
-                      }))}
-                    >
-                      Remove deployment
-                    </Button>
-                  </div>
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setFormValues((current) => ({
-                  ...current,
-                  deployments: [...current.deployments, createEmptyDeployment()]
-                }))}
-              >
-                Add deployment
-              </Button>
-            </div>
-          </DetailField>
-          <DetailField label="Registered target assets" hint="Existing target assets remain attached to the target record and are preserved on update." className="md:col-span-2">
-            <div className="space-y-2 rounded-xl border border-border bg-background/40 p-4 text-sm text-muted-foreground">
-              {item?.targetAssets?.length
-                ? item.targetAssets.map((asset) => (
-                    <div key={asset.id} className="flex items-center justify-between gap-3 border-b border-border/50 pb-2 last:border-b-0 last:pb-0">
-                      <span className="font-medium text-foreground">{asset.label}</span>
-                      <span>{asset.provider ?? asset.kind}{asset.isDefault ? " · default" : ""}</span>
-                    </div>
-                  ))
-                : <span>No registered target assets.</span>}
-            </div>
           </DetailField>
         </DetailFieldGroup>
       </>

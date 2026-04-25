@@ -14,59 +14,8 @@ export type ApplicationEnvironment = TargetEnvironment;
 export const applicationStatusSchema = targetStatusSchema;
 export type ApplicationStatus = TargetStatus;
 
-export const targetAssetKindSchema = z.enum(["url", "hostname", "ip", "cidr"]);
-export type TargetAssetKind = z.infer<typeof targetAssetKindSchema>;
-
-export const targetAssetOwnershipStatusSchema = z.enum(["verified", "pending", "unverified"]);
-export type TargetAssetOwnershipStatus = z.infer<typeof targetAssetOwnershipStatusSchema>;
-
 export const executionConstraintKindSchema = z.enum(["provider_policy", "legal_scope", "workflow_gate"]);
 export type ExecutionConstraintKind = z.infer<typeof executionConstraintKindSchema>;
-
-export const targetAssetSchema = z.object({
-  id: z.string().uuid(),
-  applicationId: z.string().uuid(),
-  label: z.string().min(1),
-  kind: targetAssetKindSchema,
-  hostname: z.string().min(1).nullable(),
-  baseUrl: z.string().url().nullable(),
-  ipAddress: z.string().min(1).nullable(),
-  cidr: z.string().min(1).nullable(),
-  provider: z.string().min(1).nullable(),
-  ownershipStatus: targetAssetOwnershipStatusSchema,
-  isDefault: z.boolean(),
-  metadata: jsonSchemaObjectSchema.nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
-});
-export type TargetAsset = z.infer<typeof targetAssetSchema>;
-
-const targetAssetBodyObjectSchema = z.object({
-  label: z.string().trim().min(1),
-  kind: targetAssetKindSchema,
-  hostname: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  baseUrl: z.union([z.string().trim().url(), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  ipAddress: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  cidr: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  provider: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null).optional(),
-  ownershipStatus: targetAssetOwnershipStatusSchema.default("unverified"),
-  isDefault: z.boolean().default(false),
-  metadata: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
-});
-
-const targetAssetBodyBaseSchema = targetAssetBodyObjectSchema.superRefine((value, ctx) => {
-  const hasOneLocator = [value.hostname, value.baseUrl, value.ipAddress, value.cidr].some((entry) => !!entry);
-  if (!hasOneLocator) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "A target asset must include at least one locator.",
-      path: ["hostname"]
-    });
-  }
-});
-
-export const targetAssetBodySchema = targetAssetBodyBaseSchema;
-export type TargetAssetBody = z.infer<typeof targetAssetBodySchema>;
 
 const excludedPathsSchema = z.array(z.string().trim().min(1)).transform((paths) => {
   const seen = new Set<string>();
@@ -163,38 +112,6 @@ export const applicationConstraintBindingSchema = z.object({
 });
 export type ApplicationConstraintBinding = z.infer<typeof applicationConstraintBindingSchema>;
 
-export const targetDeploymentServiceTypeSchema = z.enum(["gateway", "api", "worker", "database", "queue", "storage", "other"]);
-export type TargetDeploymentServiceType = z.infer<typeof targetDeploymentServiceTypeSchema>;
-
-export const targetDeploymentProviderSchema = z.enum(["aws", "gcp", "azure", "on-prem", "docker", "vercel", "other"]);
-export type TargetDeploymentProvider = z.infer<typeof targetDeploymentProviderSchema>;
-
-export const targetDeploymentStatusSchema = z.enum(["healthy", "degraded", "retired"]);
-export type TargetDeploymentStatus = z.infer<typeof targetDeploymentStatusSchema>;
-
-export const targetDeploymentSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1),
-  serviceType: targetDeploymentServiceTypeSchema,
-  provider: targetDeploymentProviderSchema,
-  environment: targetEnvironmentSchema,
-  region: z.string().min(1),
-  status: targetDeploymentStatusSchema,
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
-});
-export type TargetDeployment = z.infer<typeof targetDeploymentSchema>;
-
-const targetDeploymentBodyBaseSchema = z.object({
-  id: z.string().uuid().optional(),
-  name: z.string().trim().min(1),
-  serviceType: targetDeploymentServiceTypeSchema,
-  provider: targetDeploymentProviderSchema,
-  environment: targetEnvironmentSchema,
-  region: z.string().trim().min(1),
-  status: targetDeploymentStatusSchema
-});
-
 export const targetSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
@@ -202,16 +119,11 @@ export const targetSchema = z.object({
   environment: targetEnvironmentSchema,
   status: targetStatusSchema,
   lastScannedAt: z.string().datetime().nullable(),
-  targetAssets: z.array(targetAssetSchema).optional(),
   constraintBindings: z.array(applicationConstraintBindingSchema).optional(),
-  deployments: z.array(targetDeploymentSchema).optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 });
 export type Target = z.infer<typeof targetSchema>;
-
-export const applicationSchema = targetSchema;
-export type Application = z.infer<typeof applicationSchema>;
 
 export const targetsListQuerySchema = resourceListQuerySchema.extend({
   status: targetStatusSchema.optional(),
@@ -220,18 +132,10 @@ export const targetsListQuerySchema = resourceListQuerySchema.extend({
 });
 export type TargetsListQuery = z.infer<typeof targetsListQuerySchema>;
 
-export const applicationsListQuerySchema = targetsListQuerySchema;
-export type ApplicationsListQuery = z.infer<typeof applicationsListQuerySchema>;
-
 export const listTargetsResponseSchema = paginatedMetaSchema.extend({
   targets: z.array(targetSchema)
 });
 export type ListTargetsResponse = z.infer<typeof listTargetsResponseSchema>;
-
-export const listApplicationsResponseSchema = paginatedMetaSchema.extend({
-  applications: z.array(applicationSchema)
-});
-export type ListApplicationsResponse = z.infer<typeof listApplicationsResponseSchema>;
 
 const targetBodyBaseSchema = z.object({
   name: z.string().trim().min(1),
@@ -239,20 +143,7 @@ const targetBodyBaseSchema = z.object({
   environment: targetEnvironmentSchema,
   status: targetStatusSchema,
   lastScannedAt: z.union([z.string().datetime(), z.null()]),
-  targetAssets: z.array(targetAssetBodyObjectSchema.extend({
-    id: z.string().uuid().optional()
-  }).superRefine((value, ctx) => {
-    const hasOneLocator = [value.hostname, value.baseUrl, value.ipAddress, value.cidr].some((entry) => !!entry);
-    if (!hasOneLocator) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "A target asset must include at least one locator.",
-        path: ["hostname"]
-      });
-    }
-  })).optional(),
-  constraintIds: z.array(z.string().min(1)).optional(),
-  deployments: z.array(targetDeploymentBodyBaseSchema).optional()
+  constraintIds: z.array(z.string().min(1)).optional()
 });
 
 export const createTargetBodySchema = targetBodyBaseSchema;
@@ -262,54 +153,6 @@ export const updateTargetBodySchema = targetBodyBaseSchema.partial().refine((val
   message: "At least one field is required."
 });
 export type UpdateTargetBody = z.infer<typeof updateTargetBodySchema>;
-
-export const createApplicationBodySchema = targetBodyBaseSchema;
-export type CreateApplicationBody = z.infer<typeof createApplicationBodySchema>;
-
-export const updateApplicationBodySchema = targetBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
-  message: "At least one field is required."
-});
-export type UpdateApplicationBody = z.infer<typeof updateApplicationBodySchema>;
-
-export const runtimeServiceTypeSchema = targetDeploymentServiceTypeSchema;
-export type RuntimeServiceType = TargetDeploymentServiceType;
-
-export const runtimeProviderSchema = targetDeploymentProviderSchema;
-export type RuntimeProvider = TargetDeploymentProvider;
-
-export const runtimeStatusSchema = targetDeploymentStatusSchema;
-export type RuntimeStatus = TargetDeploymentStatus;
-
-export const runtimeSchema = targetDeploymentSchema.extend({
-  applicationId: z.string().uuid().nullable()
-});
-export type Runtime = z.infer<typeof runtimeSchema>;
-
-export const runtimesListQuerySchema = resourceListQuerySchema.extend({
-  status: runtimeStatusSchema.optional(),
-  provider: runtimeProviderSchema.optional(),
-  environment: targetEnvironmentSchema.optional(),
-  applicationId: z.string().uuid().optional(),
-  sortBy: z.enum(["name", "serviceType", "status", "provider", "environment", "region", "applicationId", "createdAt", "updatedAt"]).optional()
-});
-export type RuntimesListQuery = z.infer<typeof runtimesListQuerySchema>;
-
-export const listRuntimesResponseSchema = paginatedMetaSchema.extend({
-  runtimes: z.array(runtimeSchema)
-});
-export type ListRuntimesResponse = z.infer<typeof listRuntimesResponseSchema>;
-
-const runtimeBodyBaseSchema = targetDeploymentBodyBaseSchema.extend({
-  applicationId: z.union([z.string().uuid(), z.literal(""), z.null()]).transform((value) => value || null)
-});
-
-export const createRuntimeBodySchema = runtimeBodyBaseSchema;
-export type CreateRuntimeBody = z.infer<typeof createRuntimeBodySchema>;
-
-export const updateRuntimeBodySchema = runtimeBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
-  message: "At least one field is required."
-});
-export type UpdateRuntimeBody = z.infer<typeof updateRuntimeBodySchema>;
 
 export const aiProviderKindSchema = z.enum(["local", "anthropic"]);
 export type AiProviderKind = z.infer<typeof aiProviderKindSchema>;
@@ -864,9 +707,7 @@ export type UpdateWorkflowBody = z.infer<typeof updateWorkflowBodySchema>;
 export const workflowRunStatusSchema = z.enum(["pending", "running", "completed", "failed"]);
 export type WorkflowRunStatus = z.infer<typeof workflowRunStatusSchema>;
 
-export const startWorkflowRunBodySchema = z.object({
-  targetAssetId: z.string().uuid().optional()
-});
+export const startWorkflowRunBodySchema = z.object({});
 export type StartWorkflowRunBody = z.infer<typeof startWorkflowRunBodySchema>;
 
 export const workflowTraceEntryStatusSchema = z.enum(["completed", "failed"]);
@@ -944,7 +785,6 @@ export const workflowRunSchema = z.object({
   id: z.string().uuid(),
   workflowId: z.string().uuid(),
   executionKind: executionKindSchema.optional(),
-  targetAssetId: z.string().uuid().nullable().optional(),
   status: workflowRunStatusSchema,
   currentStepIndex: z.number().int().min(0).default(0),
   startedAt: z.string().datetime(),

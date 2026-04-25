@@ -41,7 +41,7 @@ Use this structure when adding a new feature to the catalog:
 ### Backend API And Resource Management
 
 - Status: Active
-- Purpose: Provide the backend HTTP surface for health, applications, runtimes, AI providers, AI agents, AI tools, workflows, and related control-plane operations.
+- Purpose: Provide the backend HTTP surface for health, targets, AI providers, AI agents, AI tools, workflows, execution reports, and related control-plane operations.
 - Value: Gives the frontend and developers stable endpoints for configuration, inspection, and platform management.
 - Main components: `apps/backend/src/platform/app`, route modules under `apps/backend/src/features/modules`, shared contracts in `packages/contracts`.
 - How it is tested: Route tests under `apps/backend/src/features/modules/**/*routes.test.ts` and contract validation tests in `packages/contracts/src/index.test.ts`.

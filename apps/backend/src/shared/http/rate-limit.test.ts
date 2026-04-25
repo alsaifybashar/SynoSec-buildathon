@@ -45,7 +45,7 @@ function createTestApp(config = createTestConfig()) {
   app.get("/api/connectors/status", (_req, res) => {
     res.json({ ok: true });
   });
-  app.get("/api/applications", (_req, res) => {
+  app.get("/api/targets", (_req, res) => {
     res.json({ ok: true });
   });
 
@@ -139,19 +139,19 @@ describe("createRateLimitMiddleware", () => {
     }));
 
     await request(app)
-      .get("/api/applications")
+      .get("/api/targets")
       .set("X-Forwarded-For", "198.51.100.40")
       .set("x-user-id", "user-1")
       .expect(200);
 
     await request(app)
-      .get("/api/applications")
+      .get("/api/targets")
       .set("X-Forwarded-For", "198.51.100.41")
       .set("x-user-id", "user-2")
       .expect(200);
 
     await request(app)
-      .get("/api/applications")
+      .get("/api/targets")
       .set("X-Forwarded-For", "198.51.100.99")
       .set("x-user-id", "user-1")
       .expect(429);

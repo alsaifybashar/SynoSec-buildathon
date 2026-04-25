@@ -49,7 +49,7 @@ flowchart LR
 
 ### Main Components
 
-- `apps/frontend`: React and Tailwind interface for applications, agents, tools, workflows, runtimes, scan traces, and the attack map.
+- `apps/frontend`: React and Tailwind interface for targets, agents, tools, workflows, execution reports, and the attack map.
 - `apps/backend`: Express API, scan orchestration, workflow execution, AI-provider integration, tool brokerage, scan storage, and attack-chain correlation.
 - `apps/connector`: Worker process for executing tool jobs from a different network position than the backend.
 - `packages/contracts`: Shared TypeScript contracts and Zod schemas for scans, vulnerabilities, OSI coverage, tool runs, observations, workflow events, reports, and escalation routes.
@@ -261,7 +261,6 @@ At runtime, a typical vulnerability discovery pass follows this path:
 ```bash
 cp .env.example .env
 make docker-up
-make smoke-e2e
 ```
 
 ### Local Development
@@ -287,12 +286,12 @@ To use local inference, configure the local provider settings in `.env` and ensu
 ### Common Commands
 
 ```bash
-make docker-up       # Start the Docker Compose stack
-make docker-down     # Stop and remove Docker services
-make dev             # Start host-mode development
-make smoke-e2e       # Run the Docker smoke evaluation
-make test            # Run workspace tests
-pnpm build           # Build all workspace packages
+make docker-up                # Start the Docker Compose stack
+make docker-down              # Stop and remove Docker services
+make dev                      # Start host-mode development
+make smoke-seeded-sandbox     # Run the seeded connector sandbox smoke validation
+make test                     # Run workspace tests
+pnpm build                    # Build all workspace packages
 ```
 
 To fully stop local development services and free the default ports:

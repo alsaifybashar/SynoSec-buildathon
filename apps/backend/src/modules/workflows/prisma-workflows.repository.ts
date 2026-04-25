@@ -94,7 +94,6 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
         ...(input.executionKind ? { executionKind: input.executionKind } : { executionKind: "workflow" }),
         description: input.description,
         applicationId: input.targetId,
-        runtimeId: null,
         stages: {
           createMany: {
             data: [toWorkflowStageCreateManyInput({
@@ -157,7 +156,6 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
             : {}),
           description: input.description === undefined ? current.description : input.description,
           applicationId: input.targetId ?? current.applicationId,
-          runtimeId: null,
           stages: {
             createMany: {
               data: [toWorkflowStageCreateManyInput({
@@ -226,7 +224,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
     return mapWorkflowRow(workflow);
   }
 
-  async createRun(workflowId: string, targetAssetId: string | null): Promise<WorkflowRun | null> {
+  async createRun(workflowId: string): Promise<WorkflowRun | null> {
     const workflow = await this.prisma.workflow.findUnique({ where: { id: workflowId } });
     if (!workflow) {
       return null;
@@ -236,7 +234,6 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
       data: {
         id: randomUUID(),
         workflowId,
-        targetAssetId,
         executionKind: workflow.executionKind ?? "workflow",
         status: "running"
       },

@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  applicationSchema,
-  applicationsListQuerySchema,
   connectorPollResponseSchema,
   connectorRegistrationRequestSchema,
   connectorTestDispatchRequestSchema,
   createAiToolBodySchema,
-  createApplicationBodySchema,
   createAiProviderBodySchema,
+  createTargetBodySchema,
   defensiveIterationRecordSchema,
   defensiveLoopContract,
   defensiveLoopStages,
@@ -16,15 +14,17 @@ import {
   executionReportsListQuerySchema,
   prioritizeDefensiveAction,
   healthResponseSchema,
-  listApplicationsResponseSchema,
+  listTargetsResponseSchema,
   scanLayerCoverageSchema,
   securityVulnerabilitySchema,
   aiToolSchema,
+  targetSchema,
+  targetsListQuerySchema,
   toolRequestSchema,
   toolRunSchema,
   workflowFindingSubmissionSchema,
   updateAiProviderBodySchema,
-  updateApplicationBodySchema
+  updateTargetBodySchema
 } from "./index.js";
 import { workflowTraceEventSchema } from "./index.js";
 
@@ -39,8 +39,8 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
-  it("accepts a valid application payload", () => {
-    const result = applicationSchema.safeParse({
+  it("accepts a valid target payload", () => {
+    const result = targetSchema.safeParse({
       id: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
       name: "Operator Portal",
       baseUrl: "https://portal.synosec.local",
@@ -54,8 +54,8 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
-  it("applies defaults for application list queries", () => {
-    const result = applicationsListQuerySchema.safeParse({});
+  it("applies defaults for target list queries", () => {
+    const result = targetsListQuerySchema.safeParse({});
 
     expect(result.success).toBe(true);
 
@@ -67,14 +67,14 @@ describe("contracts", () => {
   });
 
   it("rejects invalid page sizes for list queries", () => {
-    const result = applicationsListQuerySchema.safeParse({ pageSize: 15 });
+    const result = targetsListQuerySchema.safeParse({ pageSize: 15 });
 
     expect(result.success).toBe(false);
   });
 
-  it("accepts paginated application responses", () => {
-    const result = listApplicationsResponseSchema.safeParse({
-      applications: [
+  it("accepts paginated target responses", () => {
+    const result = listTargetsResponseSchema.safeParse({
+      targets: [
         {
           id: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
           name: "Operator Portal",
@@ -96,7 +96,7 @@ describe("contracts", () => {
   });
 
   it("normalizes empty create payload values", () => {
-    const result = createApplicationBodySchema.safeParse({
+    const result = createTargetBodySchema.safeParse({
       name: "Report Builder",
       baseUrl: "",
       environment: "staging",
@@ -112,7 +112,7 @@ describe("contracts", () => {
   });
 
   it("rejects an empty update payload", () => {
-    const result = updateApplicationBodySchema.safeParse({});
+    const result = updateTargetBodySchema.safeParse({});
 
     expect(result.success).toBe(false);
   });

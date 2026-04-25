@@ -46,20 +46,6 @@ export type TargetsQuery = {
   [key: string]: number | string | undefined;
 };
 
-export type ApplicationsQuery = TargetsQuery;
-
-export type RuntimesQuery = {
-  page: number;
-  pageSize: number;
-  q: string;
-  sortBy: "name" | "serviceType" | "status" | "provider" | "environment" | "region" | "applicationId" | "createdAt" | "updatedAt";
-  sortDirection: SortDirection;
-  status: OptionalString;
-  provider: OptionalString;
-  environment: OptionalString;
-  [key: string]: number | string | undefined;
-};
-
 export type AiProvidersQuery = {
   page: number;
   pageSize: number;

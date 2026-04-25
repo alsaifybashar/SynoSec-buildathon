@@ -1,17 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import type { CreateTargetBody, Target, TargetsListQuery, UpdateTargetBody } from "@synosec/contracts";
 import type { PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import { mapTargetRow } from "@/modules/targets/targets.mapper.js";
 import { type TargetsRepository } from "@/modules/targets/targets.repository.js";
-
-function toJsonValue(value: Record<string, unknown> | null | undefined): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
-  return value == null ? Prisma.JsonNull : value as Prisma.InputJsonValue;
-}
-
-function mapProvider(provider: NonNullable<CreateTargetBody["deployments"]>[number]["provider"]) {
-  return provider === "on-prem" ? "on_prem" : provider;
-}
 
 export class PrismaTargetsRepository implements TargetsRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -36,8 +28,6 @@ export class PrismaTargetsRepository implements TargetsRepository {
         where,
         orderBy,
         include: {
-          targetAssets: true,
-          runtimes: true,
           constraintBindings: {
             include: {
               constraint: true
@@ -63,8 +53,6 @@ export class PrismaTargetsRepository implements TargetsRepository {
     const target = await this.prisma.application.findUnique({
       where: { id },
       include: {
-        targetAssets: true,
-        runtimes: true,
         constraintBindings: {
           include: {
             constraint: true
@@ -85,25 +73,6 @@ export class PrismaTargetsRepository implements TargetsRepository {
         environment: input.environment,
         status: input.status,
         lastScannedAt: input.lastScannedAt ? new Date(input.lastScannedAt) : null,
-        ...(input.targetAssets?.length
-          ? {
-              targetAssets: {
-                create: input.targetAssets.map((asset) => ({
-                  id: asset.id ?? randomUUID(),
-                  label: asset.label,
-                  kind: asset.kind,
-                  hostname: asset.hostname ?? null,
-                  baseUrl: asset.baseUrl ?? null,
-                  ipAddress: asset.ipAddress ?? null,
-                  cidr: asset.cidr ?? null,
-                  provider: asset.provider ?? null,
-                  ownershipStatus: asset.ownershipStatus,
-                  isDefault: asset.isDefault,
-                  metadata: toJsonValue(asset.metadata)
-                }))
-              }
-            }
-          : {}),
         ...(input.constraintIds?.length
           ? {
               constraintBindings: {
@@ -114,26 +83,9 @@ export class PrismaTargetsRepository implements TargetsRepository {
                 }
               }
             }
-          : {}),
-        ...(input.deployments?.length
-          ? {
-              runtimes: {
-                create: input.deployments.map((deployment) => ({
-                  id: deployment.id ?? randomUUID(),
-                  name: deployment.name,
-                  serviceType: deployment.serviceType,
-                  provider: mapProvider(deployment.provider),
-                  environment: deployment.environment,
-                  region: deployment.region,
-                  status: deployment.status
-                }))
-              }
-            }
           : {})
-      } as Prisma.ApplicationCreateInput,
+      },
       include: {
-        targetAssets: true,
-        runtimes: true,
         constraintBindings: {
           include: {
             constraint: true
@@ -167,26 +119,6 @@ export class PrismaTargetsRepository implements TargetsRepository {
             : input.lastScannedAt
               ? new Date(input.lastScannedAt)
               : null,
-        ...(input.targetAssets === undefined
-          ? {}
-          : {
-              targetAssets: {
-                deleteMany: {},
-                create: input.targetAssets.map((asset) => ({
-                  id: asset.id ?? randomUUID(),
-                  label: asset.label,
-                  kind: asset.kind,
-                  hostname: asset.hostname ?? null,
-                  baseUrl: asset.baseUrl ?? null,
-                  ipAddress: asset.ipAddress ?? null,
-                  cidr: asset.cidr ?? null,
-                  provider: asset.provider ?? null,
-                  ownershipStatus: asset.ownershipStatus,
-                  isDefault: asset.isDefault,
-                  metadata: toJsonValue(asset.metadata)
-                }))
-              }
-            }),
         ...(input.constraintIds === undefined
           ? {}
           : {
@@ -199,26 +131,8 @@ export class PrismaTargetsRepository implements TargetsRepository {
                 }
               }
             }),
-        ...(input.deployments === undefined
-          ? {}
-          : {
-              runtimes: {
-                deleteMany: {},
-                create: input.deployments.map((deployment) => ({
-                  id: deployment.id ?? randomUUID(),
-                  name: deployment.name,
-                  serviceType: deployment.serviceType,
-                  provider: mapProvider(deployment.provider),
-                  environment: deployment.environment,
-                  region: deployment.region,
-                  status: deployment.status
-                }))
-              }
-            })
-      } as Prisma.ApplicationUpdateInput,
+      },
       include: {
-        targetAssets: true,
-        runtimes: true,
         constraintBindings: {
           include: {
             constraint: true

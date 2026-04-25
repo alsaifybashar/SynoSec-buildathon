@@ -498,7 +498,10 @@ export class ExecutionReportsService {
       where: { id: runId },
       include: {
         workflow: {
-          include: { stages: true }
+          include: {
+            application: true,
+            stages: true
+          }
         },
         traceEvents: true
       }
@@ -563,7 +566,7 @@ export class ExecutionReportsService {
       sourceDefinitionId: run.workflowId,
       status: normalizeExecutionReportStatus(workflowRun.status),
       title: run.workflow.name,
-      targetLabel: run.targetAssetId ?? run.workflow.applicationId,
+      targetLabel: run.workflow.application.name,
       sourceLabel: run.workflow.name,
       findingsCount: findings.length,
       highestSeverity: summarizeHighestSeverity(findings),

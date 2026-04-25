@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiAgent, AiProvider, AiTool, Application, AuthSessionResponse, Runtime, Workflow } from "@synosec/contracts";
+import type { AiAgent, AiProvider, AiTool, AuthSessionResponse, Target, Workflow } from "@synosec/contracts";
 import App from "@/app/App";
 
 function createPaginatedPayload<T>(key: string, items: T[]) {
@@ -14,8 +14,7 @@ function createPaginatedPayload<T>(key: string, items: T[]) {
 }
 
 describe("App", () => {
-  let applications: Application[];
-  let runtimes: Runtime[];
+  let targets: Target[];
   let providers: AiProvider[];
   let agents: AiAgent[];
   let tools: AiTool[];
@@ -24,7 +23,7 @@ describe("App", () => {
   let authSessionFailureCount: number;
 
   beforeEach(() => {
-    applications = [
+    targets = [
       {
         id: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
         name: "Operator Portal",
@@ -32,21 +31,19 @@ describe("App", () => {
         environment: "production",
         status: "active",
         lastScannedAt: "2026-04-12T12:00:00.000Z",
-        createdAt: "2026-04-12T12:00:00.000Z",
-        updatedAt: "2026-04-12T12:00:00.000Z"
-      }
-    ];
-
-    runtimes = [
-      {
-        id: "rt-00111111-1111-4111-8111-111111111111",
-        name: "Node Runtime 20",
-        serviceType: "api",
-        provider: "docker",
-        environment: "production",
-        region: "eu-north-1",
-        status: "healthy",
-        applicationId: applications[0]?.id ?? null,
+        deployments: [
+          {
+            id: "rt-00111111-1111-4111-8111-111111111111",
+            name: "Node Runtime 20",
+            serviceType: "api",
+            provider: "docker",
+            environment: "production",
+            region: "eu-north-1",
+            status: "healthy",
+            createdAt: "2026-04-12T12:00:00.000Z",
+            updatedAt: "2026-04-12T12:00:00.000Z"
+          }
+        ],
         createdAt: "2026-04-12T12:00:00.000Z",
         updatedAt: "2026-04-12T12:00:00.000Z"
       }
@@ -133,8 +130,7 @@ describe("App", () => {
         name: "Local Vulnerable App Walkthrough",
         status: "active",
         description: "Seeded workflow for the local target",
-        applicationId: applications[0]?.id ?? "",
-        runtimeId: runtimes[0]?.id ?? null,
+        targetId: targets[0]?.id ?? "",
         agentId: agents[0]?.id ?? "",
         objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
         allowedToolIds: [],
@@ -240,17 +236,11 @@ describe("App", () => {
         return new Response(null, { status: 204 });
       }
 
-      if ((url === "/api/applications" || url.startsWith("/api/applications?")) && method === "GET") {
-        return new Response(JSON.stringify(createPaginatedPayload("applications", applications)));
+      if ((url === "/api/targets" || url.startsWith("/api/targets?")) && method === "GET") {
+        return new Response(JSON.stringify(createPaginatedPayload("targets", targets)));
       }
-      if (url.startsWith("/api/applications/") && method === "GET") {
-        return new Response(JSON.stringify(applications[0]));
-      }
-      if ((url === "/api/runtimes" || url.startsWith("/api/runtimes?")) && method === "GET") {
-        return new Response(JSON.stringify(createPaginatedPayload("runtimes", runtimes)));
-      }
-      if (url.startsWith("/api/runtimes/") && method === "GET") {
-        return new Response(JSON.stringify(runtimes[0]));
+      if (url.startsWith("/api/targets/") && method === "GET") {
+        return new Response(JSON.stringify(targets[0]));
       }
       if ((url === "/api/ai-providers" || url.startsWith("/api/ai-providers?")) && method === "GET") {
         return new Response(JSON.stringify(createPaginatedPayload("providers", providers)));
@@ -309,17 +299,17 @@ describe("App", () => {
     }));
   });
 
-  it("routes the root path to applications", async () => {
+  it("routes the root path to targets", async () => {
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Applications" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/applications");
+    expect(await screen.findByRole("heading", { name: "Targets" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/targets");
   });
 
   it("shows the new AI builder navigation surfaces", async () => {
     render(<App />);
 
-    await screen.findByRole("heading", { name: "Applications" });
+    await screen.findByRole("heading", { name: "Targets" });
     expect(screen.getAllByRole("link", { name: "AI Providers" })[0]).toHaveAttribute("href", "/ai/providers");
     fireEvent.click(screen.getAllByRole("link", { name: "AI Providers" })[0]!);
     expect(await screen.findByRole("heading", { name: "AI Providers" })).toBeInTheDocument();
@@ -339,7 +329,7 @@ describe("App", () => {
   it("opens AI provider detail pages through the url-backed list flow", async () => {
     render(<App />);
 
-    await screen.findByRole("heading", { name: "Applications" });
+    await screen.findByRole("heading", { name: "Targets" });
     fireEvent.click(screen.getAllByRole("link", { name: "AI Providers" })[0]!);
     fireEvent.click((await screen.findAllByText("Primary Anthropic"))[0]!);
 
@@ -367,7 +357,7 @@ describe("App", () => {
   it("opens the AI provider create page from the list add-record action", async () => {
     render(<App />);
 
-    await screen.findByRole("heading", { name: "Applications" });
+    await screen.findByRole("heading", { name: "Targets" });
     fireEvent.click(screen.getAllByRole("link", { name: "AI Providers" })[0]!);
     fireEvent.click(await screen.findByRole("button", { name: "Add AI Provider" }));
 
@@ -398,7 +388,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Applications" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Targets" })).toBeInTheDocument();
   });
 
   it("shows a recoverable bootstrap error after repeated session failures", async () => {
@@ -411,7 +401,7 @@ describe("App", () => {
     authSessionFailureCount = 0;
     fireEvent.click(screen.getByRole("button", { name: "Retry session check" }));
 
-    expect(await screen.findByRole("heading", { name: "Applications" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Targets" })).toBeInTheDocument();
   });
 
   it("shows the authenticated user and allows sign out when auth is enabled", async () => {

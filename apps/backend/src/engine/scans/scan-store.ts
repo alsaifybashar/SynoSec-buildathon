@@ -169,7 +169,6 @@ export async function createScan(
   metadata?: {
     mode?: "legacy" | "workflow";
     applicationId?: string | null;
-    runtimeId?: string | null;
     agentId?: string | null;
     llm?: ScanLlmConfig | null;
     stopReason?: string | null;
@@ -181,7 +180,6 @@ export async function createScan(
       id: scan.id,
       mode: metadata?.mode ?? "legacy",
       applicationId: metadata?.applicationId ?? null,
-      runtimeId: metadata?.runtimeId ?? null,
       agentId: metadata?.agentId ?? null,
       scope: scan.scope as Prisma.InputJsonValue,
       llmConfig: metadata?.llm ? metadata.llm as Prisma.InputJsonValue : Prisma.JsonNull,
