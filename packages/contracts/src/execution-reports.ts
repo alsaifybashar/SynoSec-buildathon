@@ -50,6 +50,83 @@ export const executionReportToolActivitySchema = z.object({
 });
 export type ExecutionReportToolActivity = z.infer<typeof executionReportToolActivitySchema>;
 
+export const executionReportGraphNodeKindSchema = z.enum(["evidence", "finding", "chain"]);
+export type ExecutionReportGraphNodeKind = z.infer<typeof executionReportGraphNodeKindSchema>;
+
+export const executionReportGraphEdgeKindSchema = z.enum(["supports", "derived_from", "correlates_with", "enables"]);
+export type ExecutionReportGraphEdgeKind = z.infer<typeof executionReportGraphEdgeKindSchema>;
+
+export const executionReportGraphArtifactRefSchema = z.object({
+  traceEventId: z.string().uuid().optional(),
+  observationRef: z.string().min(1).optional(),
+  toolRunRef: z.string().min(1).optional(),
+  artifactRef: z.string().min(1).optional(),
+  externalUrl: z.string().url().optional()
+}).refine((value) => Object.values(value).some((entry) => typeof entry === "string" && entry.trim().length > 0), {
+  message: "At least one evidence reference is required."
+});
+export type ExecutionReportGraphArtifactRef = z.infer<typeof executionReportGraphArtifactRefSchema>;
+
+export const executionReportGraphEvidenceNodeSchema = z.object({
+  id: z.string().min(1),
+  kind: z.literal("evidence"),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  sourceTool: z.string().min(1),
+  quote: z.string().min(1),
+  severity: severitySchema.optional(),
+  refs: z.array(executionReportGraphArtifactRefSchema).min(1),
+  createdAt: z.string().datetime()
+});
+export type ExecutionReportGraphEvidenceNode = z.infer<typeof executionReportGraphEvidenceNodeSchema>;
+
+export const executionReportGraphFindingNodeSchema = z.object({
+  id: z.string().min(1),
+  kind: z.literal("finding"),
+  findingId: z.string().min(1),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  severity: severitySchema,
+  confidence: z.number().min(0).max(1).nullable(),
+  targetLabel: z.string().min(1),
+  createdAt: z.string().datetime()
+});
+export type ExecutionReportGraphFindingNode = z.infer<typeof executionReportGraphFindingNodeSchema>;
+
+export const executionReportGraphChainNodeSchema = z.object({
+  id: z.string().min(1),
+  kind: z.literal("chain"),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  severity: severitySchema,
+  findingIds: z.array(z.string().min(1)).min(1),
+  createdAt: z.string().datetime()
+});
+export type ExecutionReportGraphChainNode = z.infer<typeof executionReportGraphChainNodeSchema>;
+
+export const executionReportGraphNodeSchema = z.discriminatedUnion("kind", [
+  executionReportGraphEvidenceNodeSchema,
+  executionReportGraphFindingNodeSchema,
+  executionReportGraphChainNodeSchema
+]);
+export type ExecutionReportGraphNode = z.infer<typeof executionReportGraphNodeSchema>;
+
+export const executionReportGraphEdgeSchema = z.object({
+  id: z.string().min(1),
+  kind: executionReportGraphEdgeKindSchema,
+  source: z.string().min(1),
+  target: z.string().min(1),
+  label: z.string().min(1).optional(),
+  createdAt: z.string().datetime()
+});
+export type ExecutionReportGraphEdge = z.infer<typeof executionReportGraphEdgeSchema>;
+
+export const executionReportGraphSchema = z.object({
+  nodes: z.array(executionReportGraphNodeSchema).default([]),
+  edges: z.array(executionReportGraphEdgeSchema).default([])
+});
+export type ExecutionReportGraph = z.infer<typeof executionReportGraphSchema>;
+
 export const executionReportSummarySchema = z.object({
   id: z.string().uuid(),
   executionId: z.string().min(1),
@@ -89,6 +166,7 @@ export type ExecutionReportSourceSummary = z.infer<typeof executionReportSourceS
 
 export const executionReportDetailSchema = executionReportSummarySchema.extend({
   executiveSummary: z.string().min(1),
+  graph: executionReportGraphSchema.default({ nodes: [], edges: [] }),
   findings: z.array(executionReportFindingSchema),
   toolActivity: z.array(executionReportToolActivitySchema),
   coverageOverview: z.record(z.string()).default({}),
