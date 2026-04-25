@@ -11,3 +11,4 @@ Prefer these rules:
 - Fail loudly when a required dependency, tool, provider, or workflow step cannot complete.
 - Preserve the original error context so callers and operators can see what actually failed.
 - Only use a fallback when it is an intentional product requirement and the degraded state is reported explicitly.
+- Do not present synthesized summaries, inferred assistant messages, or other derived output as if the model actually produced them.

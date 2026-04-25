@@ -64,6 +64,7 @@ export type CrudRouteConfig = {
   listPath: string;
   createPath: string;
   detailPath: string;
+  editPath?: string;
   paramName: string;
 };
 
@@ -123,65 +124,12 @@ export const crudRouteConfigs: Record<CrudNavigationId, CrudRouteConfig> = {
     listPath: "/workflows",
     createPath: "/workflows/new",
     detailPath: "/workflows/:workflowId",
+    editPath: "/workflows/:workflowId/edit",
     paramName: "workflowId"
   }
 };
 
 export const navigationTree: NavigationTreeEntry[] = [
-  {
-    kind: "item",
-    item: createNavigationItem({
-      id: "runtimes",
-      label: "Runtimes",
-      path: crudRouteConfigs.runtimes.listPath,
-      icon: Network
-    })
-  },
-  {
-    kind: "item",
-    item: createNavigationItem({
-      id: "applications",
-      label: "Applications",
-      path: crudRouteConfigs.applications.listPath,
-      icon: AppWindow
-    })
-  },
-  {
-    kind: "item",
-    item: createNavigationItem({
-      id: "ai-providers",
-      label: "AI Providers",
-      path: crudRouteConfigs["ai-providers"].listPath,
-      icon: PlugZap
-    })
-  },
-  {
-    kind: "item",
-    item: createNavigationItem({
-      id: "ai-agents",
-      label: "AI Agents",
-      path: crudRouteConfigs["ai-agents"].listPath,
-      icon: Bot
-    })
-  },
-  {
-    kind: "item",
-    item: createNavigationItem({
-      id: "ai-tools",
-      label: "AI Tools",
-      path: crudRouteConfigs["ai-tools"].listPath,
-      icon: Wrench
-    })
-  },
-  {
-    kind: "item",
-    item: createNavigationItem({
-      id: "execution-constraints",
-      label: "Execution Constraints",
-      path: crudRouteConfigs["execution-constraints"].listPath,
-      icon: ScrollText
-    })
-  },
   {
     kind: "item",
     item: createNavigationItem({
@@ -208,6 +156,52 @@ export const navigationTree: NavigationTreeEntry[] = [
       path: "/attack-map",
       icon: Orbit
     })
+  },
+  {
+    kind: "group",
+    group: {
+      id: "configuration",
+      label: "Configuration",
+      icon: AppWindow,
+      items: [
+        createNavigationItem({
+          id: "applications",
+          label: "Applications",
+          path: crudRouteConfigs.applications.listPath,
+          icon: AppWindow
+        }),
+        createNavigationItem({
+          id: "runtimes",
+          label: "Runtimes",
+          path: crudRouteConfigs.runtimes.listPath,
+          icon: Network
+        }),
+        createNavigationItem({
+          id: "ai-providers",
+          label: "AI Providers",
+          path: crudRouteConfigs["ai-providers"].listPath,
+          icon: PlugZap
+        }),
+        createNavigationItem({
+          id: "ai-agents",
+          label: "AI Agents",
+          path: crudRouteConfigs["ai-agents"].listPath,
+          icon: Bot
+        }),
+        createNavigationItem({
+          id: "ai-tools",
+          label: "AI Tools",
+          path: crudRouteConfigs["ai-tools"].listPath,
+          icon: Wrench
+        }),
+        createNavigationItem({
+          id: "execution-constraints",
+          label: "Execution Constraints",
+          path: crudRouteConfigs["execution-constraints"].listPath,
+          icon: ScrollText
+        })
+      ]
+    }
   },
   {
     kind: "group",
@@ -251,8 +245,18 @@ export function getCreatePath(id: CrudNavigationId) {
   return crudRouteConfigs[id].createPath;
 }
 
+export function getEditPath(id: CrudNavigationId, detailId: string) {
+  const route = crudRouteConfigs[id];
+  if (!route.editPath) {
+    return getDetailPath(id, detailId);
+  }
+
+  return route.editPath.replace(`:${route.paramName}`, detailId);
+}
+
 export function getDetailPath(id: CrudNavigationId, detailId: string) {
-  return `${crudRouteConfigs[id].listPath}/${detailId}`;
+  const route = crudRouteConfigs[id];
+  return route.detailPath.replace(`:${route.paramName}`, detailId);
 }
 
 function matchesPath(pathname: string, path: string) {

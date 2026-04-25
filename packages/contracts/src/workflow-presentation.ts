@@ -8,11 +8,9 @@ import {
   type AiAgent,
   type AiTool,
   type Workflow,
-  type WorkflowLiveModelOutput,
   type WorkflowReportedFinding,
   type WorkflowRun,
   type WorkflowTraceEvent,
-  workflowLiveModelOutputSchema,
   workflowReportedFindingSchema
 } from "./resources.js";
 
@@ -331,37 +329,6 @@ function isGenericToolSummary(toolName: string, summary: string) {
     || normalizedSummary === `${normalizedToolName} failed`;
 }
 
-function synthesizeAssistantBody(turn: WorkflowTranscriptAssistantTurn) {
-  const toolResults = turn.details.filter((detail): detail is WorkflowTranscriptToolResultDetail => detail.kind === "tool_result");
-  if (toolResults.length === 0 && turn.findingIds.length === 0) {
-    return null;
-  }
-
-  const completedResults = toolResults.filter((detail) => detail.status === "completed");
-  const failedResults = toolResults.filter((detail) => detail.status === "failed");
-  const meaningfulSummaries = completedResults
-    .map((detail) => detail.summary.trim())
-    .filter((summary, index) => summary.length > 0 && !isGenericToolSummary(completedResults[index]?.toolName ?? "", summary))
-    .slice(0, 3);
-
-  const clauses: string[] = [];
-  if (turn.findingIds.length > 0) {
-    clauses.push(`Reported ${turn.findingIds.length} finding${turn.findingIds.length === 1 ? "" : "s"} from the collected evidence.`);
-  }
-
-  if (meaningfulSummaries.length > 0) {
-    clauses.push(meaningfulSummaries.join(" "));
-  } else if (completedResults.length > 0) {
-    clauses.push(`Collected evidence with ${completedResults.slice(0, 3).map((detail) => detail.toolName).join(", ")}.`);
-  }
-
-  if (failedResults.length > 0 && completedResults.length === 0 && turn.findingIds.length === 0) {
-    clauses.push(`Tool failures: ${failedResults.slice(0, 3).map((detail) => detail.toolName).join(", ")}.`);
-  }
-
-  return clauses.length > 0 ? clauses.join(" ") : null;
-}
-
 function getLegacyToolInput(payload: Record<string, unknown>) {
   const toolInput = payload["toolInput"];
   return isRecord(toolInput) ? JSON.stringify(toolInput, null, 2) : null;
@@ -538,7 +505,6 @@ export function buildWorkflowTranscript(input: {
   agents: AiAgent[];
   toolLookup: Record<string, string>;
   running: boolean;
-  liveModelOutput?: WorkflowLiveModelOutput | null;
 }): WorkflowTranscriptProjection {
   if (!input.run) {
     return { items: [], findings: [] };
@@ -566,7 +532,7 @@ export function buildWorkflowTranscript(input: {
     }
 
     const body = currentTurn.body?.trim() ?? "";
-    currentTurn.body = body || synthesizeAssistantBody(currentTurn);
+    currentTurn.body = body || null;
     currentTurn.reasoning = currentTurn.reasoning?.trim() || null;
     currentTurn.summary = currentTurn.summary.trim() || (
       currentTurn.body
@@ -779,25 +745,6 @@ export function buildWorkflowTranscript(input: {
 
   flushPromptMessages();
   flushTurn();
-
-  const liveModelText = input.liveModelOutput?.text.trim() ?? "";
-  const liveReasoningText = input.liveModelOutput?.reasoning?.trim() ?? "";
-  if (liveModelText.length > 0) {
-    items.push({
-      kind: "assistant_turn",
-      id: `live-model-output:${input.liveModelOutput?.runId ?? input.run.id}`,
-      ord: (items.at(-1)?.ord ?? -1) + 1,
-      createdAt: input.liveModelOutput?.createdAt ?? input.run.startedAt,
-      title: agentName,
-      summary: "",
-      body: liveModelText,
-      reasoning: liveReasoningText || null,
-      agentName,
-      details: [],
-      findingIds: [],
-      live: input.running && !Boolean(input.liveModelOutput?.final)
-    });
-  }
 
   if (closeoutEvent) {
     items.push(closeoutEvent);

@@ -168,8 +168,7 @@ describe("buildWorkflowTranscript", () => {
       run,
       agents,
       toolLookup: {},
-      running: true,
-      liveModelOutput: null
+      running: true
     });
 
     const assistantTurn = transcript.items.find((item) => item.kind === "assistant_turn");
@@ -242,8 +241,7 @@ describe("buildWorkflowTranscript", () => {
       toolLookup: {
         "tool-1": "Web Probe"
       },
-      running: false,
-      liveModelOutput: null
+      running: false
     });
 
     const assistantTurn = transcript.items.find((item) => item.kind === "assistant_turn");
@@ -298,8 +296,7 @@ describe("buildWorkflowTranscript", () => {
       toolLookup: {
         "tool-1": "Web Probe"
       },
-      running: false,
-      liveModelOutput: null
+      running: false
     });
 
     const assistantTurn = transcript.items.find((item) => item.kind === "assistant_turn");
@@ -309,7 +306,7 @@ describe("buildWorkflowTranscript", () => {
     expect(assistantTurn.details[0]?.kind === "tool_result" ? assistantTurn.details[0].body : null).toBe("HTTP/1.1 200 OK");
   });
 
-  it("synthesizes a concise assistant body when a turn only contains tool results", () => {
+  it("does not synthesize assistant prose for a turn that only contains tool results", () => {
     const run: WorkflowRun = {
       id: "50000000-0000-0000-0000-000000000003",
       workflowId: workflow.id,
@@ -382,12 +379,76 @@ describe("buildWorkflowTranscript", () => {
       toolLookup: {
         "tool-1": "HTTP Recon"
       },
-      running: false,
-      liveModelOutput: null
+      running: false
     });
 
     const assistantTurn = transcript.items.find((item) => item.kind === "assistant_turn");
-    expect(assistantTurn && assistantTurn.kind === "assistant_turn" ? assistantTurn.body : null)
-      .toContain("Discovered an HTTP 200 response on the target.");
+    if (!assistantTurn || assistantTurn.kind !== "assistant_turn") {
+      throw new Error("assistant turn missing");
+    }
+    expect(assistantTurn.body).toBeNull();
+    expect(assistantTurn.details[0]?.kind === "tool_result" ? assistantTurn.details[0].summary : null)
+      .toBe("Discovered an HTTP 200 response on the target.");
+  });
+
+  it("does not append duplicate live output when streamed text events already exist", () => {
+    const run: WorkflowRun = {
+      id: "50000000-0000-0000-0000-000000000004",
+      workflowId: workflow.id,
+      status: "running",
+      currentStepIndex: 0,
+      startedAt: "2026-04-25T00:00:00.000Z",
+      completedAt: null,
+      trace: [],
+      events: [
+        {
+          id: "start-step-live",
+          workflowRunId: "50000000-0000-0000-0000-000000000004",
+          workflowId: workflow.id,
+          workflowStageId: null,
+          stepIndex: 0,
+          ord: 0,
+          type: "system_message",
+          status: "completed",
+          title: "Model step started",
+          summary: "Started a new model step.",
+          detail: null,
+          payload: {
+            rawStreamPartType: "start-step"
+          },
+          createdAt: "2026-04-25T00:00:00.000Z"
+        },
+        {
+          id: "text-live",
+          workflowRunId: "50000000-0000-0000-0000-000000000004",
+          workflowId: workflow.id,
+          workflowStageId: null,
+          stepIndex: 0,
+          ord: 1,
+          type: "model_decision",
+          status: "running",
+          title: "Model streamed text",
+          summary: "Hello",
+          detail: "Hello",
+          payload: {
+            rawStreamPartType: "text",
+            text: "Hello"
+          },
+          createdAt: "2026-04-25T00:00:00.100Z"
+        }
+      ]
+    };
+
+    const transcript = buildWorkflowTranscript({
+      workflow,
+      run,
+      agents,
+      toolLookup: {},
+      running: true
+    });
+
+    expect(transcript.items.filter((item) => item.kind === "assistant_turn")).toHaveLength(1);
+    const assistantTurn = transcript.items.find((item) => item.kind === "assistant_turn");
+    expect(assistantTurn && assistantTurn.kind === "assistant_turn" ? assistantTurn.body : null).toBe("Hello");
   });
 });

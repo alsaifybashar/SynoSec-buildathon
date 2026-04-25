@@ -34,8 +34,7 @@ export class WorkflowRunArtifactsService {
         run,
         agents,
         toolLookup: getToolLookup(tools),
-        running: run.status === "running",
-        liveModelOutput: null
+        running: run.status === "running"
       })
     };
   }

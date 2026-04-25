@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from "react";
 import type { AiAgent, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
-import { AlertTriangle, CircleHelp, LoaderCircle, Radio, Target } from "lucide-react";
+import { AlertTriangle, ChevronRight, CircleHelp, LoaderCircle, Radio, Target } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/shared/lib/utils";
 import {
@@ -8,7 +8,6 @@ import {
   getToolLookup,
   getWorkflowAllowedToolIds,
   type FindingsRailItem,
-  type LiveModelOutput,
   type TranscriptProjection
 } from "@/features/workflows/workflow-trace";
 
@@ -25,6 +24,7 @@ type MetadataItem = {
 type DuplexAtomKind =
   | "objective"
   | "system-prompt"
+  | "tool-context"
   | "system"
   | "reasoning"
   | "body"
@@ -50,7 +50,19 @@ type DuplexAtom = {
   observations?: string[];
   status?: string;
   expandableBody?: boolean;
+  structuredToolSegment?: {
+    summary: string;
+    tools: Array<{
+      key: string;
+      name: string;
+      description: string;
+      source: "workflow-tool" | "builtin-action";
+      inputSchema: string;
+    }>;
+  };
 };
+
+type StructuredToolSegment = NonNullable<DuplexAtom["structuredToolSegment"]>;
 
 function HelpHint({ label, hint }: { label: string; hint: string }) {
   return (
@@ -101,6 +113,7 @@ function SeverityBadge({ severity }: { severity: FindingsRailItem["severity"] })
 const KIND_LABEL: Record<DuplexAtomKind, string> = {
   objective: "Objective",
   "system-prompt": "System prompt",
+  "tool-context": "Tool segment",
   system: "System",
   reasoning: "Agent reasoning",
   body: "Agent",
@@ -115,6 +128,7 @@ const KIND_LABEL: Record<DuplexAtomKind, string> = {
 const KIND_ACCENT: Record<DuplexAtomKind, { label: string; dot: string }> = {
   objective: { label: "text-primary", dot: "bg-primary" },
   "system-prompt": { label: "text-primary", dot: "bg-primary" },
+  "tool-context": { label: "text-primary", dot: "bg-primary" },
   system: { label: "text-foreground/75", dot: "bg-foreground/60" },
   reasoning: { label: "text-muted-foreground", dot: "bg-muted-foreground" },
   body: { label: "text-foreground/70", dot: "bg-foreground/50" },
@@ -165,11 +179,110 @@ function getVerificationToneLabel(status: string | undefined, title: string) {
   return "accepted";
 }
 
+function createWorkflowBuiltinToolSegment(): StructuredToolSegment["tools"] {
+  return [
+    {
+      key: "builtin:report_finding",
+      name: "report_finding",
+      description: "Persist one evidence-backed workflow finding.",
+      source: "builtin-action",
+      inputSchema: JSON.stringify({
+        type: "object",
+        required: ["type", "title", "severity", "target", "evidence", "impact", "recommendation"],
+        properties: {
+          type: { type: "string" },
+          title: { type: "string" },
+          severity: { type: "string", enum: ["info", "low", "medium", "high", "critical"] },
+          target: {
+            type: "object",
+            required: ["host"],
+            properties: {
+              host: { type: "string" },
+              port: { type: "number" },
+              url: { type: "string" }
+            }
+          },
+          evidence: {
+            type: "array",
+            items: {
+              type: "object"
+            }
+          },
+          impact: { type: "string" },
+          recommendation: { type: "string" },
+          confidence: { type: "number" },
+          reproduction: {
+            type: "object"
+          },
+          tags: {
+            type: "array",
+            items: { type: "string" }
+          }
+        }
+      }, null, 2),
+    },
+    {
+      key: "builtin:complete_run",
+      name: "complete_run",
+      description: "Finish the workflow pipeline successfully.",
+      source: "builtin-action",
+      inputSchema: JSON.stringify({
+        type: "object",
+        required: ["summary", "recommendedNextStep", "residualRisk"],
+        properties: {
+          summary: { type: "string" },
+          recommendedNextStep: { type: "string" },
+          residualRisk: { type: "string" }
+        }
+      }, null, 2),
+    },
+    {
+      key: "builtin:fail_run",
+      name: "fail_run",
+      description: "Finish the workflow pipeline as failed.",
+      source: "builtin-action",
+      inputSchema: JSON.stringify({
+        type: "object",
+        required: ["reason"],
+        properties: {
+          reason: { type: "string" },
+          summary: { type: "string" }
+        }
+      }, null, 2),
+    }
+  ];
+}
+
+function buildStructuredToolSegment(workflow: Workflow, agent: AiAgent | null, tools: AiTool[]): StructuredToolSegment {
+  const effectiveToolIds = workflow.allowedToolIds.length > 0
+    ? workflow.allowedToolIds
+    : (agent?.toolIds ?? []);
+  const toolLookup = new Map(tools.map((tool) => [tool.id, tool]));
+  const reconstructedTools = effectiveToolIds
+    .map((toolId) => toolLookup.get(toolId))
+    .filter((tool): tool is AiTool => Boolean(tool))
+    .map((tool) => ({
+      key: tool.id,
+      name: tool.name,
+      description: tool.description?.trim() || "No description provided.",
+      source: "workflow-tool" as const,
+      inputSchema: JSON.stringify(tool.inputSchema, null, 2)
+    }));
+  const builtinActions = createWorkflowBuiltinToolSegment();
+  const availableCount = reconstructedTools.length + builtinActions.length;
+
+  return {
+    summary: `${availableCount} tool${availableCount === 1 ? "" : "s"} and actions available to the model.`,
+    tools: [...reconstructedTools, ...builtinActions]
+  };
+}
+
 function buildDuplexAtoms(input: {
   workflow: Workflow;
   run: WorkflowRun | null;
   transcript: TranscriptProjection;
   agent: AiAgent | null;
+  tools: AiTool[];
   findingsById: Map<string, FindingsRailItem>;
   errors: string[];
 }) {
@@ -187,6 +300,18 @@ function buildDuplexAtoms(input: {
 
   for (const item of input.transcript.items) {
     if (item.kind === "system_message") {
+      if (item.title === "Tool context") {
+        atoms.push({
+          key: item.id,
+          side: "right",
+          kind: "tool-context",
+          label: "Structured tool segment",
+          meta: compactDate(item.createdAt),
+          structuredToolSegment: buildStructuredToolSegment(input.workflow, input.agent, input.tools)
+        });
+        continue;
+      }
+
       atoms.push({
         key: item.id,
         side: "right",
@@ -406,6 +531,8 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
   const compactToolInput = isTool ? getCompactToolInput(atom) : null;
   const compactToolOutput = isTool ? getCompactToolOutput(atom, labelText) : null;
   const showTitle = Boolean(atom.title) && (!isTool || normalizeInlineText(atom.title) !== normalizeInlineText(labelText));
+  const isStructuredToolContext = atom.kind === "tool-context" && atom.structuredToolSegment;
+  const structuredToolSegment = isStructuredToolContext ? atom.structuredToolSegment : null;
 
   return (
     <div className={cn("flex w-full", isLeft ? "justify-start pr-[6%]" : "justify-end pl-[6%]")}>
@@ -434,6 +561,40 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
           ) : null}
         </div>
         <div className={cn("space-y-1", isTool ? "pl-4" : "")}>
+          {structuredToolSegment ? (
+            <details className="rounded-lg border border-border/70 bg-background/35">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-left marker:hidden">
+                <div className="space-y-1">
+                  <p className="text-[0.86rem] text-foreground/88">{atom.label}</p>
+                  <p className="text-[0.76rem] text-muted-foreground">{structuredToolSegment.summary}</p>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform details-open:rotate-90" />
+              </summary>
+              <div className="space-y-3 border-t border-border/70 px-3 py-3">
+                {structuredToolSegment.tools.map((tool) => (
+                  <div key={tool.key} className="rounded-md border border-border/60 bg-card/50 px-3 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-mono text-[0.72rem] uppercase tracking-[0.16em] text-muted-foreground">
+                          {tool.source === "builtin-action" ? "Built-in action" : "Workflow tool"}
+                        </p>
+                        <p className="mt-1 text-[0.92rem] text-foreground">{tool.name}</p>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-[0.82rem] leading-[1.6] text-foreground/78">{tool.description}</p>
+                    <div className="mt-3">
+                      <div className="font-mono text-[0.58rem] uppercase tracking-wider text-muted-foreground">Input schema</div>
+                      <pre className="mt-1 overflow-x-auto rounded-sm border border-border/70 bg-muted/35 px-2.5 py-2 font-mono text-[0.7rem] leading-5 text-foreground/85">
+                        {tool.inputSchema}
+                      </pre>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          ) : null}
+
+          {!isStructuredToolContext ? (
           <p
             className={cn(
               "whitespace-pre-wrap leading-[1.65] text-foreground/90",
@@ -449,14 +610,15 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
             {compactToolInput && !showFullDetails ? <span className="font-mono text-[0.74rem] text-muted-foreground/90"> {compactToolInput}</span> : null}
             {showTitle ? <span className="text-muted-foreground"> · {atom.title}</span> : null}
           </p>
+          ) : null}
 
-          {compactToolOutput && !showFullDetails ? (
+          {compactToolOutput && !showFullDetails && !isStructuredToolContext ? (
             <p className="whitespace-pre-wrap font-mono text-[0.74rem] leading-[1.55] text-muted-foreground/90">
               {compactToolOutput}
             </p>
           ) : null}
 
-          {atom.body && (!isTool || showFullDetails) ? (
+          {atom.body && (!isTool || showFullDetails) && !isStructuredToolContext ? (
             <p
               className={cn(
                 "whitespace-pre-wrap leading-[1.7]",
@@ -599,7 +761,6 @@ export function WorkflowTraceSection({
   tools,
   run,
   running,
-  liveModelOutput,
   transcript,
   summaryCard,
   showFullDetails = false,
@@ -614,7 +775,6 @@ export function WorkflowTraceSection({
   tools: AiTool[];
   run: WorkflowRun | null;
   running: boolean;
-  liveModelOutput?: LiveModelOutput | null;
   transcript?: TranscriptProjection | null;
   summaryCard: SummaryCardData;
   showFullDetails?: boolean;
@@ -634,10 +794,9 @@ export function WorkflowTraceSection({
       run,
       agents,
       toolLookup,
-      running,
-      liveModelOutput: liveModelOutput ?? null
+      running
     });
-  }, [workflow, run, agents, toolLookup, running, liveModelOutput]);
+  }, [workflow, run, agents, toolLookup, running]);
   const effectiveTranscript = transcript ?? derivedTranscript;
   const findingsById = useMemo(
     () => new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding])),
@@ -678,6 +837,7 @@ export function WorkflowTraceSection({
       run,
       transcript: effectiveTranscript,
       agent,
+      tools,
       findingsById,
       errors: errorMessages
     }).filter((atom) => atom.kind !== "finding");

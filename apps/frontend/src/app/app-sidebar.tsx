@@ -222,6 +222,8 @@ function SidebarNav({
   onNavigate
 }: Pick<AppSidebarProps, "pathname"> & { onNavigate?: () => void }) {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const topEntries = useMemo(() => navigationTree.filter((entry) => entry.kind !== "group" || entry.group.id !== "designs"), []);
+  const bottomEntries = useMemo(() => navigationTree.filter((entry) => entry.kind === "group" && entry.group.id === "designs"), []);
   const groupActiveMap = useMemo(() => {
     const map: Record<string, boolean> = {};
     for (const entry of navigationTree) {
@@ -253,13 +255,56 @@ function SidebarNav({
     });
   }, [groupActiveMap]);
 
-  return (
-    <SidebarContent className="mt-4 flex-1">
-      <SidebarGroup>
-        <SidebarMenu>
-          {navigationTree.map((entry) => {
-            if (entry.kind === "item") {
-              const item = entry.item;
+  function renderEntry(entry: (typeof navigationTree)[number]) {
+    if (entry.kind === "item") {
+      const item = entry.item;
+      const Icon = item.icon;
+      const isActive = isNavigationItemActive(item, pathname);
+
+      return (
+        <Link
+          key={item.id}
+          to={item.path}
+          className={cn(
+            sidebarMenuItemClassName,
+            isActive &&
+              "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border))] before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-sidebar-primary before:content-['']"
+          )}
+          onClick={onNavigate}
+        >
+          <Icon
+            className={cn("transition-colors", isActive ? "text-sidebar-primary" : "text-sidebar-muted-foreground")}
+          />
+          <SidebarMenuText>{item.label}</SidebarMenuText>
+        </Link>
+      );
+    }
+
+    const group = entry.group;
+    const GroupIcon = group.icon;
+    const hasActiveChild = groupActiveMap[group.id] ?? false;
+    const isExpanded = expandedGroups[group.id] ?? false;
+
+    return (
+      <div key={group.id} className="grid gap-0.5">
+        <SidebarMenuItem
+          aria-expanded={isExpanded}
+          onClick={() => setExpandedGroups((prev) => ({ ...prev, [group.id]: !isExpanded }))}
+        >
+          <GroupIcon
+            className={cn("transition-colors", hasActiveChild ? "text-sidebar-primary" : "text-sidebar-muted-foreground")}
+          />
+          <SidebarMenuText>{group.label}</SidebarMenuText>
+          <ChevronRight
+            className={cn(
+              "ml-auto h-3.5 w-3.5 shrink-0 text-sidebar-muted-foreground transition-transform",
+              isExpanded && "rotate-90"
+            )}
+          />
+        </SidebarMenuItem>
+        {isExpanded ? (
+          <div className="ml-5 grid gap-0.5 border-l border-sidebar-border/60 pl-1">
+            {group.items.map((item) => {
               const Icon = item.icon;
               const isActive = isNavigationItemActive(item, pathname);
 
@@ -280,60 +325,20 @@ function SidebarNav({
                   <SidebarMenuText>{item.label}</SidebarMenuText>
                 </Link>
               );
-            }
+            })}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
-            const group = entry.group;
-            const GroupIcon = group.icon;
-            const hasActiveChild = groupActiveMap[group.id] ?? false;
-            const isExpanded = expandedGroups[group.id] ?? false;
-
-            return (
-              <div key={group.id} className="grid gap-0.5">
-                <SidebarMenuItem
-                  aria-expanded={isExpanded}
-                  onClick={() => setExpandedGroups((prev) => ({ ...prev, [group.id]: !isExpanded }))}
-                >
-                  <GroupIcon
-                    className={cn("transition-colors", hasActiveChild ? "text-sidebar-primary" : "text-sidebar-muted-foreground")}
-                  />
-                  <SidebarMenuText>{group.label}</SidebarMenuText>
-                  <ChevronRight
-                    className={cn(
-                      "ml-auto h-3.5 w-3.5 shrink-0 text-sidebar-muted-foreground transition-transform",
-                      isExpanded && "rotate-90"
-                    )}
-                  />
-                </SidebarMenuItem>
-                {isExpanded ? (
-                  <div className="ml-5 grid gap-0.5 border-l border-sidebar-border/60 pl-1">
-                    {group.items.map((item) => {
-                      const Icon = item.icon;
-                      const isActive = isNavigationItemActive(item, pathname);
-
-                      return (
-                        <Link
-                          key={item.id}
-                          to={item.path}
-                          className={cn(
-                            sidebarMenuItemClassName,
-                            isActive &&
-                              "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--sidebar-border))] before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-sidebar-primary before:content-['']"
-                          )}
-                          onClick={onNavigate}
-                        >
-                          <Icon
-                            className={cn("transition-colors", isActive ? "text-sidebar-primary" : "text-sidebar-muted-foreground")}
-                          />
-                          <SidebarMenuText>{item.label}</SidebarMenuText>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </SidebarMenu>
+  return (
+    <SidebarContent className="mt-4 flex-1 justify-between">
+      <SidebarGroup>
+        <SidebarMenu>{topEntries.map(renderEntry)}</SidebarMenu>
+      </SidebarGroup>
+      <SidebarGroup>
+        <SidebarMenu>{bottomEntries.map(renderEntry)}</SidebarMenu>
       </SidebarGroup>
     </SidebarContent>
   );

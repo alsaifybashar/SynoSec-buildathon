@@ -48,6 +48,7 @@ type CrudPageLifecycleArgs<
   formValues: TFormValues;
   handleFieldChange: <Key extends keyof TFormValues>(field: Key, value: TFormValues[Key]) => void;
   setFormValues: React.Dispatch<React.SetStateAction<TFormValues>>;
+  setInitialValues: React.Dispatch<React.SetStateAction<TFormValues>>;
 };
 
 export type CrudFeatureDefinition<
@@ -140,7 +141,8 @@ export function createCrudFeaturePage<
       item: crud.item,
       formValues: crud.formValues,
       handleFieldChange: crud.handleFieldChange,
-      setFormValues: crud.setFormValues
+      setFormValues: crud.setFormValues,
+      setInitialValues: crud.setInitialValues
     });
 
     const columns = definition.list.columns(context);

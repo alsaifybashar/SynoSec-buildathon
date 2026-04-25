@@ -5,12 +5,14 @@ import { AiToolsPage } from "@/features/ai-tools/page";
 import { ApplicationsPage } from "@/features/applications/page";
 import { ExecutionConstraintsPage } from "@/features/execution-constraints/page";
 import { RuntimesPage } from "@/features/runtimes/page";
+import { WorkflowDetailPage } from "@/features/workflows/detail-page";
 import { WorkflowsPage } from "@/features/workflows/page";
 import { crudRouteConfigs, type CrudNavigationId } from "@/app/navigation";
 
 export type CrudRouteRegistryEntry = {
   id: CrudNavigationId;
   component: ComponentType<Record<string, unknown>>;
+  detailComponent?: ComponentType<Record<string, unknown>>;
   detailIdProp: string;
   detailLabelProp: string;
   onNavigateToRelatedDetail?: boolean;
@@ -56,6 +58,7 @@ export const crudRouteRegistry: CrudRouteRegistryEntry[] = [
   {
     id: "workflows",
     component: WorkflowsPage as ComponentType<Record<string, unknown>>,
+    detailComponent: WorkflowDetailPage as ComponentType<Record<string, unknown>>,
     detailIdProp: "workflowId",
     detailLabelProp: "workflowNameHint",
     onNavigateToRelatedDetail: true

@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiAgent, AiProvider, AiTool, Application, Runtime, Workflow, WorkflowRun, WorkflowRunStreamMessage } from "@synosec/contracts";
+import type { AiAgent, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
+import { WorkflowDetailPage } from "@/features/workflows/detail-page";
 import { WorkflowsPage } from "@/features/workflows/page";
 
 const application: Application = {
@@ -11,6 +12,24 @@ const application: Application = {
   environment: "development",
   status: "active",
   lastScannedAt: null,
+  targetAssets: [
+    {
+      id: "target-1",
+      applicationId: "app-1",
+      label: "Primary target",
+      kind: "url",
+      hostname: "127.0.0.1",
+      baseUrl: "http://127.0.0.1:3000",
+      ipAddress: null,
+      cidr: null,
+      provider: null,
+      ownershipStatus: "verified",
+      isDefault: true,
+      metadata: null,
+      createdAt: "2026-04-21T00:00:00.000Z",
+      updatedAt: "2026-04-21T00:00:00.000Z"
+    }
+  ],
   createdAt: "2026-04-21T00:00:00.000Z",
   updatedAt: "2026-04-21T00:00:00.000Z"
 };
@@ -63,23 +82,11 @@ const agent: AiAgent = {
   updatedAt: "2026-04-21T00:00:00.000Z"
 };
 
-const provider: AiProvider = {
-  id: "provider-1",
-  name: "Anthropic",
-  kind: "anthropic",
-  status: "active",
-  description: "Anthropic provider",
-  baseUrl: null,
-  model: "claude-sonnet-4",
-  apiKeyConfigured: true,
-  createdAt: "2026-04-21T00:00:00.000Z",
-  updatedAt: "2026-04-21T00:00:00.000Z"
-};
-
 const workflow: Workflow = {
   id: "workflow-1",
   name: "Evidence Workflow",
   status: "active",
+  executionKind: "attack-map",
   description: "Stage timeline test",
   applicationId: application.id,
   runtimeId: runtime.id,
@@ -116,37 +123,6 @@ const workflow: Workflow = {
       agentId: agent.id,
       ord: 0,
       objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
-      allowedToolIds: [tool.id],
-      requiredEvidenceTypes: [],
-      findingPolicy: {
-        taxonomy: "typed-core-v1",
-        allowedTypes: [
-          "service_exposure",
-          "content_discovery",
-          "missing_security_header",
-          "tls_weakness",
-          "injection_signal",
-          "auth_weakness",
-          "sensitive_data_exposure",
-          "misconfiguration",
-          "other"
-        ]
-      },
-      completionRule: {
-        requireStageResult: true,
-        requireToolCall: false,
-        allowEmptyResult: true,
-        minFindings: 0
-      },
-      resultSchemaVersion: 1,
-      handoffSchema: null
-    },
-    {
-      id: "stage-2",
-      label: "Validation",
-      agentId: agent.id,
-      ord: 1,
-      objective: "Complete the Validation stage using allowed tools and structured reporting.",
       allowedToolIds: [tool.id],
       requiredEvidenceTypes: [],
       findingPolicy: {
@@ -229,21 +205,6 @@ const run: WorkflowRun = {
       workflowStageId: "stage-1",
       stepIndex: 0,
       ord: 1,
-      type: "agent_input",
-      status: "completed",
-      title: "Local Orchestrator received stage context",
-      summary: "Received Initial Recon context for Local Vulnerable Target at http://127.0.0.1:3000.",
-      detail: null,
-      payload: {},
-      createdAt: "2026-04-21T00:00:01.000Z"
-    },
-    {
-      id: "event-3",
-      workflowRunId: "run-1",
-      workflowId: workflow.id,
-      workflowStageId: "stage-1",
-      stepIndex: 0,
-      ord: 2,
       type: "model_decision",
       status: "completed",
       title: "Local Orchestrator selected tools",
@@ -252,41 +213,17 @@ const run: WorkflowRun = {
       payload: {
         selectedToolIds: [tool.id],
         selectedToolNames: [tool.name],
-        reasoning: "HTTP recon is the highest-signal first step.",
-        tokenUsage: {
-          inputTokens: 180,
-          outputTokens: 42,
-          totalTokens: 222
-        }
+        reasoning: "HTTP recon is the highest-signal first step."
       },
       createdAt: "2026-04-21T00:00:02.000Z"
     },
     {
-      id: "event-4",
+      id: "event-3",
       workflowRunId: "run-1",
       workflowId: workflow.id,
       workflowStageId: "stage-1",
       stepIndex: 0,
-      ord: 3,
-      type: "tool_call",
-      status: "running",
-      title: "HTTP Recon invoked",
-      summary: "Calling HTTP Recon for 127.0.0.1:3000.",
-      detail: "HTTP reconnaissance",
-      payload: {
-        toolId: tool.id,
-        toolName: tool.name,
-        configuredTimeoutMs: 30000
-      },
-      createdAt: "2026-04-21T00:00:02.500Z"
-    },
-    {
-      id: "event-5",
-      workflowRunId: "run-1",
-      workflowId: workflow.id,
-      workflowStageId: "stage-1",
-      stepIndex: 0,
-      ord: 4,
+      ord: 2,
       type: "tool_result",
       status: "completed",
       title: "HTTP Recon returned completed",
@@ -296,71 +233,9 @@ const run: WorkflowRun = {
         toolId: tool.id,
         toolName: tool.name,
         outputPreview: "200 OK",
-        fullOutput: "200 OK\nServer: demo",
-        observationSummaries: ["Homepage reachable"],
-        findingSummaries: ["Initial recon complete"],
-        durationMs: 120,
-        usage: {
-          totalTokens: 18
-        }
+        fullOutput: "200 OK\nServer: demo"
       },
       createdAt: "2026-04-21T00:00:03.000Z"
-    },
-    {
-      id: "event-6",
-      workflowRunId: "run-1",
-      workflowId: workflow.id,
-      workflowStageId: "stage-1",
-      stepIndex: 0,
-      ord: 5,
-      type: "stage_completed",
-      status: "completed",
-      title: "Initial Recon completed",
-      summary: "Initial Recon completed and is ready to hand off.",
-      detail: null,
-      payload: {},
-      createdAt: "2026-04-21T00:00:04.000Z"
-    }
-  ]
-};
-
-const failedRun: WorkflowRun = {
-  ...run,
-  id: "run-2",
-  status: "failed",
-  currentStepIndex: 0,
-  completedAt: "2026-04-21T00:00:04.500Z",
-  trace: [
-    {
-      ...run.trace[0]!,
-      workflowRunId: "run-2",
-      status: "failed"
-    }
-  ],
-  events: [
-    ...run.events.filter((event) => event.type !== "stage_completed").map((event) => ({
-      ...event,
-      workflowRunId: "run-2"
-    })),
-    {
-      id: "event-7",
-      workflowRunId: "run-2",
-      workflowId: workflow.id,
-      workflowStageId: "stage-1",
-      stepIndex: 0,
-      ord: 6,
-      type: "stage_failed",
-      status: "failed",
-      title: "Initial Recon failed",
-      summary: "Initial Recon failed because HTTP Recon did not complete successfully.",
-      detail: "HTTP recon crashed",
-      payload: {
-        stageLabel: "Initial Recon",
-        selectedToolIds: [tool.id],
-        failedToolRunId: "tool-run-failed",
-        degraded: false
-      },
-      createdAt: "2026-04-21T00:00:04.000Z"
     }
   ]
 };
@@ -375,20 +250,91 @@ function paginatedResponse<T>(key: string, items: T[]) {
   };
 }
 
-function renderWorkflowsPage() {
+function createFetchMock() {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.startsWith("/api/applications?")) {
+      return new Response(JSON.stringify(paginatedResponse("applications", [application])));
+    }
+    if (url.startsWith("/api/runtimes?")) {
+      return new Response(JSON.stringify(paginatedResponse("runtimes", [runtime])));
+    }
+    if (url.startsWith("/api/ai-agents?")) {
+      return new Response(JSON.stringify(paginatedResponse("agents", [agent])));
+    }
+    if (url.startsWith("/api/ai-tools?")) {
+      return new Response(JSON.stringify(paginatedResponse("tools", [tool])));
+    }
+    if (url.startsWith("/api/workflows?")) {
+      return new Response(JSON.stringify(paginatedResponse("workflows", [workflow])));
+    }
+    if (url === `/api/workflows/${workflow.id}`) {
+      return new Response(JSON.stringify(workflow));
+    }
+    if (url === `/api/workflows/${workflow.id}/runs/latest`) {
+      return new Response(JSON.stringify(run));
+    }
+    if (url === `/api/workflows/${workflow.id}/runs` && init?.method === "POST") {
+      return new Response(JSON.stringify(run));
+    }
+    if (url === "/api/workflows" && init?.method === "POST") {
+      return new Response(JSON.stringify({
+        ...workflow,
+        id: "workflow-created",
+        name: "New Workflow"
+      }));
+    }
+    if (url === `/api/workflows/${workflow.id}` && init?.method === "PATCH") {
+      return new Response(JSON.stringify({
+        ...workflow,
+        ...JSON.parse(String(init.body))
+      }));
+    }
+
+    throw new Error(`Unhandled fetch: ${url}`);
+  });
+}
+
+function renderWorkflowDetailPage({
+  onNavigateToEdit = () => {},
+  onNavigateToAgent = () => {}
+}: {
+  onNavigateToEdit?: (id: string, label?: string) => void;
+  onNavigateToAgent?: (id: string) => void;
+} = {}) {
   return render(
     <MemoryRouter>
-      <WorkflowsPage
+      <WorkflowDetailPage
         workflowId={workflow.id}
         onNavigateToList={() => {}}
-        onNavigateToCreate={() => {}}
-        onNavigateToDetail={() => {}}
+        onNavigateToEdit={onNavigateToEdit}
+        onNavigateToAgent={onNavigateToAgent}
       />
     </MemoryRouter>
   );
 }
 
-describe("WorkflowsPage", () => {
+function renderWorkflowConfigPage({
+  workflowId = "new",
+  onNavigateToDetail = () => {}
+}: {
+  workflowId?: string;
+  onNavigateToDetail?: (id: string, label?: string) => void;
+} = {}) {
+  return render(
+    <MemoryRouter>
+      <WorkflowsPage
+        workflowId={workflowId}
+        onNavigateToList={() => {}}
+        onNavigateToCreate={() => {}}
+        onNavigateToDetail={onNavigateToDetail}
+      />
+    </MemoryRouter>
+  );
+}
+
+describe("WorkflowDetailPage", () => {
   let eventSourceInstances: Array<{
     onopen: (() => void) | null;
     onmessage: ((event: MessageEvent<string>) => void) | null;
@@ -415,195 +361,96 @@ describe("WorkflowsPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the Duplex workflow detail layout and edit controls", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
+  it("renders the workflow detail layout and routes edit through navigation", async () => {
+    const onNavigateToEdit = vi.fn();
+    vi.stubGlobal("fetch", createFetchMock());
 
-      if (url.startsWith("/api/applications?")) {
-        return new Response(JSON.stringify(paginatedResponse("applications", [application])));
-      }
-      if (url.startsWith("/api/runtimes?")) {
-        return new Response(JSON.stringify(paginatedResponse("runtimes", [runtime])));
-      }
-      if (url.startsWith("/api/ai-agents?")) {
-        return new Response(JSON.stringify(paginatedResponse("agents", [agent])));
-      }
-      if (url.startsWith("/api/ai-providers?")) {
-        return new Response(JSON.stringify(paginatedResponse("providers", [provider])));
-      }
-      if (url.startsWith("/api/ai-tools?")) {
-        return new Response(JSON.stringify(paginatedResponse("tools", [tool])));
-      }
-      if (url.startsWith("/api/workflows?")) {
-        return new Response(JSON.stringify(paginatedResponse("workflows", [workflow])));
-      }
-      if (url === `/api/workflows/${workflow.id}`) {
-        return new Response(JSON.stringify(workflow));
-      }
-      if (url === `/api/workflows/${workflow.id}/runs/latest`) {
-        return new Response(JSON.stringify(run));
-      }
-
-      throw new Error(`Unhandled fetch: ${url}`);
-    }));
-
-    renderWorkflowsPage();
+    renderWorkflowDetailPage({ onNavigateToEdit });
 
     expect(await screen.findByRole("button", { name: "Start Run" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Show Full Details" })).toBeEnabled();
-    expect(screen.queryByText("Run Snapshot")).not.toBeInTheDocument();
-    expect(screen.getAllByText(/local orchestrator/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/HTTP Recon/i).length).toBeGreaterThan(0);
-    expect(screen.queryByText("200 OK\nServer: demo")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show Full Details" }));
     expect(await screen.findByRole("button", { name: "Hide Full Details" })).toBeInTheDocument();
     expect(screen.getByText(/Server: demo/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Reset" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Edit Workflow" })).toBeEnabled();
-    expect(screen.queryByRole("button", { name: "Continue Run" })).not.toBeInTheDocument();
-    expect(screen.getAllByText("Local Vulnerable Target").length).toBeGreaterThan(0);
+
     fireEvent.click(screen.getByRole("button", { name: "Edit Workflow" }));
-    expect(await screen.findByText("Workflow Edit")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Evidence Workflow")).toBeInTheDocument();
+    expect(onNavigateToEdit).toHaveBeenCalledWith(workflow.id, workflow.name);
   });
 
-  it("shows explicit failure outcome and blocked hand-off when a stage fails", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
+  it("starts a workflow run from the detail page", async () => {
+    const fetchMock = createFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
 
-      if (url.startsWith("/api/applications?")) {
-        return new Response(JSON.stringify(paginatedResponse("applications", [application])));
-      }
-      if (url.startsWith("/api/runtimes?")) {
-        return new Response(JSON.stringify(paginatedResponse("runtimes", [runtime])));
-      }
-      if (url.startsWith("/api/ai-agents?")) {
-        return new Response(JSON.stringify(paginatedResponse("agents", [agent])));
-      }
-      if (url.startsWith("/api/ai-providers?")) {
-        return new Response(JSON.stringify(paginatedResponse("providers", [provider])));
-      }
-      if (url.startsWith("/api/ai-tools?")) {
-        return new Response(JSON.stringify(paginatedResponse("tools", [tool])));
-      }
-      if (url.startsWith("/api/workflows?")) {
-        return new Response(JSON.stringify(paginatedResponse("workflows", [workflow])));
-      }
-      if (url === `/api/workflows/${workflow.id}`) {
-        return new Response(JSON.stringify(workflow));
-      }
-      if (url === `/api/workflows/${workflow.id}/runs/latest`) {
-        return new Response(JSON.stringify(failedRun));
-      }
+    renderWorkflowDetailPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Start Run" }));
 
-      throw new Error(`Unhandled fetch: ${url}`);
-    }));
-
-    renderWorkflowsPage();
-
-    expect(await screen.findByText("Initial Recon failed")).toBeInTheDocument();
-    expect(screen.getAllByText(/http recon/i).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: "Continue Run" })).not.toBeInTheDocument();
+    const postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST");
+    await waitFor(() => {
+      expect(postCall).toBeDefined();
+    });
+    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
+      targetAssetId: "target-1"
+    });
   });
 
-  it("shows the empty Duplex shell when no latest run exists yet", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
+  it("keeps the existing SSE workflow channel active for running runs", async () => {
+    vi.stubGlobal("fetch", createFetchMock());
 
-      if (url.startsWith("/api/applications?")) {
-        return new Response(JSON.stringify(paginatedResponse("applications", [application])));
-      }
-      if (url.startsWith("/api/runtimes?")) {
-        return new Response(JSON.stringify(paginatedResponse("runtimes", [runtime])));
-      }
-      if (url.startsWith("/api/ai-agents?")) {
-        return new Response(JSON.stringify(paginatedResponse("agents", [agent])));
-      }
-      if (url.startsWith("/api/ai-providers?")) {
-        return new Response(JSON.stringify(paginatedResponse("providers", [provider])));
-      }
-      if (url.startsWith("/api/ai-tools?")) {
-        return new Response(JSON.stringify(paginatedResponse("tools", [tool])));
-      }
-      if (url.startsWith("/api/workflows?")) {
-        return new Response(JSON.stringify(paginatedResponse("workflows", [workflow])));
-      }
-      if (url === `/api/workflows/${workflow.id}`) {
-        return new Response(JSON.stringify(workflow));
-      }
-      if (url === `/api/workflows/${workflow.id}/runs/latest`) {
-        return new Response(JSON.stringify({ message: "Workflow run not found." }), { status: 404, headers: { "Content-Type": "application/json" } });
-      }
-
-      throw new Error(`Unhandled fetch: ${url}`);
-    }));
-
-    renderWorkflowsPage();
-
-    expect(await screen.findByText("No run yet")).toBeInTheDocument();
-    expect(screen.getByText("Start the first Duplex session")).toBeInTheDocument();
-    expect(screen.queryByText("Run sealed")).not.toBeInTheDocument();
-  });
-
-  it("renders live streamed workflow text from the existing SSE channel", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-
-      if (url.startsWith("/api/applications?")) {
-        return new Response(JSON.stringify(paginatedResponse("applications", [application])));
-      }
-      if (url.startsWith("/api/runtimes?")) {
-        return new Response(JSON.stringify(paginatedResponse("runtimes", [runtime])));
-      }
-      if (url.startsWith("/api/ai-agents?")) {
-        return new Response(JSON.stringify(paginatedResponse("agents", [agent])));
-      }
-      if (url.startsWith("/api/ai-providers?")) {
-        return new Response(JSON.stringify(paginatedResponse("providers", [provider])));
-      }
-      if (url.startsWith("/api/ai-tools?")) {
-        return new Response(JSON.stringify(paginatedResponse("tools", [tool])));
-      }
-      if (url.startsWith("/api/workflows?")) {
-        return new Response(JSON.stringify(paginatedResponse("workflows", [workflow])));
-      }
-      if (url === `/api/workflows/${workflow.id}`) {
-        return new Response(JSON.stringify(workflow));
-      }
-      if (url === `/api/workflows/${workflow.id}/runs/latest`) {
-        return new Response(JSON.stringify(run));
-      }
-
-      throw new Error(`Unhandled fetch: ${url}`);
-    }));
-
-    renderWorkflowsPage();
+    renderWorkflowDetailPage();
 
     await waitFor(() => {
       expect(eventSourceInstances).toHaveLength(1);
     });
 
-    const message: WorkflowRunStreamMessage = {
-      type: "run_event",
-      run,
-      event: run.events[0]!,
-      liveModelOutput: {
-        runId: run.id,
-        source: "hosted",
-        text: "Live streamed assistant text",
-        reasoning: "Reasoning in progress",
-        final: false,
-        createdAt: "2026-04-21T00:00:02.200Z"
-      }
-    };
+    expect(eventSourceInstances[0]?.onmessage).toBeTypeOf("function");
+  });
+});
 
-    await act(async () => {
-      eventSourceInstances[0]?.onmessage?.({
-        data: JSON.stringify(message)
-      } as MessageEvent<string>);
+describe("WorkflowsPage", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("creates a workflow from the config page", async () => {
+    const fetchMock = createFetchMock();
+    const onNavigateToDetail = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWorkflowConfigPage({ onNavigateToDetail });
+
+    expect(await screen.findByText("Workflow Configuration")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New Workflow" } });
+    fireEvent.change(screen.getByLabelText("Objective"), { target: { value: "Map the target using the configured workflow." } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0]!);
+
+    const postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === "/api/workflows" && init?.method === "POST");
+    await waitFor(() => {
+      expect(postCall).toBeDefined();
     });
+    expect(JSON.parse(String(postCall?.[1]?.body))).toMatchObject({
+      name: "New Workflow",
+      executionKind: "workflow"
+    });
+    expect(onNavigateToDetail).toHaveBeenCalledWith("workflow-created", "New Workflow");
+  });
 
-    expect(await screen.findByText("Live streamed assistant text")).toBeInTheDocument();
-    expect(screen.getByText("Reasoning in progress")).toBeInTheDocument();
+  it("updates an existing workflow from the config edit page", async () => {
+    const fetchMock = createFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWorkflowConfigPage({ workflowId: workflow.id });
+
+    expect(await screen.findByDisplayValue("Evidence Workflow")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Updated Workflow" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0]!);
+
+    const patchCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}` && init?.method === "PATCH");
+    await waitFor(() => {
+      expect(patchCall).toBeDefined();
+    });
+    expect(JSON.parse(String(patchCall?.[1]?.body))).toMatchObject({
+      name: "Updated Workflow",
+      executionKind: "attack-map"
+    });
   });
 });

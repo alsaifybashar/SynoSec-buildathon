@@ -11,6 +11,7 @@ import {
   defaultRoutePath,
   getCreatePath,
   getDetailPath,
+  getEditPath,
   getSectionPath,
   loginRoutePath,
   type CrudNavigationId,
@@ -23,6 +24,7 @@ type CrudRouteAdapterOptions = {
   detailLabelProp: string;
   detailIdProp: string;
   component: ComponentType<Record<string, unknown>>;
+  routeKind: "list" | "create" | "detail" | "edit";
   onNavigateToRelatedDetail?: (navigate: ReturnType<typeof useNavigate>) => Record<string, unknown>;
 };
 
@@ -31,11 +33,13 @@ function CrudRouteAdapter(options: CrudRouteAdapterOptions) {
   const location = useLocation();
   const params = useParams();
   const routeConfig = crudRouteConfigs[options.id];
-  const detailId = matchPath({ path: routeConfig.createPath, end: true }, location.pathname)
-    ? "new"
-    : params[options.paramName];
   const state = location.state as NavigationState | null;
   const Page = options.component;
+  const detailId = options.routeKind === "create"
+    ? "new"
+    : options.routeKind === "list"
+    ? undefined
+    : params[options.paramName];
 
   return (
     <Page
@@ -44,6 +48,9 @@ function CrudRouteAdapter(options: CrudRouteAdapterOptions) {
       {...(options.onNavigateToRelatedDetail ? options.onNavigateToRelatedDetail(navigate) : {})}
       onNavigateToList={() => navigate(getSectionPath(options.id))}
       onNavigateToCreate={() => navigate(getCreatePath(options.id))}
+      onNavigateToEdit={(id: string, label?: string) => {
+        navigate(getEditPath(options.id, id), { state: label ? { detailLabel: label } : undefined });
+      }}
       onNavigateToDetail={(id: string, label?: string) => {
         navigate(getDetailPath(options.id, id), { state: label ? { detailLabel: label } : undefined });
       }}
@@ -81,13 +88,28 @@ function CrudGeneratedRoute({ routeId }: { routeId: CrudNavigationId }) {
     throw new Error(`Missing CRUD route definition for ${routeId}.`);
   }
 
+  const location = useLocation();
+  const routeConfig = crudRouteConfigs[definition.id];
+  const routeKind = matchPath({ path: routeConfig.createPath, end: true }, location.pathname)
+    ? "create"
+    : routeConfig.editPath && matchPath({ path: routeConfig.editPath, end: true }, location.pathname)
+    ? "edit"
+    : routeConfig.detailPath === location.pathname || matchPath({ path: routeConfig.detailPath, end: true }, location.pathname)
+    ? "detail"
+    : "list";
+
+  const component = routeKind === "detail" && definition.detailComponent
+    ? definition.detailComponent
+    : definition.component;
+
   return (
     <CrudRouteAdapter
       id={definition.id}
-      paramName={crudRouteConfigs[definition.id].paramName}
+      paramName={routeConfig.paramName}
       detailIdProp={definition.detailIdProp}
       detailLabelProp={definition.detailLabelProp}
-      component={definition.component}
+      component={component}
+      routeKind={routeKind}
       {...(definition.onNavigateToRelatedDetail
         ? {
             onNavigateToRelatedDetail: (navigate: ReturnType<typeof useNavigate>) => ({
@@ -144,6 +166,9 @@ export function AppContentRoutes({
       {crudRouteRegistry.flatMap((definition) => ([
         <Route key={`${definition.id}-list`} path={crudRouteConfigs[definition.id].listPath} element={protect(<CrudGeneratedRoute routeId={definition.id} />)} />,
         <Route key={`${definition.id}-create`} path={crudRouteConfigs[definition.id].createPath} element={protect(<CrudGeneratedRoute routeId={definition.id} />)} />,
+        ...(crudRouteConfigs[definition.id].editPath
+          ? [<Route key={`${definition.id}-edit`} path={crudRouteConfigs[definition.id].editPath!} element={protect(<CrudGeneratedRoute routeId={definition.id} />)} />]
+          : []),
         <Route key={`${definition.id}-detail`} path={crudRouteConfigs[definition.id].detailPath} element={protect(<CrudGeneratedRoute routeId={definition.id} />)} />
       ]))}
 

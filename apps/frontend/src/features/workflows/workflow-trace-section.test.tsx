@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { AiAgent, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
 import { WorkflowTraceSection } from "@/features/workflows/workflow-trace-section";
@@ -135,12 +135,51 @@ const run: WorkflowRun = {
       createdAt: "2026-04-21T00:00:01.500Z"
     },
     {
-      id: "70000000-0000-0000-0000-000000000003",
+      id: "70000000-0000-0000-0000-000000000002c",
       workflowRunId: "60000000-0000-0000-0000-000000000001",
       workflowId: workflow.id,
       workflowStageId: workflow.stages[0]!.id,
       stepIndex: 0,
       ord: 4,
+      type: "system_message",
+      status: "completed",
+      title: "Tool context",
+      summary: "Persisted the tool inventory exposed to the workflow model.",
+      detail: [
+        "Evidence tools",
+        "",
+        "Web Probe: Probe the web target.",
+        "",
+        "Built-in actions",
+        "",
+        "report_finding: Persist one evidence-backed workflow finding.",
+        "complete_run: Finish the workflow pipeline successfully.",
+        "fail_run: Finish the workflow pipeline as failed."
+      ].join("\n"),
+      payload: {
+        title: "Tool context",
+        summary: "Persisted the tool inventory exposed to the workflow model.",
+        body: [
+          "Evidence tools",
+          "",
+          "Web Probe: Probe the web target.",
+          "",
+          "Built-in actions",
+          "",
+          "report_finding: Persist one evidence-backed workflow finding.",
+          "complete_run: Finish the workflow pipeline successfully.",
+          "fail_run: Finish the workflow pipeline as failed."
+        ].join("\n")
+      },
+      createdAt: "2026-04-21T00:00:01.750Z"
+    },
+    {
+      id: "70000000-0000-0000-0000-000000000003",
+      workflowRunId: "60000000-0000-0000-0000-000000000001",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 5,
       type: "model_decision",
       status: "completed",
       title: "Agent selected Web Probe",
@@ -190,7 +229,7 @@ const run: WorkflowRun = {
       workflowId: workflow.id,
       workflowStageId: workflow.stages[0]!.id,
       stepIndex: 0,
-      ord: 5,
+      ord: 6,
       type: "tool_call",
       status: "running",
       title: "Web Probe invoked",
@@ -210,7 +249,7 @@ const run: WorkflowRun = {
       workflowId: workflow.id,
       workflowStageId: workflow.stages[0]!.id,
       stepIndex: 0,
-      ord: 6,
+      ord: 7,
       type: "tool_result",
       status: "completed",
       title: "Web Probe completed",
@@ -229,7 +268,7 @@ const run: WorkflowRun = {
       workflowId: workflow.id,
       workflowStageId: workflow.stages[0]!.id,
       stepIndex: 0,
-      ord: 7,
+      ord: 8,
       type: "finding_reported",
       status: "completed",
       title: "Finding recorded",
@@ -266,7 +305,7 @@ const run: WorkflowRun = {
       workflowId: workflow.id,
       workflowStageId: workflow.stages[0]!.id,
       stepIndex: 0,
-      ord: 8,
+      ord: 9,
       type: "verification",
       status: "completed",
       title: "Evidence checkpoint after Web Probe",
@@ -284,7 +323,7 @@ const run: WorkflowRun = {
       workflowId: workflow.id,
       workflowStageId: workflow.stages[0]!.id,
       stepIndex: 0,
-      ord: 9,
+      ord: 10,
       type: "agent_summary",
       status: "completed",
       title: "Agent summarized the run",
@@ -299,7 +338,7 @@ const run: WorkflowRun = {
       workflowId: workflow.id,
       workflowStageId: workflow.stages[0]!.id,
       stepIndex: 0,
-      ord: 10,
+      ord: 11,
       type: "stage_completed",
       status: "completed",
       title: "OSI Security Pass completed",
@@ -366,7 +405,12 @@ const tools: AiTool[] = [{
   timeoutMs: 30000,
   inputSchema: {
     type: "object",
-    properties: {}
+    properties: {
+      url: {
+        type: "string"
+      }
+    },
+    required: ["url"]
   },
   outputSchema: {
     type: "object",
@@ -591,7 +635,10 @@ describe("WorkflowTraceSection", () => {
     expect(screen.queryByText("Thread · Workflow Transcript · Duplex Flow")).not.toBeInTheDocument();
     expect(screen.getByText("Prompt context")).toBeInTheDocument();
     expect(screen.getByText("System prompt")).toBeInTheDocument();
+    expect(screen.getByText("Tool segment")).toBeInTheDocument();
+    expect(screen.getByText("Structured tool segment")).toBeInTheDocument();
     expect(screen.queryByText("Rendered system prompt")).not.toBeInTheDocument();
+    expect(screen.queryByText("Built-in actions")).not.toBeInTheDocument();
     expect(screen.getByText("Probe the exposed web surface first.")).toBeInTheDocument();
     expect(screen.getByText(/Called Web Probe/)).toBeInTheDocument();
     expect(screen.getByText(/\{ "url": "http:\/\/localhost.../)).toBeInTheDocument();
@@ -625,6 +672,37 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getAllByText(/http:\/\/localhost:8888/).length).toBeGreaterThan(0);
     expect(screen.getByText("HTTP/1.1 200 OK")).toBeInTheDocument();
     expect(screen.getByText("Observations")).toBeInTheDocument();
+  });
+
+  it("renders reconstructed structured tool context behind a disclosure", () => {
+    render(
+      <WorkflowTraceSection
+        workflow={workflow}
+        applications={applications}
+        runtimes={runtimes}
+        agents={agents}
+        tools={tools}
+        run={run}
+        running={false}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails={false}
+      />
+    );
+
+    expect(screen.getByText("4 tools and actions available to the model.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Structured tool segment"));
+
+    expect(screen.getByText("Web Probe")).toBeInTheDocument();
+    expect(screen.getByText("report_finding")).toBeInTheDocument();
+    expect(screen.getByText("complete_run")).toBeInTheDocument();
+    expect(screen.getByText("fail_run")).toBeInTheDocument();
+    expect(screen.getAllByText("Input schema").length).toBeGreaterThan(0);
+    expect(screen.getByText(/"required": \[\s*"url"/)).toBeInTheDocument();
+    expect(screen.getAllByText(/"url"/).length).toBeGreaterThan(0);
   });
 
   it("renders a fallback compact output line when a completed tool has no non-redundant output preview", () => {
