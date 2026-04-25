@@ -1,8 +1,10 @@
 import { useMemo, type ReactNode } from "react";
 import type { AiAgent, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
-import { AlertTriangle, ChevronRight, CircleHelp, LoaderCircle, Radio, Target } from "lucide-react";
+import { AlertTriangle, ChevronRight, LoaderCircle, Radio, Target } from "lucide-react";
+import { DetailHintTrigger } from "@/shared/components/detail-page";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/shared/lib/utils";
+import { DetailMetadataPanel, DetailSidebarItem } from "@/shared/components/detail-page";
 import {
   buildWorkflowTranscript,
   getToolLookup,
@@ -19,6 +21,7 @@ type SummaryCardData = {
 type MetadataItem = {
   label: string;
   value: string;
+  hint?: string;
 };
 
 type DuplexAtomKind =
@@ -69,13 +72,10 @@ function HelpHint({ label, hint }: { label: string; hint: string }) {
     <TooltipProvider delayDuration={150}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
-            type="button"
-            className="inline-flex cursor-default items-center text-muted-foreground transition hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
-            aria-label={`Show guidance for ${label}`}
-          >
-            <CircleHelp className="h-3.5 w-3.5" />
-          </button>
+          <DetailHintTrigger
+            label={label}
+            className="text-[0.62rem] tracking-[0.12em] text-primary/70 hover:text-primary focus-visible:text-primary"
+          />
         </TooltipTrigger>
         <TooltipContent>{hint}</TooltipContent>
       </Tooltip>
@@ -139,6 +139,14 @@ const KIND_ACCENT: Record<DuplexAtomKind, { label: string; dot: string }> = {
   sealed: { label: "text-success", dot: "bg-success" },
   error: { label: "text-destructive", dot: "bg-destructive" }
 };
+
+const WORKFLOW_METADATA_HINTS = {
+  status: "Lifecycle state of the workflow definition itself, separate from the currently selected run.",
+  target: "Application context this workflow is currently bound to for targeting and reporting.",
+  agent: "AI agent definition that provides the standing prompt, provider, and default tool grants.",
+  currentRun: "Latest persisted run state and the number of workflow events currently attached to it.",
+  updated: "Last time the workflow definition record changed."
+} as const;
 
 function compactDate(value: string | null | undefined) {
   if (!value) {
@@ -207,6 +215,21 @@ function createWorkflowBuiltinToolSegment(): StructuredToolSegment["tools"] {
             items: {
               type: "object"
             }
+          },
+          derivedFromFindingIds: {
+            type: "array",
+            items: { type: "string" }
+          },
+          relatedFindingIds: {
+            type: "array",
+            items: { type: "string" }
+          },
+          enablesFindingIds: {
+            type: "array",
+            items: { type: "string" }
+          },
+          chain: {
+            type: "object"
           },
           impact: { type: "string" },
           recommendation: { type: "string" },
@@ -521,6 +544,50 @@ function getCompactToolOutput(atom: DuplexAtom, labelText: string) {
   return truncateWithEllipsis(preferredSource, 100);
 }
 
+function ToolObservations({
+  observations,
+  showHeading
+}: {
+  observations: string[];
+  showHeading: boolean;
+}) {
+  return (
+    <div className={cn("space-y-1.5", showHeading ? "pt-1" : "")}>
+      {showHeading ? (
+        <div className="font-mono text-[0.58rem] uppercase tracking-wider text-muted-foreground">Observations</div>
+      ) : null}
+      <ul className="space-y-0.5">
+        {observations.map((observation) => (
+          <li key={observation} className="grid grid-cols-[10px_1fr] gap-1.5 text-[0.76rem] leading-[1.5] text-foreground/85">
+            <span className="text-success">+</span>
+            <span>{observation}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ToolDetailBlock({
+  label,
+  hint,
+  children
+}: {
+  label: string;
+  hint: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5 pt-1">
+      <div className="flex items-center gap-1.5">
+        <div className="font-mono text-[0.58rem] uppercase tracking-wider text-muted-foreground">{label}</div>
+        <HelpHint label={label} hint={hint} />
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; showFullDetails: boolean }) {
   const isLeft = atom.side === "left";
   const accent = KIND_ACCENT[atom.kind];
@@ -533,6 +600,9 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
   const showTitle = Boolean(atom.title) && (!isTool || normalizeInlineText(atom.title) !== normalizeInlineText(labelText));
   const isStructuredToolContext = atom.kind === "tool-context" && atom.structuredToolSegment;
   const structuredToolSegment = isStructuredToolContext ? atom.structuredToolSegment : null;
+  const hasObservations = Boolean(atom.observations && atom.observations.length > 0);
+  const showObservationPreview = isTool && hasObservations && !showFullDetails && !isStructuredToolContext;
+  const showCompactToolOutput = Boolean(compactToolOutput) && !showObservationPreview && !showFullDetails && !isStructuredToolContext;
 
   return (
     <div className={cn("flex w-full", isLeft ? "justify-start pr-[6%]" : "justify-end pl-[6%]")}>
@@ -612,43 +682,58 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
           </p>
           ) : null}
 
-          {compactToolOutput && !showFullDetails && !isStructuredToolContext ? (
+          {showCompactToolOutput ? (
             <p className="whitespace-pre-wrap font-mono text-[0.74rem] leading-[1.55] text-muted-foreground/90">
               {compactToolOutput}
             </p>
           ) : null}
 
-          {atom.body && (!isTool || showFullDetails) && !isStructuredToolContext ? (
-            <p
-              className={cn(
-                "whitespace-pre-wrap leading-[1.7]",
-                isSystemTone
-                  ? "text-[0.86rem] font-light text-foreground/68"
-                  : "text-[0.92rem] text-foreground/88"
-              )}
-            >
-              {atom.body}
-            </p>
+          {showObservationPreview && atom.observations ? (
+            <ToolObservations observations={atom.observations} showHeading={false} />
           ) : null}
 
           {showFullDetails && atom.code ? (
-            <pre className="overflow-x-auto rounded-sm border border-border/70 bg-muted/35 px-2.5 py-1.5 font-mono text-[0.7rem] leading-5 text-foreground/85">
-              {atom.code}
-            </pre>
+            <ToolDetailBlock
+              label="Input"
+              hint="The exact payload the workflow sent to the tool for this run."
+            >
+              <pre className="overflow-x-auto rounded-sm border border-border/70 bg-muted/35 px-2.5 py-1.5 font-mono text-[0.7rem] leading-5 text-foreground/85">
+                {atom.code}
+              </pre>
+            </ToolDetailBlock>
+          ) : null}
+
+          {atom.body && (!isTool || showFullDetails) && !isStructuredToolContext ? (
+            isTool && showFullDetails ? (
+              <ToolDetailBlock
+                label="Output"
+                hint="The raw tool output captured for this run before it was normalized into observations."
+              >
+                <p className="whitespace-pre-wrap text-[0.92rem] leading-[1.7] text-foreground/88">
+                  {atom.body}
+                </p>
+              </ToolDetailBlock>
+            ) : (
+              <p
+                className={cn(
+                  "whitespace-pre-wrap leading-[1.7]",
+                  isSystemTone
+                    ? "text-[0.86rem] font-light text-foreground/68"
+                    : "text-[0.92rem] text-foreground/88"
+                )}
+              >
+                {atom.body}
+              </p>
+            )
           ) : null}
 
           {showFullDetails && atom.observations && atom.observations.length > 0 ? (
-            <div className="space-y-1.5 pt-1">
-              <div className="font-mono text-[0.58rem] uppercase tracking-wider text-muted-foreground">Observations</div>
-              <ul className="space-y-0.5">
-                {atom.observations.map((observation) => (
-                  <li key={observation} className="grid grid-cols-[10px_1fr] gap-1.5 text-[0.76rem] leading-[1.5] text-foreground/85">
-                    <span className="text-success">+</span>
-                    <span>{observation}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <ToolDetailBlock
+              label="Observations"
+              hint="Structured evidence summaries derived from the tool run and surfaced by default in the compact view."
+            >
+              <ToolObservations observations={atom.observations} showHeading={false} />
+            </ToolDetailBlock>
           ) : null}
         </div>
       </article>
@@ -673,25 +758,19 @@ function FindingsRail({
   return (
     <aside className="space-y-3 lg:sticky lg:top-6">
       {metadata.length > 0 ? (
-        <div className="rounded-xl border border-border/80 bg-card px-4 py-4">
-          <div className="flex items-center gap-2">
-            <MonoLabel>Metadata</MonoLabel>
-            <HelpHint
-              label="Metadata"
-              hint="Workflow identity, linked resources, and current run state for this Duplex session."
-            />
-          </div>
-          <div className="mt-4 space-y-4">
+        <DetailMetadataPanel
+          title="Metadata"
+          hint="Workflow identity, linked resources, and current run state for this Duplex session."
+          className="rounded-xl border-border/80 bg-card px-4 py-4"
+        >
+          <div className="mt-0 space-y-4">
             {metadata.map((item) => (
-              <div key={item.label} className="space-y-1">
-                <p className="font-mono text-[0.6rem] font-medium uppercase tracking-[0.3em] text-muted-foreground">
-                  {item.label}
-                </p>
-                <div className="text-xs text-foreground">{item.value}</div>
-              </div>
+              <DetailSidebarItem key={item.label} label={item.label} {...(item.hint ? { hint: item.hint } : {})}>
+                {item.value}
+              </DetailSidebarItem>
             ))}
           </div>
-        </div>
+        </DetailMetadataPanel>
       ) : null}
       <div className="rounded-xl border border-border/80 bg-card px-4 py-4">
         <div className="flex items-center gap-2">
@@ -820,11 +899,11 @@ export function WorkflowTraceSection({
     }
 
     return [
-      { label: "Status", value: workflow.status },
-      { label: "Target", value: applicationName },
-      { label: "Agent", value: agent?.name ?? "Unknown" },
-      { label: "Current Run", value: run ? `${run.status} · ${run.events.length} events` : "No active run" },
-      { label: "Updated", value: new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(workflow.updatedAt)) }
+      { label: "Status", value: workflow.status, hint: WORKFLOW_METADATA_HINTS.status },
+      { label: "Target", value: applicationName, hint: WORKFLOW_METADATA_HINTS.target },
+      { label: "Agent", value: agent?.name ?? "Unknown", hint: WORKFLOW_METADATA_HINTS.agent },
+      { label: "Current Run", value: run ? `${run.status} · ${run.events.length} events` : "No active run", hint: WORKFLOW_METADATA_HINTS.currentRun },
+      { label: "Updated", value: new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(workflow.updatedAt)), hint: WORKFLOW_METADATA_HINTS.updated }
     ];
   }, [workflow, applicationName, agent, run]);
   const atoms = useMemo(() => {

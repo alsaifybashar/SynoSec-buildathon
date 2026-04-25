@@ -642,9 +642,10 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getByText("Probe the exposed web surface first.")).toBeInTheDocument();
     expect(screen.getByText(/Called Web Probe/)).toBeInTheDocument();
     expect(screen.getByText(/\{ "url": "http:\/\/localhost.../)).toBeInTheDocument();
-    expect(screen.getByText("The web probe returned a live HTTP service.")).toBeInTheDocument();
+    expect(screen.getByText("HTTP service responded with 200 OK.")).toBeInTheDocument();
+    expect(screen.getByText("Headers were returned immediately.")).toBeInTheDocument();
+    expect(screen.queryByText("HTTP/1.1 200 OK")).not.toBeInTheDocument();
     expect(screen.getByText("Evidence checkpoint after Web Probe")).toBeInTheDocument();
-    expect(screen.getAllByText("Missing security headers").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Findings").length).toBeGreaterThan(0);
     expect(screen.getByText("Run sealed")).toBeInTheDocument();
     expect(screen.queryByText("{\"url\":\"http://localhost:8888\"}")).not.toBeInTheDocument();
@@ -670,8 +671,12 @@ describe("WorkflowTraceSection", () => {
     );
 
     expect(screen.getAllByText(/http:\/\/localhost:8888/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Output")).toBeInTheDocument();
+    expect(screen.getByText("Input")).toBeInTheDocument();
     expect(screen.getByText("HTTP/1.1 200 OK")).toBeInTheDocument();
     expect(screen.getByText("Observations")).toBeInTheDocument();
+    expect(screen.getByText("HTTP service responded with 200 OK.")).toBeInTheDocument();
+    expect(screen.getByText("Headers were returned immediately.")).toBeInTheDocument();
   });
 
   it("renders reconstructed structured tool context behind a disclosure", () => {
@@ -747,7 +752,7 @@ describe("WorkflowTraceSection", () => {
     expect(screen.queryByText("Thread · Workflow Transcript · Duplex Flow")).not.toBeInTheDocument();
     expect(screen.getByText("Prompt context")).toBeInTheDocument();
     expect(screen.getAllByText("Agent typing").length).toBeGreaterThan(0);
-    expect(screen.queryByText("No findings reported yet.")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Findings").length).toBeGreaterThan(0);
   });
 
   it("renders standardized model and tool error atoms with retry guidance", () => {
