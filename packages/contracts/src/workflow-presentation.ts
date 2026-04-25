@@ -700,7 +700,7 @@ export function buildWorkflowTranscript(input: {
         toolId: getPayloadString(payload, "toolId"),
         toolName: getToolName(event, input.toolLookup),
         summary: getPayloadString(payload, "summary") ?? getPayloadString(payload, "outputPreview") ?? event.summary,
-        body: serializedOutput ?? getLegacyToolOutput(payload, event),
+        body: getLegacyToolOutput(payload, event) ?? serializedOutput,
         observations: getPayloadStringList(payload, "observations").concat(getPayloadStringList(payload, "observationSummaries")),
         status: event.status === "pending" ? "running" : event.status
       });

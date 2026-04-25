@@ -25,6 +25,8 @@ function createService(overrides: {
   agent?: Record<string, unknown> | null;
   provider?: Record<string, unknown> | null;
   workflowRunStream?: WorkflowRunStream;
+  orchestrator?: Record<string, unknown>;
+  aiToolById?: Record<string, Record<string, unknown>>;
 } = {}) {
   const workflow = overrides.workflow ?? {
     id: "10000000-0000-0000-0000-000000000001",
@@ -164,7 +166,7 @@ function createService(overrides: {
       remove: async () => false
     } as any,
     {
-      getById: async () => null
+      getById: async (id: string) => overrides.aiToolById?.[id] ?? null
     } as any,
     {
       getById: async () => agent as any
@@ -176,7 +178,7 @@ function createService(overrides: {
       getById: async () => null
     } as any,
     workflowRunStream,
-    {} as any
+    (overrides.orchestrator ?? {}) as any
   );
 
   return { service, createdRuns, workflowRunStream };
@@ -278,6 +280,180 @@ describe("WorkflowExecutionService", () => {
     const run = await service.startRun("10000000-0000-0000-0000-000000000001");
 
     expect(run.executionKind).toBe("attack-map");
+  });
+
+  it("emits explicit recon tool activity before the attack-map recon summary", async () => {
+    const { service, createdRuns } = createService({
+      workflow: {
+        id: "10000000-0000-0000-0000-000000000001",
+        name: "Attack Map Workflow",
+        status: "active",
+        executionKind: "attack-map",
+        description: null,
+        applicationId: "20000000-0000-0000-0000-000000000001",
+        runtimeId: null,
+        agentId: "30000000-0000-0000-0000-000000000001",
+        objective: "Run attack-map orchestration.",
+        allowedToolIds: ["tool:nikto"],
+        requiredEvidenceTypes: [],
+        findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
+        completionRule: { requireStageResult: true, requireToolCall: false, allowEmptyResult: true, minFindings: 0 },
+        resultSchemaVersion: 1,
+        handoffSchema: null,
+        stages: [],
+        createdAt: "2026-04-24T10:00:00.000Z",
+        updatedAt: "2026-04-24T10:00:00.000Z"
+      },
+      provider: {
+        id: "40000000-0000-0000-0000-000000000001",
+        name: "Local",
+        kind: "local",
+        status: "active",
+        description: null,
+        baseUrl: "http://localhost:11434",
+        model: "qwen",
+        apiKey: null,
+        apiKeyConfigured: false,
+        createdAt: "2026-04-24T10:00:00.000Z",
+        updatedAt: "2026-04-24T10:00:00.000Z"
+      },
+      aiToolById: {
+        "tool:nikto": {
+          id: "tool:nikto",
+          name: "Nikto",
+          description: "Web server scanner for common misconfigurations.",
+          source: "custom",
+          executorType: "bash"
+        }
+      },
+      orchestrator: {
+        listOrchestratorRunnableTools: async () => [],
+        runRecon: async () => ({
+          openPorts: [{ port: 80, protocol: "tcp", service: "http", version: "Apache" }],
+          technologies: ["Apache"],
+          httpHeaders: { Server: "Apache" },
+          serverInfo: { webServer: "Apache" },
+          interestingPaths: [],
+          probes: [
+            {
+              toolName: "cURL",
+              command: "curl -sI --max-time 8 --connect-timeout 5 -L http://localhost:3000",
+              output: "HTTP/1.1 200 OK",
+              status: "completed"
+            },
+            {
+              toolName: "Nmap",
+              command: "nmap -sV --open -T4 --version-intensity 3 -p 21,22,25,80,443,3000,3306,4443,5432,6379,8080,8443,8888,27017 localhost",
+              output: "80/tcp open http Apache",
+              status: "completed"
+            }
+          ],
+          rawNmap: "80/tcp open http Apache",
+          rawCurl: "HTTP/1.1 200 OK"
+        }),
+        createPlan: async () => ({
+          phases: [],
+          overallRisk: "low" as const,
+          summary: "Attack plan generated."
+        }),
+        executePhase: async () => ({
+          findings: [],
+          probeCommand: "",
+          probeOutput: "",
+          toolAttempts: []
+        }),
+        deepDiveFinding: async () => [],
+        correlateAttackChains: async () => []
+      }
+    });
+
+    await service.startRun("10000000-0000-0000-0000-000000000001");
+
+    await vi.waitFor(() => {
+      expect((createdRuns[0] as any)?.events?.some((event: WorkflowTraceEvent) => event.title === "Recon completed")).toBe(true);
+    });
+
+    const events = ((createdRuns[0] as any)?.events ?? []) as WorkflowTraceEvent[];
+    const curlResultIndex = events.findIndex((event) => event.type === "tool_result" && event.payload?.["toolName"] === "cURL");
+    const nmapResultIndex = events.findIndex((event) => event.type === "tool_result" && event.payload?.["toolName"] === "Nmap");
+    const reconSummaryIndex = events.findIndex((event) => event.title === "Recon completed");
+
+    expect(curlResultIndex).toBeGreaterThan(-1);
+    expect(nmapResultIndex).toBeGreaterThan(-1);
+    expect(reconSummaryIndex).toBeGreaterThan(nmapResultIndex);
+    expect(events[curlResultIndex]?.detail).toContain("HTTP/1.1 200 OK");
+    expect(events[nmapResultIndex]?.detail).toContain("80/tcp open http Apache");
+  });
+
+  it("persists workflow tool context as name-description pairs", async () => {
+    streamTextMock.mockReturnValue({
+      fullStream: (async function* () {
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: {
+            inputTokens: 1,
+            outputTokens: 1,
+            totalTokens: 2
+          }
+        };
+      })()
+    });
+
+    const { service, createdRuns } = createService({
+      workflow: {
+        id: "10000000-0000-0000-0000-000000000001",
+        name: "Pipeline Workflow",
+        status: "active",
+        description: null,
+        applicationId: "20000000-0000-0000-0000-000000000001",
+        runtimeId: null,
+        agentId: "30000000-0000-0000-0000-000000000001",
+        objective: "Collect evidence and stop through system tools.",
+        allowedToolIds: ["tool:http-recon"],
+        requiredEvidenceTypes: [],
+        findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
+        completionRule: { requireStageResult: true, requireToolCall: false, allowEmptyResult: true, minFindings: 0 },
+        resultSchemaVersion: 1,
+        handoffSchema: null,
+        stages: [],
+        createdAt: "2026-04-24T10:00:00.000Z",
+        updatedAt: "2026-04-24T10:00:00.000Z"
+      },
+      aiToolById: {
+        "tool:http-recon": {
+          id: "tool:http-recon",
+          name: "HTTP Recon",
+          description: "Collect HTTP headers and response metadata.",
+          source: "custom",
+          executorType: "bash",
+          category: "web",
+          riskTier: "passive",
+          capabilities: [],
+          sandboxProfile: "network-recon",
+          privilegeProfile: "unprivileged"
+        }
+      }
+    });
+
+    await service.startRun("10000000-0000-0000-0000-000000000001");
+
+    await vi.waitFor(() => {
+      expect((createdRuns[0] as any)?.events?.some((event: WorkflowTraceEvent) => event.title === "Tool context")).toBe(true);
+    });
+
+    const toolContextEvent = (((createdRuns[0] as any)?.events ?? []) as WorkflowTraceEvent[])
+      .find((event) => event.title === "Tool context");
+
+    const toolContextBody = typeof toolContextEvent?.payload?.["body"] === "string"
+      ? toolContextEvent.payload["body"]
+      : toolContextEvent?.detail;
+
+    expect(toolContextBody).toContain("Built-in actions");
+    expect(toolContextBody).toContain("report_finding: Persist one evidence-backed workflow finding.");
+    expect(toolContextBody).toContain("complete_run: Finish the workflow pipeline successfully.");
+    expect(toolContextBody).toContain("fail_run: Finish the workflow pipeline as failed.");
   });
 
   it("persists raw stream part types and publishes live model output from streamed workflow text", async () => {

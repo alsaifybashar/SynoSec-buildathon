@@ -255,6 +255,60 @@ describe("buildWorkflowTranscript", () => {
     expect(assistantTurn.details[1]?.kind === "tool_result" ? assistantTurn.details[1].toolCallId : null).toBe("call-1");
   });
 
+  it("prefers persisted full tool output over serialized tool result JSON", () => {
+    const run: WorkflowRun = {
+      id: "50000000-0000-0000-0000-000000000002a",
+      workflowId: workflow.id,
+      status: "completed",
+      currentStepIndex: 0,
+      startedAt: "2026-04-25T00:00:00.000Z",
+      completedAt: "2026-04-25T00:00:01.000Z",
+      trace: [],
+      events: [
+        {
+          id: "tool-result",
+          workflowRunId: "50000000-0000-0000-0000-000000000002a",
+          workflowId: workflow.id,
+          workflowStageId: null,
+          stepIndex: 0,
+          ord: 0,
+          type: "tool_result",
+          status: "completed",
+          title: "Web Probe returned",
+          summary: "200 OK",
+          detail: "HTTP/1.1 200 OK",
+          payload: {
+            toolId: "tool-1",
+            toolName: "Web Probe",
+            fullOutput: "HTTP/1.1 200 OK",
+            output: {
+              ok: true
+            },
+            summary: "200 OK"
+          },
+          createdAt: "2026-04-25T00:00:00.200Z"
+        }
+      ]
+    };
+
+    const transcript = buildWorkflowTranscript({
+      workflow,
+      run,
+      agents,
+      toolLookup: {
+        "tool-1": "Web Probe"
+      },
+      running: false,
+      liveModelOutput: null
+    });
+
+    const assistantTurn = transcript.items.find((item) => item.kind === "assistant_turn");
+    if (!assistantTurn || assistantTurn.kind !== "assistant_turn") {
+      throw new Error("assistant turn missing");
+    }
+    expect(assistantTurn.details[0]?.kind === "tool_result" ? assistantTurn.details[0].body : null).toBe("HTTP/1.1 200 OK");
+  });
+
   it("synthesizes a concise assistant body when a turn only contains tool results", () => {
     const run: WorkflowRun = {
       id: "50000000-0000-0000-0000-000000000003",

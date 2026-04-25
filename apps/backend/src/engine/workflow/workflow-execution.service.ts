@@ -318,7 +318,6 @@ export class WorkflowExecutionService {
   private buildSystemPrompt(input: PipelineContext) {
     return [
       input.agent.systemPrompt,
-      "Use only approved tools and stay in scope.",
       "Report concrete findings with report_finding.",
       "Use complete_run or fail_run to stop.",
       "Emit short plain-text progress updates before tool bursts and closeout."
@@ -326,18 +325,26 @@ export class WorkflowExecutionService {
   }
 
   private buildTaskPrompt(input: PipelineContext) {
-    const evidenceTools = input.tools.filter((tool) => tool.executorType === "bash");
-    const builtinActions = input.tools.filter((tool) => tool.executorType === "builtin");
-
     return [
       `Workflow: ${input.workflow.name}`,
-      `Objective: ${input.workflow.objective}`,
       `Application: ${input.application.name}`,
       `Target URL: ${input.target.baseUrl}`,
-      input.runtime ? `Runtime: ${input.runtime.name} (${input.runtime.provider}, ${input.runtime.region})` : null,
-      `Allowed evidence tools: ${evidenceTools.map((tool) => `${tool.id}=${tool.name}`).join(", ") || "none"}`,
-      builtinActions.length > 0 ? `Visible built-in actions: ${builtinActions.map((tool) => `${tool.id}=${tool.name}`).join(", ")}` : null
+      input.runtime ? `Runtime: ${input.runtime.name} (${input.runtime.provider}, ${input.runtime.region})` : null
     ].filter(Boolean).join("\n");
+  }
+
+  private formatToolContextSections(sections: Array<{ title: string; tools: Array<{ name: string; description: string | null | undefined }> }>) {
+    return sections
+      .map((section) => {
+        const lines = section.tools
+          .map((tool) => `${tool.name}: ${tool.description?.trim() || "No description provided."}`);
+        if (lines.length === 0) {
+          return null;
+        }
+        return `${section.title}\n\n${lines.join("\n")}`;
+      })
+      .filter((section): section is string => Boolean(section))
+      .join("\n\n");
   }
 
   private mapPersistedTraceType(type: WorkflowTraceEvent["type"]): PersistedWorkflowTraceType {
@@ -455,6 +462,12 @@ export class WorkflowExecutionService {
         httpHeaders: Record<string, string>;
         serverInfo: { os?: string; webServer?: string; cms?: string };
         interestingPaths: string[];
+        probes: Array<{
+          toolName: string;
+          command: string;
+          output: string;
+          status: "completed" | "failed";
+        }>;
         rawNmap: string;
         rawCurl: string;
       }>;
@@ -466,6 +479,12 @@ export class WorkflowExecutionService {
           httpHeaders: Record<string, string>;
           serverInfo: { os?: string; webServer?: string; cms?: string };
           interestingPaths: string[];
+          probes: Array<{
+            toolName: string;
+            command: string;
+            output: string;
+            status: "completed" | "failed";
+          }>;
           rawNmap: string;
           rawCurl: string;
         },
@@ -483,6 +502,12 @@ export class WorkflowExecutionService {
           httpHeaders: Record<string, string>;
           serverInfo: { os?: string; webServer?: string; cms?: string };
           interestingPaths: string[];
+          probes: Array<{
+            toolName: string;
+            command: string;
+            output: string;
+            status: "completed" | "failed";
+          }>;
           rawNmap: string;
           rawCurl: string;
         },
@@ -508,6 +533,12 @@ export class WorkflowExecutionService {
           httpHeaders: Record<string, string>;
           serverInfo: { os?: string; webServer?: string; cms?: string };
           interestingPaths: string[];
+          probes: Array<{
+            toolName: string;
+            command: string;
+            output: string;
+            status: "completed" | "failed";
+          }>;
           rawNmap: string;
           rawCurl: string;
         },
@@ -605,23 +636,69 @@ export class WorkflowExecutionService {
         outputPreview
       );
     };
-
-    await appendEvent(
-      "system_message",
-      "completed",
+    const appendReconProbeEvent = async (probe: {
+      toolName: string;
+      command: string;
+      output: string;
+      status: "completed" | "failed";
+    }) => {
+      await appendEvent(
+        "tool_call",
+        "running",
+        { phase: "recon", toolId: null, toolName: probe.toolName, input: probe.command },
+        `Tool started: ${probe.toolName}`,
+        `${probe.toolName} started for recon.`,
+        probe.command
+      );
+      const outputPreview = probe.status === "failed"
+        ? `${probe.toolName} failed during recon.`
+        : `${probe.toolName} completed during recon.`;
+      await appendEvent(
+        "tool_result",
+        probe.status,
+        {
+          phase: "recon",
+          toolId: null,
+          toolName: probe.toolName,
+          summary: outputPreview,
+          fullOutput: probe.output
+        },
+        `Tool completed: ${probe.toolName}`,
+        outputPreview,
+        probe.output
+      );
+    };
+    const plannerToolContext = this.formatToolContextSections([
       {
-        title: "Attack-map workflow started",
-        summary: `Running orchestrated attack-map workflow against ${target.baseUrl}.`,
-        body: `${agent.name} is orchestrating an attack-map workflow against ${target.baseUrl}.`
-      },
-      "Attack-map workflow started",
-      `Running orchestrated attack-map workflow against ${target.baseUrl}.`,
-      workflow.objective
-    );
+        title: "Planner-visible tools",
+        tools: plannerTools.map((tool) => ({
+          name: tool.name,
+          description: tool.description
+        }))
+      }
+    ]);
+
+    if (plannerToolContext) {
+      await appendEvent(
+        "system_message",
+        "completed",
+        {
+          title: "Tool context",
+          summary: "Persisted the attack-map tool inventory exposed to the planner.",
+          body: plannerToolContext
+        },
+        "Tool context",
+        "Persisted the attack-map tool inventory exposed to the planner.",
+        plannerToolContext
+      );
+    }
 
     const recon = await orchestrator.runRecon(target.baseUrl, run.id, provider, provider.model, (phase, title, summary) => {
       void emitReasoning(phase, title, summary);
     });
+    for (const probe of recon.probes) {
+      await appendReconProbeEvent(probe);
+    }
     await appendEvent(
       "system_message",
       "completed",
@@ -893,6 +970,34 @@ export class WorkflowExecutionService {
 
     const systemPrompt = this.buildSystemPrompt(context);
     const taskPrompt = this.buildTaskPrompt(context);
+    const toolContext = this.formatToolContextSections([
+      {
+        title: "Evidence tools",
+        tools: context.tools
+          .filter((tool) => tool.executorType === "bash")
+          .map((tool) => ({
+            name: tool.name,
+            description: tool.description
+          }))
+      },
+      {
+        title: "Built-in actions",
+        tools: [
+          {
+            name: "report_finding",
+            description: "Persist one evidence-backed workflow finding."
+          },
+          {
+            name: "complete_run",
+            description: "Finish the workflow pipeline successfully."
+          },
+          {
+            name: "fail_run",
+            description: "Finish the workflow pipeline as failed."
+          }
+        ]
+      }
+    ]);
     await appendEvent("system_message", "completed", {
       title: "Rendered system prompt",
       summary: "Persisted the workflow pipeline system prompt.",
@@ -907,6 +1012,13 @@ export class WorkflowExecutionService {
       messageKind: "prompt",
       promptKind: "task"
     }, "Rendered task prompt", "Persisted the workflow pipeline task prompt.", taskPrompt);
+    if (toolContext) {
+      await appendEvent("system_message", "completed", {
+        title: "Tool context",
+        summary: "Persisted the tool inventory exposed to the workflow model.",
+        body: toolContext
+      }, "Tool context", "Persisted the tool inventory exposed to the workflow model.", toolContext);
+    }
 
     const scan = createWorkflowScan(run, constraintSet);
     await this.ensureWorkflowScan(scan, context);

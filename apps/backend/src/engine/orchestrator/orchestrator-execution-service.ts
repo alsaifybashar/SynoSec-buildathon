@@ -65,6 +65,12 @@ export type ReconResult = {
   httpHeaders: Record<string, string>;
   serverInfo: { os?: string; webServer?: string; cms?: string };
   interestingPaths: string[];
+  probes: Array<{
+    toolName: string;
+    command: string;
+    output: string;
+    status: "completed" | "failed";
+  }>;
   rawNmap: string;
   rawCurl: string;
 };
@@ -650,20 +656,25 @@ export class OrchestratorExecutionEngineService {
     const url = new URL(targetUrl.includes("://") ? targetUrl : `http://${targetUrl}`);
     const host = url.hostname;
     const port = url.port || (url.protocol === "https:" ? "443" : "80");
+    const curlCommand = `curl -sI --max-time 8 --connect-timeout 5 -L ${targetUrl}`;
+    const nmapCommand = `nmap -sV --open -T4 --version-intensity 3 -p 21,22,25,80,443,3000,3306,4443,5432,6379,8080,8443,8888,27017 ${host}`;
 
     emit(`HTTP probe: ${targetUrl}`);
     let rawCurl = "";
+    let curlStatus: "completed" | "failed" = "completed";
     try {
       const { stdout } = await execFileAsync("curl", [
         "-sI", "--max-time", "8", "--connect-timeout", "5", "-L", targetUrl
       ], { timeout: 12_000 });
       rawCurl = stdout;
     } catch (error) {
+      curlStatus = "failed";
       rawCurl = error instanceof Error ? error.message : String(error);
     }
 
     emit(`Port scan: ${host}`);
     let rawNmap = "";
+    let nmapStatus: "completed" | "failed" = "completed";
     const commonPorts = "21,22,25,80,443,3000,3306,4443,5432,6379,8080,8443,8888,27017";
     try {
       const { stdout } = await execFileAsync("nmap", [
@@ -672,11 +683,29 @@ export class OrchestratorExecutionEngineService {
       ], { timeout: 60_000 });
       rawNmap = stdout;
     } catch (error) {
+      nmapStatus = "failed";
       rawNmap = error instanceof Error ? error.message : String(error);
     }
 
     emit(`Parsing recon results with ${provider.name}`);
-    return this.parseReconWithAI(rawNmap, rawCurl, targetUrl, port, provider, model, emitReasoning);
+    const parsed = await this.parseReconWithAI(rawNmap, rawCurl, targetUrl, port, provider, model, emitReasoning);
+    return {
+      ...parsed,
+      probes: [
+        {
+          toolName: "cURL",
+          command: curlCommand,
+          output: rawCurl,
+          status: curlStatus
+        },
+        {
+          toolName: "Nmap",
+          command: nmapCommand,
+          output: rawNmap,
+          status: nmapStatus
+        }
+      ]
+    };
   }
 
   private async parseReconWithAI(
@@ -707,6 +736,7 @@ export class OrchestratorExecutionEngineService {
       httpHeaders: typeof parsed.httpHeaders === "object" && parsed.httpHeaders !== null ? parsed.httpHeaders as Record<string, string> : {},
       serverInfo: typeof parsed.serverInfo === "object" && parsed.serverInfo !== null ? parsed.serverInfo as ReconResult["serverInfo"] : {},
       interestingPaths: Array.isArray(parsed.interestingPaths) ? parsed.interestingPaths : [],
+      probes: [],
       rawNmap,
       rawCurl
     };

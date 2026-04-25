@@ -175,15 +175,6 @@ function buildDuplexAtoms(input: {
 }) {
   const atoms: DuplexAtom[] = [];
 
-  atoms.push({
-    key: `${input.workflow.id}:objective`,
-    side: "right",
-    kind: "objective",
-    label: "Objective",
-    body: input.workflow.objective,
-    meta: input.workflow.name
-  });
-
   for (const error of input.errors) {
     atoms.push({
       key: `error:${error}`,
@@ -379,7 +370,7 @@ function getCompactToolInput(atom: DuplexAtom) {
 }
 
 function getCompactToolOutput(atom: DuplexAtom, labelText: string) {
-  const preferredSource = collapseWhitespace(atom.body) || collapseWhitespace(atom.summaryText);
+  const preferredSource = collapseWhitespace(atom.summaryText) || collapseWhitespace(atom.body);
   if (!preferredSource) {
     return atom.status ? `${atom.status} with no summarized output.` : null;
   }
