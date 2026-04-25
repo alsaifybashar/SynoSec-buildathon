@@ -271,7 +271,7 @@ export const seededRoleDefinitions = [
     name: "Orchestrator",
     description: "Coordinates scans, chooses the next useful step, and delegates the right tool path.",
     systemPrompt:
-      "Lead a single evidence-driven SynoSec workflow. Choose the highest-value next action, stay in scope, use only approved tools, prefer concrete target/baseUrl inputs, and stop when confidence stops improving.",
+      "Lead a single evidence-driven SynoSec workflow. Choose the highest-value next action, stay in scope, use only approved tools, prefer concrete target/baseUrl inputs, and stop when confidence stops improving. Keep the operator informed with short visible progress updates by calling log_progress before tool calls and after meaningful results. Do not expose private chain-of-thought; provide concise action-oriented progress notes instead.",
     toolIds: [
       httpReconTool.id,
       httpHeadersTool.id,
@@ -339,7 +339,7 @@ export const seededRoleDefinitions = [
     name: "Compact Evaluator",
     description: "Evaluates the semantic-family tool surface as a compact alternative to the raw pentest catalog.",
     systemPrompt:
-      "You are the compact evaluation agent for SynoSec. Use only the available semantic family tools, think in terms of task families rather than tool brands, keep the evidence chain explicit, and evaluate whether the compact tool surface is sufficient to make progress. Do not ask for raw tool access. Work within the family tools you are given, report concrete findings through the workflow actions, and stop when confidence stops improving.",
+      "You are the compact evaluation agent for SynoSec. Use only the available semantic family tools, think in terms of task families rather than tool brands, keep the evidence chain explicit, and evaluate whether the compact tool surface is sufficient to make progress. Do not ask for raw tool access. Work within the family tools you are given, report concrete findings through the workflow actions, and stop when confidence stops improving. Keep the operator informed with short visible progress updates by calling log_progress before tool calls and after meaningful results. Do not expose private chain-of-thought; provide concise action-oriented progress notes instead.",
     toolIds: [
       familyHttpSurfaceTool.id,
       familyNetworkEnumerationTool.id,
@@ -395,7 +395,7 @@ export function getSeededWorkflowDefinitions() {
           id: "6e54b520-366c-4acb-9e36-a6cfe1c07fd3",
           label: "Pipeline",
           agentId: seededAgentId("anthropic", "orchestrator"),
-          objective: "Run one evidence-backed transparent pipeline across the configured target, use approved tools for collection, register concrete findings through report_finding, and stop only through complete_run or fail_run.",
+          objective: "Run one evidence-backed transparent pipeline across the configured target, use approved tools for collection, call log_progress for short operator-visible progress updates before tool calls and after meaningful results, register concrete findings through report_finding, and stop only through complete_run or fail_run.",
           allowedToolIds: [
             ...getSeededRoleDefinition("orchestrator")?.toolIds ?? [],
             vulnAuditTool.id
@@ -439,7 +439,7 @@ export function getSeededWorkflowDefinitions() {
           id: "0586f03f-27e2-4c5a-a12c-abcb1b68e841",
           label: "Attack Map",
           agentId: seededAgentId("anthropic", "orchestrator"),
-          objective: "Run a workflow-native attack-map orchestration pass across the configured target, prioritize realistic attack paths, execute approved tools, and report normalized evidence-backed workflow findings.",
+          objective: "Run a workflow-native attack-map orchestration pass across the configured target, prioritize realistic attack paths, call log_progress for short operator-visible progress updates before tool calls and after meaningful results, execute approved tools, and report normalized evidence-backed workflow findings.",
           allowedToolIds: [
             ...getSeededRoleDefinition("orchestrator")?.toolIds ?? [],
             vulnAuditTool.id,
@@ -484,7 +484,7 @@ export function getSeededWorkflowDefinitions() {
           id: "d6be6af5-fc56-42fa-a802-702d002b4bf6",
           label: "Compact Evaluation",
           agentId: seededAgentId("anthropic", "compact-evaluator"),
-          objective: "Run one evidence-backed compact-family evaluation pipeline across the configured target, use only the semantic family tools for collection and validation, register concrete findings through report_finding, and stop only through complete_run or fail_run.",
+          objective: "Run one evidence-backed compact-family evaluation pipeline across the configured target, use only the semantic family tools for collection and validation, call log_progress for short operator-visible progress updates before tool calls and after meaningful results, register concrete findings through report_finding, and stop only through complete_run or fail_run.",
           allowedToolIds: [
             ...getSeededRoleDefinition("compact-evaluator")?.toolIds ?? []
           ],

@@ -18,6 +18,7 @@ import { z } from "zod";
 import type { WorkflowRunStream } from "@/engine/workflow/workflow-run-stream.js";
 import { RequestError } from "@/shared/http/request-error.js";
 import { compileToolRequestFromDefinition } from "@/modules/ai-tools/index.js";
+import { derivePrivilegeProfile, deriveSandboxProfile } from "@/modules/ai-tools/tool-execution-config.js";
 import { ExecutionReportsService } from "@/modules/execution-reports/index.js";
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
 import type { AiProvidersRepository, StoredAiProvider } from "@/modules/ai-providers/index.js";
@@ -299,6 +300,9 @@ export class WorkflowExecutionService {
       evidence: input.evidence,
       impact: input.description,
       recommendation: `Investigate and remediate the attack path associated with "${input.title}" before additional chaining increases impact.`,
+      derivedFromFindingIds: [],
+      relatedFindingIds: [],
+      enablesFindingIds: [],
       ...(input.toolCommandPreview
         ? {
             reproduction: {
@@ -322,8 +326,11 @@ export class WorkflowExecutionService {
       "Report concrete findings with report_finding.",
       "Every report_finding must include concrete evidence references so execution reports can build the evidence graph automatically.",
       "Use derivedFromFindingIds, relatedFindingIds, and enablesFindingIds inside report_finding when findings depend on or connect to earlier findings.",
+      "Call log_progress before any evidence tool call or tool burst, and again after any meaningful result before deciding the next step.",
       "Use complete_run or fail_run to stop.",
-      "Emit short plain-text progress updates before tool bursts and closeout."
+      "Each log_progress update must be concise, operator-visible, and action-oriented.",
+      "Keep each log_progress message to 1-2 short sentences describing the next check, what changed, or what you will do next.",
+      "Do not expose hidden chain-of-thought or private reasoning. Provide concise action-oriented progress notes only."
     ].join("\n\n");
   }
 
@@ -918,8 +925,8 @@ export class WorkflowExecutionService {
         layer: inferLayer(tool.category),
         riskTier: tool.riskTier,
         justification: `Preflight compatibility check for ${tool.name}.`,
-        sandboxProfile: tool.sandboxProfile,
-        privilegeProfile: tool.privilegeProfile,
+        sandboxProfile: deriveSandboxProfile(tool.riskTier),
+        privilegeProfile: derivePrivilegeProfile(tool.riskTier),
         parameters: {
           bashSource: tool.bashSource ?? "",
           commandPreview: tool.name,
@@ -988,6 +995,10 @@ export class WorkflowExecutionService {
       {
         title: "Built-in actions",
         tools: [
+          {
+            name: "log_progress",
+            description: "Persist one short operator-visible progress update for the workflow transcript."
+          },
           {
             name: "report_finding",
             description: "Persist one evidence-backed workflow finding."
@@ -1157,6 +1168,23 @@ export class WorkflowExecutionService {
     ]));
 
     const systemTools = {
+      log_progress: createSdkTool({
+        description: "Persist one short operator-visible progress update for the workflow transcript.",
+        inputSchema: z.object({
+          message: z.string().min(1).max(400)
+        }),
+        execute: async (rawInput) => {
+          const note = z.object({
+            message: z.string().min(1).max(400)
+          }).parse(rawInput);
+          const message = note.message.trim();
+          await appendEvent("text", "completed", {
+            text: message,
+            source: "log_progress"
+          }, "Agent progress update", truncate(message, 80), message);
+          return { accepted: true };
+        }
+      }),
       report_finding: createSdkTool({
         description: "Persist one evidence-backed workflow finding.",
         inputSchema: workflowFindingSubmissionSchema,
@@ -1323,6 +1351,9 @@ export class WorkflowExecutionService {
             }
             break;
           case "tool-call-streaming-start":
+            if (part.toolName === "log_progress") {
+              break;
+            }
             await appendEvent("tool_call", "running", {
               toolCallId: part.toolCallId,
               toolName: part.toolName
@@ -1331,6 +1362,9 @@ export class WorkflowExecutionService {
             });
             break;
           case "tool-call-delta":
+            if (part.toolName === "log_progress") {
+              break;
+            }
             await appendEvent("tool_call", "running", {
               toolCallId: part.toolCallId,
               toolName: part.toolName,
@@ -1340,6 +1374,9 @@ export class WorkflowExecutionService {
             });
             break;
           case "tool-call":
+            if (part.toolName === "log_progress") {
+              break;
+            }
             await appendEvent("tool_call", "running", {
               toolCallId: part.toolCallId,
               toolName: part.toolName,
@@ -1350,6 +1387,9 @@ export class WorkflowExecutionService {
             });
             break;
           case "tool-result": {
+            if (part.toolName === "log_progress") {
+              break;
+            }
             const toolRunId = typeof part.output === "object" && part.output !== null && "toolRunId" in part.output && typeof part.output.toolRunId === "string"
               ? part.output.toolRunId
               : null;

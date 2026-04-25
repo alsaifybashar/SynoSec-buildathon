@@ -426,6 +426,110 @@ const activeRun: WorkflowRun = {
   completedAt: null
 };
 
+const streamedNarrationRun: WorkflowRun = {
+  id: "60000000-0000-0000-0000-000000000010",
+  workflowId: workflow.id,
+  status: "running",
+  currentStepIndex: 1,
+  startedAt: "2026-04-21T00:00:00.000Z",
+  completedAt: null,
+  trace: [],
+  events: [
+    {
+      id: "stream-1",
+      workflowRunId: "60000000-0000-0000-0000-000000000010",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 0,
+      type: "system_message",
+      status: "completed",
+      title: "Model step started",
+      summary: "Started a new model step.",
+      detail: null,
+      payload: {
+        rawStreamPartType: "start-step"
+      },
+      createdAt: "2026-04-21T00:00:00.100Z"
+    },
+    {
+      id: "stream-2",
+      workflowRunId: "60000000-0000-0000-0000-000000000010",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 1,
+      type: "model_decision",
+      status: "running",
+      title: "Model streamed text",
+      summary: "Checking the web entrypoint before expanding coverage.",
+      detail: "Checking the web entrypoint before expanding coverage.",
+      payload: {
+        rawStreamPartType: "text",
+        text: "Checking the web entrypoint before expanding coverage."
+      },
+      createdAt: "2026-04-21T00:00:00.200Z"
+    },
+    {
+      id: "stream-3",
+      workflowRunId: "60000000-0000-0000-0000-000000000010",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 2,
+      type: "tool_call",
+      status: "running",
+      title: "Calling Web Probe",
+      summary: "Invoked Web Probe.",
+      detail: "{\"url\":\"http://localhost:8888\"}",
+      payload: {
+        rawStreamPartType: "tool-call",
+        toolName: "Web Probe",
+        input: "{\"url\":\"http://localhost:8888\"}"
+      },
+      createdAt: "2026-04-21T00:00:00.300Z"
+    },
+    {
+      id: "stream-4",
+      workflowRunId: "60000000-0000-0000-0000-000000000010",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 3,
+      type: "tool_result",
+      status: "completed",
+      title: "Web Probe returned",
+      summary: "HTTP 200 confirmed.",
+      detail: "HTTP/1.1 200 OK",
+      payload: {
+        rawStreamPartType: "tool-result",
+        toolName: "Web Probe",
+        summary: "HTTP 200 confirmed.",
+        observations: ["HTTP service responded with 200 OK."]
+      },
+      createdAt: "2026-04-21T00:00:00.400Z"
+    },
+    {
+      id: "stream-5",
+      workflowRunId: "60000000-0000-0000-0000-000000000010",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 4,
+      type: "model_decision",
+      status: "running",
+      title: "Model streamed text",
+      summary: "The surface is reachable, so the next step is header-focused validation.",
+      detail: "The surface is reachable, so the next step is header-focused validation.",
+      payload: {
+        rawStreamPartType: "text",
+        text: "The surface is reachable, so the next step is header-focused validation."
+      },
+      createdAt: "2026-04-21T00:00:00.500Z"
+    }
+  ]
+};
+
 const rejectedModelRun: WorkflowRun = {
   id: "60000000-0000-0000-0000-000000000099",
   workflowId: workflow.id,
@@ -753,6 +857,30 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getByText("Prompt context")).toBeInTheDocument();
     expect(screen.getAllByText("Agent typing").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Findings").length).toBeGreaterThan(0);
+  });
+
+  it("renders streamed narration separately from tool activity for active runs", () => {
+    render(
+      <WorkflowTraceSection
+        workflow={workflow}
+        applications={applications}
+        runtimes={runtimes}
+        agents={agents}
+        tools={tools}
+        run={streamedNarrationRun}
+        running={true}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails={false}
+      />
+    );
+
+    expect(screen.getByText(/Checking the web entrypoint before expanding coverage\./)).toBeInTheDocument();
+    expect(screen.getByText(/The surface is reachable, so the next step is header-focused validation\./)).toBeInTheDocument();
+    expect(screen.getByText(/Called Web Probe/)).toBeInTheDocument();
+    expect(screen.getByText("HTTP service responded with 200 OK.")).toBeInTheDocument();
   });
 
   it("renders standardized model and tool error atoms with retry guidance", () => {

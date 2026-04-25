@@ -451,9 +451,82 @@ describe("WorkflowExecutionService", () => {
       : toolContextEvent?.detail;
 
     expect(toolContextBody).toContain("Built-in actions");
+    expect(toolContextBody).toContain("log_progress: Persist one short operator-visible progress update for the workflow transcript.");
     expect(toolContextBody).toContain("report_finding: Persist one evidence-backed workflow finding.");
     expect(toolContextBody).toContain("complete_run: Finish the workflow pipeline successfully.");
     expect(toolContextBody).toContain("fail_run: Finish the workflow pipeline as failed.");
+  });
+
+  it("injects explicit visible narration instructions into the workflow system prompt", async () => {
+    streamTextMock.mockReturnValue({
+      fullStream: (async function* () {
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: {
+            inputTokens: 1,
+            outputTokens: 1,
+            totalTokens: 2
+          }
+        };
+      })()
+    });
+
+    const { service } = createService();
+
+    await service.startRun("10000000-0000-0000-0000-000000000001");
+
+    await vi.waitFor(() => {
+      expect(streamTextMock).toHaveBeenCalledTimes(1);
+    });
+    const call = streamTextMock.mock.calls[0]?.[0] as { system?: string };
+    expect(call.system).toContain("Call log_progress before any evidence tool call or tool burst");
+    expect(call.system).toContain("Each log_progress update must be concise, operator-visible, and action-oriented.");
+    expect(call.system).toContain("Do not expose hidden chain-of-thought or private reasoning.");
+  });
+
+  it("does not surface log_progress as a regular tool call in workflow events", async () => {
+    async function* fullStream() {
+      yield {
+        type: "tool-call",
+        toolCallId: "call-progress",
+        toolName: "log_progress",
+        input: {
+          message: "Checking the HTTP surface before deeper validation."
+        }
+      };
+      yield {
+        type: "tool-result",
+        toolCallId: "call-progress",
+        toolName: "log_progress",
+        output: {
+          accepted: true
+        }
+      };
+      yield {
+        type: "finish",
+        finishReason: "stop",
+        rawFinishReason: "end_turn",
+        totalUsage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          totalTokens: 2
+        }
+      };
+    }
+
+    streamTextMock.mockReturnValue({
+      fullStream: fullStream()
+    });
+
+    const { service, createdRuns } = createService();
+
+    await service.startRun("10000000-0000-0000-0000-000000000001");
+
+    const events = (createdRuns[0]?.["events"] ?? []) as WorkflowTraceEvent[];
+    expect(events.some((event) => event.type === "tool_call" && event.payload?.["toolName"] === "log_progress")).toBe(false);
+    expect(events.some((event) => event.type === "tool_result" && event.payload?.["toolName"] === "log_progress")).toBe(false);
   });
 
   it("persists raw stream part types and publishes live model output from streamed workflow text", async () => {

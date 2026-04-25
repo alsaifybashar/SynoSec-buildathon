@@ -19,6 +19,7 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(workflow?.description).toContain("transparent evidence pipeline");
     expect(workflow?.stages.map((stage) => stage.label)).toEqual(["Pipeline"]);
     expect(workflow?.stages[0]?.objective).toContain("transparent pipeline");
+    expect(workflow?.stages[0]?.objective).toContain("operator-visible progress updates");
     expect(workflow?.stages[0]?.agentId).toBe(seededAgentId("anthropic", "orchestrator"));
     expect(attackMapWorkflow).toBeDefined();
     expect(attackMapWorkflow?.executionKind).toBe("attack-map");
@@ -36,6 +37,8 @@ describe("getSeededWorkflowDefinitions", () => {
       "seed-family-content-discovery",
       "seed-family-vulnerability-validation"
     ]);
+    expect(attackMapWorkflow?.stages[0]?.objective).toContain("operator-visible progress updates");
+    expect(compactWorkflow?.stages[0]?.objective).toContain("operator-visible progress updates");
     expect(workflow?.applicationId).toBe(localApplicationId);
     expect(attackMapWorkflow?.applicationId).toBe(localApplicationId);
     expect(compactWorkflow?.applicationId).toBe(localApplicationId);
