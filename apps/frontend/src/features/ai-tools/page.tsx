@@ -10,7 +10,7 @@ import {
   type ToolCategory,
   type ToolRiskTier
 } from "@synosec/contracts";
-import { ChevronDown, ChevronRight, Copy, RefreshCcw } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { aiToolsResource } from "@/features/ai-tools/resource";
 import { aiToolTransfer } from "@/features/ai-tools/transfer";
 import { fetchJson } from "@/shared/lib/api";
@@ -33,15 +33,12 @@ type ToolFormValues = {
   source: "custom" | "system";
   description: string;
   bashSource: string;
-  capabilitiesText: string;
   category: ToolCategory;
   riskTier: ToolRiskTier;
   timeoutMsText: string;
   inputSchemaText: string;
   outputSchemaText: string;
 };
-
-type SchemaField = "inputSchemaText" | "outputSchemaText";
 
 const statusLabels: Record<AiToolStatus, string> = {
   active: "Active",
@@ -68,7 +65,6 @@ function createEmptyFormValues(): ToolFormValues {
     source: "custom",
     description: "",
     bashSource: "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' 'Tool implementation is required before execution.' >&2\nexit 1\n",
-    capabilitiesText: "",
     category: "utility",
     riskTier: "passive",
     timeoutMsText: "",
@@ -84,7 +80,6 @@ function toFormValues(tool: AiTool): ToolFormValues {
     source: tool.source,
     description: tool.description ?? "",
     bashSource: tool.bashSource ?? "",
-    capabilitiesText: tool.capabilities.join("\n"),
     category: tool.category,
     riskTier: tool.riskTier,
     timeoutMsText: String(tool.timeoutMs),
@@ -142,10 +137,6 @@ function parseRequestBody(values: ToolFormValues): { body?: CreateAiToolBody; er
       description: values.description.trim(),
       executorType: "bash",
       bashSource: values.bashSource,
-      capabilities: values.capabilitiesText
-        .split("\n")
-        .map((value) => value.trim())
-        .filter(Boolean),
       category: values.category,
       riskTier: values.riskTier,
       timeoutMs: timeoutMs ?? 30000,
@@ -160,10 +151,6 @@ function formatTimestamp(value: string) {
   return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-function formatCrudCapability(value: boolean) {
-  return value ? "Allowed" : "Blocked";
-}
-
 function describeBuiltinAction(tool: AiTool) {
   const actionKey = tool.builtinActionKey;
   if (!actionKey) {
@@ -171,6 +158,7 @@ function describeBuiltinAction(tool: AiTool) {
   }
 
   const labels: Record<ToolBuiltinActionKey, string> = {
+    log_progress: "Workflow built-in: persists a short operator-visible progress update into the workflow transcript.",
     report_finding: "Workflow built-in: persists a structured finding and supplies the metadata used to project execution-report graph nodes and edges.",
     complete_run: "Workflow built-in: marks the current workflow run as complete.",
     fail_run: "Workflow built-in: marks the current workflow run as failed.",
@@ -256,17 +244,6 @@ function createExampleRunInput(tool: AiTool) {
   return example;
 }
 
-function parseJsonText(value: string) {
-  try {
-    return { value: JSON.parse(value) as Record<string, unknown>, error: null };
-  } catch (error) {
-    return {
-      value: null,
-      error: error instanceof Error ? error.message : "Invalid JSON"
-    };
-  }
-}
-
 function CollapsibleSection({
   title,
   open,
@@ -301,39 +278,6 @@ function CollapsibleSection({
   );
 }
 
-function MetadataGrid({
-  canCreateTool,
-  canUpdateTool,
-  canDeleteTool,
-  tool
-}: {
-  canCreateTool: boolean;
-  canUpdateTool: boolean;
-  canDeleteTool: boolean;
-  tool: AiTool;
-}) {
-  return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-      <div className="rounded-[4px] border border-border/70 bg-background/70 p-3">
-        <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Create</p>
-        <p className="mt-2 text-sm text-foreground">{formatCrudCapability(canCreateTool)}</p>
-      </div>
-      <div className="rounded-[4px] border border-border/70 bg-background/70 p-3">
-        <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Update</p>
-        <p className="mt-2 text-sm text-foreground">{formatCrudCapability(canUpdateTool)}</p>
-      </div>
-      <div className="rounded-[4px] border border-border/70 bg-background/70 p-3">
-        <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Delete</p>
-        <p className="mt-2 text-sm text-foreground">{formatCrudCapability(canDeleteTool)}</p>
-      </div>
-      <div className="rounded-[4px] border border-border/70 bg-background/70 p-3">
-        <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Updated</p>
-        <p className="mt-2 text-sm text-foreground">{formatTimestamp(tool.updatedAt)}</p>
-      </div>
-    </div>
-  );
-}
-
 export function AiToolsPage({
   toolId,
   toolNameHint,
@@ -356,8 +300,6 @@ export function AiToolsPage({
   const [runError, setRunError] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<AiToolRunResult | null>(null);
   const [runningTool, setRunningTool] = useState(false);
-  const [schemasOpen, setSchemasOpen] = useState(false);
-  const [metadataOpen, setMetadataOpen] = useState(false);
   const isCreateMode = toolId === "new";
   const aiToolsListResource = useMemo<ResourceClient<AiTool, AiToolsQuery>>(() => ({
     ...aiToolsResource,
@@ -456,46 +398,14 @@ export function AiToolsPage({
   const isDirty = JSON.stringify(formValues) !== JSON.stringify(initialValues);
   const canCreateTool = aiToolsResource.capabilities.canCreate;
   const canUpdateTool = !isCreateMode && tool ? aiToolsResource.capabilities.canUpdate(tool) : canCreateTool;
-  const canDeleteTool = tool ? aiToolsResource.capabilities.canDelete(tool) : false;
   const isToolEditable = isCreateMode ? canCreateTool : canUpdateTool;
   const isBuiltinTool = tool?.executorType === "builtin";
   const isToolRunnable = !isCreateMode && tool?.executorType === "bash";
   const exampleRunInput = useMemo(() => (tool ? JSON.stringify(createExampleRunInput(tool), null, 2) : JSON.stringify({}, null, 2)), [tool]);
-  const inputSchemaValidation = parseJsonText(formValues.inputSchemaText);
-  const outputSchemaValidation = parseJsonText(formValues.outputSchemaText);
 
   function handleFieldChange<Key extends keyof ToolFormValues>(field: Key, value: ToolFormValues[Key]) {
     setFormValues((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
-  }
-
-  function handleSchemaFormat(field: SchemaField) {
-    const parsed = parseJsonText(formValues[field]);
-    if (!parsed.value) {
-      setErrors((current) => ({ ...current, [field]: "Schema must be valid JSON before formatting." }));
-      return;
-    }
-
-    handleFieldChange(field, JSON.stringify(parsed.value, null, 2));
-  }
-
-  function handleSchemaValidate(field: SchemaField) {
-    const parsed = parseJsonText(formValues[field]);
-    if (!parsed.value) {
-      setErrors((current) => ({ ...current, [field]: parsed.error ?? "Schema must be valid JSON." }));
-      return;
-    }
-
-    setErrors((current) => ({ ...current, [field]: undefined }));
-    toast.success(field === "inputSchemaText" ? "Input schema is valid JSON" : "Output schema is valid JSON");
-  }
-
-  function handleSchemaReset(field: SchemaField) {
-    const nextValue = field === "inputSchemaText"
-      ? (tool ? JSON.stringify(tool.inputSchema, null, 2) : createDefaultInputSchemaText())
-      : (tool ? JSON.stringify(tool.outputSchema, null, 2) : createDefaultOutputSchemaText());
-
-    handleFieldChange(field, nextValue);
   }
 
   function handleUseExampleInput() {
@@ -506,17 +416,6 @@ export function AiToolsPage({
   function handleResetRunInput() {
     setRunInputText(JSON.stringify({}, null, 2));
     setRunError(null);
-  }
-
-  async function handleCopyExampleInput() {
-    try {
-      await navigator.clipboard.writeText(exampleRunInput);
-      toast.success("Example input copied");
-    } catch (error) {
-      toast.error("Failed to copy example input", {
-        description: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
   }
 
   async function handleSave() {
@@ -570,8 +469,10 @@ export function AiToolsPage({
       return;
     }
 
-    const parsed = parseJsonText(runInputText);
-    if (!parsed.value) {
+    let parsedInput: Record<string, unknown>;
+    try {
+      parsedInput = JSON.parse(runInputText) as Record<string, unknown>;
+    } catch {
       setRunError("Run input must be valid JSON.");
       setRunResult(null);
       return;
@@ -584,7 +485,7 @@ export function AiToolsPage({
       const result = await fetchJson<AiToolRunResult>(`${apiRoutes.aiTools}/${tool.id}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: parsed.value })
+        body: JSON.stringify({ input: parsedInput })
       });
       setRunResult(result);
     } catch (error) {
@@ -729,11 +630,6 @@ export function AiToolsPage({
               <Input value={formValues.timeoutMsText} onChange={(event) => handleFieldChange("timeoutMsText", event.target.value)} aria-label="Timeout milliseconds" disabled={!isToolEditable} />
             </DetailField>
           ) : null}
-          {!isBuiltinTool ? (
-            <DetailField label="Capabilities" className="md:col-span-2" hint="One capability per line. Keep entries short and machine-readable.">
-              <Textarea value={formValues.capabilitiesText} onChange={(event) => handleFieldChange("capabilitiesText", event.target.value)} aria-label="Capabilities" rows={4} className="font-mono text-sm" disabled={!isToolEditable} />
-            </DetailField>
-          ) : null}
         </DetailFieldGroup>
 
         {!isBuiltinTool ? (
@@ -803,123 +699,13 @@ export function AiToolsPage({
           </div>
         ) : null}
 
-        <CollapsibleSection
-          title="Schemas"
-          open={schemasOpen}
-          onToggle={() => setSchemasOpen((current) => !current)}
-          summary="Input and result contracts, with helpers for formatting and validation."
-        >
-          <div className="space-y-4">
-            <div className="rounded-[4px] border border-border/70 bg-background/70 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Example input</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Use this directly in the run section below.</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={handleUseExampleInput}>
-                    Use Below
-                  </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => void handleCopyExampleInput()}>
-                    <Copy className="h-4 w-4" />
-                    Copy
-                  </Button>
-                </div>
-              </div>
-              <Textarea value={exampleRunInput} readOnly aria-label="Example tool input" rows={6} className="mt-3 font-mono text-sm" />
-            </div>
-
-            <DetailFieldGroup className="bg-transparent" title="Schema editors">
-              <DetailField label="Input schema" className="md:col-span-2" {...definedString(errors.inputSchemaText)}>
-                {!inputSchemaValidation.value ? (
-                  <div className="mb-2 rounded-[4px] border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    Invalid JSON: {inputSchemaValidation.error}
-                  </div>
-                ) : null}
-                <div className="mb-2 flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => handleSchemaFormat("inputSchemaText")} disabled={!isToolEditable}>Format JSON</Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => handleSchemaValidate("inputSchemaText")}>Validate JSON</Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => handleSchemaReset("inputSchemaText")} disabled={!isToolEditable}>
-                    <RefreshCcw className="h-4 w-4" />
-                    Reset
-                  </Button>
-                </div>
-                <Textarea value={formValues.inputSchemaText} onChange={(event) => handleFieldChange("inputSchemaText", event.target.value)} aria-label="Input schema" rows={10} className="font-mono text-sm" disabled={!isToolEditable} />
-              </DetailField>
-
-              <DetailField label="Structured result schema" className="md:col-span-2" {...definedString(errors.outputSchemaText)}>
-                <p className="mb-2 text-sm leading-6 text-muted-foreground">
-                  Evidence tools return a structured result envelope. `output` is required. `observations` are optional evidence records and are not persisted findings.
-                </p>
-                {!outputSchemaValidation.value ? (
-                  <div className="mb-2 rounded-[4px] border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    Invalid JSON: {outputSchemaValidation.error}
-                  </div>
-                ) : null}
-                <div className="mb-2 flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => handleSchemaFormat("outputSchemaText")} disabled={!isToolEditable}>Format JSON</Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => handleSchemaValidate("outputSchemaText")}>Validate JSON</Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => handleSchemaReset("outputSchemaText")} disabled={!isToolEditable}>
-                    <RefreshCcw className="h-4 w-4" />
-                    Reset
-                  </Button>
-                </div>
-                <Textarea value={formValues.outputSchemaText} onChange={(event) => handleFieldChange("outputSchemaText", event.target.value)} aria-label="Output schema" rows={10} className="font-mono text-sm" disabled={!isToolEditable} />
-              </DetailField>
-            </DetailFieldGroup>
-          </div>
-        </CollapsibleSection>
-
-        {isToolRunnable && tool ? (
-          <>
-            <DetailFieldGroup title="Results" className="bg-card/70">
-              <DetailField label="Command preview" className="md:col-span-2">
-                <Textarea value={runResult?.commandPreview ?? ""} readOnly aria-label="Tool command preview" rows={3} className="font-mono text-sm" />
-              </DetailField>
-              <DetailField label="Raw output" className="md:col-span-2">
-                <Textarea value={runResult?.output ?? ""} readOnly aria-label="Tool raw output" rows={8} className="font-mono text-sm" />
-              </DetailField>
-              <DetailField label="Parsed evidence result" className="md:col-span-2">
-                <Textarea
-                  value={runResult ? JSON.stringify({
-                    exitCode: runResult.exitCode,
-                    statusReason: runResult.statusReason,
-                    durationMs: runResult.durationMs,
-                    target: runResult.target,
-                    port: runResult.port,
-                    observations: runResult.observations
-                  }, null, 2) : ""}
-                  readOnly
-                  aria-label="Tool parsed result"
-                  rows={12}
-                  className="font-mono text-sm"
-                />
-              </DetailField>
-            </DetailFieldGroup>
-          </>
-        ) : (
+        {isToolRunnable && tool ? null : (
           <div className="rounded-[4px] border border-border/70 bg-background/70 p-4 text-sm text-muted-foreground">
             {isBuiltinTool
               ? "Built-in tools do not expose a runnable shell test console here."
               : "Save a runnable bash tool to use the test console."}
           </div>
         )}
-
-        {tool ? (
-          <CollapsibleSection
-            title="Metadata"
-            open={metadataOpen}
-            onToggle={() => setMetadataOpen((current) => !current)}
-            summary="Operational metadata and CRUD capabilities."
-          >
-            <MetadataGrid
-              canCreateTool={canCreateTool}
-              canUpdateTool={canUpdateTool}
-              canDeleteTool={canDeleteTool}
-              tool={tool}
-            />
-          </CollapsibleSection>
-        ) : null}
       </section>
     </DetailPage>
   );

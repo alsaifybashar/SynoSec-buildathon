@@ -92,9 +92,7 @@ describe("AiToolsPage", () => {
       }));
     });
 
-    expect(await screen.findByDisplayValue("curl -sS -I -L https://example.com")).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/HTTP\/1.1 200 OK/)).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/"exitCode": 0/)).toBeInTheDocument();
+    expect(await screen.findByText("Succeeded")).toBeInTheDocument();
   });
 
   it("shows builtin execution details without exposing the run console", () => {
@@ -117,14 +115,8 @@ describe("AiToolsPage", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /metadata/i }));
-    expect(screen.getByText("Create")).toBeInTheDocument();
-    expect(screen.getByText("Update")).toBeInTheDocument();
-    expect(screen.getByText("Delete")).toBeInTheDocument();
     expect(screen.getByText("Built-in action")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Report Finding")).toBeDisabled();
-    expect(screen.getByText("Allowed")).toBeInTheDocument();
-    expect(screen.getAllByText("Blocked")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Run Tool" })).not.toBeInTheDocument();
     expect(screen.getByText("Built-in tools do not expose a runnable shell test console here.")).toBeInTheDocument();
 

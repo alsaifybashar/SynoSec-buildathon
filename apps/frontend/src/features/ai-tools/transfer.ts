@@ -19,7 +19,6 @@ export const aiToolTransfer = {
     description: tool.description ?? "",
     executorType: "bash",
     bashSource: tool.bashSource ?? "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"imported tool\"}'",
-    capabilities: tool.capabilities,
     category: tool.category,
     riskTier: tool.riskTier,
     timeoutMs: tool.timeoutMs,
