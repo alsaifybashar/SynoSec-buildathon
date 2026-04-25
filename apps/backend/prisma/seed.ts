@@ -16,6 +16,7 @@ const prisma = new PrismaClient();
 const localTargetAssetId = "7e8d6ec5-2d8b-4d41-9a46-8d5d8bff7a31";
 const cloudflareConstraintId = "seed-constraint-cloudflare-v1";
 const localTargetBypassConstraintId = "seed-constraint-local-target-bypass-v1";
+const cloudflareScansPolicyUrl = "https://developers.cloudflare.com/fundamentals/reference/scans-penetration/";
 const legacySingleAgentSeedIds = {
   runId: "b6ec7b8e-b8dc-4b58-bf5a-5f3f0f7e8d4c",
   tacticId: "54ec7b8e-b8dc-4b58-bf5a-5f3f0f7e8d4c",
@@ -114,7 +115,7 @@ async function main() {
       kind: "provider_policy",
       provider: "cloudflare",
       version: 1,
-      description: "Restricts testing to customer-owned assets behind Cloudflare and enforces Cloudflare-specific scan exclusions and throttling.",
+      description: "Restricts testing to customer-owned assets behind Cloudflare, denies Cloudflare-owned destinations, disables active exploitation, and enforces Cloudflare scan exclusions and throttling. Cloudflare penetration-test prerequisites such as WAF, bot, and rate-limiting zone configuration must still be validated outside this constraint.",
       bypassForLocalTargets: false,
       denyProviderOwnedTargets: true,
       requireVerifiedOwnership: true,
@@ -123,6 +124,7 @@ async function main() {
       rateLimitRps: 5,
       requireHostAllowlistSupport: true,
       requirePathExclusionSupport: true,
+      documentationUrls: [cloudflareScansPolicyUrl],
       excludedPaths: ["/cdn-cgi/"]
     },
     create: {
@@ -131,7 +133,7 @@ async function main() {
       kind: "provider_policy",
       provider: "cloudflare",
       version: 1,
-      description: "Restricts testing to customer-owned assets behind Cloudflare and enforces Cloudflare-specific scan exclusions and throttling.",
+      description: "Restricts testing to customer-owned assets behind Cloudflare, denies Cloudflare-owned destinations, disables active exploitation, and enforces Cloudflare scan exclusions and throttling. Cloudflare penetration-test prerequisites such as WAF, bot, and rate-limiting zone configuration must still be validated outside this constraint.",
       bypassForLocalTargets: false,
       denyProviderOwnedTargets: true,
       requireVerifiedOwnership: true,
@@ -140,6 +142,7 @@ async function main() {
       rateLimitRps: 5,
       requireHostAllowlistSupport: true,
       requirePathExclusionSupport: true,
+      documentationUrls: [cloudflareScansPolicyUrl],
       excludedPaths: ["/cdn-cgi/"]
     }
   });

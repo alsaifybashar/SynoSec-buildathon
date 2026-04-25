@@ -53,7 +53,7 @@ const application: Application = {
         requireHostAllowlistSupport: true,
         requirePathExclusionSupport: true,
         documentationUrls: [
-          "https://developers.cloudflare.com/fundamentals/reference/policies-compliances/cloudflare-penetration-testing-policy/"
+          "https://developers.cloudflare.com/fundamentals/reference/scans-penetration/"
         ],
         excludedPaths: ["/cdn-cgi/"],
         createdAt: "2026-04-25T00:00:00.000Z",
