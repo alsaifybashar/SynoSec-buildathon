@@ -136,6 +136,11 @@ function WorkflowConfigEditor({
             </SelectContent>
           </Select>
         </DetailField>
+        <DetailField label="Execution kind">
+          <div className="rounded-xl border border-border bg-background/40 px-3 py-2 text-sm text-foreground">
+            {formValues.executionKind}
+          </div>
+        </DetailField>
         <DetailField label="Application" required {...definedFieldError(errors["applicationId"])}>
           <Select value={formValues.applicationId} onValueChange={(value) => onFieldChange("applicationId", value)}>
             <SelectTrigger aria-label="Application">
@@ -292,6 +297,7 @@ export function WorkflowsPage({
   const [latestRunError, setLatestRunError] = useState<string | null>(null);
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [selectedTargetAssetId, setSelectedTargetAssetId] = useState("");
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [showFullDetails, setShowFullDetails] = useState(false);
   const isCreateMode = workflowId === "new";
@@ -397,6 +403,22 @@ export function WorkflowsPage({
     setEditModalOpen(false);
     setErrors({});
   }, [workflowDetail, workflowId, onNavigateToList, applications, agents]);
+
+  useEffect(() => {
+    if (!workflow) {
+      setSelectedTargetAssetId("");
+      return;
+    }
+
+    const application = applications.find((item) => item.id === workflow.applicationId);
+    const targetAssets = application?.targetAssets ?? [];
+    const defaultTarget = targetAssets.find((asset) => asset.isDefault) ?? targetAssets[0];
+    setSelectedTargetAssetId((current) => (
+      current && targetAssets.some((asset) => asset.id === current)
+        ? current
+        : defaultTarget?.id ?? ""
+    ));
+  }, [applications, workflow]);
 
   useEffect(() => {
     if (!workflow || isCreateMode) {
@@ -606,12 +628,25 @@ export function WorkflowsPage({
       return;
     }
 
+    const application = applications.find((item) => item.id === workflow.applicationId);
+    const targetAssets = application?.targetAssets ?? [];
+    if (targetAssets.length === 0) {
+      toast.error("No registered targets", {
+        description: "This application needs at least one registered target asset before a workflow can run."
+      });
+      return;
+    }
+
     setRunPending(true);
     setLatestRunError(null);
     setTranscriptError(null);
     setStreamError(null);
     try {
-      const run = await fetchJson<WorkflowRun>(`${apiRoutes.workflows}/${workflow.id}/runs`, { method: "POST" });
+      const run = await fetchJson<WorkflowRun>(`${apiRoutes.workflows}/${workflow.id}/runs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(selectedTargetAssetId ? { targetAssetId: selectedTargetAssetId } : {})
+      });
       setCurrentRun(run);
       toast.success("Workflow run started");
     } catch (error) {
@@ -696,6 +731,8 @@ export function WorkflowsPage({
   const workflowAgentId = workflow?.agentId ?? "";
   const workflowAllowedToolIds = workflow?.allowedToolIds ?? [];
   const workflowAgent = workflowAgentId ? agentLookup[workflowAgentId] : null;
+  const workflowApplication = workflow ? applications.find((item) => item.id === workflow.applicationId) ?? null : null;
+  const workflowTargetAssets = workflowApplication?.targetAssets ?? [];
   const approvedToolCount = workflow
     ? (workflowAllowedToolIds.length > 0 ? workflowAllowedToolIds.length : workflowAgent?.toolIds.length ?? 0)
     : 0;
@@ -745,6 +782,20 @@ export function WorkflowsPage({
             ) : (
               <>
                 <div aria-hidden className="mx-1 hidden h-6 w-px bg-border/70 md:block" />
+                {workflowTargetAssets.length > 0 ? (
+                  <Select value={selectedTargetAssetId || "__none__"} onValueChange={(value) => setSelectedTargetAssetId(value === "__none__" ? "" : value)}>
+                    <SelectTrigger className="h-9 min-w-56" aria-label="Workflow target">
+                      <SelectValue placeholder="Select target" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {workflowTargetAssets.map((asset) => (
+                        <SelectItem key={asset.id} value={asset.id}>
+                          {asset.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : null}
                 <Button type="button" onClick={handleStartRun} disabled={!workflow || runPending}>
                   <WorkflowIcon className="h-4 w-4" />
                   Start Run

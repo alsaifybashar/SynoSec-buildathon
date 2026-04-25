@@ -374,8 +374,6 @@ Current list UX improvements:
 
 - category filter
 - risk tier filter
-- `list` / `grouped` view mode toggle
-- grouped-by-category rendering on the client
 - compact colored risk badges:
   - passive = green
   - active = amber

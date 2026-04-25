@@ -15,11 +15,11 @@ export const aiToolTransfer = {
   toCreateBody: (tool: AiTool): CreateAiToolBody => ({
     name: tool.name,
     status: tool.status,
-    source: tool.source,
+    source: "custom",
     description: tool.description ?? "",
     binary: tool.binary,
-    executorType: tool.executorType,
-    bashSource: tool.bashSource,
+    executorType: "bash",
+    bashSource: tool.bashSource ?? "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"imported tool\"}'",
     capabilities: tool.capabilities,
     category: tool.category,
     riskTier: tool.riskTier,
@@ -27,6 +27,7 @@ export const aiToolTransfer = {
     sandboxProfile: tool.sandboxProfile,
     privilegeProfile: tool.privilegeProfile,
     timeoutMs: tool.timeoutMs,
+    constraintProfile: tool.constraintProfile,
     inputSchema: tool.inputSchema,
     outputSchema: tool.outputSchema
   })

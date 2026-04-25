@@ -1,8 +1,9 @@
-import type { CreateWorkflowBody, Workflow, WorkflowStatus } from "@synosec/contracts";
+import type { CreateWorkflowBody, ExecutionKind, Workflow, WorkflowStatus } from "@synosec/contracts";
 
 export type WorkflowFormValues = {
   name: string;
   status: WorkflowStatus;
+  executionKind: ExecutionKind;
   description: string;
   applicationId: string;
   runtimeId: string;
@@ -15,6 +16,7 @@ export function createEmptyFormValues(defaultApplicationId = "", defaultRuntimeI
   return {
     name: "",
     status: "draft",
+    executionKind: "workflow",
     description: "",
     applicationId: defaultApplicationId,
     runtimeId: defaultRuntimeId,
@@ -28,6 +30,7 @@ export function toWorkflowFormValues(workflow: Workflow): WorkflowFormValues {
   return {
     name: workflow.name,
     status: workflow.status,
+    executionKind: workflow.executionKind ?? "workflow",
     description: workflow.description ?? "",
     applicationId: workflow.applicationId,
     runtimeId: workflow.runtimeId ?? "",
@@ -41,6 +44,7 @@ export function toWorkflowRequestBody(values: WorkflowFormValues): CreateWorkflo
   return {
     name: values.name.trim(),
     status: values.status,
+    executionKind: values.executionKind,
     description: values.description.trim() || null,
     applicationId: values.applicationId,
     runtimeId: values.runtimeId || null,

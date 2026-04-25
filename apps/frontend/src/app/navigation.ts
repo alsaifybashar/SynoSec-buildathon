@@ -3,6 +3,7 @@ import {
   AppWindow,
   Bot,
   Columns2,
+  FileSearch,
   GitCompare,
   ListTree,
   MessageSquareText,
@@ -24,7 +25,9 @@ export type NavigationId =
   | "ai-providers"
   | "ai-agents"
   | "ai-tools"
+  | "execution-constraints"
   | "workflows"
+  | "execution-reports"
   | "workflow-thread"
   | "workflow-trace"
   | "workflow-ledger"
@@ -65,6 +68,7 @@ export type CrudNavigationId =
   | "ai-providers"
   | "ai-agents"
   | "ai-tools"
+  | "execution-constraints"
   | "workflows";
 
 export type CrudRouteConfig = {
@@ -118,6 +122,13 @@ export const crudRouteConfigs: Record<CrudNavigationId, CrudRouteConfig> = {
     createPath: "/ai/tools/new",
     detailPath: "/ai/tools/:toolId",
     paramName: "toolId"
+  },
+  "execution-constraints": {
+    id: "execution-constraints",
+    listPath: "/execution-constraints",
+    createPath: "/execution-constraints/new",
+    detailPath: "/execution-constraints/:constraintId",
+    paramName: "constraintId"
   },
   workflows: {
     id: "workflows",
@@ -177,10 +188,28 @@ export const navigationTree: NavigationTreeEntry[] = [
   {
     kind: "item",
     item: createNavigationItem({
+      id: "execution-constraints",
+      label: "Execution Constraints",
+      path: crudRouteConfigs["execution-constraints"].listPath,
+      icon: ScrollText
+    })
+  },
+  {
+    kind: "item",
+    item: createNavigationItem({
       id: "workflows",
       label: "Workflows",
       path: crudRouteConfigs.workflows.listPath,
       icon: Route
+    })
+  },
+  {
+    kind: "item",
+    item: createNavigationItem({
+      id: "execution-reports",
+      label: "Execution Reports",
+      path: "/execution-reports",
+      icon: FileSearch
     })
   },
   {

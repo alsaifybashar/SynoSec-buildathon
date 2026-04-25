@@ -888,7 +888,7 @@ export function AttackMapPage() {
         setToolActivity((prev) => [
           {
             phase: event.phase,
-            toolId: event.toolId,
+            ...(event.toolId ? { toolId: event.toolId } : {}),
             toolName: event.toolName,
             command: event.command,
             startedAt: event.startedAt,
@@ -902,7 +902,7 @@ export function AttackMapPage() {
         setToolActivity((prev) => [
           {
             phase: event.phase,
-            toolId: event.toolId,
+            ...(event.toolId ? { toolId: event.toolId } : {}),
             toolName: event.toolName,
             command: event.command,
             startedAt: event.startedAt,

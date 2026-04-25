@@ -347,6 +347,18 @@ describe("App", () => {
     expect(await screen.findByPlaceholderText("Configured; leave blank to keep current value")).toBeInTheDocument();
   });
 
+  it("opens the AI provider create page from the list add-record action", async () => {
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Applications" });
+    fireEvent.click(screen.getAllByRole("button", { name: "AI Providers" })[0]!);
+    fireEvent.click(await screen.findByRole("button", { name: "Add AI Provider" }));
+
+    expect(window.location.pathname).toBe("/ai/providers/new");
+    expect(await screen.findByRole("heading", { name: "New AI provider" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Name" })).toBeInTheDocument();
+  });
+
   it("redirects protected routes to login when auth is enabled and no session exists", async () => {
     authSession = {
       authEnabled: true,

@@ -3,6 +3,7 @@ import { AiAgentsPage } from "@/features/ai-agents/page";
 import { AiProvidersPage } from "@/features/ai-providers/page";
 import { AiToolsPage } from "@/features/ai-tools/page";
 import { ApplicationsPage } from "@/features/applications/page";
+import { ExecutionConstraintsPage } from "@/features/execution-constraints/page";
 import { RuntimesPage } from "@/features/runtimes/page";
 import { WorkflowsPage } from "@/features/workflows/page";
 import { crudRouteConfigs, type CrudNavigationId } from "@/app/navigation";
@@ -45,6 +46,12 @@ export const crudRouteRegistry: CrudRouteRegistryEntry[] = [
     component: AiToolsPage as ComponentType<Record<string, unknown>>,
     detailIdProp: "toolId",
     detailLabelProp: "toolNameHint"
+  },
+  {
+    id: "execution-constraints",
+    component: ExecutionConstraintsPage as ComponentType<Record<string, unknown>>,
+    detailIdProp: "constraintId",
+    detailLabelProp: "constraintNameHint"
   },
   {
     id: "workflows",

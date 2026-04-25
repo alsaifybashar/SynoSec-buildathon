@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import { useCrudPage, type ValidationErrors } from "@/shared/crud/use-crud-page";
 import { DetailLoadingState, DetailPage } from "@/shared/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
@@ -118,6 +118,7 @@ export function createCrudFeaturePage<
     } = props;
 
     const context = useFeatureContext();
+    const createEmptyFormValues = useCallback(() => definition.createEmptyFormValues(context), [context]);
     const crud = useCrudPage({
       recordLabel: definition.recordLabel,
       ...(definition.titleLabel ? { titleLabel: definition.titleLabel } : {}),
@@ -125,7 +126,7 @@ export function createCrudFeaturePage<
       route: definition.route,
       resource: definition.resource,
       transfer: definition.transfer,
-      createEmptyFormValues: () => definition.createEmptyFormValues(context),
+      createEmptyFormValues,
       toFormValues: definition.toFormValues,
       parseRequestBody: definition.parseRequestBody,
       onNavigateToList,

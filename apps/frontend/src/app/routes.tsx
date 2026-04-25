@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
-import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams } from "react-router-dom";
 import { AttackMapPage } from "@/features/attack-map/page";
+import { ExecutionReportsPage } from "@/features/execution-reports/page";
 import { LoginPage } from "@/features/auth/login-page";
 import { DesignDiff } from "@/features/designs/design-diff";
 import { DesignDocument } from "@/features/designs/design-document";
@@ -36,7 +37,10 @@ function CrudRouteAdapter(options: CrudRouteAdapterOptions) {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams();
-  const detailId = params[options.paramName];
+  const routeConfig = crudRouteConfigs[options.id];
+  const detailId = matchPath({ path: routeConfig.createPath, end: true }, location.pathname)
+    ? "new"
+    : params[options.paramName];
   const state = location.state as NavigationState | null;
   const Page = options.component;
 
@@ -102,6 +106,18 @@ function CrudGeneratedRoute({ routeId }: { routeId: CrudNavigationId }) {
   );
 }
 
+function ExecutionReportsRouteAdapter() {
+  const navigate = useNavigate();
+  const params = useParams();
+  return (
+    <ExecutionReportsPage
+      {...(params["reportId"] ? { reportId: params["reportId"] } : {})}
+      onNavigateToList={() => navigate("/execution-reports")}
+      onNavigateToDetail={(id: string) => navigate(`/execution-reports/${id}`)}
+    />
+  );
+}
+
 export function AppContentRoutes({
   authRequired,
   authenticated,
@@ -139,6 +155,8 @@ export function AppContentRoutes({
       ]))}
 
       <Route path="/attack-map" element={protect(<AttackMapPage />)} />
+      <Route path="/execution-reports" element={protect(<ExecutionReportsRouteAdapter />)} />
+      <Route path="/execution-reports/:reportId" element={protect(<ExecutionReportsRouteAdapter />)} />
       <Route path="/designs/stream" element={protect(<DesignStream />)} />
       <Route path="/designs/duplex" element={protect(<DesignDuplex />)} />
       <Route path="/designs/document" element={protect(<DesignDocument />)} />

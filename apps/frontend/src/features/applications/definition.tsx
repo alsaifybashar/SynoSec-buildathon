@@ -204,7 +204,7 @@ export const applicationsDefinition: CrudFeatureDefinition<
         </DetailSidebarItem>
       </>
     ),
-    renderContent: ({ formValues, errors, handleFieldChange }) => (
+    renderContent: ({ item, formValues, errors, handleFieldChange }) => (
       <>
         <DetailFieldGroup title="General">
           <DetailField label="Name" required {...definedString(errors["name"] as string | undefined)}>
@@ -258,6 +258,33 @@ export const applicationsDefinition: CrudFeatureDefinition<
               onChange={(event) => handleFieldChange("lastScannedAt", event.target.value)}
               aria-label="Last scanned"
             />
+          </DetailField>
+        </DetailFieldGroup>
+
+        <DetailFieldGroup title="Policy Surface">
+          <DetailField label="Registered targets" className="md:col-span-2">
+            <div className="space-y-2 rounded-xl border border-border bg-background/40 p-4 text-sm text-muted-foreground">
+              {item?.targetAssets?.length
+                ? item.targetAssets.map((asset) => (
+                    <div key={asset.id} className="flex items-center justify-between gap-3 border-b border-border/50 pb-2 last:border-b-0 last:pb-0">
+                      <span className="font-medium text-foreground">{asset.label}</span>
+                      <span>{asset.provider ?? asset.kind}{asset.isDefault ? " · default" : ""}</span>
+                    </div>
+                  ))
+                : <span>No registered target assets.</span>}
+            </div>
+          </DetailField>
+          <DetailField label="Bound constraints" className="md:col-span-2">
+            <div className="space-y-2 rounded-xl border border-border bg-background/40 p-4 text-sm text-muted-foreground">
+              {item?.constraintBindings?.length
+                ? item.constraintBindings.map((binding) => (
+                    <div key={binding.constraintId} className="flex items-center justify-between gap-3 border-b border-border/50 pb-2 last:border-b-0 last:pb-0">
+                      <span className="font-medium text-foreground">{binding.constraint?.name ?? binding.constraintId}</span>
+                      <span>{binding.constraint?.provider ?? binding.constraint?.kind ?? "bound"}</span>
+                    </div>
+                  ))
+                : <span>No bound execution constraints.</span>}
+            </div>
           </DetailField>
         </DetailFieldGroup>
       </>

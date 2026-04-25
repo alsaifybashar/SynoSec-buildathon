@@ -15,6 +15,7 @@ export const workflowTransfer = {
   toCreateBody: (workflow: Workflow): CreateWorkflowBody => ({
     name: workflow.name,
     status: workflow.status,
+    executionKind: workflow.executionKind,
     description: workflow.description,
     applicationId: workflow.applicationId,
     runtimeId: workflow.runtimeId,

@@ -352,6 +352,62 @@ function formatToolLine(atom: DuplexAtom) {
   return `${verb} ${atom.label}`;
 }
 
+function normalizeInlineText(value: string | undefined) {
+  return (value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function collapseWhitespace(value: string | undefined) {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function truncateWithEllipsis(value: string, maxChars: number) {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, maxChars)).trimEnd()}...`;
+}
+
+function getCompactToolInput(atom: DuplexAtom) {
+  if (!atom.code) {
+    return null;
+  }
+
+  const collapsed = collapseWhitespace(atom.code);
+  if (!collapsed) {
+    return null;
+  }
+
+  return truncateWithEllipsis(collapsed, 30);
+}
+
+function getCompactToolOutput(atom: DuplexAtom, labelText: string) {
+  const preferredSource = collapseWhitespace(atom.body) || collapseWhitespace(atom.summaryText);
+  if (!preferredSource) {
+    return null;
+  }
+
+  const normalizedSummary = normalizeInlineText(preferredSource);
+  const normalizedLabel = normalizeInlineText(labelText);
+  const normalizedName = normalizeInlineText(atom.label);
+  const normalizedStatus = normalizeInlineText(atom.status);
+
+  const repeatsLabel = normalizedLabel.length > 0 && normalizedSummary.includes(normalizedLabel);
+  const repeatsName = normalizedName.length > 0 && normalizedSummary.includes(normalizedName);
+  const repeatsStatus = normalizedStatus.length > 0 && normalizedSummary.includes(normalizedStatus);
+
+  if (repeatsLabel || (repeatsName && repeatsStatus)) {
+    return null;
+  }
+
+  const lines = preferredSource.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length > 2) {
+    return `${lines.slice(0, 2).join("\n")}...`;
+  }
+
+  return truncateWithEllipsis(preferredSource, 100);
+}
+
 function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; showFullDetails: boolean }) {
   const isLeft = atom.side === "left";
   const accent = KIND_ACCENT[atom.kind];
@@ -359,6 +415,9 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
   const isSystemTone = atom.kind === "objective" || atom.kind === "system-prompt" || atom.kind === "system" || atom.kind === "verification";
   const isErrorTone = atom.kind === "error";
   const labelText = isTool ? formatToolLine(atom) : atom.label;
+  const compactToolInput = isTool ? getCompactToolInput(atom) : null;
+  const compactToolOutput = isTool ? getCompactToolOutput(atom, labelText) : null;
+  const showTitle = Boolean(atom.title) && (!isTool || normalizeInlineText(atom.title) !== normalizeInlineText(labelText));
 
   return (
     <div className={cn("flex w-full", isLeft ? "justify-start pr-[6%]" : "justify-end pl-[6%]")}>
@@ -399,12 +458,13 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
             )}
           >
             <span className={cn("font-medium", isSystemTone ? "font-normal text-foreground/65" : "text-foreground")}>{labelText}</span>
-            {atom.title ? <span className="text-muted-foreground"> · {atom.title}</span> : null}
+            {compactToolInput && !showFullDetails ? <span className="font-mono text-[0.74rem] text-muted-foreground/90"> {compactToolInput}</span> : null}
+            {showTitle ? <span className="text-muted-foreground"> · {atom.title}</span> : null}
           </p>
 
-          {atom.summaryText && !showFullDetails ? (
-            <p className="whitespace-pre-wrap text-[0.78rem] leading-[1.6] text-muted-foreground">
-              {atom.summaryText}
+          {compactToolOutput && !showFullDetails ? (
+            <p className="whitespace-pre-wrap font-mono text-[0.74rem] leading-[1.55] text-muted-foreground/90">
+              {compactToolOutput}
             </p>
           ) : null}
 

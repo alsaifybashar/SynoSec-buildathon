@@ -104,6 +104,28 @@ export type WorkflowsQuery = {
   [key: string]: number | string | undefined;
 };
 
+export type ExecutionReportsQuery = {
+  page: number;
+  pageSize: number;
+  q: string;
+  sortBy: "generatedAt" | "updatedAt" | "findingsCount" | "highestSeverity" | "executionKind" | "status" | "title";
+  sortDirection: SortDirection;
+  executionKind: OptionalString;
+  status: OptionalString;
+  [key: string]: number | string | undefined;
+};
+
+export type ExecutionConstraintsQuery = {
+  page: number;
+  pageSize: number;
+  q: string;
+  sortBy: "name" | "kind" | "provider" | "version" | "createdAt" | "updatedAt";
+  sortDirection: SortDirection;
+  kind: OptionalString;
+  provider: OptionalString;
+  [key: string]: number | string | undefined;
+};
+
 function buildQueryString(query: ListQueryState, defaults: ListQueryState) {
   const params = new URLSearchParams();
 

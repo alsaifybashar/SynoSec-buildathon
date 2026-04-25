@@ -570,7 +570,9 @@ describe("WorkflowTraceSection", () => {
     expect(screen.queryByText("Thread · Workflow Transcript · Duplex Flow")).not.toBeInTheDocument();
     expect(screen.getByText("Rendered system prompt")).toBeInTheDocument();
     expect(screen.getByText("Probe the exposed web surface first.")).toBeInTheDocument();
-    expect(screen.getByText("Called Web Probe")).toBeInTheDocument();
+    expect(screen.getByText(/Called Web Probe/)).toBeInTheDocument();
+    expect(screen.getByText(/\{ "url": "http:\/\/localhost.../)).toBeInTheDocument();
+    expect(screen.getByText("HTTP/1.1 200 OK")).toBeInTheDocument();
     expect(screen.getByText("Evidence checkpoint after Web Probe")).toBeInTheDocument();
     expect(screen.getAllByText("Missing security headers").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Findings").length).toBeGreaterThan(0);
