@@ -9,15 +9,11 @@ const tool: AiTool = {
   status: "active",
   source: "custom",
   description: "Fetch headers",
-  binary: "curl",
   executorType: "bash",
   bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
   capabilities: ["web-recon"],
   category: "web",
   riskTier: "passive",
-  notes: null,
-  sandboxProfile: "network-recon",
-  privilegeProfile: "read-only-network",
   timeoutMs: 30000,
   inputSchema: { type: "object", properties: { baseUrl: { type: "string" } } },
   outputSchema: { type: "object", properties: { output: { type: "string" } } },
@@ -101,7 +97,7 @@ describe("AiToolsPage", () => {
     expect(screen.getByDisplayValue(/"exitCode": 0/)).toBeInTheDocument();
   });
 
-  it("shows read-only system tool behavior and builtin execution details", () => {
+  it("shows builtin execution details without exposing the run console", () => {
     resourceDetailState.item = {
       ...tool,
       id: "builtin-report-finding",
@@ -109,8 +105,7 @@ describe("AiToolsPage", () => {
       source: "system",
       executorType: "builtin",
       builtinActionKey: "report_finding",
-      bashSource: null,
-      binary: null
+      bashSource: null
     };
 
     render(
@@ -122,12 +117,10 @@ describe("AiToolsPage", () => {
       />
     );
 
-    expect(screen.getByText("This tool is read-only and can be inspected but not edited.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /metadata/i }));
     expect(screen.getByText("Create")).toBeInTheDocument();
     expect(screen.getByText("Update")).toBeInTheDocument();
     expect(screen.getByText("Delete")).toBeInTheDocument();
-    expect(screen.getByText("Built-in system actions are listed here but remain read-only.")).toBeInTheDocument();
     expect(screen.getByText("Built-in action")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Report Finding")).toBeDisabled();
     expect(screen.getByText("Allowed")).toBeInTheDocument();
@@ -148,7 +141,7 @@ describe("AiToolsPage", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Use Below" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use Example Input" }));
 
     expect(screen.getByLabelText("Run input JSON")).toHaveValue('{\n  "baseUrl": ""\n}');
   });

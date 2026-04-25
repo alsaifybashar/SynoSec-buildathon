@@ -11,16 +11,12 @@ const builtinAiTools: AiTool[] = [
     status: "active",
     source: "system",
     description: "Workflow engine action for persisting one evidence-backed workflow finding.",
-    binary: null,
     executorType: "builtin",
     builtinActionKey: "report_finding",
     bashSource: null,
     capabilities: ["workflow-reporting"],
     category: "utility",
     riskTier: "passive",
-    notes: "Executed by the workflow execution service, not by a shell script.",
-    sandboxProfile: "read-only-parser",
-    privilegeProfile: "read-only-network",
     timeoutMs: 1000,
     inputSchema: {
       type: "object",
@@ -59,16 +55,12 @@ const builtinAiTools: AiTool[] = [
     status: "active",
     source: "system",
     description: "Workflow engine action for successfully finishing a workflow run with a final summary, recommended next step, and residual risk.",
-    binary: null,
     executorType: "builtin",
     builtinActionKey: "complete_run",
     bashSource: null,
     capabilities: ["workflow-control"],
     category: "utility",
     riskTier: "passive",
-    notes: "Executed by the workflow execution service, not by a shell script.",
-    sandboxProfile: "read-only-parser",
-    privilegeProfile: "read-only-network",
     timeoutMs: 1000,
     inputSchema: {
       type: "object",
@@ -95,16 +87,12 @@ const builtinAiTools: AiTool[] = [
     status: "active",
     source: "system",
     description: "Workflow engine action for finishing a workflow run as failed with an explicit reason and optional summary.",
-    binary: null,
     executorType: "builtin",
     builtinActionKey: "fail_run",
     bashSource: null,
     capabilities: ["workflow-control"],
     category: "utility",
     riskTier: "passive",
-    notes: "Executed by the workflow execution service, not by a shell script.",
-    sandboxProfile: "read-only-parser",
-    privilegeProfile: "read-only-network",
     timeoutMs: 1000,
     inputSchema: {
       type: "object",
@@ -130,16 +118,12 @@ const builtinAiTools: AiTool[] = [
     status: "active",
     source: "system",
     description: "Attack map orchestrator action for deep exploitation analysis of a significant finding.",
-    binary: null,
     executorType: "builtin",
     builtinActionKey: "deep_analysis",
     bashSource: null,
     capabilities: ["orchestrator-analysis"],
     category: "utility",
     riskTier: "passive",
-    notes: "Executed by the attack map orchestrator engine, not by a shell script.",
-    sandboxProfile: "read-only-parser",
-    privilegeProfile: "read-only-network",
     timeoutMs: 1000,
     inputSchema: {
       type: "object",
@@ -173,16 +157,12 @@ const builtinAiTools: AiTool[] = [
     status: "active",
     source: "system",
     description: "Attack map orchestrator action for correlating confirmed findings into chained attack paths.",
-    binary: null,
     executorType: "builtin",
     builtinActionKey: "attack_chain_correlation",
     bashSource: null,
     capabilities: ["orchestrator-analysis"],
     category: "utility",
     riskTier: "passive",
-    notes: "Executed by the attack map orchestrator engine, not by a shell script.",
-    sandboxProfile: "read-only-parser",
-    privilegeProfile: "read-only-network",
     timeoutMs: 1000,
     inputSchema: {
       type: "object",
@@ -251,7 +231,7 @@ export function mergeAndPaginateAiTools(items: AiTool[], query: AiToolsListQuery
         return true;
       }
 
-      return [tool.name, tool.description ?? "", tool.notes ?? ""]
+      return [tool.name, tool.description ?? ""]
         .some((value) => value.toLowerCase().includes(normalizedQuery));
     })
     .sort((left, right) => {

@@ -7,8 +7,6 @@ import {
   type AiToolRunResult,
   type AiToolStatus,
   type CreateAiToolBody,
-  type ToolPrivilegeProfile,
-  type ToolSandboxProfile,
   type ToolCategory,
   type ToolRiskTier
 } from "@synosec/contracts";
@@ -34,14 +32,10 @@ type ToolFormValues = {
   status: AiToolStatus;
   source: "custom" | "system";
   description: string;
-  binary: string;
   bashSource: string;
   capabilitiesText: string;
   category: ToolCategory;
   riskTier: ToolRiskTier;
-  notes: string;
-  sandboxProfile: ToolSandboxProfile;
-  privilegeProfile: ToolPrivilegeProfile;
   timeoutMsText: string;
   inputSchemaText: string;
   outputSchemaText: string;
@@ -58,8 +52,6 @@ const statusLabels: Record<AiToolStatus, string> = {
 
 const categoryOptions: ToolCategory[] = ["web", "network", "content", "dns", "subdomain", "cloud", "utility", "password", "windows", "kubernetes", "forensics", "reversing", "exploitation"];
 const riskTierOptions: ToolRiskTier[] = ["passive", "active", "controlled-exploit"];
-const sandboxProfileOptions: ToolSandboxProfile[] = ["network-recon", "read-only-parser", "active-recon", "controlled-exploit-lab"];
-const privilegeProfileOptions: ToolPrivilegeProfile[] = ["read-only-network", "active-network", "controlled-exploit"];
 
 function createDefaultInputSchemaText() {
   return JSON.stringify({ type: "object", properties: {} }, null, 2);
@@ -75,14 +67,10 @@ function createEmptyFormValues(): ToolFormValues {
     status: "active",
     source: "custom",
     description: "",
-    binary: "",
     bashSource: "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' 'Tool implementation is required before execution.' >&2\nexit 1\n",
     capabilitiesText: "",
     category: "utility",
     riskTier: "passive",
-    notes: "",
-    sandboxProfile: "read-only-parser",
-    privilegeProfile: "read-only-network",
     timeoutMsText: "",
     inputSchemaText: createDefaultInputSchemaText(),
     outputSchemaText: createDefaultOutputSchemaText()
@@ -95,14 +83,10 @@ function toFormValues(tool: AiTool): ToolFormValues {
     status: tool.status,
     source: tool.source,
     description: tool.description ?? "",
-    binary: tool.binary ?? "",
     bashSource: tool.bashSource ?? "",
     capabilitiesText: tool.capabilities.join("\n"),
     category: tool.category,
     riskTier: tool.riskTier,
-    notes: tool.notes ?? "",
-    sandboxProfile: tool.sandboxProfile,
-    privilegeProfile: tool.privilegeProfile,
     timeoutMsText: String(tool.timeoutMs),
     inputSchemaText: JSON.stringify(tool.inputSchema, null, 2),
     outputSchemaText: JSON.stringify(tool.outputSchema, null, 2)
@@ -156,7 +140,6 @@ function parseRequestBody(values: ToolFormValues): { body?: CreateAiToolBody; er
       status: values.status,
       source: "custom",
       description: values.description.trim(),
-      binary: values.binary.trim() || null,
       executorType: "bash",
       bashSource: values.bashSource,
       capabilities: values.capabilitiesText
@@ -165,9 +148,6 @@ function parseRequestBody(values: ToolFormValues): { body?: CreateAiToolBody; er
         .filter(Boolean),
       category: values.category,
       riskTier: values.riskTier,
-      notes: values.notes.trim() || null,
-      sandboxProfile: values.sandboxProfile,
-      privilegeProfile: values.privilegeProfile,
       timeoutMs: timeoutMs ?? 30000,
       inputSchema: inputSchema as Record<string, unknown>,
       outputSchema: outputSchema as Record<string, unknown>
@@ -182,14 +162,6 @@ function formatTimestamp(value: string) {
 
 function formatCrudCapability(value: boolean) {
   return value ? "Allowed" : "Blocked";
-}
-
-function describeSourceBehavior(tool: AiTool) {
-  if (tool.source === "system") {
-    return "Built-in system actions are listed here but remain read-only.";
-  }
-
-  return "Edits remain on the custom tool record.";
 }
 
 function describeBuiltinAction(tool: AiTool) {
@@ -384,7 +356,6 @@ export function AiToolsPage({
   const [runError, setRunError] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<AiToolRunResult | null>(null);
   const [runningTool, setRunningTool] = useState(false);
-  const [executionSettingsOpen, setExecutionSettingsOpen] = useState(true);
   const [schemasOpen, setSchemasOpen] = useState(false);
   const [metadataOpen, setMetadataOpen] = useState(false);
   const isCreateMode = toolId === "new";
@@ -489,7 +460,6 @@ export function AiToolsPage({
   const isToolEditable = isCreateMode ? canCreateTool : canUpdateTool;
   const isBuiltinTool = tool?.executorType === "builtin";
   const isToolRunnable = !isCreateMode && tool?.executorType === "bash";
-  const isReadonlyTool = !isToolEditable;
   const exampleRunInput = useMemo(() => (tool ? JSON.stringify(createExampleRunInput(tool), null, 2) : JSON.stringify({}, null, 2)), [tool]);
   const inputSchemaValidation = parseJsonText(formValues.inputSchemaText);
   const outputSchemaValidation = parseJsonText(formValues.outputSchemaText);
@@ -723,19 +693,6 @@ export function AiToolsPage({
       {...(!isCreateMode && tool?.source !== "system" ? { onExportJson: handleExportJson } : {})}
     >
       <section className="space-y-4">
-        {tool ? (
-          <div className="rounded-[4px] border border-border/70 bg-background/70 p-4">
-            <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Tool behavior</p>
-            <p className="mt-2 text-sm text-foreground">{describeSourceBehavior(tool)}</p>
-            {isReadonlyTool ? (
-              <p className="mt-2 text-sm text-muted-foreground">This tool is read-only and can be inspected but not edited.</p>
-            ) : null}
-            {tool.builtinActionKey ? (
-              <p className="mt-2 text-sm text-muted-foreground">{describeBuiltinAction(tool) ?? "Built-in action provided by a backend execution engine."}</p>
-            ) : null}
-          </div>
-        ) : null}
-
         <DetailFieldGroup title="Definition" className="bg-card/70">
           <DetailField label="Name" required {...definedString(errors.name)}>
             <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" disabled={!isToolEditable} />
@@ -767,56 +724,20 @@ export function AiToolsPage({
           <DetailField label="Description" required className="md:col-span-2" {...definedString(errors.description)}>
             <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" disabled={!isToolEditable} />
           </DetailField>
-          <DetailField label="Notes" className="md:col-span-2">
-            <Input value={formValues.notes} onChange={(event) => handleFieldChange("notes", event.target.value)} aria-label="Notes" disabled={!isToolEditable} />
-          </DetailField>
+          {!isBuiltinTool ? (
+            <DetailField label="Timeout (ms)" hint="Integer duration. Values under 1000ms are rejected." {...definedString(errors.timeoutMsText)}>
+              <Input value={formValues.timeoutMsText} onChange={(event) => handleFieldChange("timeoutMsText", event.target.value)} aria-label="Timeout milliseconds" disabled={!isToolEditable} />
+            </DetailField>
+          ) : null}
+          {!isBuiltinTool ? (
+            <DetailField label="Capabilities" className="md:col-span-2" hint="One capability per line. Keep entries short and machine-readable.">
+              <Textarea value={formValues.capabilitiesText} onChange={(event) => handleFieldChange("capabilitiesText", event.target.value)} aria-label="Capabilities" rows={4} className="font-mono text-sm" disabled={!isToolEditable} />
+            </DetailField>
+          ) : null}
         </DetailFieldGroup>
 
         {!isBuiltinTool ? (
           <>
-            <CollapsibleSection
-              title="Execution settings"
-              open={executionSettingsOpen}
-              onToggle={() => setExecutionSettingsOpen((current) => !current)}
-              summary="Runtime controls and privilege boundaries."
-            >
-              <DetailFieldGroup className="bg-transparent" title="Runtime settings">
-                <DetailField label="Binary" hint="Optional. Use when the script should anchor to a specific executable.">
-                  <Input value={formValues.binary} onChange={(event) => handleFieldChange("binary", event.target.value)} aria-label="Binary" disabled={!isToolEditable} />
-                </DetailField>
-                <DetailField label="Timeout (ms)" hint="Integer duration. Values under 1000ms are rejected." {...definedString(errors.timeoutMsText)}>
-                  <Input value={formValues.timeoutMsText} onChange={(event) => handleFieldChange("timeoutMsText", event.target.value)} aria-label="Timeout milliseconds" disabled={!isToolEditable} />
-                </DetailField>
-                <DetailField label="Sandbox profile" hint="Constrains how the tool may access the environment.">
-                  <Select value={formValues.sandboxProfile} onValueChange={(value) => handleFieldChange("sandboxProfile", value as ToolSandboxProfile)} disabled={!isToolEditable}>
-                    <SelectTrigger aria-label="Sandbox profile">
-                      <SelectValue placeholder="Select sandbox profile" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {sandboxProfileOptions.map((profile) => (
-                        <SelectItem key={profile} value={profile}>{profile}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </DetailField>
-                <DetailField label="Privilege profile" hint="Declares the network or exploit privileges this tool expects.">
-                  <Select value={formValues.privilegeProfile} onValueChange={(value) => handleFieldChange("privilegeProfile", value as ToolPrivilegeProfile)} disabled={!isToolEditable}>
-                    <SelectTrigger aria-label="Privilege profile">
-                      <SelectValue placeholder="Select privilege profile" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {privilegeProfileOptions.map((profile) => (
-                        <SelectItem key={profile} value={profile}>{profile}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </DetailField>
-                <DetailField label="Capabilities" className="md:col-span-2" hint="One capability per line. Keep entries short and machine-readable.">
-                  <Textarea value={formValues.capabilitiesText} onChange={(event) => handleFieldChange("capabilitiesText", event.target.value)} aria-label="Capabilities" rows={4} className="font-mono text-sm" disabled={!isToolEditable} />
-                </DetailField>
-              </DetailFieldGroup>
-            </CollapsibleSection>
-
             <div className={cn("grid gap-4", isToolRunnable && tool ? "xl:grid-cols-[minmax(0,1.6fr)_minmax(22rem,1fr)]" : "")}>
               <DetailFieldGroup title="Source Code" className="bg-card/70">
                 <DetailField label="Bash source" required className="md:col-span-2" {...definedString(errors.bashSource)}>

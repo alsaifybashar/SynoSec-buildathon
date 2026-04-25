@@ -1,9 +1,10 @@
 import type { AiTool, OsiLayer, ToolRequest } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
+import { derivePrivilegeProfile, deriveSandboxProfile } from "./tool-execution-config.js";
 
 type CompilableTool = Pick<
   AiTool,
-  "id" | "name" | "executorType" | "bashSource" | "riskTier" | "sandboxProfile" | "privilegeProfile" | "timeoutMs"
+  "id" | "name" | "executorType" | "bashSource" | "riskTier" | "timeoutMs"
 > & {
   capabilities: readonly string[];
 };
@@ -65,8 +66,8 @@ export function compileToolRequestFromDefinition(tool: CompilableTool, input: Co
     layer: input.layer,
     riskTier: tool.riskTier,
     justification: input.justification,
-    sandboxProfile: tool.sandboxProfile,
-    privilegeProfile: tool.privilegeProfile,
+    sandboxProfile: deriveSandboxProfile(tool.riskTier),
+    privilegeProfile: derivePrivilegeProfile(tool.riskTier),
     parameters: {
       bashSource: tool.bashSource,
       timeoutMs: tool.timeoutMs,

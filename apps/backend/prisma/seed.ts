@@ -269,8 +269,8 @@ async function main() {
             timeoutMs: tool.timeoutMs,
             capabilities: [...tool.capabilities],
             ...(tool.constraintProfile ? { constraintProfile: tool.constraintProfile } : {})
-          }),
-          outputSchema: tool.outputSchema
+          }) as Prisma.InputJsonValue,
+          outputSchema: tool.outputSchema as Prisma.InputJsonValue
         },
         create: {
           id: tool.id,
@@ -291,8 +291,8 @@ async function main() {
             timeoutMs: tool.timeoutMs,
             capabilities: [...tool.capabilities],
             ...(tool.constraintProfile ? { constraintProfile: tool.constraintProfile } : {})
-          }),
-          outputSchema: tool.outputSchema
+          }) as Prisma.InputJsonValue,
+          outputSchema: tool.outputSchema as Prisma.InputJsonValue
         }
       })
     )

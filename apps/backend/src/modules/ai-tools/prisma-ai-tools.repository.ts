@@ -23,8 +23,7 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
         ? {
             OR: [
               { name: { contains: query.q, mode: "insensitive" as const } },
-              { description: { contains: query.q, mode: "insensitive" as const } },
-              { notes: { contains: query.q, mode: "insensitive" as const } }
+              { description: { contains: query.q, mode: "insensitive" as const } }
             ]
           }
         : {})
@@ -59,10 +58,10 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
         source: "custom",
         description: encoded.description,
         adapter: null,
-        binary: encoded.binary ?? null,
+        binary: null,
         category: encoded.category,
         riskTier: encoded.riskTier,
-        notes: encoded.notes,
+        notes: null,
         inputSchema: encoded.inputSchema as Prisma.InputJsonValue,
         outputSchema: encoded.outputSchema as Prisma.InputJsonValue
       }
@@ -90,10 +89,10 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
         source: "custom",
         description: encoded.description === undefined ? current.description : encoded.description,
         adapter: current.adapter,
-        binary: encoded.binary === undefined ? current.binary : encoded.binary ?? null,
+        binary: current.binary,
         category: encoded.category ?? current.category,
         riskTier: encoded.riskTier ?? current.riskTier,
-        notes: encoded.notes === undefined ? current.notes : encoded.notes,
+        notes: current.notes,
         inputSchema: (encoded.inputSchema ?? current.inputSchema) as Prisma.InputJsonValue,
         outputSchema: (encoded.outputSchema ?? current.outputSchema) as Prisma.InputJsonValue
       }

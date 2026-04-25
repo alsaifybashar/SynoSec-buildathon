@@ -6,6 +6,7 @@ import {
   resolveEffectiveExecutionConstraints,
   resolveTargetAsset
 } from "./execution-constraints.js";
+import { derivePrivilegeProfile, deriveSandboxProfile } from "@/modules/ai-tools/tool-execution-config.js";
 
 const application: Application = {
   id: "10000000-0000-0000-0000-000000000001",
@@ -70,15 +71,11 @@ const compatibleTool: AiTool = {
   status: "active",
   source: "system",
   description: null,
-  binary: "httpx",
   executorType: "bash",
   bashSource: "#!/usr/bin/env bash\ntrue",
   capabilities: ["web-recon"],
   category: "web",
   riskTier: "passive",
-  notes: null,
-  sandboxProfile: "network-recon",
-  privilegeProfile: "read-only-network",
   timeoutMs: 30000,
   constraintProfile: {
     enforced: true,
@@ -120,8 +117,8 @@ const request: ToolRequest = {
   layer: "L7",
   riskTier: "passive",
   justification: "collect evidence",
-  sandboxProfile: compatibleTool.sandboxProfile,
-  privilegeProfile: compatibleTool.privilegeProfile,
+  sandboxProfile: deriveSandboxProfile(compatibleTool.riskTier),
+  privilegeProfile: derivePrivilegeProfile(compatibleTool.riskTier),
   parameters: {
     bashSource: compatibleTool.bashSource ?? "",
     commandPreview: compatibleTool.name,

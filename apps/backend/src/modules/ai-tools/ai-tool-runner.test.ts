@@ -9,15 +9,11 @@ function createTool(overrides: Partial<AiTool> = {}): AiTool {
     status: "active",
     source: "custom",
     description: "Deterministic test tool",
-    binary: "bash",
     executorType: "bash",
     bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
     capabilities: ["passive"],
     category: "utility",
     riskTier: "passive",
-    notes: null,
-    sandboxProfile: "read-only-parser",
-    privilegeProfile: "read-only-network",
     timeoutMs: 1000,
     inputSchema: {
       type: "object",
@@ -97,8 +93,7 @@ describe("runAiTool", () => {
       source: "system",
       executorType: "builtin",
       builtinActionKey: "report_finding",
-      bashSource: null,
-      binary: null
+      bashSource: null
     }), {})).rejects.toMatchObject({
       status: 400,
       code: "AI_TOOL_BUILTIN_NOT_RUNNABLE"

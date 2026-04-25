@@ -554,22 +554,18 @@ describe("contracts", () => {
     }
   });
 
-  it("accepts executable ai tools with sandbox and privilege policy", () => {
+  it("accepts executable ai tools with the simplified custom tool shape", () => {
     const result = aiToolSchema.safeParse({
       id: "tool-1",
       name: "HTTP Recon",
       status: "active",
       source: "custom",
       description: "Bash-backed HTTP probe",
-      binary: "httpx",
       executorType: "bash",
       bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
       capabilities: ["web-recon"],
       category: "web",
       riskTier: "passive",
-      notes: null,
-      sandboxProfile: "network-recon",
-      privilegeProfile: "read-only-network",
       timeoutMs: 30000,
       inputSchema: { type: "object", properties: { target: { type: "string" } } },
       outputSchema: { type: "object", properties: { summary: { type: "string" } } },
@@ -587,16 +583,12 @@ describe("contracts", () => {
       status: "active",
       source: "system",
       description: "Workflow built-in action for completing a run successfully.",
-      binary: null,
       executorType: "builtin",
       builtinActionKey: "complete_run",
       bashSource: null,
       capabilities: ["workflow-control"],
       category: "utility",
       riskTier: "passive",
-      notes: "Executed by the workflow engine.",
-      sandboxProfile: "read-only-parser",
-      privilegeProfile: "read-only-network",
       timeoutMs: 1000,
       inputSchema: { type: "object", properties: { summary: { type: "string" } } },
       outputSchema: { type: "object", properties: { accepted: { type: "boolean" } } },
@@ -607,24 +599,23 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects executable ai tools without sandbox metadata", () => {
+  it("accepts executable ai tools without explicit sandbox metadata in the CRUD body", () => {
     const result = createAiToolBodySchema.safeParse({
       name: "Unsafe Custom Tool",
       status: "active",
       source: "custom",
-      description: "Missing sandbox policy",
-      binary: "curl",
+      description: "Simplified custom tool body",
       executorType: "bash",
       bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
       capabilities: ["web-recon"],
       category: "utility",
       riskTier: "passive",
-      notes: null,
+      timeoutMs: 30000,
       inputSchema: { type: "object", properties: {} },
       outputSchema: { type: "object", properties: {} }
     });
 
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it("requires bash tool requests to carry runtime execution metadata", () => {

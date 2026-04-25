@@ -20,7 +20,6 @@ function createSeededTool(id: string): AiTool {
     source: "system",
     description: definition.description ?? null,
     capabilities: [...definition.capabilities],
-    notes: definition.notes ?? null,
     inputSchema: { ...definition.inputSchema },
     outputSchema: { ...definition.outputSchema },
     createdAt: "2026-04-21T00:00:00.000Z",

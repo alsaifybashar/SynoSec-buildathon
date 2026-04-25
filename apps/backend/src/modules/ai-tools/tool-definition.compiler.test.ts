@@ -10,8 +10,6 @@ describe("compileToolRequestFromDefinition", () => {
       bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
       capabilities: ["network-recon"],
       riskTier: "passive",
-      sandboxProfile: "network-recon",
-      privilegeProfile: "read-only-network",
       timeoutMs: 30000
     }, {
       target: "localhost",

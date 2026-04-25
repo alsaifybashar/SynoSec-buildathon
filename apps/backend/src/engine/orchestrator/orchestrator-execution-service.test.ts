@@ -17,16 +17,12 @@ function createTool(overrides: Partial<AiTool> = {}): AiTool {
     status: "active",
     source: "custom",
     description: "Template-driven web probe",
-    binary: "nuclei",
     executorType: "bash",
     builtinActionKey: null,
     bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
     capabilities: ["web-recon"],
     category: "web",
     riskTier: "passive",
-    notes: null,
-    sandboxProfile: "network-recon",
-    privilegeProfile: "read-only-network",
     timeoutMs: 30000,
     inputSchema: { type: "object", properties: { baseUrl: { type: "string" } } },
     outputSchema: { type: "object", properties: { output: { type: "string" } } },
@@ -58,8 +54,7 @@ describe("OrchestratorExecutionEngineService", () => {
         source: "system",
         executorType: "builtin",
         builtinActionKey: "deep_analysis",
-        bashSource: null,
-        binary: null
+        bashSource: null
       })
     ]);
     const privateService = service as any;
