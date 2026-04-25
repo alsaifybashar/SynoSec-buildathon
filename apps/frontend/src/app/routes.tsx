@@ -6,6 +6,9 @@ import { LoginPage } from "@/features/auth/login-page";
 import { DesignDuplex } from "@/features/designs/design-duplex";
 import { DesignStream } from "@/features/designs/design-stream";
 import { DesignReportFindingMap } from "@/features/designs/design-report-finding-map";
+import { DesignReportFindingList } from "@/features/designs/design-report-finding-list";
+import { DesignReportFindingSplit } from "@/features/designs/design-report-finding-split";
+import { DesignReportFindingZen } from "@/features/designs/design-report-finding-zen";
 import { crudRouteRegistry, legacyCrudRedirects } from "@/app/crud-route-registry";
 import {
   crudRouteConfigs,
@@ -179,6 +182,9 @@ export function AppContentRoutes({
       <Route path="/designs/stream" element={protect(<DesignStream />)} />
       <Route path="/designs/duplex" element={protect(<DesignDuplex />)} />
       <Route path="/designs/report-finding-map" element={protect(<DesignReportFindingMap />)} />
+      <Route path="/designs/report-finding-list" element={protect(<DesignReportFindingList />)} />
+      <Route path="/designs/report-finding-split" element={protect(<DesignReportFindingSplit />)} />
+      <Route path="/designs/report-finding-zen" element={protect(<DesignReportFindingZen />)} />
 
       {legacyCrudRedirects.map((redirect) => (
         "redirectTo" in redirect

@@ -10,6 +10,9 @@ import {
   Shapes,
   Sparkles,
   ListChecks,
+  List,
+  PanelsLeftBottom,
+  Feather,
   Wrench,
   type LucideIcon
 } from "lucide-react";
@@ -25,7 +28,10 @@ export type NavigationId =
   | "attack-map"
   | "design-stream"
   | "design-duplex"
-  | "design-report-finding-map";
+  | "design-report-finding-map"
+  | "design-report-finding-list"
+  | "design-report-finding-split"
+  | "design-report-finding-zen";
 
 export type NavigationState = {
   detailLabel?: string;
@@ -210,9 +216,27 @@ export const navigationTree: NavigationTreeEntry[] = [
         }),
         createNavigationItem({
           id: "design-report-finding-map",
-          label: "Finding map",
+          label: "Finding · map",
           path: "/designs/report-finding-map",
           icon: ListChecks
+        }),
+        createNavigationItem({
+          id: "design-report-finding-list",
+          label: "Finding · list",
+          path: "/designs/report-finding-list",
+          icon: List
+        }),
+        createNavigationItem({
+          id: "design-report-finding-split",
+          label: "Finding · split",
+          path: "/designs/report-finding-split",
+          icon: PanelsLeftBottom
+        }),
+        createNavigationItem({
+          id: "design-report-finding-zen",
+          label: "Finding · zen",
+          path: "/designs/report-finding-zen",
+          icon: Feather
         })
       ]
     }
