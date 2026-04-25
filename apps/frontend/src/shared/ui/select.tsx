@@ -13,7 +13,7 @@ const SelectLabel = React.forwardRef<ElementRef<typeof SelectPrimitive.Label>, C
     <SelectPrimitive.Label
       ref={ref}
       className={cn(
-        "px-3 pb-1.5 pt-2 font-mono text-[0.625rem] font-medium uppercase tracking-[0.28em] text-muted-foreground/70",
+        "px-3 pb-1.5 pt-2 font-mono text-eyebrow font-medium uppercase tracking-[0.28em] text-muted-foreground/70",
         className
       )}
       {...props}
@@ -34,7 +34,7 @@ const SelectTrigger = React.forwardRef<ElementRef<typeof SelectPrimitive.Trigger
     <SelectPrimitive.Trigger
       ref={ref}
       className={cn(
-        "flex h-10 w-full items-center justify-between gap-2 rounded-[4px] border border-input bg-background px-3 py-2 text-xs text-left shadow-sm transition-[border-color,box-shadow,background-color,color] placeholder:text-muted-foreground hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring focus:border-ring data-[state=open]:bg-accent data-[state=open]:text-accent-foreground data-[state=open]:ring-1 data-[state=open]:ring-inset data-[state=open]:ring-ring data-[state=open]:border-ring disabled:cursor-not-allowed disabled:opacity-50 [&>span]:min-w-0 [&>span]:flex-1 [&>span]:overflow-hidden [&>span]:text-left [&>span]:text-clip [&>span]:whitespace-nowrap [&>span[data-placeholder]]:text-muted-foreground",
+        "flex h-9 w-full items-center justify-between gap-2 rounded-[4px] border border-input bg-background px-3 py-2 text-xs text-left shadow-sm transition-[border-color,box-shadow,background-color,color] placeholder:text-muted-foreground hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring focus:border-ring data-[state=open]:bg-accent data-[state=open]:text-accent-foreground data-[state=open]:ring-1 data-[state=open]:ring-inset data-[state=open]:ring-ring data-[state=open]:border-ring disabled:cursor-not-allowed disabled:opacity-50 [&>span]:min-w-0 [&>span]:flex-1 [&>span]:overflow-hidden [&>span]:text-left [&>span]:text-clip [&>span]:whitespace-nowrap [&>span[data-placeholder]]:text-muted-foreground",
         className
       )}
       {...props}

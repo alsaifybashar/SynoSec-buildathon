@@ -44,9 +44,9 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(portfolioWorkflow?.executionKind).toBe("workflow");
     expect(portfolioWorkflow?.description).toContain("evidence-graph-oriented reporting");
     expect(portfolioWorkflow?.stages.map((stage) => stage.label)).toEqual(["Portfolio Assessment"]);
-    expect(portfolioWorkflow?.stages[0]?.agentId).toBe(seededAgentId("anthropic", "compact-evaluator"));
+    expect(portfolioWorkflow?.stages[0]?.agentId).toBe(seededAgentId("anthropic", "portfolio-evaluator"));
     expect(portfolioWorkflow?.stages[0]?.allowedToolIds).toEqual([
-      ...getSeededRoleDefinition("compact-evaluator")?.toolIds ?? []
+      ...getSeededRoleDefinition("portfolio-evaluator")?.toolIds ?? []
     ]);
     expect(portfolioWorkflow?.stages[0]?.objective).toContain("Treat OSI-inspired terms only as shorthand for dependency boundaries");
     expect(portfolioWorkflow?.stages[0]?.objective).toContain("derivedFromFindingIds, relatedFindingIds, or enablesFindingIds");
@@ -67,5 +67,18 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(compactEvaluator?.systemPrompt).toContain("Distinguish confirmed findings, plausible hypotheses, and rejected leads");
     expect(compactEvaluator?.systemPrompt).toContain("derivedFromFindingIds, relatedFindingIds, or enablesFindingIds");
     expect(compactEvaluator?.systemPrompt).toContain("treat log_progress as secondary to high-quality report_finding calls");
+  });
+
+  it("gives the portfolio workflow its own seeded evaluator agent", () => {
+    const portfolioEvaluator = getSeededRoleDefinition("portfolio-evaluator");
+
+    expect(portfolioEvaluator).toBeDefined();
+    expect(portfolioEvaluator?.name).toBe("Portfolio Evaluator");
+    expect(portfolioEvaluator?.toolIds).toEqual([
+      ...getSeededRoleDefinition("compact-evaluator")?.toolIds ?? []
+    ]);
+    expect(portfolioEvaluator?.systemPrompt).toContain("Assess a prerendered portfolio-style web target");
+    expect(portfolioEvaluator?.systemPrompt).toContain("headers, redirects, public assets, sitemap and robots exposure");
+    expect(portfolioEvaluator?.systemPrompt).toContain("derivedFromFindingIds, relatedFindingIds, or enablesFindingIds");
   });
 });
