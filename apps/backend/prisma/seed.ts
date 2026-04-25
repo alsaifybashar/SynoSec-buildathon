@@ -4,16 +4,15 @@ import {
   getSeededProviderDefinitions,
   getSeededWorkflowDefinitions,
   localApplicationId,
+  portfolioApplicationId,
   seededAgentId,
   seededRoleDefinitions as roleDefinitions,
-  seededToolDefinitions as toolDefinitions,
-  targetRuntimeId
+  seededToolDefinitions as toolDefinitions
 } from "./seed-data/ai-builder-defaults.js";
 import "@/shared/config/load-env.js";
 import { attachExecutionConfig } from "@/modules/ai-tools/tool-execution-config.js";
 
 const prisma = new PrismaClient();
-const localTargetAssetId = "7e8d6ec5-2d8b-4d41-9a46-8d5d8bff7a31";
 const cloudflareConstraintId = "seed-constraint-cloudflare-v1";
 const localTargetBypassConstraintId = "seed-constraint-local-target-bypass-v1";
 const cloudflareScansPolicyUrl = "https://developers.cloudflare.com/fundamentals/reference/scans-penetration/";
@@ -22,27 +21,26 @@ const legacySingleAgentSeedIds = {
   tacticId: "54ec7b8e-b8dc-4b58-bf5a-5f3f0f7e8d4c",
   vulnerabilityId: "64ec7b8e-b8dc-4b58-bf5a-5f3f0f7e8d4c"
 } as const;
+const deprecatedSeededAgentIds = [
+  "751d2c0b-85f1-4f7a-8ac6-2c05d0ce0f56",
+  "f1f99dd4-c2a7-47e8-946e-6a880f09001f",
+  "897204f6-2e08-4775-aae8-f233d4ec8154",
+  "fa1a0bfa-6b02-4948-8e1c-155f6b9a4ae7",
+  "fcfe30d4-9473-4e74-8836-d824ff777c88",
+  "36f56ea0-e8ce-48ca-bda8-c33ed49e67b2",
+  "72ea29f0-f780-4402-bfe4-574604830749",
+  "7115bc3d-9237-4fba-97f7-8d72966502c0"
+] as const;
 
 async function main() {
   const providerDefinitions = getSeededProviderDefinitions();
-  await prisma.runtime.deleteMany({
-    where: {
-      id: { not: targetRuntimeId },
-      name: {
-        in: [
-          "Edge Gateway",
-          "Queue Worker",
-          "Backend Orchestrator"
-        ]
-      }
-    }
-  });
-
+  const seededAgentProviders = providerDefinitions.filter((provider) => provider.key === "anthropic");
   await prisma.application.deleteMany({
     where: {
       id: { not: localApplicationId },
       name: {
         in: [
+          "Nils Wickman Portfolio",
           "Operator Portal",
           "Report Builder",
           "Queue Reconciler",
@@ -71,40 +69,22 @@ async function main() {
     }
   });
 
-  await prisma.targetAsset.upsert({
-    where: { id: localTargetAssetId },
+  await prisma.application.upsert({
+    where: { id: portfolioApplicationId },
     update: {
-      applicationId: localApplicationId,
-      label: "Local vulnerable app",
-      kind: "url",
-      hostname: "localhost",
-      baseUrl: localDemoTargetDefaults.hostUrl,
-      ipAddress: "127.0.0.1",
-      cidr: null,
-      provider: "local",
-      ownershipStatus: "verified",
-      isDefault: true,
-      metadata: {
-        lab: true,
-        internalHost: localDemoTargetDefaults.internalHost
-      }
+      name: "Nils Wickman Portfolio",
+      baseUrl: "https://nilswickman.com",
+      environment: "production",
+      status: "active",
+      lastScannedAt: null
     },
     create: {
-      id: localTargetAssetId,
-      applicationId: localApplicationId,
-      label: "Local vulnerable app",
-      kind: "url",
-      hostname: "localhost",
-      baseUrl: localDemoTargetDefaults.hostUrl,
-      ipAddress: "127.0.0.1",
-      cidr: null,
-      provider: "local",
-      ownershipStatus: "verified",
-      isDefault: true,
-      metadata: {
-        lab: true,
-        internalHost: localDemoTargetDefaults.internalHost
-      }
+      id: portfolioApplicationId,
+      name: "Nils Wickman Portfolio",
+      baseUrl: "https://nilswickman.com",
+      environment: "production",
+      status: "active",
+      lastScannedAt: null
     }
   });
 
@@ -200,26 +180,17 @@ async function main() {
     }
   });
 
-  await prisma.runtime.upsert({
-    where: { id: targetRuntimeId },
-    update: {
-      name: "Vulnerable Target Container",
-      serviceType: "api",
-      provider: "docker",
-      environment: "development",
-      region: "local-docker",
-      status: "healthy",
-      applicationId: localApplicationId
+  await prisma.applicationConstraintBinding.upsert({
+    where: {
+      applicationId_constraintId: {
+        applicationId: portfolioApplicationId,
+        constraintId: cloudflareConstraintId
+      }
     },
+    update: {},
     create: {
-      id: targetRuntimeId,
-      name: "Vulnerable Target Container",
-      serviceType: "api",
-      provider: "docker",
-      environment: "development",
-      region: "local-docker",
-      status: "healthy",
-      applicationId: localApplicationId
+      applicationId: portfolioApplicationId,
+      constraintId: cloudflareConstraintId
     }
   });
 
@@ -311,7 +282,7 @@ async function main() {
   });
 
   await Promise.all(
-    providerDefinitions.flatMap((provider) =>
+    seededAgentProviders.flatMap((provider) =>
       roleDefinitions.map((role) =>
         prisma.aiAgent.upsert({
           where: { id: seededAgentId(provider.key, role.key) },
@@ -337,7 +308,7 @@ async function main() {
     )
   );
 
-  const seededAgentIdList = providerDefinitions.flatMap((provider) =>
+  const seededAgentIdList = seededAgentProviders.flatMap((provider) =>
     roleDefinitions.map((role) => seededAgentId(provider.key, role.key))
   );
 
@@ -348,7 +319,7 @@ async function main() {
   });
 
   await prisma.aiAgentTool.createMany({
-    data: providerDefinitions.flatMap((provider) =>
+    data: seededAgentProviders.flatMap((provider) =>
       roleDefinitions.flatMap((role) =>
         role.toolIds.map((toolId, index) => ({
           agentId: seededAgentId(provider.key, role.key),
@@ -357,6 +328,18 @@ async function main() {
         }))
       )
     )
+  });
+
+  await prisma.aiAgentTool.deleteMany({
+    where: {
+      agentId: { in: [...deprecatedSeededAgentIds] }
+    }
+  });
+
+  await prisma.aiAgent.deleteMany({
+    where: {
+      id: { in: [...deprecatedSeededAgentIds] }
+    }
   });
 
   const workflowDefinitions = getSeededWorkflowDefinitions();
@@ -378,8 +361,7 @@ async function main() {
           status: workflow.status,
           executionKind: workflow.executionKind,
           description: workflow.description,
-          applicationId: workflow.applicationId,
-          runtimeId: workflow.runtimeId
+          applicationId: workflow.applicationId
         },
         create: {
           id: workflow.id,
@@ -387,8 +369,7 @@ async function main() {
           status: workflow.status,
           executionKind: workflow.executionKind,
           description: workflow.description,
-          applicationId: workflow.applicationId,
-          runtimeId: workflow.runtimeId
+          applicationId: workflow.applicationId
         }
       });
 

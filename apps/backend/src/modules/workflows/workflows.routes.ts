@@ -17,8 +17,8 @@ import {
 import { type Express } from "express";
 import { registerCrudRoutes } from "@/shared/http/register-crud-routes.js";
 import type { WorkflowExecutionEngine, WorkflowRunEventStream } from "@/engine/contracts.js";
+import type { WorkflowArtifactReader } from "@/engine/workflow/index.js";
 import type { WorkflowsRepository } from "./workflows.repository.js";
-import { WorkflowRunArtifactsService } from "./workflow-run-artifacts.service.js";
 
 function writeSseMessage(response: { write: (chunk: string) => void }, payload: unknown) {
   response.write(`data: ${JSON.stringify(payload)}\n\n`);
@@ -29,7 +29,7 @@ export function registerWorkflowsRoutes(
   repository: WorkflowsRepository,
   executionService: WorkflowExecutionEngine,
   workflowRunStream: WorkflowRunEventStream,
-  workflowRunArtifactsService: WorkflowRunArtifactsService
+  workflowRunArtifactsService: WorkflowArtifactReader
 ) {
   registerCrudRoutes(app, {
     resourcePath: apiRoutes.workflows,

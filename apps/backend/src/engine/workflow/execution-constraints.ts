@@ -1,8 +1,7 @@
 import type {
   AiTool,
-  Application,
+  Target,
   ExecutionConstraint,
-  TargetAsset,
   ToolRequest
 } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
@@ -32,7 +31,7 @@ export type ConstraintDecision = {
 };
 
 export type EffectiveExecutionConstraintSet = {
-  targetAsset: TargetAsset;
+  target: { label: string; baseUrl: string | null };
   normalizedTarget: NormalizedTarget;
   localhostException: boolean;
   excludedPaths: string[];
@@ -74,7 +73,7 @@ function parseBaseUrl(baseUrl: string | null) {
   try {
     return new URL(baseUrl);
   } catch (error) {
-    throw new RequestError(400, `Invalid target asset base URL: ${baseUrl}.`, {
+    throw new RequestError(400, `Invalid target base URL: ${baseUrl}.`, {
       code: "WORKFLOW_TARGET_INVALID",
       userFriendlyMessage: "The selected workflow target URL is invalid.",
       cause: error
@@ -82,25 +81,19 @@ function parseBaseUrl(baseUrl: string | null) {
   }
 }
 
-function targetAssetToNormalizedTarget(asset: TargetAsset): NormalizedTarget {
-  const parsedUrl = parseBaseUrl(asset.baseUrl ?? null);
-  const host = normalizeHost(
-    asset.hostname
-    ?? parsedUrl?.hostname
-    ?? asset.ipAddress
-    ?? asset.cidr
-    ?? ""
-  );
+function targetToNormalizedTarget(target: Target): NormalizedTarget {
+  const parsedUrl = parseBaseUrl(target.baseUrl ?? null);
+  const host = normalizeHost(parsedUrl?.hostname ?? "");
 
   if (!host) {
-    throw new RequestError(400, `Target asset ${asset.label} is missing a usable host.`, {
+    throw new RequestError(400, `Target ${target.name} is missing a usable host.`, {
       code: "WORKFLOW_TARGET_MISSING",
       userFriendlyMessage: "The selected workflow target is missing a usable host."
     });
   }
 
   return {
-    baseUrl: parsedUrl?.toString() ?? asset.baseUrl ?? null,
+    baseUrl: parsedUrl?.toString() ?? target.baseUrl ?? null,
     host,
     ...(parsedUrl?.port ? { port: Number(parsedUrl.port) } : {})
   };
@@ -126,39 +119,18 @@ function isLocalDevTarget(host: string) {
   return isLocalHost(host) || isPrivateDevHost(host);
 }
 
-export function resolveTargetAsset(application: Application, requestedTargetAssetId?: string): TargetAsset {
-  const targetAssets = application.targetAssets ?? [];
-  if (targetAssets.length === 0) {
-    throw new RequestError(400, "Application has no registered target assets.", {
-      code: "WORKFLOW_TARGET_ASSET_REQUIRED",
-      userFriendlyMessage: "This application does not have any registered targets."
+export function resolveWorkflowTarget(target: Target) {
+  if (!target.baseUrl?.trim()) {
+    throw new RequestError(400, "Target requires a base URL before workflow execution.", {
+      code: "WORKFLOW_TARGET_REQUIRED",
+      userFriendlyMessage: "This target needs a base URL before a workflow can run."
     });
   }
 
-  if (requestedTargetAssetId) {
-    const exact = targetAssets.find((asset) => asset.id === requestedTargetAssetId);
-    if (!exact) {
-      throw new RequestError(400, `Target asset ${requestedTargetAssetId} is not registered for this application.`, {
-        code: "WORKFLOW_TARGET_ASSET_INVALID",
-        userFriendlyMessage: "The selected workflow target is not registered for this application."
-      });
-    }
-    return exact;
-  }
-
-  const defaultTarget = targetAssets.find((asset) => asset.isDefault);
-  if (defaultTarget) {
-    return defaultTarget;
-  }
-
-  if (targetAssets.length === 1) {
-    return targetAssets[0] as TargetAsset;
-  }
-
-  throw new RequestError(400, "Application has multiple registered targets and requires an explicit target selection.", {
-    code: "WORKFLOW_TARGET_ASSET_REQUIRED",
-    userFriendlyMessage: "Select a registered target before starting the workflow run."
-  });
+  return {
+    label: target.name,
+    baseUrl: target.baseUrl
+  };
 }
 
 function loadConstraintRuleSet(constraint: ExecutionConstraint): ConstraintRuleSet {
@@ -183,9 +155,10 @@ function isProviderOwnedTarget(constraint: ExecutionConstraint, host: string) {
   return false;
 }
 
-export function resolveEffectiveExecutionConstraints(application: Application, targetAsset: TargetAsset, rateLimitRps: number): EffectiveExecutionConstraintSet {
-  const normalizedTarget = targetAssetToNormalizedTarget(targetAsset);
-  const bindings = application.constraintBindings ?? [];
+export function resolveEffectiveExecutionConstraints(targetRecord: Target, rateLimitRps: number): EffectiveExecutionConstraintSet {
+  const target = resolveWorkflowTarget(targetRecord);
+  const normalizedTarget = targetToNormalizedTarget(targetRecord);
+  const bindings = targetRecord.constraintBindings ?? [];
   const constraints = bindings
     .map((binding) => binding.constraint)
     .filter((constraint): constraint is ExecutionConstraint => Boolean(constraint));
@@ -194,7 +167,7 @@ export function resolveEffectiveExecutionConstraints(application: Application, t
 
   if (localhostException) {
     return {
-      targetAsset,
+      target,
       normalizedTarget,
       localhostException: true,
       excludedPaths: [],
@@ -236,13 +209,6 @@ export function resolveEffectiveExecutionConstraints(application: Application, t
     allowActiveExploit: false
   });
 
-  if (aggregate.requireVerifiedOwnership && targetAsset.ownershipStatus !== "verified") {
-    throw new RequestError(400, `Target asset ${targetAsset.label} is not ownership-verified.`, {
-      code: "WORKFLOW_TARGET_UNVERIFIED",
-      userFriendlyMessage: "Workflow runs require a verified owned target."
-    });
-  }
-
   if (aggregate.denyProviderOwnedTargets) {
     const denyingConstraint = constraints.find((constraint) => isProviderOwnedTarget(constraint, normalizedTarget.host));
     if (denyingConstraint) {
@@ -254,7 +220,7 @@ export function resolveEffectiveExecutionConstraints(application: Application, t
   }
 
   return {
-    targetAsset,
+    target,
     normalizedTarget,
     localhostException: false,
     excludedPaths: aggregate.excludedPaths,
@@ -291,7 +257,7 @@ export function authorizeToolAgainstConstraints(
   if (request.riskTier === "controlled-exploit" && !constraints.allowActiveExploit) {
     return {
       allowed: false,
-      reason: `Tool ${tool.name} requires exploit authorization that this application does not allow.`
+      reason: `Tool ${tool.name} requires exploit authorization that this target does not allow.`
     };
   }
 
@@ -318,7 +284,7 @@ export function authorizeToolAgainstConstraints(
 
   return {
     allowed: true,
-    reason: `Tool ${tool.name} is compatible with the active application constraints.`
+    reason: `Tool ${tool.name} is compatible with the active target constraints.`
   };
 }
 

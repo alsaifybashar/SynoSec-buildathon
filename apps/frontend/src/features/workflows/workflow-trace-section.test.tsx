@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type { AiAgent, AiTool, Application, Runtime, Workflow, WorkflowRun } from "@synosec/contracts";
+import type { AiAgent, AiTool, Target, Workflow, WorkflowRun } from "@synosec/contracts";
 import { WorkflowTraceSection } from "@/features/workflows/workflow-trace-section";
 
 const workflow: Workflow = {
@@ -8,8 +8,7 @@ const workflow: Workflow = {
   name: "OSI Single-Agent",
   status: "active",
   description: "Workflow debug transcript test",
-  applicationId: "20000000-0000-0000-0000-000000000001",
-  runtimeId: "30000000-0000-0000-0000-000000000001",
+  targetId: "20000000-0000-0000-0000-000000000001",
   agentId: "50000000-0000-0000-0000-000000000001",
   objective: "Run one evidence-backed workflow pass.",
   allowedToolIds: ["tool-1"],
@@ -352,26 +351,13 @@ const run: WorkflowRun = {
   ]
 };
 
-const applications: Application[] = [{
-  id: workflow.applicationId,
-  name: "Demo App",
+const targets: Target[] = [{
+  id: workflow.targetId,
+  name: "Demo Target",
   baseUrl: "http://localhost:8888",
   environment: "development",
   status: "active",
   lastScannedAt: null,
-  createdAt: "2026-04-21T00:00:00.000Z",
-  updatedAt: "2026-04-21T00:00:00.000Z"
-}];
-
-const runtimes: Runtime[] = [{
-  id: workflow.runtimeId ?? "",
-  name: "Demo Runtime",
-  serviceType: "api",
-  provider: "docker",
-  environment: "development",
-  region: "local",
-  status: "healthy",
-  applicationId: workflow.applicationId,
   createdAt: "2026-04-21T00:00:00.000Z",
   updatedAt: "2026-04-21T00:00:00.000Z"
 }];
@@ -724,8 +710,7 @@ describe("WorkflowTraceSection", () => {
     const { container } = render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={run}
@@ -762,8 +747,7 @@ describe("WorkflowTraceSection", () => {
     render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={run}
@@ -789,8 +773,7 @@ describe("WorkflowTraceSection", () => {
     render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={run}
@@ -821,8 +804,7 @@ describe("WorkflowTraceSection", () => {
     render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={summaryOnlyToolRun}
@@ -842,8 +824,7 @@ describe("WorkflowTraceSection", () => {
     render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={activeRun}
@@ -866,8 +847,7 @@ describe("WorkflowTraceSection", () => {
     render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={streamedNarrationRun}
@@ -890,8 +870,7 @@ describe("WorkflowTraceSection", () => {
     const { rerender } = render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={rejectedModelRun}
@@ -910,8 +889,7 @@ describe("WorkflowTraceSection", () => {
     rerender(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={failedToolRun}
@@ -933,8 +911,7 @@ describe("WorkflowTraceSection", () => {
     render(
       <WorkflowTraceSection
         workflow={workflow}
-        applications={applications}
-        runtimes={runtimes}
+        targets={targets}
         agents={agents}
         tools={tools}
         run={null}

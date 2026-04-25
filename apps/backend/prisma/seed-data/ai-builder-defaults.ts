@@ -79,15 +79,16 @@ import { responderTool } from "./tools/windows/responder.js";
 import type { AiTool } from "@synosec/contracts";
 
 export const localApplicationId = "5ecf4a8e-df5f-4945-a7e1-230ef43eac80";
-export const targetRuntimeId = "6fd90dd7-6f27-47d0-ab24-6328bb2f3624";
+export const portfolioApplicationId = "1f92a3d7-4f70-4950-b750-9bf74c6f3591";
 export const anthropicProviderId = "88e995dc-c55d-4a74-b831-b64922f25858";
 export const localProviderId = "6fb18f09-f230-49df-b0ab-4f1bcedd230c";
 export const osiSingleAgentWorkflowId = "8b57f0e7-1dd7-4d6a-8db5-c4ff7be80a21";
 export const orchestrationAttackMapWorkflowId = "97fa61fd-8ae7-41d8-b267-d472413fcb9c";
 export const osiCompactFamilyWorkflowId = "0e8e3912-c48f-4c34-9ac0-c54ec70df3f6";
+export const portfolioEvidenceGraphWorkflowId = "5edb1601-27cf-4a87-b7d4-a50873f5d985";
 
-export type SeededProviderKey = "anthropic" | "local";
-export type SeededRoleKey = "orchestrator" | "qa-analyst" | "pen-tester" | "reporter" | "compact-evaluator";
+export type SeededProviderKey = "anthropic";
+export type SeededRoleKey = "orchestrator" | "compact-evaluator" | "portfolio-evaluator";
 
 export function getSeededProviderDefinitions(env: NodeJS.ProcessEnv = process.env) {
   return [
@@ -310,36 +311,11 @@ export const seededRoleDefinitions = [
     ] as const
   },
   {
-    key: "qa-analyst" as const,
-    name: "QA Analyst",
-    description: "Validates evidence quality, cross-checks findings, and identifies confidence gaps.",
-    systemPrompt:
-      "You are the QA analyst for SynoSec. Review evidence for consistency, verify that findings are supported, call out uncertainty, and recommend the smallest follow-up needed to confirm or reject a claim. Prefer reproducibility, precise language, and conservative confidence scoring over speculation.",
-    toolIds: [
-      httpReconTool.id,
-      httpHeadersTool.id,
-      niktoScanTool.id,
-      bashProbeTool.id,
-      nmapScanTool.id,
-      vulnAuditTool.id
-    ] as const
-  },
-  {
-    key: "pen-tester" as const,
-    name: "Pen-Tester",
-    description: "Performs controlled offensive validation against approved targets and evidence paths.",
-    systemPrompt:
-      "You are the pen-tester for SynoSec. Use approved active techniques to validate exploitable conditions, prioritize realistic attack paths, and preserve a clean evidence trail. Stay inside scope, prefer the least invasive validation that proves impact, and clearly separate confirmed exploitation from hypothesis.",
-    toolIds: [
-      ...seededToolDefinitions.map(t => t.id)
-    ] as const
-  },
-  {
     key: "compact-evaluator" as const,
     name: "Compact Evaluator",
     description: "Evaluates the semantic-family tool surface as a compact alternative to the raw pentest catalog.",
     systemPrompt:
-      "You are the compact evaluation agent for SynoSec. Use only the available semantic family tools, think in terms of task families rather than tool brands, keep the evidence chain explicit, and evaluate whether the compact tool surface is sufficient to make progress. Do not ask for raw tool access. Work within the family tools you are given, report concrete findings through the workflow actions, and stop when confidence stops improving. Keep the operator informed with short visible progress updates by calling log_progress before tool calls and after meaningful results. Do not expose private chain-of-thought; provide concise action-oriented progress notes instead.",
+      "You are the compact evaluation agent for SynoSec. Use only the available semantic family tools, think in terms of task families rather than tool brands, and keep the evidence chain explicit. Do not ask for raw tool access. Prefer structured evidence-backed findings over free-form narrative. Distinguish confirmed findings, plausible hypotheses, and rejected leads in your reporting. When findings connect, capture the relationship explicitly with derivedFromFindingIds, relatedFindingIds, or enablesFindingIds instead of implying the connection only in prose. Each finding should describe the affected asset or URL, the preconditions that make the issue matter, the observed impact, and the most direct remediation. Keep the operator informed with short visible progress updates by calling log_progress before tool calls and after meaningful results, but treat log_progress as secondary to high-quality report_finding calls. Stop when confidence stops improving. Do not expose private chain-of-thought; provide concise action-oriented progress notes instead.",
     toolIds: [
       familyHttpSurfaceTool.id,
       familyNetworkEnumerationTool.id,
@@ -350,26 +326,26 @@ export const seededRoleDefinitions = [
     ] as const
   },
   {
-    key: "reporter" as const,
-    name: "Reporter",
-    description: "Builds clear security reports for both executive and technical audiences.",
+    key: "portfolio-evaluator" as const,
+    name: "Portfolio Evaluator",
+    description: "Assesses the seeded nilswickman.com workflow with compact family tools and evidence-graph-first reporting.",
     systemPrompt:
-      "You are the reporting specialist for SynoSec. Convert findings and evidence into a crisp report with accurate severity framing, clear remediation guidance, and separate executive and technical narratives. Do not introduce unsupported claims. Focus on clarity, prioritization, and traceability back to evidence.",
-    toolIds: [httpReconTool.id, httpHeadersTool.id, bashProbeTool.id] as const
+      "You are the portfolio evaluation agent for SynoSec. Assess a prerendered portfolio-style web target using only the available semantic family tools. Treat OSI-inspired language only as shorthand for dependency boundaries across network exposure, HTTP/TLS behavior, and application behavior. Prefer structured evidence-backed findings over free-form narrative. Distinguish confirmed findings, plausible hypotheses, and rejected leads in your reporting. Focus on realistic portfolio surfaces such as headers, redirects, public assets, sitemap and robots exposure, content discovery, web crawl findings, and deployment or CDN assumptions. When findings connect, capture the relationship explicitly with derivedFromFindingIds, relatedFindingIds, or enablesFindingIds instead of implying the connection only in prose. Each finding should describe the affected asset or URL, the preconditions that make the issue matter, the observed impact, and the most direct remediation. Keep the operator informed with short visible progress updates by calling log_progress before tool calls and after meaningful results, but treat log_progress as secondary to high-quality report_finding calls. Stop when confidence stops improving. Do not expose private chain-of-thought; provide concise action-oriented progress notes instead.",
+    toolIds: [
+      familyHttpSurfaceTool.id,
+      familyNetworkEnumerationTool.id,
+      familySubdomainDiscoveryTool.id,
+      familyWebCrawlTool.id,
+      familyContentDiscoveryTool.id,
+      familyVulnerabilityValidationTool.id
+    ] as const
   }
 ] as const;
 
 export const seededAgentIds = {
   "anthropic:orchestrator": "34e69347-4446-4c54-b8b0-b3962f701f0e",
-  "anthropic:qa-analyst": "751d2c0b-85f1-4f7a-8ac6-2c05d0ce0f56",
-  "anthropic:pen-tester": "f1f99dd4-c2a7-47e8-946e-6a880f09001f",
-  "anthropic:reporter": "897204f6-2e08-4775-aae8-f233d4ec8154",
   "anthropic:compact-evaluator": "3d9992c0-a20b-4527-86d3-9479e86d6c3b",
-  "local:orchestrator": "fa1a0bfa-6b02-4948-8e1c-155f6b9a4ae7",
-  "local:qa-analyst": "fcfe30d4-9473-4e74-8836-d824ff777c88",
-  "local:pen-tester": "36f56ea0-e8ce-48ca-bda8-c33ed49e67b2",
-  "local:reporter": "72ea29f0-f780-4402-bfe4-574604830749",
-  "local:compact-evaluator": "7115bc3d-9237-4fba-97f7-8d72966502c0"
+  "anthropic:portfolio-evaluator": "18adcb50-327a-40d3-a4c5-ff05ec4d2458"
 } as const;
 
 export function seededAgentId(providerKey: SeededProviderKey, roleKey: SeededRoleKey) {
@@ -384,12 +360,11 @@ export function getSeededWorkflowDefinitions() {
   return [
     {
       id: osiSingleAgentWorkflowId,
-      name: "OSI Single-Agent",
+      name: "Single-Agent",
       status: "active" as const,
       executionKind: "workflow" as const,
       description: "Seeded Anthropic workflow that runs one prompt-driven transparent evidence pipeline with approved tools, native finding registration, and explicit completion control.",
       applicationId: localApplicationId,
-      runtimeId: targetRuntimeId,
       stages: [
         {
           id: "6e54b520-366c-4acb-9e36-a6cfe1c07fd3",
@@ -433,7 +408,6 @@ export function getSeededWorkflowDefinitions() {
       executionKind: "attack-map" as const,
       description: "Seeded workflow-backed attack-map orchestration run that plans high-value attack paths, executes approved tools, and reports normalized workflow findings.",
       applicationId: localApplicationId,
-      runtimeId: targetRuntimeId,
       stages: [
         {
           id: "0586f03f-27e2-4c5a-a12c-abcb1b68e841",
@@ -473,12 +447,11 @@ export function getSeededWorkflowDefinitions() {
     },
     {
       id: osiCompactFamilyWorkflowId,
-      name: "OSI Compact Family Evaluation",
+      name: "Compact Family Evaluation",
       status: "active" as const,
       executionKind: "workflow" as const,
       description: "Seeded Anthropic workflow for evaluating a compact semantic-family tool surface against the same local target and evidence pipeline.",
       applicationId: localApplicationId,
-      runtimeId: targetRuntimeId,
       stages: [
         {
           id: "d6be6af5-fc56-42fa-a802-702d002b4bf6",
@@ -487,6 +460,48 @@ export function getSeededWorkflowDefinitions() {
           objective: "Run one evidence-backed compact-family evaluation pipeline across the configured target, use only the semantic family tools for collection and validation, call log_progress for short operator-visible progress updates before tool calls and after meaningful results, register concrete findings through report_finding, and stop only through complete_run or fail_run.",
           allowedToolIds: [
             ...getSeededRoleDefinition("compact-evaluator")?.toolIds ?? []
+          ],
+          requiredEvidenceTypes: [],
+          findingPolicy: {
+            taxonomy: "typed-core-v1",
+            allowedTypes: [
+              "service_exposure",
+              "content_discovery",
+              "missing_security_header",
+              "tls_weakness",
+              "injection_signal",
+              "auth_weakness",
+              "sensitive_data_exposure",
+              "misconfiguration",
+              "other"
+            ]
+          },
+          completionRule: {
+            requireStageResult: true,
+            requireToolCall: false,
+            allowEmptyResult: true,
+            minFindings: 0
+          },
+          resultSchemaVersion: 1,
+          handoffSchema: null
+        }
+      ]
+    },
+    {
+      id: portfolioEvidenceGraphWorkflowId,
+      name: "Portfolio Evidence Graph",
+      status: "active" as const,
+      executionKind: "workflow" as const,
+      description: "Seeded Anthropic workflow for evaluating nilswickman.com with compact family tools and evidence-graph-oriented reporting.",
+      applicationId: portfolioApplicationId,
+      stages: [
+        {
+          id: "78f81dbf-b482-4d8d-b63f-a6e63cd3d38f",
+          label: "Portfolio Assessment",
+          agentId: seededAgentId("anthropic", "portfolio-evaluator"),
+          objective: "Assess the configured portfolio target as a prerendered Nuxt site using only the compact semantic family tools. Treat OSI-inspired terms only as shorthand for dependency boundaries across network exposure, HTTP/TLS behavior, and application behavior. Focus on realistic portfolio surfaces such as headers, redirects, public assets, sitemap and robots exposure, content discovery, web crawl findings, and deployment or CDN assumptions. Register concrete findings through report_finding with evidence-backed URLs or assets, explicit preconditions, and plain-language remediation. When one finding depends on, correlates with, or enables another, populate derivedFromFindingIds, relatedFindingIds, or enablesFindingIds. Do not present speculative exploit chains as confirmed; mark only directly supported connections as findings and keep weaker links as hypotheses in the final summary. Use complete_run to summarize the highest-confidence connected findings, the strongest remaining hypothesis chain, and the minimum-cut remediation that breaks the most paths.",
+          allowedToolIds: [
+            ...getSeededRoleDefinition("portfolio-evaluator")?.toolIds ?? []
           ],
           requiredEvidenceTypes: [],
           findingPolicy: {
