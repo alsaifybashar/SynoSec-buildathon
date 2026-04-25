@@ -12,6 +12,7 @@ coverage
 .local/
 .playwright-mcp/
 *.png
+!images/*.png
 .ralph/
 .ralph/*
 .agents/
