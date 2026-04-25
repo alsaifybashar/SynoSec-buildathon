@@ -1,6 +1,6 @@
 # Strategy Flow Terminology
 
-This document records the terminology chosen for the scan/pentest domain so the rename can be implemented consistently later.
+This document records terminology choices for the strategy-flow domain so naming can stay consistent if that rename work resumes later.
 
 ## Chosen Product Language
 
@@ -40,10 +40,7 @@ Use these terms as the default vocabulary across product copy, contracts, API na
 
 When the rename work resumes, the intended public naming is:
 
-- `/api/scan/:id/strategy-map`
-- `/api/scan/:id/escalation-routes`
 - `ScanTactic`
-- `StrategyMapResponse`
 - `EscalationRoute`
 - `EscalationRouteLink`
 - `StrategyAnalysis`

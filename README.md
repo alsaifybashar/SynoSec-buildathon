@@ -77,20 +77,7 @@ stateDiagram-v2
     Complete --> [*]
 ```
 
-The discovery method has two complementary execution paths.
-
-### Single-Agent Defensive Loop
-
-The single-agent scan path focuses on layer-aware vulnerability discovery. It creates a scan, initializes requested OSI-layer coverage, loads the approved agent tools, and asks the selected model to act through constrained tool calls.
-
-The agent can perform four structured actions:
-
-- `call_tool`: Execute one approved tool against a normalized target.
-- `report_vulnerability`: Persist one evidence-backed vulnerability.
-- `update_layer_coverage`: Mark a layer as covered, partially covered, or not covered, with evidence and gaps.
-- `submit_scan_completion`: Close the scan with a summary, residual risk, next step, and stop reason.
-
-For hosted models, SynoSec exposes these actions as tool calls through the AI SDK. For local models, the same behavior is represented as strict JSON actions. In both modes, the backend validates the action schema and rejects unsupported actions, unknown tools, invalid coverage references, or missing completion payloads.
+The current execution path is the attack-map orchestrator.
 
 ### Attack-Map Orchestrator
 

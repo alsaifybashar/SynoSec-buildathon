@@ -6,7 +6,6 @@ import {
   connectorRegistrationRequestSchema,
   connectorTestDispatchRequestSchema,
   createAiToolBodySchema,
-  createScanRequestSchema,
   createApplicationBodySchema,
   createAiProviderBodySchema,
   defensiveIterationRecordSchema,
@@ -18,9 +17,7 @@ import {
   prioritizeDefensiveAction,
   healthResponseSchema,
   listApplicationsResponseSchema,
-  listScansResponseSchema,
   scanLayerCoverageSchema,
-  scansListQuerySchema,
   securityVulnerabilitySchema,
   aiToolSchema,
   toolRequestSchema,
@@ -136,72 +133,6 @@ describe("contracts", () => {
   it("accepts partial AI provider updates", () => {
     const result = updateAiProviderBodySchema.safeParse({
       model: "claude-sonnet-4"
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts a scan request with local llm overrides", () => {
-    const result = createScanRequestSchema.safeParse({
-      scope: {
-        targets: ["localhost:8888"],
-        exclusions: [],
-        layers: ["L3", "L4", "L7"],
-        maxDepth: 2,
-        maxDurationMinutes: 5,
-        rateLimitRps: 5,
-        allowActiveExploits: false
-      },
-      llm: {
-        provider: "local",
-        model: "Qwen/Qwen3-4B",
-        baseUrl: "http://127.0.0.1:8000",
-        apiPath: "/api/chat/raw"
-      }
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it("applies defaults for scan list queries", () => {
-    const result = scansListQuerySchema.safeParse({});
-
-    expect(result.success).toBe(true);
-
-    if (result.success) {
-      expect(result.data.sortBy).toBe("createdAt");
-      expect(result.data.sortDirection).toBe("desc");
-    }
-  });
-
-  it("accepts paginated scan responses", () => {
-    const result = listScansResponseSchema.safeParse({
-      scans: [
-        {
-          id: "scan-1",
-          scope: {
-            targets: ["localhost:8888"],
-            exclusions: [],
-            layers: ["L4", "L7"],
-            maxDepth: 2,
-            maxDurationMinutes: 5,
-            rateLimitRps: 5,
-            allowActiveExploits: false,
-            graceEnabled: true,
-            graceRoundInterval: 3,
-            cyberRangeMode: "simulation"
-          },
-          status: "running",
-          currentRound: 1,
-          tacticsTotal: 3,
-          tacticsComplete: 1,
-          createdAt: "2026-04-12T12:00:00.000Z"
-        }
-      ],
-      page: 1,
-      pageSize: 25,
-      total: 1,
-      totalPages: 1
     });
 
     expect(result.success).toBe(true);
