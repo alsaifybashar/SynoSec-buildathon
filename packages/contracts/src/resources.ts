@@ -114,7 +114,14 @@ const executionConstraintBodyBaseSchema = z.object({
   provider: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null),
   version: z.number().int().min(1),
   description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
-  ruleSpec: jsonSchemaObjectSchema
+  denyProviderOwnedTargets: z.boolean().default(false),
+  requireVerifiedOwnership: z.boolean().default(false),
+  allowActiveExploit: z.boolean().default(false),
+  requireRateLimitSupport: z.boolean().default(false),
+  rateLimitRps: z.union([z.number().int().min(1), z.null()]).default(null),
+  requireHostAllowlistSupport: z.boolean().default(false),
+  requirePathExclusionSupport: z.boolean().default(false),
+  excludedPaths: excludedPathsSchema.default([])
 });
 
 export const createExecutionConstraintBodySchema = executionConstraintBodyBaseSchema;
