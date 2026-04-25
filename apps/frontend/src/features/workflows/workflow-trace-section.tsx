@@ -772,37 +772,52 @@ function FindingsRail({
           </div>
         </DetailMetadataPanel>
       ) : null}
-      <div className="rounded-xl border border-border/80 bg-card px-4 py-4">
-        <div className="flex items-center gap-2">
-          <MonoLabel>Findings</MonoLabel>
-          <HelpHint
-            label="Findings"
-            hint="This rail tracks issues the workflow explicitly reported while it was running."
-          />
+      <div className="rounded-xl border border-border/80 bg-card">
+        <div className="px-4 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <MonoLabel>Findings</MonoLabel>
+              <HelpHint
+                label="Findings"
+                hint="This rail tracks issues the workflow explicitly reported while it was running."
+              />
+            </div>
+            <span className="font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">
+              {findings.length} · {runStatus ?? "idle"}
+            </span>
+          </div>
+          {findings.length === 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">No findings reported yet.</p>
+          ) : null}
         </div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {findings.length === 0 ? "No findings reported yet." : `${findings.length} finding${findings.length === 1 ? "" : "s"} reported.`}
-        </p>
-        <p className="mt-1 font-mono text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground">
-          run status · {runStatus ?? "idle"}
-        </p>
+        {findings.length > 0 ? (
+          <ul className="divide-y divide-border/60 border-t border-border/60">
+            {findings.map((finding) => (
+              <li key={finding.id}>
+                <details className="group">
+                  <summary className="flex cursor-pointer list-none items-start gap-2 px-4 py-2.5 marker:hidden hover:bg-muted/30">
+                    <SeverityBadge severity={finding.severity} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[0.82rem] font-medium text-foreground">{finding.title}</p>
+                      <p className="mt-0.5 flex items-center gap-1.5 truncate font-mono text-[0.62rem] uppercase tracking-[0.12em] text-muted-foreground">
+                        <Target className="h-3 w-3 text-primary" />
+                        <span className="truncate">{finding.host}</span>
+                        <span>· conf {finding.confidence.toFixed(2)}</span>
+                      </p>
+                    </div>
+                    <ChevronRight className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+                  </summary>
+                  <div className="space-y-2 border-t border-dashed border-border/60 bg-background/40 px-4 py-3">
+                    <p className="font-mono text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">{finding.type}</p>
+                    <p className="text-[0.8rem] leading-5 text-muted-foreground">{finding.impact}</p>
+                    <p className="border-t border-dashed border-border/60 pt-2 text-[0.8rem] leading-5 text-foreground/85">{finding.recommendation}</p>
+                  </div>
+                </details>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
-      {findings.map((finding) => (
-        <div key={finding.id} className="rounded-xl border border-border/80 bg-background/80 px-4 py-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <SeverityBadge severity={finding.severity} />
-            <span className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground">{finding.type}</span>
-          </div>
-          <p className="mt-3 text-sm font-semibold text-foreground">{finding.title}</p>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">{finding.impact}</p>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Target className="h-3.5 w-3.5 text-primary" />
-            <span>{finding.host}</span>
-            <span className="font-mono">conf {finding.confidence.toFixed(2)}</span>
-          </div>
-          <p className="mt-3 border-t border-dashed border-border pt-3 text-sm leading-6 text-foreground/85">{finding.recommendation}</p>
-        </div>
-      ))}
     </aside>
   );
 }
