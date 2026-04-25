@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiTool } from "@synosec/contracts";
 import { AiToolsPage } from "@/features/ai-tools/page";
 
@@ -56,6 +56,11 @@ vi.mock("@/shared/lib/api", () => ({
 }));
 
 describe("AiToolsPage", () => {
+  beforeEach(() => {
+    resourceDetailState.item = tool;
+    mockFetchJson.mockReset();
+  });
+
   it("runs a tool from the detail page and renders the parsed result", async () => {
     mockFetchJson.mockResolvedValueOnce({
       toolId: "tool-1",
@@ -96,7 +101,7 @@ describe("AiToolsPage", () => {
     expect(screen.getByDisplayValue(/"exitCode": 0/)).toBeInTheDocument();
   });
 
-  it("shows source conversion metadata and allows editing for system tools", () => {
+  it("shows read-only system tool behavior and builtin execution details", () => {
     resourceDetailState.item = {
       ...tool,
       id: "builtin-report-finding",
@@ -117,16 +122,34 @@ describe("AiToolsPage", () => {
       />
     );
 
+    expect(screen.getByText("This tool is read-only and can be inspected but not edited.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /metadata/i }));
     expect(screen.getByText("Create")).toBeInTheDocument();
     expect(screen.getByText("Update")).toBeInTheDocument();
     expect(screen.getByText("Delete")).toBeInTheDocument();
     expect(screen.getByText("Built-in system actions are listed here but remain read-only.")).toBeInTheDocument();
-    expect(screen.getByText("Workflow built-in: persists a structured workflow finding.")).toBeInTheDocument();
+    expect(screen.getByText("Built-in action")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Report Finding")).toBeDisabled();
     expect(screen.getByText("Allowed")).toBeInTheDocument();
     expect(screen.getAllByText("Blocked")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Run Tool" })).not.toBeInTheDocument();
+    expect(screen.getByText("Built-in tools do not expose a runnable shell test console here.")).toBeInTheDocument();
 
     resourceDetailState.item = tool;
+  });
+
+  it("reuses example input from the overview contract section in the test console", () => {
+    render(
+      <AiToolsPage
+        toolId="tool-1"
+        onNavigateToList={vi.fn()}
+        onNavigateToCreate={vi.fn()}
+        onNavigateToDetail={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Use Below" }));
+
+    expect(screen.getByLabelText("Run input JSON")).toHaveValue('{\n  "baseUrl": ""\n}');
   });
 });

@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
   apiRoutes,
@@ -12,14 +12,15 @@ import {
   type ToolCategory,
   type ToolRiskTier
 } from "@synosec/contracts";
+import { ChevronDown, ChevronRight, Copy, RefreshCcw } from "lucide-react";
 import { aiToolsResource } from "@/features/ai-tools/resource";
 import { aiToolTransfer } from "@/features/ai-tools/transfer";
 import { fetchJson } from "@/shared/lib/api";
 import { useResourceDetail } from "@/shared/hooks/use-resource-detail";
 import { useResourceList } from "@/shared/hooks/use-resource-list";
-import { listPageSizes, type ResourceClient, type AiToolsQuery } from "@/shared/lib/resource-client";
+import { type ResourceClient, type AiToolsQuery } from "@/shared/lib/resource-client";
 import { exportResourceRecords, importResourceRecords } from "@/shared/lib/resource-transfer";
-import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
+import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage } from "@/shared/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -46,6 +47,8 @@ type ToolFormValues = {
   outputSchemaText: string;
 };
 
+type SchemaField = "inputSchemaText" | "outputSchemaText";
+
 const statusLabels: Record<AiToolStatus, string> = {
   active: "Active",
   inactive: "Inactive",
@@ -57,6 +60,14 @@ const categoryOptions: ToolCategory[] = ["web", "network", "content", "dns", "su
 const riskTierOptions: ToolRiskTier[] = ["passive", "active", "controlled-exploit"];
 const sandboxProfileOptions: ToolSandboxProfile[] = ["network-recon", "read-only-parser", "active-recon", "controlled-exploit-lab"];
 const privilegeProfileOptions: ToolPrivilegeProfile[] = ["read-only-network", "active-network", "controlled-exploit"];
+
+function createDefaultInputSchemaText() {
+  return JSON.stringify({ type: "object", properties: {} }, null, 2);
+}
+
+function createDefaultOutputSchemaText() {
+  return JSON.stringify({ type: "object", properties: { output: { type: "string" } }, required: ["output"] }, null, 2);
+}
 
 function createEmptyFormValues(): ToolFormValues {
   return {
@@ -73,8 +84,8 @@ function createEmptyFormValues(): ToolFormValues {
     sandboxProfile: "read-only-parser",
     privilegeProfile: "read-only-network",
     timeoutMsText: "",
-    inputSchemaText: JSON.stringify({ type: "object", properties: {} }, null, 2),
-    outputSchemaText: JSON.stringify({ type: "object", properties: { output: { type: "string" } }, required: ["output"] }, null, 2)
+    inputSchemaText: createDefaultInputSchemaText(),
+    outputSchemaText: createDefaultOutputSchemaText()
   };
 }
 
@@ -188,7 +199,9 @@ function describeBuiltinAction(tool: AiTool) {
   }
 
   const labels: Record<ToolBuiltinActionKey, string> = {
-    report_finding: "Workflow built-in: persists a structured workflow finding.",
+    report_finding: "Workflow built-in: persists a structured finding and supplies the metadata used to project execution-report graph nodes and edges.",
+    complete_run: "Workflow built-in: marks the current workflow run as complete.",
+    fail_run: "Workflow built-in: marks the current workflow run as failed.",
     deep_analysis: "Attack map built-in: performs deeper orchestrator analysis on a significant finding.",
     attack_chain_correlation: "Attack map built-in: correlates confirmed findings into chained attack paths."
   };
@@ -271,6 +284,84 @@ function createExampleRunInput(tool: AiTool) {
   return example;
 }
 
+function parseJsonText(value: string) {
+  try {
+    return { value: JSON.parse(value) as Record<string, unknown>, error: null };
+  } catch (error) {
+    return {
+      value: null,
+      error: error instanceof Error ? error.message : "Invalid JSON"
+    };
+  }
+}
+
+function CollapsibleSection({
+  title,
+  open,
+  onToggle,
+  children,
+  summary
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+  summary?: string;
+}) {
+  return (
+    <section className="rounded-[4px] border border-border/70 bg-card/50">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+        onClick={onToggle}
+        aria-expanded={open}
+      >
+        <div>
+          <div className="font-mono text-[0.62rem] font-medium uppercase tracking-[0.28em] text-muted-foreground">
+            {title}
+          </div>
+          {summary ? <div className="mt-1 text-xs text-muted-foreground">{summary}</div> : null}
+        </div>
+        {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+      </button>
+      {open ? <div className="border-t border-border/70 px-4 py-4">{children}</div> : null}
+    </section>
+  );
+}
+
+function MetadataGrid({
+  canCreateTool,
+  canUpdateTool,
+  canDeleteTool,
+  tool
+}: {
+  canCreateTool: boolean;
+  canUpdateTool: boolean;
+  canDeleteTool: boolean;
+  tool: AiTool;
+}) {
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="rounded-[4px] border border-border/70 bg-background/70 p-3">
+        <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Create</p>
+        <p className="mt-2 text-sm text-foreground">{formatCrudCapability(canCreateTool)}</p>
+      </div>
+      <div className="rounded-[4px] border border-border/70 bg-background/70 p-3">
+        <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Update</p>
+        <p className="mt-2 text-sm text-foreground">{formatCrudCapability(canUpdateTool)}</p>
+      </div>
+      <div className="rounded-[4px] border border-border/70 bg-background/70 p-3">
+        <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Delete</p>
+        <p className="mt-2 text-sm text-foreground">{formatCrudCapability(canDeleteTool)}</p>
+      </div>
+      <div className="rounded-[4px] border border-border/70 bg-background/70 p-3">
+        <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Updated</p>
+        <p className="mt-2 text-sm text-foreground">{formatTimestamp(tool.updatedAt)}</p>
+      </div>
+    </div>
+  );
+}
+
 export function AiToolsPage({
   toolId,
   toolNameHint,
@@ -293,6 +384,9 @@ export function AiToolsPage({
   const [runError, setRunError] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<AiToolRunResult | null>(null);
   const [runningTool, setRunningTool] = useState(false);
+  const [executionSettingsOpen, setExecutionSettingsOpen] = useState(true);
+  const [schemasOpen, setSchemasOpen] = useState(false);
+  const [metadataOpen, setMetadataOpen] = useState(false);
   const isCreateMode = toolId === "new";
   const aiToolsListResource = useMemo<ResourceClient<AiTool, AiToolsQuery>>(() => ({
     ...aiToolsResource,
@@ -315,6 +409,9 @@ export function AiToolsPage({
       setFormValues(empty);
       setInitialValues(empty);
       setErrors({});
+      setRunInputText(JSON.stringify({}, null, 2));
+      setRunError(null);
+      setRunResult(null);
       return;
     }
 
@@ -392,10 +489,64 @@ export function AiToolsPage({
   const isToolEditable = isCreateMode ? canCreateTool : canUpdateTool;
   const isBuiltinTool = tool?.executorType === "builtin";
   const isToolRunnable = !isCreateMode && tool?.executorType === "bash";
+  const isReadonlyTool = !isToolEditable;
+  const exampleRunInput = useMemo(() => (tool ? JSON.stringify(createExampleRunInput(tool), null, 2) : JSON.stringify({}, null, 2)), [tool]);
+  const inputSchemaValidation = parseJsonText(formValues.inputSchemaText);
+  const outputSchemaValidation = parseJsonText(formValues.outputSchemaText);
 
   function handleFieldChange<Key extends keyof ToolFormValues>(field: Key, value: ToolFormValues[Key]) {
     setFormValues((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
+  }
+
+  function handleSchemaFormat(field: SchemaField) {
+    const parsed = parseJsonText(formValues[field]);
+    if (!parsed.value) {
+      setErrors((current) => ({ ...current, [field]: "Schema must be valid JSON before formatting." }));
+      return;
+    }
+
+    handleFieldChange(field, JSON.stringify(parsed.value, null, 2));
+  }
+
+  function handleSchemaValidate(field: SchemaField) {
+    const parsed = parseJsonText(formValues[field]);
+    if (!parsed.value) {
+      setErrors((current) => ({ ...current, [field]: parsed.error ?? "Schema must be valid JSON." }));
+      return;
+    }
+
+    setErrors((current) => ({ ...current, [field]: undefined }));
+    toast.success(field === "inputSchemaText" ? "Input schema is valid JSON" : "Output schema is valid JSON");
+  }
+
+  function handleSchemaReset(field: SchemaField) {
+    const nextValue = field === "inputSchemaText"
+      ? (tool ? JSON.stringify(tool.inputSchema, null, 2) : createDefaultInputSchemaText())
+      : (tool ? JSON.stringify(tool.outputSchema, null, 2) : createDefaultOutputSchemaText());
+
+    handleFieldChange(field, nextValue);
+  }
+
+  function handleUseExampleInput() {
+    setRunInputText(exampleRunInput);
+    setRunError(null);
+  }
+
+  function handleResetRunInput() {
+    setRunInputText(JSON.stringify({}, null, 2));
+    setRunError(null);
+  }
+
+  async function handleCopyExampleInput() {
+    try {
+      await navigator.clipboard.writeText(exampleRunInput);
+      toast.success("Example input copied");
+    } catch (error) {
+      toast.error("Failed to copy example input", {
+        description: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
   }
 
   async function handleSave() {
@@ -449,10 +600,8 @@ export function AiToolsPage({
       return;
     }
 
-    let parsedInput: Record<string, unknown>;
-    try {
-      parsedInput = JSON.parse(runInputText) as Record<string, unknown>;
-    } catch {
+    const parsed = parseJsonText(runInputText);
+    if (!parsed.value) {
       setRunError("Run input must be valid JSON.");
       setRunResult(null);
       return;
@@ -465,7 +614,7 @@ export function AiToolsPage({
       const result = await fetchJson<AiToolRunResult>(`${apiRoutes.aiTools}/${tool.id}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: parsedInput })
+        body: JSON.stringify({ input: parsed.value })
       });
       setRunResult(result);
     } catch (error) {
@@ -550,228 +699,307 @@ export function AiToolsPage({
     );
   }
 
+  const currentToolName = isCreateMode ? "New AI tool" : tool?.name ?? "AI tool detail";
+
+  const detailPageProps = {
+    title: currentToolName,
+    breadcrumbs: ["Start", "AI Tools", isCreateMode ? "New" : tool?.name ?? "Detail"],
+    isDirty: isToolEditable ? isDirty : false,
+    isSaving: saving,
+    onBack: onNavigateToList,
+    onSave: handleSave,
+    onDismiss: () => {
+      setFormValues(initialValues);
+      setErrors({});
+      setRunError(null);
+    },
+    saveLabel: isToolEditable ? "Save" : "Read only"
+  };
+
   return (
     <DetailPage
-      title={isCreateMode ? "New AI tool" : tool?.name ?? "AI tool detail"}
-      breadcrumbs={["Start", "AI Tools", isCreateMode ? "New" : tool?.name ?? "Detail"]}
-      isDirty={isToolEditable ? isDirty : false}
-      isSaving={saving}
-      onBack={onNavigateToList}
-      onSave={handleSave}
-      onDismiss={() => {
-        setFormValues(initialValues);
-        setErrors({});
-      }}
-      onExportJson={!isCreateMode && tool?.source !== "system" ? handleExportJson : undefined}
-      saveLabel={isToolEditable ? "Save" : "Read only"}
-      sidebar={tool ? (
-        <>
-          <DetailSidebarItem label="Source">{tool.source}</DetailSidebarItem>
-          <DetailSidebarItem label="Source behavior">{describeSourceBehavior(tool)}</DetailSidebarItem>
-          <DetailSidebarItem label="Executor">{tool.executorType}</DetailSidebarItem>
-          {tool.builtinActionKey ? <DetailSidebarItem label="Built-in key">{tool.builtinActionKey}</DetailSidebarItem> : null}
-          <DetailSidebarItem label="Status">{statusLabels[tool.status]}</DetailSidebarItem>
-          <DetailSidebarItem label="Create">{formatCrudCapability(canCreateTool)}</DetailSidebarItem>
-          <DetailSidebarItem label="Update">{formatCrudCapability(canUpdateTool)}</DetailSidebarItem>
-          <DetailSidebarItem label="Delete">{formatCrudCapability(canDeleteTool)}</DetailSidebarItem>
-          <DetailSidebarItem label="Updated">{formatTimestamp(tool.updatedAt)}</DetailSidebarItem>
-        </>
-      ) : undefined}
+      {...detailPageProps}
+      {...(!isCreateMode && tool ? { subtitle: tool.id, timestamp: formatTimestamp(tool.updatedAt) } : {})}
+      {...(!isCreateMode && tool?.source !== "system" ? { onExportJson: handleExportJson } : {})}
     >
-      <DetailFieldGroup title="Definition" className="bg-card/70">
-        <DetailField label="Name" required {...definedString(errors.name)}>
-          <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" disabled={!isToolEditable} />
-        </DetailField>
-        <DetailField label="Category">
-          <Select value={formValues.category} onValueChange={(value) => handleFieldChange("category", value as ToolCategory)} disabled={!isToolEditable}>
-            <SelectTrigger aria-label="Category">
-              <SelectValue placeholder="Select category" />
-            </SelectTrigger>
-            <SelectContent>
-              {categoryOptions.map((category) => (
-                <SelectItem key={category} value={category}>{category}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </DetailField>
-        <DetailField label="Risk tier">
-          <Select value={formValues.riskTier} onValueChange={(value) => handleFieldChange("riskTier", value as ToolRiskTier)} disabled={!isToolEditable}>
-            <SelectTrigger aria-label="Risk tier">
-              <SelectValue placeholder="Select risk tier" />
-            </SelectTrigger>
-            <SelectContent>
-              {riskTierOptions.map((riskTier) => (
-                <SelectItem key={riskTier} value={riskTier}>{riskTier}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </DetailField>
-        <DetailField label="Description" required className="md:col-span-2" {...definedString(errors.description)}>
-          <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" disabled={!isToolEditable} />
-        </DetailField>
-        <DetailField label="Notes" className="md:col-span-2">
-          <Input value={formValues.notes} onChange={(event) => handleFieldChange("notes", event.target.value)} aria-label="Notes" disabled={!isToolEditable} />
-        </DetailField>
-      </DetailFieldGroup>
-
-      {tool?.executorType === "builtin" ? (
-        <DetailFieldGroup title="Built-in Action" className="bg-card/70">
-          <DetailField label="Execution owner" className="md:col-span-2">
-            <div className="rounded-xl border border-border bg-background/40 p-4 text-sm text-foreground">
-              {describeBuiltinAction(tool) ?? "Built-in action provided by a backend execution engine."}
-            </div>
-          </DetailField>
-        </DetailFieldGroup>
-      ) : null}
-
-      <DetailFieldGroup title="Evidence Contract" className="bg-card/70">
-        <DetailField label="Example input" className="md:col-span-2">
-          <Textarea
-            value={tool ? JSON.stringify(createExampleRunInput(tool), null, 2) : ""}
-            readOnly
-            aria-label="Example tool input"
-            rows={6}
-            className="font-mono text-sm"
-          />
-        </DetailField>
-        <DetailField label="Input schema" className="md:col-span-2" {...definedString(errors.inputSchemaText)}>
-          <Textarea value={formValues.inputSchemaText} onChange={(event) => handleFieldChange("inputSchemaText", event.target.value)} aria-label="Input schema" rows={10} className="font-mono text-sm" disabled={!isToolEditable} />
-        </DetailField>
-        <DetailField label="Structured result schema" className="md:col-span-2" {...definedString(errors.outputSchemaText)}>
-          <p className="mb-2 text-sm leading-6 text-muted-foreground">
-            Evidence tools return a structured result envelope. `output` is required. `observations` are optional evidence records and are not persisted findings.
-          </p>
-          <Textarea value={formValues.outputSchemaText} onChange={(event) => handleFieldChange("outputSchemaText", event.target.value)} aria-label="Output schema" rows={10} className="font-mono text-sm" disabled={!isToolEditable} />
-        </DetailField>
-      </DetailFieldGroup>
-
-      {isToolRunnable && tool ? (
-        <DetailFieldGroup title="Test Tool" className="bg-card/70">
-          <DetailField label="Input JSON" className="md:col-span-2">
-            <Textarea
-              value={runInputText}
-              onChange={(event) => {
-                setRunInputText(event.target.value);
-                setRunError(null);
-              }}
-              aria-label="Run input JSON"
-              rows={10}
-              className="font-mono text-sm"
-            />
-          </DetailField>
-          <div className="md:col-span-2 flex items-center gap-3">
-            <Button type="button" onClick={() => void handleRunTool()} disabled={runningTool}>
-              {runningTool ? "Running…" : "Run Tool"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                if (!tool) {
-                  return;
-                }
-                setRunInputText(JSON.stringify(createExampleRunInput(tool), null, 2));
-                setRunError(null);
-              }}
-              disabled={runningTool}
-            >
-              Use Example Input
-            </Button>
-            {runError ? <p className="text-sm text-destructive">{runError}</p> : null}
+      <section className="space-y-4">
+        {tool ? (
+          <div className="rounded-[4px] border border-border/70 bg-background/70 p-4">
+            <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Tool behavior</p>
+            <p className="mt-2 text-sm text-foreground">{describeSourceBehavior(tool)}</p>
+            {isReadonlyTool ? (
+              <p className="mt-2 text-sm text-muted-foreground">This tool is read-only and can be inspected but not edited.</p>
+            ) : null}
+            {tool.builtinActionKey ? (
+              <p className="mt-2 text-sm text-muted-foreground">{describeBuiltinAction(tool) ?? "Built-in action provided by a backend execution engine."}</p>
+            ) : null}
           </div>
-          <DetailField label="Last run status" className="md:col-span-2">
-            <Input
-              value={describeRunStatus(runResult)}
-              readOnly
-              aria-label="Tool last run status"
-            />
-          </DetailField>
-          <DetailField label="Command preview" className="md:col-span-2">
-            <Textarea
-              value={runResult?.commandPreview ?? ""}
-              readOnly
-              aria-label="Tool command preview"
-              rows={3}
-              className="font-mono text-sm"
-            />
-          </DetailField>
-          <DetailField label="Raw output" className="md:col-span-2">
-            <Textarea
-              value={runResult?.output ?? ""}
-              readOnly
-              aria-label="Tool raw output"
-              rows={8}
-              className="font-mono text-sm"
-            />
-          </DetailField>
-          <DetailField label="Parsed evidence result" className="md:col-span-2">
-            <p className="mb-2 text-sm leading-6 text-muted-foreground">
-              Parsed observations here become evidence artifacts. Findings are created separately by workflow system actions such as vulnerability reporting.
-            </p>
-            <Textarea
-              value={runResult ? JSON.stringify({
-                exitCode: runResult.exitCode,
-                statusReason: runResult.statusReason,
-                durationMs: runResult.durationMs,
-                target: runResult.target,
-                port: runResult.port,
-                observations: runResult.observations
-              }, null, 2) : ""}
-              readOnly
-              aria-label="Tool parsed result"
-              rows={12}
-              className="font-mono text-sm"
-            />
-          </DetailField>
-        </DetailFieldGroup>
-      ) : null}
+        ) : null}
 
-      {!isBuiltinTool ? (
-        <DetailFieldGroup title="Execution" className="bg-card/70">
-        <DetailField label="Binary">
-          <Input value={formValues.binary} onChange={(event) => handleFieldChange("binary", event.target.value)} aria-label="Binary" disabled={!isToolEditable} />
-        </DetailField>
-        <DetailField label="Timeout (ms)" {...definedString(errors.timeoutMsText)}>
-          <Input value={formValues.timeoutMsText} onChange={(event) => handleFieldChange("timeoutMsText", event.target.value)} aria-label="Timeout milliseconds" disabled={!isToolEditable} />
-        </DetailField>
-        <DetailField label="Sandbox profile">
-          <Select value={formValues.sandboxProfile} onValueChange={(value) => handleFieldChange("sandboxProfile", value as ToolSandboxProfile)} disabled={!isToolEditable}>
-            <SelectTrigger aria-label="Sandbox profile">
-              <SelectValue placeholder="Select sandbox profile" />
-            </SelectTrigger>
-            <SelectContent>
-              {sandboxProfileOptions.map((profile) => (
-                <SelectItem key={profile} value={profile}>{profile}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </DetailField>
-        <DetailField label="Privilege profile">
-          <Select value={formValues.privilegeProfile} onValueChange={(value) => handleFieldChange("privilegeProfile", value as ToolPrivilegeProfile)} disabled={!isToolEditable}>
-            <SelectTrigger aria-label="Privilege profile">
-              <SelectValue placeholder="Select privilege profile" />
-            </SelectTrigger>
-            <SelectContent>
-              {privilegeProfileOptions.map((profile) => (
-                <SelectItem key={profile} value={profile}>{profile}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </DetailField>
-        <DetailField label="Capabilities" className="md:col-span-2">
-          <Textarea value={formValues.capabilitiesText} onChange={(event) => handleFieldChange("capabilitiesText", event.target.value)} aria-label="Capabilities" rows={4} className="font-mono text-sm" disabled={!isToolEditable} />
-        </DetailField>
-        <DetailField label="Bash source" required className="md:col-span-2" {...definedString(errors.bashSource)}>
-          <BashEditor
-            value={formValues.bashSource}
-            onChange={(next) => handleFieldChange("bashSource", next)}
-            disabled={!isToolEditable}
-            filename={formValues.name ? `${formValues.name.replace(/[^A-Za-z0-9._-]+/g, "-").toLowerCase()}.sh` : "tool.sh"}
-            aria-label="Bash source"
-          />
-        </DetailField>
+        <DetailFieldGroup title="Definition" className="bg-card/70">
+          <DetailField label="Name" required {...definedString(errors.name)}>
+            <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" disabled={!isToolEditable} />
+          </DetailField>
+          <DetailField label="Category">
+            <Select value={formValues.category} onValueChange={(value) => handleFieldChange("category", value as ToolCategory)} disabled={!isToolEditable}>
+              <SelectTrigger aria-label="Category">
+                <SelectValue placeholder="Select category" />
+              </SelectTrigger>
+              <SelectContent>
+                {categoryOptions.map((category) => (
+                  <SelectItem key={category} value={category}>{category}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </DetailField>
+          <DetailField label="Risk tier">
+            <Select value={formValues.riskTier} onValueChange={(value) => handleFieldChange("riskTier", value as ToolRiskTier)} disabled={!isToolEditable}>
+              <SelectTrigger aria-label="Risk tier">
+                <SelectValue placeholder="Select risk tier" />
+              </SelectTrigger>
+              <SelectContent>
+                {riskTierOptions.map((riskTier) => (
+                  <SelectItem key={riskTier} value={riskTier}>{riskTier}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </DetailField>
+          <DetailField label="Description" required className="md:col-span-2" {...definedString(errors.description)}>
+            <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" disabled={!isToolEditable} />
+          </DetailField>
+          <DetailField label="Notes" className="md:col-span-2">
+            <Input value={formValues.notes} onChange={(event) => handleFieldChange("notes", event.target.value)} aria-label="Notes" disabled={!isToolEditable} />
+          </DetailField>
         </DetailFieldGroup>
-      ) : null}
+
+        {!isBuiltinTool ? (
+          <>
+            <CollapsibleSection
+              title="Execution settings"
+              open={executionSettingsOpen}
+              onToggle={() => setExecutionSettingsOpen((current) => !current)}
+              summary="Runtime controls and privilege boundaries."
+            >
+              <DetailFieldGroup className="bg-transparent" title="Runtime settings">
+                <DetailField label="Binary" hint="Optional. Use when the script should anchor to a specific executable.">
+                  <Input value={formValues.binary} onChange={(event) => handleFieldChange("binary", event.target.value)} aria-label="Binary" disabled={!isToolEditable} />
+                </DetailField>
+                <DetailField label="Timeout (ms)" hint="Integer duration. Values under 1000ms are rejected." {...definedString(errors.timeoutMsText)}>
+                  <Input value={formValues.timeoutMsText} onChange={(event) => handleFieldChange("timeoutMsText", event.target.value)} aria-label="Timeout milliseconds" disabled={!isToolEditable} />
+                </DetailField>
+                <DetailField label="Sandbox profile" hint="Constrains how the tool may access the environment.">
+                  <Select value={formValues.sandboxProfile} onValueChange={(value) => handleFieldChange("sandboxProfile", value as ToolSandboxProfile)} disabled={!isToolEditable}>
+                    <SelectTrigger aria-label="Sandbox profile">
+                      <SelectValue placeholder="Select sandbox profile" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sandboxProfileOptions.map((profile) => (
+                        <SelectItem key={profile} value={profile}>{profile}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </DetailField>
+                <DetailField label="Privilege profile" hint="Declares the network or exploit privileges this tool expects.">
+                  <Select value={formValues.privilegeProfile} onValueChange={(value) => handleFieldChange("privilegeProfile", value as ToolPrivilegeProfile)} disabled={!isToolEditable}>
+                    <SelectTrigger aria-label="Privilege profile">
+                      <SelectValue placeholder="Select privilege profile" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {privilegeProfileOptions.map((profile) => (
+                        <SelectItem key={profile} value={profile}>{profile}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </DetailField>
+                <DetailField label="Capabilities" className="md:col-span-2" hint="One capability per line. Keep entries short and machine-readable.">
+                  <Textarea value={formValues.capabilitiesText} onChange={(event) => handleFieldChange("capabilitiesText", event.target.value)} aria-label="Capabilities" rows={4} className="font-mono text-sm" disabled={!isToolEditable} />
+                </DetailField>
+              </DetailFieldGroup>
+            </CollapsibleSection>
+
+            <div className={cn("grid gap-4", isToolRunnable && tool ? "xl:grid-cols-[minmax(0,1.6fr)_minmax(22rem,1fr)]" : "")}>
+              <DetailFieldGroup title="Source Code" className="bg-card/70">
+                <DetailField label="Bash source" required className="md:col-span-2" {...definedString(errors.bashSource)}>
+                  <BashEditor
+                    value={formValues.bashSource}
+                    onChange={(next) => handleFieldChange("bashSource", next)}
+                    disabled={!isToolEditable}
+                    filename={formValues.name ? `${formValues.name.replace(/[^A-Za-z0-9._-]+/g, "-").toLowerCase()}.sh` : "tool.sh"}
+                    aria-label="Bash source"
+                  />
+                </DetailField>
+              </DetailFieldGroup>
+
+              {isToolRunnable && tool ? (
+                <DetailFieldGroup title="Run Tool" className="bg-card/70">
+                  <DetailField label="Input JSON" className="md:col-span-2">
+                    <Textarea
+                      value={runInputText}
+                      onChange={(event) => {
+                        setRunInputText(event.target.value);
+                        setRunError(null);
+                      }}
+                      aria-label="Run input JSON"
+                      rows={16}
+                      className="font-mono text-sm"
+                    />
+                  </DetailField>
+                  <div className="md:col-span-2 flex flex-wrap items-center gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={handleUseExampleInput} disabled={runningTool}>Use Example Input</Button>
+                    <Button type="button" variant="outline" size="sm" onClick={handleResetRunInput} disabled={runningTool}>Reset Input</Button>
+                    <Button type="button" onClick={() => void handleRunTool()} disabled={runningTool}>{runningTool ? "Running…" : "Run Tool"}</Button>
+                  </div>
+                  <div className={cn(
+                    "md:col-span-2 rounded-[4px] border p-4",
+                    runError
+                      ? "border-destructive/30 bg-destructive/10"
+                      : runResult
+                        ? (runResult.exitCode === 0 ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10")
+                        : "border-border/70 bg-background/70"
+                  )}>
+                    <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Run status</p>
+                    <p className="mt-2 text-sm text-foreground">
+                      {runError ? runError : (runResult ? describeRunStatus(runResult) : "No run executed yet.")}
+                    </p>
+                    {runResult ? (
+                      <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                        <span>exit code: {runResult.exitCode}</span>
+                        <span>duration: {runResult.durationMs}ms</span>
+                        {runResult.target ? <span>target: {runResult.target}</span> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </DetailFieldGroup>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+
+        {isBuiltinTool && tool ? (
+          <div className="rounded-[4px] border border-border/70 bg-background/70 p-4">
+            <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Built-in action</p>
+            <p className="mt-2 text-sm text-foreground">{describeBuiltinAction(tool) ?? "Built-in action provided by a backend execution engine."}</p>
+          </div>
+        ) : null}
+
+        <CollapsibleSection
+          title="Schemas"
+          open={schemasOpen}
+          onToggle={() => setSchemasOpen((current) => !current)}
+          summary="Input and result contracts, with helpers for formatting and validation."
+        >
+          <div className="space-y-4">
+            <div className="rounded-[4px] border border-border/70 bg-background/70 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Example input</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Use this directly in the run section below.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={handleUseExampleInput}>
+                    Use Below
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => void handleCopyExampleInput()}>
+                    <Copy className="h-4 w-4" />
+                    Copy
+                  </Button>
+                </div>
+              </div>
+              <Textarea value={exampleRunInput} readOnly aria-label="Example tool input" rows={6} className="mt-3 font-mono text-sm" />
+            </div>
+
+            <DetailFieldGroup className="bg-transparent" title="Schema editors">
+              <DetailField label="Input schema" className="md:col-span-2" {...definedString(errors.inputSchemaText)}>
+                {!inputSchemaValidation.value ? (
+                  <div className="mb-2 rounded-[4px] border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    Invalid JSON: {inputSchemaValidation.error}
+                  </div>
+                ) : null}
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => handleSchemaFormat("inputSchemaText")} disabled={!isToolEditable}>Format JSON</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => handleSchemaValidate("inputSchemaText")}>Validate JSON</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => handleSchemaReset("inputSchemaText")} disabled={!isToolEditable}>
+                    <RefreshCcw className="h-4 w-4" />
+                    Reset
+                  </Button>
+                </div>
+                <Textarea value={formValues.inputSchemaText} onChange={(event) => handleFieldChange("inputSchemaText", event.target.value)} aria-label="Input schema" rows={10} className="font-mono text-sm" disabled={!isToolEditable} />
+              </DetailField>
+
+              <DetailField label="Structured result schema" className="md:col-span-2" {...definedString(errors.outputSchemaText)}>
+                <p className="mb-2 text-sm leading-6 text-muted-foreground">
+                  Evidence tools return a structured result envelope. `output` is required. `observations` are optional evidence records and are not persisted findings.
+                </p>
+                {!outputSchemaValidation.value ? (
+                  <div className="mb-2 rounded-[4px] border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    Invalid JSON: {outputSchemaValidation.error}
+                  </div>
+                ) : null}
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => handleSchemaFormat("outputSchemaText")} disabled={!isToolEditable}>Format JSON</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => handleSchemaValidate("outputSchemaText")}>Validate JSON</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => handleSchemaReset("outputSchemaText")} disabled={!isToolEditable}>
+                    <RefreshCcw className="h-4 w-4" />
+                    Reset
+                  </Button>
+                </div>
+                <Textarea value={formValues.outputSchemaText} onChange={(event) => handleFieldChange("outputSchemaText", event.target.value)} aria-label="Output schema" rows={10} className="font-mono text-sm" disabled={!isToolEditable} />
+              </DetailField>
+            </DetailFieldGroup>
+          </div>
+        </CollapsibleSection>
+
+        {isToolRunnable && tool ? (
+          <>
+            <DetailFieldGroup title="Results" className="bg-card/70">
+              <DetailField label="Command preview" className="md:col-span-2">
+                <Textarea value={runResult?.commandPreview ?? ""} readOnly aria-label="Tool command preview" rows={3} className="font-mono text-sm" />
+              </DetailField>
+              <DetailField label="Raw output" className="md:col-span-2">
+                <Textarea value={runResult?.output ?? ""} readOnly aria-label="Tool raw output" rows={8} className="font-mono text-sm" />
+              </DetailField>
+              <DetailField label="Parsed evidence result" className="md:col-span-2">
+                <Textarea
+                  value={runResult ? JSON.stringify({
+                    exitCode: runResult.exitCode,
+                    statusReason: runResult.statusReason,
+                    durationMs: runResult.durationMs,
+                    target: runResult.target,
+                    port: runResult.port,
+                    observations: runResult.observations
+                  }, null, 2) : ""}
+                  readOnly
+                  aria-label="Tool parsed result"
+                  rows={12}
+                  className="font-mono text-sm"
+                />
+              </DetailField>
+            </DetailFieldGroup>
+          </>
+        ) : (
+          <div className="rounded-[4px] border border-border/70 bg-background/70 p-4 text-sm text-muted-foreground">
+            {isBuiltinTool
+              ? "Built-in tools do not expose a runnable shell test console here."
+              : "Save a runnable bash tool to use the test console."}
+          </div>
+        )}
+
+        {tool ? (
+          <CollapsibleSection
+            title="Metadata"
+            open={metadataOpen}
+            onToggle={() => setMetadataOpen((current) => !current)}
+            summary="Operational metadata and CRUD capabilities."
+          >
+            <MetadataGrid
+              canCreateTool={canCreateTool}
+              canUpdateTool={canUpdateTool}
+              canDeleteTool={canDeleteTool}
+              tool={tool}
+            />
+          </CollapsibleSection>
+        ) : null}
+      </section>
     </DetailPage>
   );
 }
