@@ -46,6 +46,7 @@ type ExecutedToolResult = {
   toolRun: ToolRun;
   status: ToolRun["status"];
   observations: string[];
+  observationKeys: string[];
   outputPreview: string;
   fullOutput: string;
 };
@@ -319,6 +320,8 @@ export class WorkflowExecutionService {
     return [
       input.agent.systemPrompt,
       "Report concrete findings with report_finding.",
+      "Every report_finding must include concrete evidence references so execution reports can build the evidence graph automatically.",
+      "Use derivedFromFindingIds, relatedFindingIds, and enablesFindingIds inside report_finding when findings depend on or connect to earlier findings.",
       "Use complete_run or fail_run to stop.",
       "Emit short plain-text progress updates before tool bursts and closeout."
     ].join("\n\n");
@@ -764,7 +767,8 @@ export class WorkflowExecutionService {
               }))
             : [{
                 sourceTool: phase.name,
-                quote: (finding.rawEvidence ?? finding.description).slice(0, 600)
+                quote: (finding.rawEvidence ?? finding.description).slice(0, 600),
+                externalUrl: target.baseUrl
               }],
           toolCommandPreview: result.probeCommand || null,
           tags: ["attack-map", "workflow-orchestrator", phase.name.toLowerCase().replace(/\s+/g, "-")]
@@ -813,7 +817,8 @@ export class WorkflowExecutionService {
           vector: String(child.data["vector"] ?? ""),
           evidence: [{
             sourceTool: "deep_analysis",
-            quote: String(child.data["description"] ?? child.label).slice(0, 600)
+            quote: String(child.data["description"] ?? child.label).slice(0, 600),
+            externalUrl: target.baseUrl
           }],
           tags: ["attack-map", "workflow-orchestrator", "deep-analysis"]
         });
@@ -1029,6 +1034,13 @@ export class WorkflowExecutionService {
     const abortController = new AbortController();
     const liveOutputSource: WorkflowLiveModelOutput["source"] = provider.kind === "local" ? "local" : "hosted";
 
+    const hasTraceEvent = (traceEventId: string) => currentRun.events.some((event) => event.id === traceEventId);
+    const hasToolRunRef = (toolRunRef: string) => executedResults.some((result) => result.toolRun.id === toolRunRef);
+    const hasObservationRef = (observationRef: string) => executedResults.some((result) => result.observationKeys.includes(observationRef));
+    const hasArtifactRef = (artifactRef: string) =>
+      executedResults.some((result) => result.toolRun.id === artifactRef)
+      || [...reportedFindings.values()].some((finding) => finding.evidence.some((entry) => entry.artifactRef === artifactRef));
+
     const appendLiveText = (delta: string) => {
       if (!liveModelOutput) {
         liveModelOutput = {
@@ -1121,6 +1133,7 @@ export class WorkflowExecutionService {
             toolRun,
             status: toolRun.status,
             observations: brokerResult.observations.map((observation) => observation.summary),
+            observationKeys: brokerResult.observations.map((observation) => observation.key),
             outputPreview: truncate(
               brokerResult.observations[0]?.summary
                 ?? toolRun.statusReason
@@ -1149,6 +1162,31 @@ export class WorkflowExecutionService {
         inputSchema: workflowFindingSubmissionSchema,
         execute: async (rawInput) => {
           const findingInput = workflowFindingSubmissionSchema.parse(rawInput);
+          for (const evidence of findingInput.evidence) {
+            if (evidence.traceEventId && !hasTraceEvent(evidence.traceEventId)) {
+              throw new RequestError(400, `Unknown trace event reference: ${evidence.traceEventId}`);
+            }
+            if (evidence.toolRunRef && !hasToolRunRef(evidence.toolRunRef)) {
+              throw new RequestError(400, `Unknown tool run reference: ${evidence.toolRunRef}`);
+            }
+            if (evidence.observationRef && !hasObservationRef(evidence.observationRef)) {
+              throw new RequestError(400, `Unknown observation reference: ${evidence.observationRef}`);
+            }
+            if (evidence.artifactRef && !hasArtifactRef(evidence.artifactRef)) {
+              throw new RequestError(400, `Unknown artifact reference: ${evidence.artifactRef}`);
+            }
+          }
+
+          for (const relatedFindingId of [
+            ...findingInput.derivedFromFindingIds,
+            ...findingInput.relatedFindingIds,
+            ...findingInput.enablesFindingIds
+          ]) {
+            if (!reportedFindings.has(relatedFindingId)) {
+              throw new RequestError(400, `Unknown finding reference: ${relatedFindingId}`);
+            }
+          }
+
           const finding: WorkflowReportedFinding = {
             id: randomUUID(),
             workflowRunId: currentRun.id,

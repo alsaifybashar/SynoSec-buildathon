@@ -5,7 +5,7 @@ import { dirsearchTool } from "../web/dirsearch.js";
 export const familyContentDiscoveryTool = createSeededFamilyTool({
   id: "seed-family-content-discovery",
   name: "Content Discovery Family",
-  description: "Enumerate likely in-scope content paths through one semantic discovery family tool.",
+  description: "Use this when you need likely hidden paths, panels, or API routes on a known web target. Provide `target` and `baseUrl`. It performs controlled path discovery and returns concrete content-exposure evidence. Prefer this for path guessing, not for simple HTTP fingerprinting.",
   capabilities: ["semantic-family", "content-discovery", "active-recon"],
   binary: "node",
   category: "content",

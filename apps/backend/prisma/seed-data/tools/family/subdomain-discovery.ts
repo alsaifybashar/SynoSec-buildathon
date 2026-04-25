@@ -5,7 +5,7 @@ import { theHarvesterTool } from "../subdomain/theharvester.js";
 export const familySubdomainDiscoveryTool = createSeededFamilyTool({
   id: "seed-family-subdomain-discovery",
   name: "Subdomain Discovery",
-  description: "Discover subdomains through one semantic passive-enumeration family tool.",
+  description: "Use this when the target is a domain and you need passive subdomain expansion. Provide `target`. It gathers likely subdomains and returns enumeration evidence to expand the attack surface before deeper probing. Do not use this for single-host HTTP validation.",
   capabilities: ["semantic-family", "subdomain-discovery", "passive"],
   binary: "subfinder",
   category: "subdomain",

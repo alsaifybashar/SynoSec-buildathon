@@ -347,9 +347,8 @@ export type ToolExecutorType = z.infer<typeof toolExecutorTypeSchema>;
 
 export const toolBuiltinActionKeySchema = z.enum([
   "report_finding",
-  "report_evidence_node",
-  "report_finding_node",
-  "report_relationship",
+  "complete_run",
+  "fail_run",
   "deep_analysis",
   "attack_chain_correlation"
 ]);
@@ -625,8 +624,21 @@ export type WorkflowFindingType = z.infer<typeof workflowFindingTypeSchema>;
 export const workflowFindingEvidenceSchema = z.object({
   sourceTool: z.string().min(1),
   quote: z.string().min(1),
-  artifactRef: z.string().min(1).optional()
-});
+  artifactRef: z.string().min(1).optional(),
+  observationRef: z.string().min(1).optional(),
+  toolRunRef: z.string().min(1).optional(),
+  traceEventId: z.string().uuid().optional(),
+  externalUrl: z.string().url().optional()
+}).refine((value) =>
+  Boolean(
+    value.artifactRef
+    || value.observationRef
+    || value.toolRunRef
+    || value.traceEventId
+    || value.externalUrl
+  ), {
+    message: "Workflow finding evidence requires at least one evidence reference."
+  });
 export type WorkflowFindingEvidence = z.infer<typeof workflowFindingEvidenceSchema>;
 
 export const workflowFindingTargetSchema = z.object({
@@ -637,46 +649,8 @@ export const workflowFindingTargetSchema = z.object({
 });
 export type WorkflowFindingTarget = z.infer<typeof workflowFindingTargetSchema>;
 
-export const workflowGraphArtifactRefSchema = z.object({
-  traceEventId: z.string().uuid().optional(),
-  observationRef: z.string().min(1).optional(),
-  toolRunRef: z.string().min(1).optional(),
-  artifactRef: z.string().min(1).optional(),
-  externalUrl: z.string().url().optional()
-}).refine((value) => Object.values(value).some((entry) => typeof entry === "string" && entry.trim().length > 0), {
-  message: "At least one evidence reference is required."
-});
-export type WorkflowGraphArtifactRef = z.infer<typeof workflowGraphArtifactRefSchema>;
-
-export const workflowEvidenceNodeSubmissionSchema = z.object({
-  id: z.string().min(1).optional(),
-  title: z.string().min(1),
-  summary: z.string().min(1),
-  sourceTool: z.string().min(1),
-  quote: z.string().min(1),
-  severity: z.enum(["info", "low", "medium", "high", "critical"]).optional(),
-  refs: z.array(workflowGraphArtifactRefSchema).min(1)
-});
-export type WorkflowEvidenceNodeSubmission = z.infer<typeof workflowEvidenceNodeSubmissionSchema>;
-
-export const workflowFindingNodeSubmissionSchema = z.object({
-  id: z.string().min(1).optional(),
-  findingId: z.string().uuid(),
-  summary: z.string().min(1).optional()
-});
-export type WorkflowFindingNodeSubmission = z.infer<typeof workflowFindingNodeSubmissionSchema>;
-
 export const workflowGraphRelationshipKindSchema = z.enum(["supports", "derived_from", "correlates_with", "enables"]);
 export type WorkflowGraphRelationshipKind = z.infer<typeof workflowGraphRelationshipKindSchema>;
-
-export const workflowGraphRelationshipSubmissionSchema = z.object({
-  id: z.string().min(1).optional(),
-  kind: workflowGraphRelationshipKindSchema,
-  sourceNodeId: z.string().min(1),
-  targetNodeId: z.string().min(1),
-  label: z.string().min(1).optional()
-});
-export type WorkflowGraphRelationshipSubmission = z.infer<typeof workflowGraphRelationshipSubmissionSchema>;
 
 export const workflowFindingSubmissionSchema = z.object({
   type: workflowFindingTypeSchema,
@@ -692,6 +666,15 @@ export const workflowFindingSubmissionSchema = z.object({
   reproduction: z.object({
     commandPreview: z.string().min(1).optional(),
     steps: z.array(z.string().min(1)).min(1)
+  }).optional(),
+  derivedFromFindingIds: z.array(z.string().uuid()).default([]),
+  relatedFindingIds: z.array(z.string().uuid()).default([]),
+  enablesFindingIds: z.array(z.string().uuid()).default([]),
+  chain: z.object({
+    id: z.string().min(1).optional(),
+    title: z.string().min(1),
+    summary: z.string().min(1),
+    severity: z.enum(["info", "low", "medium", "high", "critical"]).optional()
   }).optional(),
   tags: z.array(z.string().min(1)).default([])
 });
@@ -884,8 +867,6 @@ export const workflowTraceEventTypeSchema = z.enum([
   "tool_result",
   "verification",
   "finding_reported",
-  "report_graph_node",
-  "report_graph_edge",
   "stage_result_submitted",
   "stage_contract_validation_failed",
   "agent_summary",

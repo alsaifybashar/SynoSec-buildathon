@@ -25,6 +25,7 @@ import {
   aiToolSchema,
   toolRequestSchema,
   toolRunSchema,
+  workflowFindingSubmissionSchema,
   updateAiProviderBodySchema,
   updateApplicationBodySchema
 } from "./index.js";
@@ -352,6 +353,40 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts workflow finding submissions with inline graph relationship metadata and linked evidence", () => {
+    const result = workflowFindingSubmissionSchema.safeParse({
+      type: "auth_weakness",
+      title: "Admin surface exposed",
+      severity: "high",
+      confidence: 0.92,
+      target: {
+        host: "target.local",
+        url: "https://target.local/admin"
+      },
+      evidence: [
+        {
+          sourceTool: "httpx",
+          quote: "GET /admin returned 200",
+          toolRunRef: "tool-run-1"
+        }
+      ],
+      impact: "An administrative entrypoint is reachable without the expected front-door controls.",
+      recommendation: "Restrict access to the admin surface.",
+      derivedFromFindingIds: ["11111111-1111-4111-8111-111111111111"],
+      relatedFindingIds: ["22222222-2222-4222-8222-222222222222"],
+      enablesFindingIds: ["33333333-3333-4333-8333-333333333333"],
+      chain: {
+        id: "admin-path",
+        title: "Admin exposure path",
+        summary: "This finding contributes to a broader privilege escalation chain.",
+        severity: "high"
+      },
+      tags: ["admin"]
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("accepts scan layer coverage for L1 through L7 values", () => {
     const result = scanLayerCoverageSchema.safeParse({
       scanId: "scan-1",
@@ -384,6 +419,41 @@ describe("contracts", () => {
       updatedAt: "2026-04-25T12:05:00.000Z",
       archivedAt: null,
       executiveSummary: "One meaningful attack path was confirmed.",
+      graph: {
+        nodes: [
+          {
+            id: "evidence-1",
+            kind: "evidence",
+            title: "Admin panel response",
+            summary: "Passive HTTP evidence showing an admin surface.",
+            sourceTool: "httpx",
+            quote: "/admin returned 200 OK",
+            severity: "high",
+            refs: [{ toolRunRef: "tool-run-1" }],
+            createdAt: "2026-04-25T12:02:00.000Z"
+          },
+          {
+            id: "finding-1",
+            kind: "finding",
+            findingId: "finding-1",
+            title: "Admin surface exposed",
+            summary: "The attack map confirmed an exposed admin surface.",
+            severity: "high",
+            confidence: null,
+            targetLabel: "https://target.local/admin",
+            createdAt: "2026-04-25T12:03:00.000Z"
+          }
+        ],
+        edges: [
+          {
+            id: "edge-1",
+            kind: "supports",
+            source: "evidence-1",
+            target: "finding-1",
+            createdAt: "2026-04-25T12:03:30.000Z"
+          }
+        ]
+      },
       findings: [
         {
           id: "finding-1",
@@ -512,24 +582,24 @@ describe("contracts", () => {
 
   it("accepts builtin ai tools without bash source", () => {
     const result = aiToolSchema.safeParse({
-      id: "builtin-report-finding",
-      name: "Report Finding",
+      id: "builtin-complete-run",
+      name: "Complete Run",
       status: "active",
       source: "system",
-      description: "Workflow built-in action for persisting a structured finding.",
+      description: "Workflow built-in action for completing a run successfully.",
       binary: null,
       executorType: "builtin",
-      builtinActionKey: "report_finding",
+      builtinActionKey: "complete_run",
       bashSource: null,
-      capabilities: ["workflow-reporting"],
+      capabilities: ["workflow-control"],
       category: "utility",
       riskTier: "passive",
       notes: "Executed by the workflow engine.",
       sandboxProfile: "read-only-parser",
       privilegeProfile: "read-only-network",
       timeoutMs: 1000,
-      inputSchema: { type: "object", properties: { title: { type: "string" } } },
-      outputSchema: { type: "object", properties: { findingId: { type: "string" } } },
+      inputSchema: { type: "object", properties: { summary: { type: "string" } } },
+      outputSchema: { type: "object", properties: { accepted: { type: "boolean" } } },
       createdAt: "2026-04-21T12:00:00.000Z",
       updatedAt: "2026-04-21T12:00:00.000Z"
     });

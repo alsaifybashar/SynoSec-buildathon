@@ -5,7 +5,7 @@ import { serviceScanTool } from "../network/service-scan.js";
 export const familyNetworkEnumerationTool = createSeededFamilyTool({
   id: "seed-family-network-enumeration",
   name: "Network Enumeration",
-  description: "Enumerate exposed services through one semantic network-enumeration family tool.",
+  description: "Use this when you need port and service visibility for a host. Provide `target` and optional `port`. It checks reachable network services and returns concrete service-exposure evidence. Prefer this for host-level enumeration, not for web content discovery.",
   capabilities: ["semantic-family", "network-enumeration", "passive"],
   binary: "node",
   category: "network",

@@ -32,7 +32,11 @@ const builtinAiTools: AiTool[] = [
         impact: { type: "string" },
         recommendation: { type: "string" },
         target: { type: "object" },
-        evidence: { type: "array" }
+        evidence: { type: "array" },
+        derivedFromFindingIds: { type: "array" },
+        relatedFindingIds: { type: "array" },
+        enablesFindingIds: { type: "array" },
+        chain: { type: "object" }
       },
       required: ["type", "title", "severity", "confidence", "impact", "recommendation", "target", "evidence"]
     },
@@ -45,6 +49,77 @@ const builtinAiTools: AiTool[] = [
         host: { type: "string" }
       },
       required: ["findingId", "title", "severity", "host"]
+    },
+    createdAt: builtinTimestamp,
+    updatedAt: builtinTimestamp
+  },
+  {
+    id: "builtin-complete-run",
+    name: "Complete Run",
+    status: "active",
+    source: "system",
+    description: "Workflow engine action for successfully finishing a workflow run with a final summary, recommended next step, and residual risk.",
+    binary: null,
+    executorType: "builtin",
+    builtinActionKey: "complete_run",
+    bashSource: null,
+    capabilities: ["workflow-control"],
+    category: "utility",
+    riskTier: "passive",
+    notes: "Executed by the workflow execution service, not by a shell script.",
+    sandboxProfile: "read-only-parser",
+    privilegeProfile: "read-only-network",
+    timeoutMs: 1000,
+    inputSchema: {
+      type: "object",
+      properties: {
+        summary: { type: "string" },
+        recommendedNextStep: { type: "string" },
+        residualRisk: { type: "string" }
+      },
+      required: ["summary", "recommendedNextStep", "residualRisk"]
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        accepted: { type: "boolean" }
+      },
+      required: ["accepted"]
+    },
+    createdAt: builtinTimestamp,
+    updatedAt: builtinTimestamp
+  },
+  {
+    id: "builtin-fail-run",
+    name: "Fail Run",
+    status: "active",
+    source: "system",
+    description: "Workflow engine action for finishing a workflow run as failed with an explicit reason and optional summary.",
+    binary: null,
+    executorType: "builtin",
+    builtinActionKey: "fail_run",
+    bashSource: null,
+    capabilities: ["workflow-control"],
+    category: "utility",
+    riskTier: "passive",
+    notes: "Executed by the workflow execution service, not by a shell script.",
+    sandboxProfile: "read-only-parser",
+    privilegeProfile: "read-only-network",
+    timeoutMs: 1000,
+    inputSchema: {
+      type: "object",
+      properties: {
+        reason: { type: "string" },
+        summary: { type: "string" }
+      },
+      required: ["reason"]
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        accepted: { type: "boolean" }
+      },
+      required: ["accepted"]
     },
     createdAt: builtinTimestamp,
     updatedAt: builtinTimestamp

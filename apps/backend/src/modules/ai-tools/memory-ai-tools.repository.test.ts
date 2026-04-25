@@ -64,7 +64,9 @@ describe("MemoryAiToolsRepository", () => {
 
     expect(builtinOnly.items.map((tool) => tool.id)).toEqual([
       "builtin-attack-chain-correlation",
+      "builtin-complete-run",
       "builtin-deep-analysis",
+      "builtin-fail-run",
       "builtin-report-finding"
     ]);
     expect(allTools.items.some((tool) => tool.id === "builtin-deep-analysis" && tool.source === "system")).toBe(true);

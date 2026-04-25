@@ -5,7 +5,7 @@ import { httpReconTool } from "../web/http-recon.js";
 export const familyHttpSurfaceTool = createSeededFamilyTool({
   id: "seed-family-http-surface",
   name: "HTTP Surface",
-  description: "Inspect the exposed HTTP surface through one semantic web-recon family tool.",
+  description: "Use this first for a reachable web target when you need a safe HTTP fingerprint. Provide `baseUrl`. It probes the live HTTP surface, collects status/title/headers/fingerprint signals, and returns quick reconnaissance evidence without broad crawling or brute-force discovery.",
   capabilities: ["semantic-family", "http-surface", "passive"],
   binary: "httpx",
   category: "web",

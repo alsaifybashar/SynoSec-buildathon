@@ -5,7 +5,7 @@ import { katanaTool } from "../web/katana.js";
 export const familyWebCrawlTool = createSeededFamilyTool({
   id: "seed-family-web-crawl",
   name: "Web Crawl Family",
-  description: "Expand in-scope reachable pages through one semantic crawl family tool.",
+  description: "Use this after confirming a live web target when you need more reachable in-scope URLs. Provide `target` and `baseUrl`. It follows links and expands the known page set for later evidence collection. Prefer this for link traversal, not for brute-force path guessing.",
   capabilities: ["semantic-family", "web-crawl", "passive"],
   binary: "node",
   category: "content",
