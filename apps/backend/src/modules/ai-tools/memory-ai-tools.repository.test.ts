@@ -63,6 +63,7 @@ describe("MemoryAiToolsRepository", () => {
       "builtin-complete-run",
       "builtin-deep-analysis",
       "builtin-fail-run",
+      "builtin-log-progress",
       "builtin-report-finding"
     ]);
     expect(allTools.items.some((tool) => tool.id === "builtin-deep-analysis" && tool.source === "system")).toBe(true);

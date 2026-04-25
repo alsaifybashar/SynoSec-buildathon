@@ -346,6 +346,7 @@ export const toolExecutorTypeSchema = z.enum(["bash", "builtin"]);
 export type ToolExecutorType = z.infer<typeof toolExecutorTypeSchema>;
 
 export const toolBuiltinActionKeySchema = z.enum([
+  "log_progress",
   "report_finding",
   "complete_run",
   "fail_run",
@@ -481,7 +482,6 @@ const aiToolBodyBaseSchema = z.object({
   description: z.string().trim().min(1),
   executorType: z.literal("bash").default("bash"),
   bashSource: z.string().min(1),
-  capabilities: z.array(z.lazy(() => toolCapabilityTagSchema)).default([]),
   category: z.lazy(() => toolCategorySchema),
   riskTier: z.lazy(() => toolRiskTierSchema),
   timeoutMs: z.number().int().min(1000).max(300000),
@@ -496,13 +496,6 @@ export const createAiToolBodySchema = aiToolBodyBaseSchema.superRefine((value, c
       code: z.ZodIssueCode.custom,
       message: "System tools are synchronized from the backend catalog and cannot be created manually.",
       path: ["source"]
-    });
-  }
-  if (value.capabilities.length === 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "At least one capability is required for bash tools.",
-      path: ["capabilities"]
     });
   }
   if (!value.bashSource.trim()) {
@@ -540,13 +533,6 @@ export const updateAiToolBodySchema = aiToolBodyBaseSchema
         code: z.ZodIssueCode.custom,
         message: "Bash source is required.",
         path: ["bashSource"]
-      });
-    }
-    if ("capabilities" in value && value.capabilities?.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "At least one capability is required for bash tools.",
-        path: ["capabilities"]
       });
     }
   });

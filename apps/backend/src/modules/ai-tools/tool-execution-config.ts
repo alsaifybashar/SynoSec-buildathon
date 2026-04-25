@@ -37,6 +37,22 @@ type ExecutionConfigLookup = Pick<AiTool, "id" | "name" | "category" | "riskTier
   capabilities?: string[];
 };
 
+const categoryCapabilities: Record<AiTool["category"], string[]> = {
+  network: ["network-recon"],
+  web: ["web-recon"],
+  content: ["content-discovery"],
+  dns: ["dns-recon"],
+  subdomain: ["subdomain-recon"],
+  password: ["password-audit"],
+  cloud: ["cloud-audit"],
+  kubernetes: ["kubernetes-audit"],
+  windows: ["windows-enum"],
+  forensics: ["forensics-analysis"],
+  reversing: ["binary-analysis"],
+  exploitation: ["exploit-validation"],
+  utility: ["utility"]
+};
+
 function asJsonRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
@@ -112,6 +128,10 @@ function deriveExecutionPolicy(riskTier: ToolRiskTier) {
   };
 }
 
+export function deriveCapabilities(category: AiTool["category"]) {
+  return [...(categoryCapabilities[category] ?? [`${category}-tool`])];
+}
+
 function createLegacyFallbackBashSource(tool: ExecutionConfigLookup) {
   const detail = `The AI tool "${tool.name}" is missing runtime execution config and must be updated before it can run.`;
 
@@ -148,7 +168,7 @@ function resolveFallbackExecutionConfig(tool: ExecutionConfigLookup): ToolExecut
     bashSource: createLegacyFallbackBashSource(tool),
     ...deriveExecutionPolicy(tool.riskTier),
     timeoutMs: 30000,
-    capabilities: tool.capabilities?.length ? [...tool.capabilities] : [`${tool.category}-tool`],
+    capabilities: tool.capabilities?.length ? [...tool.capabilities] : deriveCapabilities(tool.category),
     constraintProfile: {
       enforced: false,
       targetKinds: [],
@@ -196,7 +216,7 @@ export function attachExecutionConfig<T>(
 }
 
 export function mapToolExecutionFields(
-  tool: Pick<AiTool, "riskTier">,
+  tool: Pick<AiTool, "riskTier" | "category">,
   inputSchema: unknown
 ): ToolExecutionFields {
   const stored = readStoredExecutionConfig(inputSchema);
@@ -213,8 +233,10 @@ export function mapToolExecutionFields(
     ...deriveExecutionPolicy(tool.riskTier),
     timeoutMs: stored.timeoutMs,
     capabilities: Array.isArray(stored.capabilities)
-      ? stored.capabilities.filter((value): value is string => typeof value === "string")
-      : [],
+      ? (stored.capabilities.filter((value): value is string => typeof value === "string").length > 0
+          ? stored.capabilities.filter((value): value is string => typeof value === "string")
+          : deriveCapabilities(tool.category))
+      : deriveCapabilities(tool.category),
     ...(stored.constraintProfile ? { constraintProfile: stored.constraintProfile } : {})
   };
 }
@@ -243,6 +265,7 @@ export function resolveToolExecutionFields(tool: ExecutionConfigLookup, inputSch
 }
 
 export function encodeCreateToolInput(input: CreateAiToolBody) {
+  const capabilities = deriveCapabilities(input.category);
   return {
     ...input,
     inputSchema: attachExecutionConfig(input.inputSchema, {
@@ -250,7 +273,7 @@ export function encodeCreateToolInput(input: CreateAiToolBody) {
       bashSource: input.bashSource,
       ...deriveExecutionPolicy(input.riskTier),
       timeoutMs: input.timeoutMs,
-      capabilities: input.capabilities,
+      capabilities,
       ...(input.constraintProfile ? { constraintProfile: input.constraintProfile } : {})
     })
   };
@@ -263,7 +286,7 @@ export function encodeUpdateToolInput(input: UpdateAiToolBody, current: AiTool) 
     input.bashSource !== undefined ||
     input.riskTier !== undefined ||
     input.timeoutMs !== undefined ||
-    input.capabilities !== undefined ||
+    input.category !== undefined ||
     input.constraintProfile !== undefined
   );
 
@@ -276,7 +299,7 @@ export function encodeUpdateToolInput(input: UpdateAiToolBody, current: AiTool) 
           bashSource: input.bashSource ?? current.bashSource ?? "",
           ...deriveExecutionPolicy(input.riskTier ?? current.riskTier),
           timeoutMs: input.timeoutMs ?? current.timeoutMs,
-          capabilities: input.capabilities ?? current.capabilities,
+          capabilities: deriveCapabilities(input.category ?? current.category),
           ...(input.constraintProfile ?? current.constraintProfile
             ? { constraintProfile: input.constraintProfile ?? current.constraintProfile }
             : {})

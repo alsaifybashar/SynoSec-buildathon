@@ -6,6 +6,36 @@ const builtinTimestamp = "2026-04-25T00:00:00.000Z";
 
 const builtinAiTools: AiTool[] = [
   {
+    id: "builtin-log-progress",
+    name: "Log Progress",
+    status: "active",
+    source: "system",
+    description: "Workflow engine action for persisting one short operator-visible progress update in the workflow transcript.",
+    executorType: "builtin",
+    builtinActionKey: "log_progress" as ToolBuiltinActionKey,
+    bashSource: null,
+    capabilities: ["workflow-control"],
+    category: "utility",
+    riskTier: "passive",
+    timeoutMs: 1000,
+    inputSchema: {
+      type: "object",
+      properties: {
+        message: { type: "string" }
+      },
+      required: ["message"]
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        accepted: { type: "boolean" }
+      },
+      required: ["accepted"]
+    },
+    createdAt: builtinTimestamp,
+    updatedAt: builtinTimestamp
+  },
+  {
     id: "builtin-report-finding",
     name: "Report Finding",
     status: "active",

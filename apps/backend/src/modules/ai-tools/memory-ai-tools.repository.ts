@@ -61,7 +61,7 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
   async create(input: CreateAiToolBody): Promise<AiTool> {
     const timestamp = new Date().toISOString();
     const encoded = encodeCreateToolInput(input);
-    const execution = mapToolExecutionFields({ riskTier: encoded.riskTier }, encoded.inputSchema);
+    const execution = mapToolExecutionFields({ category: encoded.category, riskTier: encoded.riskTier }, encoded.inputSchema);
     const record: AiTool = {
       id: randomUUID(),
       name: encoded.name,
@@ -99,7 +99,10 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
     const encoded = encodeUpdateToolInput(input, current);
     const nextInputSchema = encoded.inputSchema ?? current.inputSchema;
     const execution = encoded.inputSchema
-      ? mapToolExecutionFields({ riskTier: encoded.riskTier ?? current.riskTier }, encoded.inputSchema)
+      ? mapToolExecutionFields(
+          { category: encoded.category ?? current.category, riskTier: encoded.riskTier ?? current.riskTier },
+          encoded.inputSchema
+        )
       : {
           executorType: current.executorType,
           bashSource: current.bashSource,
