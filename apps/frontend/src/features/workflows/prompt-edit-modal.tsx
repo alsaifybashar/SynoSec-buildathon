@@ -70,20 +70,6 @@ export function PromptEditModal({
 
             <section className="space-y-3 rounded-2xl border border-border/70 bg-card/55 p-4">
               <div className="space-y-1">
-                <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Workflow prompt</p>
-                <h3 className="text-base text-foreground">Objective</h3>
-              </div>
-              <Textarea
-                value={draft.objective}
-                onChange={(event) => onDraftChange("objective", event.target.value)}
-                aria-label="Workflow objective"
-                rows={8}
-                disabled={saving}
-              />
-            </section>
-
-            <section className="space-y-3 rounded-2xl border border-border/70 bg-card/55 p-4">
-              <div className="space-y-1">
                 <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Agent prompt</p>
                 <h3 className="text-base text-foreground">System prompt</h3>
               </div>
@@ -92,6 +78,20 @@ export function PromptEditModal({
                 onChange={(event) => onDraftChange("systemPrompt", event.target.value)}
                 aria-label="Agent system prompt"
                 rows={12}
+                disabled={saving}
+              />
+            </section>
+
+            <section className="space-y-3 rounded-2xl border border-border/70 bg-card/55 p-4">
+              <div className="space-y-1">
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Workflow prompt</p>
+                <h3 className="text-base text-foreground">Objective</h3>
+              </div>
+              <Textarea
+                value={draft.objective}
+                onChange={(event) => onDraftChange("objective", event.target.value)}
+                aria-label="Workflow objective"
+                rows={8}
                 disabled={saving}
               />
             </section>

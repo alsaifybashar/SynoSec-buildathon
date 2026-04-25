@@ -54,7 +54,7 @@ async function main() {
 
   await prisma.application.deleteMany({
     where: {
-      id: { not: localApplicationId },
+      id: { notIn: [localApplicationId, portfolioApplicationId] },
       name: {
         in: [
           "Nils Wickman Portfolio",
