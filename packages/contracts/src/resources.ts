@@ -76,6 +76,20 @@ const excludedPathsSchema = z.array(z.string().trim().min(1)).transform((paths) 
   return normalized;
 });
 
+const documentationUrlsSchema = z.array(z.string().trim().url()).transform((urls) => {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const url of urls) {
+    if (!seen.has(url)) {
+      seen.add(url);
+      normalized.push(url);
+    }
+  }
+
+  return normalized;
+});
+
 export const executionConstraintSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -83,6 +97,7 @@ export const executionConstraintSchema = z.object({
   provider: z.string().min(1).nullable(),
   version: z.number().int().min(1),
   description: z.string().nullable(),
+  bypassForLocalTargets: z.boolean(),
   denyProviderOwnedTargets: z.boolean(),
   requireVerifiedOwnership: z.boolean(),
   allowActiveExploit: z.boolean(),
@@ -90,6 +105,7 @@ export const executionConstraintSchema = z.object({
   rateLimitRps: z.number().int().min(1).nullable(),
   requireHostAllowlistSupport: z.boolean(),
   requirePathExclusionSupport: z.boolean(),
+  documentationUrls: documentationUrlsSchema,
   excludedPaths: excludedPathsSchema,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
@@ -114,6 +130,7 @@ const executionConstraintBodyBaseSchema = z.object({
   provider: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null),
   version: z.number().int().min(1),
   description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
+  bypassForLocalTargets: z.boolean().default(false),
   denyProviderOwnedTargets: z.boolean().default(false),
   requireVerifiedOwnership: z.boolean().default(false),
   allowActiveExploit: z.boolean().default(false),
@@ -121,6 +138,7 @@ const executionConstraintBodyBaseSchema = z.object({
   rateLimitRps: z.union([z.number().int().min(1), z.null()]).default(null),
   requireHostAllowlistSupport: z.boolean().default(false),
   requirePathExclusionSupport: z.boolean().default(false),
+  documentationUrls: documentationUrlsSchema.default([]),
   excludedPaths: excludedPathsSchema.default([])
 });
 

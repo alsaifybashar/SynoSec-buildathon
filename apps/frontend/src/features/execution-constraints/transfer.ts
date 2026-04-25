@@ -18,6 +18,7 @@ export const executionConstraintTransfer = {
     provider: constraint.provider,
     version: constraint.version,
     description: constraint.description,
+    bypassForLocalTargets: constraint.bypassForLocalTargets,
     denyProviderOwnedTargets: constraint.denyProviderOwnedTargets,
     requireVerifiedOwnership: constraint.requireVerifiedOwnership,
     allowActiveExploit: constraint.allowActiveExploit,
@@ -25,6 +26,7 @@ export const executionConstraintTransfer = {
     rateLimitRps: constraint.rateLimitRps,
     requireHostAllowlistSupport: constraint.requireHostAllowlistSupport,
     requirePathExclusionSupport: constraint.requirePathExclusionSupport,
+    documentationUrls: constraint.documentationUrls,
     excludedPaths: constraint.excludedPaths
   })
 } satisfies ResourceTransferConfig<ExecutionConstraint, CreateExecutionConstraintBody>;

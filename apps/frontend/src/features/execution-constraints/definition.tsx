@@ -4,11 +4,13 @@ import {
   type ExecutionConstraint,
   type ExecutionConstraintKind
 } from "@synosec/contracts";
+import { Plus, Trash2 } from "lucide-react";
 import { executionConstraintTransfer } from "@/features/execution-constraints/transfer";
 import { executionConstraintsResource } from "@/features/execution-constraints/resource";
 import type { CrudFeatureDefinition } from "@/shared/crud/crud-feature";
 import { DetailField, DetailFieldGroup, DetailSidebarItem } from "@/shared/components/detail-page";
 import type { ExecutionConstraintsQuery } from "@/shared/lib/resource-client";
+import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
 import { Textarea } from "@/shared/ui/textarea";
@@ -19,6 +21,7 @@ type ConstraintFormValues = {
   provider: string;
   version: string;
   description: string;
+  bypassForLocalTargets: boolean;
   denyProviderOwnedTargets: boolean;
   requireVerifiedOwnership: boolean;
   allowActiveExploit: boolean;
@@ -26,6 +29,7 @@ type ConstraintFormValues = {
   rateLimitRps: string;
   requireHostAllowlistSupport: boolean;
   requirePathExclusionSupport: boolean;
+  documentationUrls: string[];
   excludedPaths: string;
 };
 
@@ -42,6 +46,7 @@ function createEmptyFormValues(): ConstraintFormValues {
     provider: "",
     version: "1",
     description: "",
+    bypassForLocalTargets: false,
     denyProviderOwnedTargets: false,
     requireVerifiedOwnership: false,
     allowActiveExploit: false,
@@ -49,6 +54,7 @@ function createEmptyFormValues(): ConstraintFormValues {
     rateLimitRps: "",
     requireHostAllowlistSupport: false,
     requirePathExclusionSupport: false,
+    documentationUrls: [""],
     excludedPaths: ""
   };
 }
@@ -60,6 +66,7 @@ function toFormValues(constraint: ExecutionConstraint): ConstraintFormValues {
     provider: constraint.provider ?? "",
     version: String(constraint.version),
     description: constraint.description ?? "",
+    bypassForLocalTargets: constraint.bypassForLocalTargets,
     denyProviderOwnedTargets: constraint.denyProviderOwnedTargets,
     requireVerifiedOwnership: constraint.requireVerifiedOwnership,
     allowActiveExploit: constraint.allowActiveExploit,
@@ -67,17 +74,25 @@ function toFormValues(constraint: ExecutionConstraint): ConstraintFormValues {
     rateLimitRps: constraint.rateLimitRps == null ? "" : String(constraint.rateLimitRps),
     requireHostAllowlistSupport: constraint.requireHostAllowlistSupport,
     requirePathExclusionSupport: constraint.requirePathExclusionSupport,
+    documentationUrls: constraint.documentationUrls.length > 0 ? constraint.documentationUrls : [""],
     excludedPaths: constraint.excludedPaths.join("\n")
   };
 }
 
-function parseExcludedPaths(value: string) {
+function dedupeTrimmedEntries(values: string[]) {
   return Array.from(new Set(
-    value
-      .split("\n")
+    values
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0)
   ));
+}
+
+function parseExcludedPaths(value: string) {
+  return dedupeTrimmedEntries(value.split("\n"));
+}
+
+function parseDocumentationUrls(values: string[]) {
+  return dedupeTrimmedEntries(values);
 }
 
 function toRequestBody(values: ConstraintFormValues): CreateExecutionConstraintBody {
@@ -87,6 +102,7 @@ function toRequestBody(values: ConstraintFormValues): CreateExecutionConstraintB
     provider: values.provider.trim() || null,
     version: Number(values.version),
     description: values.description.trim() || null,
+    bypassForLocalTargets: values.bypassForLocalTargets,
     denyProviderOwnedTargets: values.denyProviderOwnedTargets,
     requireVerifiedOwnership: values.requireVerifiedOwnership,
     allowActiveExploit: values.allowActiveExploit,
@@ -94,6 +110,7 @@ function toRequestBody(values: ConstraintFormValues): CreateExecutionConstraintB
     rateLimitRps: values.rateLimitRps.trim() ? Number(values.rateLimitRps) : null,
     requireHostAllowlistSupport: values.requireHostAllowlistSupport,
     requirePathExclusionSupport: values.requirePathExclusionSupport,
+    documentationUrls: parseDocumentationUrls(values.documentationUrls),
     excludedPaths: parseExcludedPaths(values.excludedPaths)
   };
 }
@@ -114,6 +131,19 @@ function validateForm(values: ConstraintFormValues) {
     }
   }
 
+  const documentationUrls = parseDocumentationUrls(values.documentationUrls);
+  const invalidDocumentationUrl = documentationUrls.find((value) => {
+    try {
+      new URL(value);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+  if (invalidDocumentationUrl) {
+    errors.documentationUrls = "Each documentation source must be a valid URL.";
+  }
+
   return errors;
 }
 
@@ -123,6 +153,10 @@ function formatTimestamp(value: string) {
 
 function definedString(value: string | undefined) {
   return value ? { error: value } : {};
+}
+
+function updateDocumentationUrlAtIndex(urls: string[], index: number, value: string) {
+  return urls.map((entry, entryIndex) => (entryIndex === index ? value : entry));
 }
 
 function renderToggleField(
@@ -193,10 +227,11 @@ export const executionConstraintsDefinition: CrudFeatureDefinition<
         <DetailSidebarItem label="Kind">{kindLabels[item.kind]}</DetailSidebarItem>
         <DetailSidebarItem label="Provider">{item.provider ?? "Generic"}</DetailSidebarItem>
         <DetailSidebarItem label="Version">v{item.version}</DetailSidebarItem>
+        <DetailSidebarItem label="Documentation sources">{item.documentationUrls.length}</DetailSidebarItem>
         <DetailSidebarItem label="Updated">{formatTimestamp(item.updatedAt)}</DetailSidebarItem>
       </>
     ),
-    renderContent: ({ formValues, errors, handleFieldChange }) => (
+    renderContent: ({ item, formValues, errors, handleFieldChange }) => (
       <>
         <DetailFieldGroup title="Constraint">
           <DetailField label="Name" required {...definedString(errors["name"] as string | undefined)}>
@@ -222,6 +257,64 @@ export const executionConstraintsDefinition: CrudFeatureDefinition<
           </DetailField>
           <DetailField label="Description">
             <Textarea value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" rows={4} />
+          </DetailField>
+        </DetailFieldGroup>
+
+        <DetailFieldGroup title="Documentation">
+          <DetailField
+            label="Provider documentation URLs"
+            hint="Paste provider pentesting, bug bounty, or white-hat policy URLs. Add as many sources as needed."
+            className="lg:col-span-2"
+            {...definedString(errors["documentationUrls"] as string | undefined)}
+          >
+            <div className="space-y-3">
+              {formValues.documentationUrls.map((url, index) => (
+                <div key={`${index}-${url}`} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    value={url}
+                    onChange={(event) => handleFieldChange("documentationUrls", updateDocumentationUrlAtIndex(formValues.documentationUrls, index, event.target.value))}
+                    aria-label={`Documentation URL ${index + 1}`}
+                    placeholder="https://developers.cloudflare.com/fundamentals/reference/policies-compliances/cloudflare-penetration-testing-policy/"
+                    type="url"
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleFieldChange("documentationUrls", [...formValues.documentationUrls, ""])}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add source
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={formValues.documentationUrls.length === 1}
+                      onClick={() => handleFieldChange(
+                        "documentationUrls",
+                        formValues.documentationUrls.filter((_, entryIndex) => entryIndex !== index)
+                      )}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {!item || item.documentationUrls.length === 0 ? null : (
+                <div className="rounded-[4px] border border-border/60 bg-card/40 px-3 py-2 text-xs text-muted-foreground">
+                  Saved sources:
+                  {" "}
+                  {item.documentationUrls.map((url) => (
+                    <a key={url} href={url} target="_blank" rel="noreferrer" className="mr-3 underline underline-offset-4">
+                      {url}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
           </DetailField>
         </DetailFieldGroup>
 

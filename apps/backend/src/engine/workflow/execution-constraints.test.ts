@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AiTool, Application, ToolRequest } from "@synosec/contracts";
+import type { AiTool, Application, ExecutionConstraint, ToolRequest } from "@synosec/contracts";
 import {
   applyConstraintInputs,
   authorizeToolAgainstConstraints,
@@ -43,6 +43,7 @@ const application: Application = {
         provider: "cloudflare",
         version: 1,
         description: null,
+        bypassForLocalTargets: false,
         denyProviderOwnedTargets: true,
         requireVerifiedOwnership: true,
         allowActiveExploit: false,
@@ -50,6 +51,9 @@ const application: Application = {
         rateLimitRps: 3,
         requireHostAllowlistSupport: true,
         requirePathExclusionSupport: true,
+        documentationUrls: [
+          "https://developers.cloudflare.com/fundamentals/reference/policies-compliances/cloudflare-penetration-testing-policy/"
+        ],
         excludedPaths: ["/cdn-cgi/"],
         createdAt: "2026-04-25T00:00:00.000Z",
         updatedAt: "2026-04-25T00:00:00.000Z"
@@ -128,6 +132,33 @@ const request: ToolRequest = {
   }
 };
 
+const localTargetBypassConstraint: ExecutionConstraint = {
+  id: "seed-constraint-local-target-bypass-v1",
+  name: "Local Target Bypass Policy",
+  kind: "workflow_gate",
+  provider: null,
+  version: 1,
+  description: "Allows local and private development targets to bypass provider-governed execution constraints for seeded lab workflows.",
+  bypassForLocalTargets: true,
+  denyProviderOwnedTargets: false,
+  requireVerifiedOwnership: false,
+  allowActiveExploit: true,
+  requireRateLimitSupport: false,
+  rateLimitRps: null,
+  requireHostAllowlistSupport: false,
+  requirePathExclusionSupport: false,
+  documentationUrls: [],
+  excludedPaths: [],
+  createdAt: "2026-04-25T00:00:00.000Z",
+  updatedAt: "2026-04-25T00:00:00.000Z"
+};
+
+const baseTargetAsset = application.targetAssets?.[0];
+
+if (!baseTargetAsset) {
+  throw new Error("Expected execution-constraints test fixture to include a target asset.");
+}
+
 describe("execution constraints", () => {
   it("injects Cloudflare exclusions and throttling into compatible tools", () => {
     const targetAsset = resolveTargetAsset(application);
@@ -154,5 +185,74 @@ describe("execution constraints", () => {
 
     expect(decision.allowed).toBe(false);
     expect(decision.reason).toContain("not constraint-compatible");
+  });
+
+  it("allows local targets only when a bypass constraint is bound", () => {
+    const localApplication: Application = {
+      ...application,
+      targetAssets: [
+        {
+          ...baseTargetAsset,
+          hostname: "localhost",
+          baseUrl: "http://localhost:3000",
+          provider: "local"
+        }
+      ],
+      constraintBindings: [
+        {
+          constraintId: localTargetBypassConstraint.id,
+          createdAt: "2026-04-25T00:00:00.000Z",
+          constraint: localTargetBypassConstraint
+        }
+      ]
+    };
+
+    const targetAsset = resolveTargetAsset(localApplication);
+    const constraintSet = resolveEffectiveExecutionConstraints(localApplication, targetAsset, 5);
+    const decision = authorizeToolAgainstConstraints(constraintSet, incompatibleTool, {
+      ...request,
+      toolId: incompatibleTool.id,
+      tool: incompatibleTool.name,
+      target: "localhost"
+    });
+
+    expect(constraintSet.localhostException).toBe(true);
+    expect(constraintSet.constraints).toEqual([]);
+    expect(constraintSet.allowActiveExploit).toBe(true);
+    expect(decision.allowed).toBe(true);
+    expect(applyConstraintInputs({
+      ...request,
+      target: "localhost"
+    }, constraintSet)).toEqual({
+      ...request,
+      target: "localhost"
+    });
+  });
+
+  it("does not auto-bypass local targets without the seeded bypass constraint", () => {
+    const localApplicationWithoutBypass: Application = {
+      ...application,
+      targetAssets: [
+        {
+          ...baseTargetAsset,
+          hostname: "localhost",
+          baseUrl: "http://localhost:3000",
+          provider: "local"
+        }
+      ],
+      constraintBindings: []
+    };
+
+    const targetAsset = resolveTargetAsset(localApplicationWithoutBypass);
+    const constraintSet = resolveEffectiveExecutionConstraints(localApplicationWithoutBypass, targetAsset, 5);
+    const decision = authorizeToolAgainstConstraints(constraintSet, incompatibleTool, {
+      ...request,
+      toolId: incompatibleTool.id,
+      tool: incompatibleTool.name,
+      target: "localhost"
+    });
+
+    expect(constraintSet.localhostException).toBe(false);
+    expect(decision.allowed).toBe(false);
   });
 });

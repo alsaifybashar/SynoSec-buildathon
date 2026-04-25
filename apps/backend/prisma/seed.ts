@@ -15,6 +15,7 @@ import { attachExecutionConfig } from "@/modules/ai-tools/tool-execution-config.
 const prisma = new PrismaClient();
 const localTargetAssetId = "7e8d6ec5-2d8b-4d41-9a46-8d5d8bff7a31";
 const cloudflareConstraintId = "seed-constraint-cloudflare-v1";
+const localTargetBypassConstraintId = "seed-constraint-local-target-bypass-v1";
 const legacySingleAgentSeedIds = {
   runId: "b6ec7b8e-b8dc-4b58-bf5a-5f3f0f7e8d4c",
   tacticId: "54ec7b8e-b8dc-4b58-bf5a-5f3f0f7e8d4c",
@@ -114,6 +115,7 @@ async function main() {
       provider: "cloudflare",
       version: 1,
       description: "Restricts testing to customer-owned assets behind Cloudflare and enforces Cloudflare-specific scan exclusions and throttling.",
+      bypassForLocalTargets: false,
       denyProviderOwnedTargets: true,
       requireVerifiedOwnership: true,
       allowActiveExploit: false,
@@ -130,6 +132,7 @@ async function main() {
       provider: "cloudflare",
       version: 1,
       description: "Restricts testing to customer-owned assets behind Cloudflare and enforces Cloudflare-specific scan exclusions and throttling.",
+      bypassForLocalTargets: false,
       denyProviderOwnedTargets: true,
       requireVerifiedOwnership: true,
       allowActiveExploit: false,
@@ -138,6 +141,59 @@ async function main() {
       requireHostAllowlistSupport: true,
       requirePathExclusionSupport: true,
       excludedPaths: ["/cdn-cgi/"]
+    }
+  });
+
+  await prisma.executionConstraint.upsert({
+    where: { id: localTargetBypassConstraintId },
+    update: {
+      name: "Local Target Bypass Policy",
+      kind: "workflow_gate",
+      provider: null,
+      version: 1,
+      description: "Allows local and private development targets to bypass provider-governed execution constraints for seeded lab workflows.",
+      bypassForLocalTargets: true,
+      denyProviderOwnedTargets: false,
+      requireVerifiedOwnership: false,
+      allowActiveExploit: true,
+      requireRateLimitSupport: false,
+      rateLimitRps: null,
+      requireHostAllowlistSupport: false,
+      requirePathExclusionSupport: false,
+      documentationUrls: [],
+      excludedPaths: []
+    },
+    create: {
+      id: localTargetBypassConstraintId,
+      name: "Local Target Bypass Policy",
+      kind: "workflow_gate",
+      provider: null,
+      version: 1,
+      description: "Allows local and private development targets to bypass provider-governed execution constraints for seeded lab workflows.",
+      bypassForLocalTargets: true,
+      denyProviderOwnedTargets: false,
+      requireVerifiedOwnership: false,
+      allowActiveExploit: true,
+      requireRateLimitSupport: false,
+      rateLimitRps: null,
+      requireHostAllowlistSupport: false,
+      requirePathExclusionSupport: false,
+      documentationUrls: [],
+      excludedPaths: []
+    }
+  });
+
+  await prisma.applicationConstraintBinding.upsert({
+    where: {
+      applicationId_constraintId: {
+        applicationId: localApplicationId,
+        constraintId: localTargetBypassConstraintId
+      }
+    },
+    update: {},
+    create: {
+      applicationId: localApplicationId,
+      constraintId: localTargetBypassConstraintId
     }
   });
 

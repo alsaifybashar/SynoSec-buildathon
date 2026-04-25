@@ -9,6 +9,7 @@ export function mapExecutionConstraintRow(row: PrismaExecutionConstraint): Execu
     provider: row.provider,
     version: row.version,
     description: row.description,
+    bypassForLocalTargets: row.bypassForLocalTargets,
     denyProviderOwnedTargets: row.denyProviderOwnedTargets,
     requireVerifiedOwnership: row.requireVerifiedOwnership,
     allowActiveExploit: row.allowActiveExploit,
@@ -16,6 +17,7 @@ export function mapExecutionConstraintRow(row: PrismaExecutionConstraint): Execu
     rateLimitRps: row.rateLimitRps,
     requireHostAllowlistSupport: row.requireHostAllowlistSupport,
     requirePathExclusionSupport: row.requirePathExclusionSupport,
+    documentationUrls: row.documentationUrls,
     excludedPaths: row.excludedPaths,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()

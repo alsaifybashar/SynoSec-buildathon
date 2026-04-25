@@ -14,6 +14,7 @@ type NormalizedTarget = {
 };
 
 type ConstraintRuleSet = {
+  bypassForLocalTargets: boolean;
   excludedPaths: string[];
   requireVerifiedOwnership: boolean;
   requireRateLimitSupport: boolean;
@@ -121,6 +122,10 @@ function isPrivateDevHost(host: string) {
   );
 }
 
+function isLocalDevTarget(host: string) {
+  return isLocalHost(host) || isPrivateDevHost(host);
+}
+
 export function resolveTargetAsset(application: Application, requestedTargetAssetId?: string): TargetAsset {
   const targetAssets = application.targetAssets ?? [];
   if (targetAssets.length === 0) {
@@ -158,6 +163,7 @@ export function resolveTargetAsset(application: Application, requestedTargetAsse
 
 function loadConstraintRuleSet(constraint: ExecutionConstraint): ConstraintRuleSet {
   return {
+    bypassForLocalTargets: constraint.bypassForLocalTargets,
     excludedPaths: constraint.excludedPaths,
     requireVerifiedOwnership: constraint.requireVerifiedOwnership,
     requireRateLimitSupport: constraint.requireRateLimitSupport,
@@ -179,11 +185,12 @@ function isProviderOwnedTarget(constraint: ExecutionConstraint, host: string) {
 
 export function resolveEffectiveExecutionConstraints(application: Application, targetAsset: TargetAsset, rateLimitRps: number): EffectiveExecutionConstraintSet {
   const normalizedTarget = targetAssetToNormalizedTarget(targetAsset);
-  const localhostException = isLocalHost(normalizedTarget.host) || isPrivateDevHost(normalizedTarget.host);
   const bindings = application.constraintBindings ?? [];
   const constraints = bindings
     .map((binding) => binding.constraint)
     .filter((constraint): constraint is ExecutionConstraint => Boolean(constraint));
+  const localTargetBypassEnabled = constraints.some((constraint) => constraint.bypassForLocalTargets);
+  const localhostException = localTargetBypassEnabled && isLocalDevTarget(normalizedTarget.host);
 
   if (localhostException) {
     return {
@@ -203,6 +210,7 @@ export function resolveEffectiveExecutionConstraints(application: Application, t
   const aggregate = constraints.reduce<ConstraintRuleSet>((accumulator, constraint) => {
     const rules = loadConstraintRuleSet(constraint);
     return {
+      bypassForLocalTargets: accumulator.bypassForLocalTargets || rules.bypassForLocalTargets,
       excludedPaths: [...new Set([...accumulator.excludedPaths, ...rules.excludedPaths])],
       requireVerifiedOwnership: accumulator.requireVerifiedOwnership || rules.requireVerifiedOwnership,
       requireRateLimitSupport: accumulator.requireRateLimitSupport || rules.requireRateLimitSupport,
@@ -217,6 +225,7 @@ export function resolveEffectiveExecutionConstraints(application: Application, t
       allowActiveExploit: accumulator.allowActiveExploit || rules.allowActiveExploit
     };
   }, {
+    bypassForLocalTargets: false,
     excludedPaths: [],
     requireVerifiedOwnership: false,
     requireRateLimitSupport: false,

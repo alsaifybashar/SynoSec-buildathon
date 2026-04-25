@@ -203,6 +203,7 @@ model ExecutionConstraint {
   provider                    String?
   version                     Int                      @default(1)
   description                 String?
+  bypassForLocalTargets       Boolean                  @default(false) @map("bypass_for_local_targets")
   denyProviderOwnedTargets    Boolean                  @default(false) @map("deny_provider_owned_targets")
   requireVerifiedOwnership    Boolean                  @default(false) @map("require_verified_ownership")
   allowActiveExploit          Boolean                  @default(false) @map("allow_active_exploit")
@@ -210,6 +211,7 @@ model ExecutionConstraint {
   rateLimitRps                Int?                     @map("rate_limit_rps")
   requireHostAllowlistSupport Boolean                  @default(false) @map("require_host_allowlist_support")
   requirePathExclusionSupport Boolean                  @default(false) @map("require_path_exclusion_support")
+  documentationUrls           String[]                 @default([]) @map("documentation_urls")
   excludedPaths               String[]                 @default([]) @map("excluded_paths")
   createdAt                   DateTime                 @default(now()) @map("created_at")
   updatedAt                   DateTime                 @updatedAt @map("updated_at")

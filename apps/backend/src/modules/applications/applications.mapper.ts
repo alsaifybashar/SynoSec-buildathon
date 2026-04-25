@@ -41,6 +41,7 @@ function mapConstraintBindingRow(row: ApplicationConstraintBinding & {
         provider: row.constraint.provider,
         version: row.constraint.version,
         description: row.constraint.description,
+        bypassForLocalTargets: row.constraint.bypassForLocalTargets,
         denyProviderOwnedTargets: row.constraint.denyProviderOwnedTargets,
         requireVerifiedOwnership: row.constraint.requireVerifiedOwnership,
         allowActiveExploit: row.constraint.allowActiveExploit,
@@ -48,6 +49,7 @@ function mapConstraintBindingRow(row: ApplicationConstraintBinding & {
         rateLimitRps: row.constraint.rateLimitRps,
         requireHostAllowlistSupport: row.constraint.requireHostAllowlistSupport,
         requirePathExclusionSupport: row.constraint.requirePathExclusionSupport,
+        documentationUrls: row.constraint.documentationUrls,
         excludedPaths: row.constraint.excludedPaths,
         createdAt: row.constraint.createdAt.toISOString(),
         updatedAt: row.constraint.updatedAt.toISOString()

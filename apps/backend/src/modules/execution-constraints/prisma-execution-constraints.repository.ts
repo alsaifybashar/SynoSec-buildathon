@@ -62,6 +62,7 @@ export class PrismaExecutionConstraintsRepository implements ExecutionConstraint
         provider: input.provider,
         version: input.version,
         description: input.description,
+        bypassForLocalTargets: input.bypassForLocalTargets,
         denyProviderOwnedTargets: input.denyProviderOwnedTargets,
         requireVerifiedOwnership: input.requireVerifiedOwnership,
         allowActiveExploit: input.allowActiveExploit,
@@ -69,6 +70,7 @@ export class PrismaExecutionConstraintsRepository implements ExecutionConstraint
         rateLimitRps: input.rateLimitRps,
         requireHostAllowlistSupport: input.requireHostAllowlistSupport,
         requirePathExclusionSupport: input.requirePathExclusionSupport,
+        documentationUrls: input.documentationUrls,
         excludedPaths: input.excludedPaths
       }
     });
@@ -90,6 +92,7 @@ export class PrismaExecutionConstraintsRepository implements ExecutionConstraint
         provider: input.provider === undefined ? current.provider : input.provider,
         version: input.version ?? current.version,
         description: input.description === undefined ? current.description : input.description,
+        bypassForLocalTargets: input.bypassForLocalTargets ?? current.bypassForLocalTargets,
         denyProviderOwnedTargets: input.denyProviderOwnedTargets ?? current.denyProviderOwnedTargets,
         requireVerifiedOwnership: input.requireVerifiedOwnership ?? current.requireVerifiedOwnership,
         allowActiveExploit: input.allowActiveExploit ?? current.allowActiveExploit,
@@ -97,6 +100,7 @@ export class PrismaExecutionConstraintsRepository implements ExecutionConstraint
         rateLimitRps: input.rateLimitRps === undefined ? current.rateLimitRps : input.rateLimitRps,
         requireHostAllowlistSupport: input.requireHostAllowlistSupport ?? current.requireHostAllowlistSupport,
         requirePathExclusionSupport: input.requirePathExclusionSupport ?? current.requirePathExclusionSupport,
+        documentationUrls: input.documentationUrls ?? current.documentationUrls,
         excludedPaths: input.excludedPaths ?? current.excludedPaths
       }
     });

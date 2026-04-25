@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getSeededWorkflowDefinitions,
+  localApplicationId,
   seededAgentId
 } from "./ai-builder-defaults.js";
 
@@ -21,5 +22,7 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(attackMapWorkflow?.executionKind).toBe("attack-map");
     expect(attackMapWorkflow?.stages.map((stage) => stage.label)).toEqual(["Attack Map"]);
     expect(attackMapWorkflow?.stages[0]?.agentId).toBe(seededAgentId("anthropic", "orchestrator"));
+    expect(workflow?.applicationId).toBe(localApplicationId);
+    expect(attackMapWorkflow?.applicationId).toBe(localApplicationId);
   });
 });
