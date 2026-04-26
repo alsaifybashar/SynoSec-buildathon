@@ -10,7 +10,8 @@ ARG DALFOX_VERSION=2.12.0
 
 ENV PATH="/root/.local/bin:/root/go/bin:${PATH}"
 
-RUN apt-get update \
+RUN sed -i 's/Components: main/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources \
+  && apt-get update \
   && apt-get install -y --no-install-recommends \
     bash \
     binutils \
@@ -21,7 +22,6 @@ RUN apt-get update \
     default-jre-headless \
     dirb \
     dnsenum \
-    enum4linux \
     fierce \
     gdb \
     git \
@@ -39,7 +39,6 @@ RUN apt-get update \
     pipx \
     python3 \
     python3-pip \
-    responder \
     ruby-full \
     scalpel \
     sqlmap \
@@ -50,6 +49,7 @@ RUN apt-get update \
   && corepack enable \
   && pipx install arjun \
   && pipx install dirsearch \
+  && pipx install enum4linux.py \
   && pipx install enum4linux-ng \
   && pipx install hashid \
   && pipx install kube-hunter \
@@ -57,6 +57,7 @@ RUN apt-get update \
   && pipx install paramspider \
   && pipx install patator \
   && pipx install prowler \
+  && pipx install responder \
   && pipx install scoutsuite \
   && pipx install sublist3r \
   && pipx install theHarvester \
