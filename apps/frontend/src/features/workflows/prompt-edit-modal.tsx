@@ -7,6 +7,14 @@ export type PromptEditDraft = {
   systemPrompt: string;
 };
 
+function buildEngineGeneratedTargetContext(target: Target | null) {
+  return [
+    "Runtime target context:",
+    `Target: ${target?.name ?? "Unknown target"}`,
+    `Target URL: ${target?.baseUrl?.trim() || "Unknown target URL"}`
+  ].join("\n");
+}
+
 const workflowCompletionContract = [
   "Required end state:",
   "Before the run stops, call complete_run to submit the current stage result or fail_run to stop with an explicit failure."
@@ -41,6 +49,8 @@ export function PromptEditModal({
     return null;
   }
 
+  const generatedTargetContext = buildEngineGeneratedTargetContext(target);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/75 px-4 py-6 backdrop-blur-sm">
       <div
@@ -74,8 +84,11 @@ export function PromptEditModal({
 
             <section className="space-y-3 rounded-2xl border border-border/70 bg-card/55 p-4">
               <div className="space-y-1">
-                <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Workflow prompt</p>
-                <h3 className="text-base text-foreground">System prompt</h3>
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Workflow-owned</p>
+                <h3 className="text-base text-foreground">Editable system prompt</h3>
+                <p className="text-xs text-muted-foreground">
+                  This is only the workflow-owned prompt text. Engine-generated target context and runtime contract are appended separately at run time.
+                </p>
               </div>
               <Textarea
                 value={draft.systemPrompt}
@@ -83,6 +96,22 @@ export function PromptEditModal({
                 aria-label="Workflow system prompt"
                 rows={14}
                 disabled={saving}
+              />
+            </section>
+
+            <section className="space-y-3 rounded-2xl border border-border/70 bg-card/40 p-4">
+              <div className="space-y-1">
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Engine-generated</p>
+                <h3 className="text-base text-foreground">Target context</h3>
+                <p className="text-xs text-muted-foreground">
+                  Source: runtime target resolution performed by the workflow engine.
+                </p>
+              </div>
+              <Textarea
+                value={generatedTargetContext}
+                aria-label="Generated target context"
+                rows={4}
+                disabled
               />
             </section>
 

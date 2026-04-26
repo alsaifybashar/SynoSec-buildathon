@@ -919,8 +919,12 @@ describe("WorkflowExecutionService", () => {
     expect(toolContextBody).toContain("complete_run: Submit the current workflow stage result.");
 
     const systemPromptEvent = createdRuns[0]!.events.find((event) => event.title === "Rendered system prompt");
-    expect(systemPromptEvent?.detail).toContain("Workflow-owned editable prompt.");
-    expect(systemPromptEvent?.payload["promptSourceLabel"]).toBe("Workflow-owned editable system prompt plus runtime contract.");
+    expect(systemPromptEvent?.detail).toContain("You are executing the \"Pipeline\" stage of the workflow \"Pipeline Workflow\".");
+    expect(systemPromptEvent?.detail).toContain("Runtime target context:");
+    expect(systemPromptEvent?.detail).toContain("Target: Demo Target");
+    expect(systemPromptEvent?.detail).toContain("Target URL: http://localhost:3000/");
+    expect(systemPromptEvent?.detail).toContain("Workflow execution contract:");
+    expect(systemPromptEvent?.payload["promptSourceLabel"]).toBe("Workflow-owned editable system prompt plus engine-generated target context and runtime contract.");
     expect(createdRuns[0]!.events.find((event) => event.title === "Rendered task prompt")).toBeUndefined();
 
     expect(createdRuns[0]!.events.some((event) => event.type === "tool_call" && event.payload?.["toolName"] === "log_progress")).toBe(false);
@@ -935,7 +939,7 @@ describe("WorkflowExecutionService", () => {
     expect(liveMessages.some((message) => message.liveModelOutput.final)).toBe(true);
     expect(streamTextMock).toHaveBeenCalledWith(expect.objectContaining({
       system: expect.any(String),
-      prompt: ""
+      prompt: "Proceed."
     }));
   });
 

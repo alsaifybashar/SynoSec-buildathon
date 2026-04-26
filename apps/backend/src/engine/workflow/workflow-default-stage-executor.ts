@@ -24,22 +24,17 @@ import { WorkflowRunPreflight } from "./workflow-run-preflight.js";
 
 export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
   private readonly broker: ToolBroker;
+  private static readonly TARGET_CONTEXT_SUFFIX = [
+    "Runtime target context:",
+    "Target: {{target.name}}",
+    "Target URL: {{target.url}}"
+  ].join("\n");
   private static readonly SYSTEM_PROTOCOL_SUFFIX = [
     "Workflow execution contract:",
     "Use only the approved tools and built-in workflow actions exposed for this run.",
     "Report concrete evidence-backed findings with report_finding.",
     "End every run explicitly with complete_run or fail_run."
   ].join("\n");
-
-  private describePromptSource(input: {
-    kind: "system";
-    value: string;
-  }) {
-    return {
-      sourceLabel: "Workflow-owned editable system prompt plus runtime contract.",
-      compactBody: `System prompt\n\nWorkflow-owned editable prompt. ${input.value.length} chars. Inspect or edit it from Edit Prompts.`
-    };
-  }
 
   constructor(
     private readonly ports: WorkflowRuntimePorts,
@@ -84,8 +79,16 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       targetName: targetRecord.name,
       targetUrl: target.baseUrl
     });
+    const targetContextPrompt = this.renderPromptTemplate(DefaultWorkflowStageExecutor.TARGET_CONTEXT_SUFFIX, {
+      workflowName: workflow.name,
+      stageLabel: stage.label,
+      stageObjective: stage.objective,
+      targetName: targetRecord.name,
+      targetUrl: target.baseUrl
+    });
     const systemPrompt = [
       renderedStageSystemPrompt,
+      targetContextPrompt,
       DefaultWorkflowStageExecutor.SYSTEM_PROTOCOL_SUFFIX
     ].join("\n\n");
     const builtinLifecycleToolNames = new Set([
@@ -209,19 +212,16 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       }
     ]);
 
-    const systemPromptDescriptor = this.describePromptSource({
-      kind: "system",
-      value: systemPrompt
-    });
     await appendEvent("system_message", "completed", {
       title: "Rendered system prompt",
-      summary: "Persisted the workflow pipeline system prompt.",
-      body: systemPromptDescriptor.compactBody,
+      summary: "Persisted the exact system prompt delivered to the workflow model, including engine-generated target and runtime contract context.",
+      body: systemPrompt,
       messageKind: "prompt",
       promptKind: "system",
-      promptSourceLabel: systemPromptDescriptor.sourceLabel,
-      promptCharCount: systemPrompt.length
-    }, "Rendered system prompt", "Persisted the workflow pipeline system prompt.", systemPromptDescriptor.compactBody);
+      promptSourceLabel: "Workflow-owned editable system prompt plus engine-generated target context and runtime contract.",
+      promptCharCount: systemPrompt.length,
+      fullPrompt: systemPrompt
+    }, "Rendered system prompt", "Persisted the exact system prompt delivered to the workflow model.", systemPrompt);
 
     if (toolContext) {
       await appendEvent("system_message", "completed", {
@@ -424,7 +424,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     const result = streamText({
       model: this.createAnthropicLanguageModel(provider, agent.modelOverride ?? provider.model),
       system: systemPrompt,
-      prompt: "",
+      prompt: "Proceed.",
       tools: {
         ...evidenceTools,
         ...systemTools

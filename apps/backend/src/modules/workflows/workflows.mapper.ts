@@ -27,12 +27,10 @@ function normalizeOptionalText(value: string | null) {
 
 function mapWorkflowStageRow(row: WorkflowStageRow) {
   const persistedStageSystemPrompt = (row as WorkflowStageRow & { stageSystemPrompt?: string | null }).stageSystemPrompt;
-  const persistedTaskPromptTemplate = (row as WorkflowStageRow & { taskPromptTemplate?: string | null }).taskPromptTemplate;
   const contract = normalizeWorkflowStageContract({
     label: row.label,
     ...(row.objective ? { objective: row.objective } : {}),
     ...(persistedStageSystemPrompt ? { stageSystemPrompt: persistedStageSystemPrompt } : {}),
-    ...(persistedTaskPromptTemplate ? { taskPromptTemplate: persistedTaskPromptTemplate } : {}),
     ...(Array.isArray(row.allowedToolIds) ? { allowedToolIds: row.allowedToolIds.map(String) } : {}),
     ...(Array.isArray(row.requiredEvidenceTypes) ? { requiredEvidenceTypes: row.requiredEvidenceTypes.map(String) } : {}),
     ...(row.findingPolicy && typeof row.findingPolicy === "object" && !Array.isArray(row.findingPolicy)
@@ -79,7 +77,6 @@ export function mapWorkflowRow(
     agentId: primaryContract.agentId,
     objective: primaryContract.objective,
     stageSystemPrompt: primaryContract.stageSystemPrompt,
-    taskPromptTemplate: primaryContract.taskPromptTemplate,
     allowedToolIds: primaryContract.allowedToolIds,
     requiredEvidenceTypes: primaryContract.requiredEvidenceTypes,
     findingPolicy: primaryContract.findingPolicy,

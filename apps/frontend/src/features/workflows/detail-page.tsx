@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Download, ExternalLink, Pencil, Workflow as WorkflowIcon } from "lucide-react";
 import { toast } from "sonner";
-import { apiRoutes, defaultWorkflowTaskPromptTemplate, type AiAgent, type UpdateWorkflowBody, type Workflow } from "@synosec/contracts";
+import { apiRoutes, type AiAgent, type UpdateWorkflowBody, type Workflow } from "@synosec/contracts";
 import { workflowsResource } from "@/features/workflows/resource";
 import { workflowTransfer } from "@/features/workflows/transfer";
 import { useWorkflowDefinitionContext } from "@/features/workflows/context";
@@ -147,8 +147,7 @@ export function WorkflowDetailPage({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            stageSystemPrompt: nextSystemPrompt,
-            taskPromptTemplate: defaultWorkflowTaskPromptTemplate
+            stageSystemPrompt: nextSystemPrompt
           } satisfies UpdateWorkflowBody)
         });
         workflowSaved = true;

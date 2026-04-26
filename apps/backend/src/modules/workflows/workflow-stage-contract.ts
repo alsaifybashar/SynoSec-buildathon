@@ -1,6 +1,5 @@
 import {
   defaultWorkflowStageSystemPrompt,
-  defaultWorkflowTaskPromptTemplate,
   workflowStageCompletionRuleSchema,
   workflowStageFindingPolicySchema,
   type WorkflowStage
@@ -10,7 +9,6 @@ type WorkflowStageContractFields = Pick<
   WorkflowStage,
   | "objective"
   | "stageSystemPrompt"
-  | "taskPromptTemplate"
   | "allowedToolIds"
   | "requiredEvidenceTypes"
   | "findingPolicy"
@@ -23,7 +21,6 @@ type WorkflowStageContractInput = {
   label: string;
   objective?: unknown;
   stageSystemPrompt?: unknown;
-  taskPromptTemplate?: unknown;
   allowedToolIds?: unknown;
   requiredEvidenceTypes?: unknown;
   findingPolicy?: unknown;
@@ -33,7 +30,6 @@ type WorkflowStageContractInput = {
 };
 
 export const defaultStageSystemPromptTemplate = defaultWorkflowStageSystemPrompt;
-export const defaultTaskPromptTemplate = defaultWorkflowTaskPromptTemplate;
 
 function normalizeStringArray(value: unknown) {
   if (!Array.isArray(value)) {
@@ -50,7 +46,6 @@ export function createDefaultWorkflowStageContract(
   return {
     objective: `Complete the ${stage.label} stage using allowed tools and structured reporting.`,
     stageSystemPrompt: defaultStageSystemPromptTemplate,
-    taskPromptTemplate: defaultTaskPromptTemplate,
     allowedToolIds: normalizeStringArray(fallbackToolIds),
     requiredEvidenceTypes: [],
     findingPolicy: workflowStageFindingPolicySchema.parse({
@@ -80,9 +75,6 @@ export function normalizeWorkflowStageContract(
     stageSystemPrompt: typeof stage.stageSystemPrompt === "string" && stage.stageSystemPrompt.trim().length > 0
       ? stage.stageSystemPrompt
       : defaults.stageSystemPrompt,
-    taskPromptTemplate: typeof stage.taskPromptTemplate === "string" && stage.taskPromptTemplate.trim().length > 0
-      ? stage.taskPromptTemplate
-      : defaults.taskPromptTemplate,
     allowedToolIds: normalizeStringArray(stage.allowedToolIds ?? defaults.allowedToolIds),
     requiredEvidenceTypes: normalizeStringArray(stage.requiredEvidenceTypes ?? defaults.requiredEvidenceTypes),
     findingPolicy: workflowStageFindingPolicySchema.parse(stage.findingPolicy ?? defaults.findingPolicy),

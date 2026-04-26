@@ -21,7 +21,6 @@ export const workflowTransfer = {
     agentId: workflow.agentId,
     objective: workflow.objective,
     stageSystemPrompt: workflow.stageSystemPrompt,
-    taskPromptTemplate: workflow.taskPromptTemplate,
     allowedToolIds: workflow.allowedToolIds,
     requiredEvidenceTypes: workflow.requiredEvidenceTypes,
     findingPolicy: workflow.findingPolicy,

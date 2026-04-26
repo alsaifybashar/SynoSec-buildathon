@@ -1,6 +1,5 @@
 import {
   defaultWorkflowStageSystemPrompt,
-  defaultWorkflowTaskPromptTemplate,
   type CreateWorkflowBody,
   type ExecutionKind,
   type Workflow,
@@ -54,7 +53,6 @@ export function toWorkflowRequestBody(values: WorkflowFormValues): CreateWorkflo
     agentId: values.agentId,
     objective: "Run the configured workflow using the linked agent, allowed tools, and structured reporting.",
     stageSystemPrompt: values.systemPrompt.trim(),
-    taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
     allowedToolIds: values.allowedToolIds,
     requiredEvidenceTypes: [],
     findingPolicy: {

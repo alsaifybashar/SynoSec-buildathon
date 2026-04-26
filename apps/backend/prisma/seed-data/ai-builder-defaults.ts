@@ -83,7 +83,6 @@ import { netExecTool } from "./tools/windows/netexec.js";
 import { responderTool } from "./tools/windows/responder.js";
 import {
   defaultWorkflowStageSystemPrompt,
-  defaultWorkflowTaskPromptTemplate,
   type AiTool
 } from "@synosec/contracts";
 
@@ -99,8 +98,7 @@ export const osiCompactFamilyWorkflowId = "0e8e3912-c48f-4c34-9ac0-c54ec70df3f6"
 export const portfolioEvidenceGraphWorkflowId = "5edb1601-27cf-4a87-b7d4-a50873f5d985";
 
 const defaultWorkflowStagePrompts = {
-  stageSystemPrompt: defaultWorkflowStageSystemPrompt,
-  taskPromptTemplate: defaultWorkflowTaskPromptTemplate
+  stageSystemPrompt: defaultWorkflowStageSystemPrompt
 } as const;
 
 const fullSemanticFamilyToolIds = [

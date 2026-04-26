@@ -674,7 +674,7 @@ export const workflowStageSchema = z.object({
   ord: z.number().int().min(0),
   objective: z.string().min(1),
   stageSystemPrompt: z.string().min(1),
-  taskPromptTemplate: z.string().min(1),
+  taskPromptTemplate: z.string().min(1).optional(),
   allowedToolIds: z.array(z.string().min(1)).default([]),
   requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
   findingPolicy: workflowStageFindingPolicySchema.default({
@@ -702,7 +702,7 @@ export const workflowSchema = z.object({
   agentId: z.string().uuid(),
   objective: z.string().min(1),
   stageSystemPrompt: z.string().min(1),
-  taskPromptTemplate: z.string().min(1),
+  taskPromptTemplate: z.string().min(1).optional(),
   allowedToolIds: z.array(z.string().min(1)).default([]),
   requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
   findingPolicy: workflowStageFindingPolicySchema.default({
@@ -739,7 +739,7 @@ const workflowStageBodySchema = z.object({
   agentId: z.string().uuid(),
   objective: z.string().trim().min(1),
   stageSystemPrompt: z.string().trim().min(1),
-  taskPromptTemplate: z.string().trim().min(1),
+  taskPromptTemplate: z.string().trim().min(1).optional(),
   allowedToolIds: z.array(z.string().min(1)).default([]),
   requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
   findingPolicy: workflowStageFindingPolicySchema.default({
@@ -766,7 +766,7 @@ const workflowBodyBaseSchema = z.object({
   agentId: z.string().uuid(),
   objective: z.string().trim().min(1),
   stageSystemPrompt: z.string().trim().min(1),
-  taskPromptTemplate: z.string().trim().min(1),
+  taskPromptTemplate: z.string().trim().min(1).optional(),
   allowedToolIds: z.array(z.string().min(1)).default([]),
   requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
   findingPolicy: workflowStageFindingPolicySchema.default({

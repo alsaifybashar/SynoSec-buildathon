@@ -26,7 +26,7 @@ function toWorkflowStageCreateManyInput(
     ord: index,
     objective: contract.objective,
     stageSystemPrompt: contract.stageSystemPrompt,
-    taskPromptTemplate: contract.taskPromptTemplate,
+    taskPromptTemplate: null,
     allowedToolIds: contract.allowedToolIds as Prisma.InputJsonValue,
     requiredEvidenceTypes: contract.requiredEvidenceTypes as Prisma.InputJsonValue,
     findingPolicy: contract.findingPolicy as Prisma.InputJsonValue,
@@ -102,7 +102,6 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
               agentId: input.agentId,
               objective: input.objective,
               stageSystemPrompt: input.stageSystemPrompt,
-              taskPromptTemplate: input.taskPromptTemplate,
               allowedToolIds: input.allowedToolIds
             }, 0)]
           }
@@ -137,7 +136,6 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
       agentId: input.agentId ?? currentPrimaryStage.agentId,
       objective: input.objective ?? currentPrimaryStage.objective ?? "Run the configured pipeline with the linked agent and approved tools.",
       stageSystemPrompt: input.stageSystemPrompt ?? (currentPrimaryStage as { stageSystemPrompt?: string | null }).stageSystemPrompt,
-      taskPromptTemplate: input.taskPromptTemplate ?? (currentPrimaryStage as { taskPromptTemplate?: string | null }).taskPromptTemplate,
       allowedToolIds: input.allowedToolIds ?? (Array.isArray(currentPrimaryStage.allowedToolIds) ? currentPrimaryStage.allowedToolIds.map(String) : [])
     };
 
@@ -169,7 +167,6 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
                 ...(nextStage.id ? { id: nextStage.id } : {}),
                 objective: nextStage.objective,
                 stageSystemPrompt: nextStage.stageSystemPrompt,
-                taskPromptTemplate: nextStage.taskPromptTemplate,
                 allowedToolIds: nextStage.allowedToolIds
               }, 0)]
             }
@@ -213,9 +210,6 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
           ...((stage as { stageSystemPrompt?: string | null }).stageSystemPrompt
             ? { stageSystemPrompt: (stage as { stageSystemPrompt?: string | null }).stageSystemPrompt }
             : {}),
-          ...((stage as { taskPromptTemplate?: string | null }).taskPromptTemplate
-            ? { taskPromptTemplate: (stage as { taskPromptTemplate?: string | null }).taskPromptTemplate }
-            : {}),
           ...(Array.isArray(stage.allowedToolIds) ? { allowedToolIds: stage.allowedToolIds.map(String) } : {})
         }, fallbackToolIdsByAgentId[stage.agentId] ?? []);
 
@@ -224,7 +218,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
           data: {
             objective: contract.objective,
             stageSystemPrompt: contract.stageSystemPrompt,
-            taskPromptTemplate: contract.taskPromptTemplate,
+            taskPromptTemplate: null,
             allowedToolIds: contract.allowedToolIds as Prisma.InputJsonValue
           } as Prisma.WorkflowStageUpdateInput
         });

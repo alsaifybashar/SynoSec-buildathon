@@ -429,7 +429,10 @@ describe("WorkflowDetailPage", () => {
 
     expect(await screen.findByRole("dialog", { name: "Edit Prompts" })).toBeInTheDocument();
     expect(screen.getByText("Workflow context")).toBeInTheDocument();
+    expect(screen.getByText("Target context")).toBeInTheDocument();
     expect(screen.getByText("Completion contract")).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/Runtime target context:/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/Target URL: http:\/\/127.0.0.1:3000/)).toBeInTheDocument();
     expect(screen.getByDisplayValue(/Before the run stops, call complete_run/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Workflow system prompt"), {
@@ -445,8 +448,7 @@ describe("WorkflowDetailPage", () => {
     const workflowPatchCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}` && init?.method === "PATCH");
 
     expect(JSON.parse(String(workflowPatchCall?.[1]?.body))).toEqual({
-      stageSystemPrompt: "Drive the workflow decisively and report evidence-backed findings.",
-      taskPromptTemplate: defaultWorkflowTaskPromptTemplate
+      stageSystemPrompt: "Drive the workflow decisively and report evidence-backed findings."
     });
   });
 });
