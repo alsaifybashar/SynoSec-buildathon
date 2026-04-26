@@ -172,7 +172,25 @@ Combined, these turn a stale release artifact into a working session for **any t
       recommendation:
         "Revoke ATLAS_RT immediately; rotate the seed-env signing key and rebuild release. Add an artifact secret-scan gate to the release workflow.",
       confidence: 0.95,
+      validationStatus: "reproduced",
+      explanationSummary: "A release artifact contained a live refresh token with enough remaining lifetime to mint access tokens well after disclosure.",
+      confidenceReason: "The token value was extracted directly from the artifact and verified against its remaining validity window.",
       targetLabel: "atlas-release.tar.gz",
+      derivedFromFindingIds: [],
+      relatedFindingIds: ["fn-01"],
+      enablesFindingIds: ["fn-03"],
+      relationshipExplanations: {
+        relatedTo: "The exposed token becomes more damaging when combined with the weak session controls elsewhere in the environment.",
+        enables: "The refresh token can be exchanged into a session that reaches the downstream audience-confusion weakness.",
+        chainRole: "entry"
+      },
+      chain: {
+        id: "ch-01",
+        title: "Cross-tenant session graft",
+        summary: "Refresh-token disclosure, audience confusion, and weak cookie scope can be chained into cross-tenant access.",
+        severity: "critical"
+      },
+      reproduction: null,
       evidence: [
         { sourceTool: "artifact-scan", quote: "ATLAS_RT=eyJhbGciOiJSUzI1NiIs… (89d remaining)", artifactRef: "atlas-release" }
       ],
@@ -193,7 +211,18 @@ Combined, these turn a stale release artifact into a working session for **any t
       recommendation:
         "Replace wildcard with an explicit allowlist tied to the tenant routing table; remove Allow-Credentials where unused.",
       confidence: 0.85,
+      validationStatus: "single_source",
+      explanationSummary: "The live response exposed a permissive credentialed CORS posture on a sensitive session endpoint.",
+      confidenceReason: "The probe captured the exact response headers from the target service.",
       targetLabel: "sso-bridge.blackpine.internal",
+      derivedFromFindingIds: [],
+      relatedFindingIds: ["fn-02"],
+      enablesFindingIds: [],
+      relationshipExplanations: {
+        relatedTo: "The CORS exposure increases the operational impact of the leaked refresh token by widening where session material can be replayed."
+      },
+      chain: null,
+      reproduction: null,
       evidence: [
         { sourceTool: "http-probe", quote: "access-control-allow-origin: *", toolRunRef: "http-probe-3" }
       ],
@@ -214,7 +243,25 @@ Combined, these turn a stale release artifact into a working session for **any t
       recommendation:
         "Enforce aud == staging-aud-proxy in the proxy validator; add a contract test that fails on cross-tenant aud.",
       confidence: 0.9,
+      validationStatus: "cross_validated",
+      explanationSummary: "The proxy accepted tokens minted for the wrong audience, which breaks tenant isolation assumptions.",
+      confidenceReason: "JWT fuzzing produced a successful response using a deliberately mismatched audience claim.",
       targetLabel: "aud-proxy.staging.blackpine.internal",
+      derivedFromFindingIds: ["fn-02"],
+      relatedFindingIds: [],
+      enablesFindingIds: ["fn-04"],
+      relationshipExplanations: {
+        derivedFrom: "The leaked refresh token supplied a practical token source for probing the proxy validation path.",
+        enables: "Once the proxy accepts a wrong-audience token, broad cookie scope increases where that session can travel.",
+        chainRole: "pivot"
+      },
+      chain: {
+        id: "ch-01",
+        title: "Cross-tenant session graft",
+        summary: "Refresh-token disclosure, audience confusion, and weak cookie scope can be chained into cross-tenant access.",
+        severity: "critical"
+      },
+      reproduction: null,
       evidence: [{ sourceTool: "jwt-fuzz", quote: "200 OK ← unrelated-tenant aud accepted", toolRunRef: "jwt-fuzz-12" }],
       sourceToolIds: ["jwt-fuzz"],
       sourceToolRunIds: [],
@@ -233,7 +280,24 @@ Combined, these turn a stale release artifact into a working session for **any t
       recommendation:
         "Tighten scope to the auth subdomain; introduce a host-bound session token for downstream services.",
       confidence: 0.7,
+      validationStatus: "suspected",
+      explanationSummary: "The cookie domain spans all subdomains, increasing the lateral exposure of any stolen or mis-issued session.",
+      confidenceReason: "The scope is directly visible in the Set-Cookie header, but downstream abuse still depends on other weaknesses.",
       targetLabel: "sso-bridge.blackpine.internal",
+      derivedFromFindingIds: ["fn-03"],
+      relatedFindingIds: [],
+      enablesFindingIds: [],
+      relationshipExplanations: {
+        derivedFrom: "This becomes materially exploitable after the audience-confusion path produces a usable cross-tenant session.",
+        chainRole: "impact"
+      },
+      chain: {
+        id: "ch-01",
+        title: "Cross-tenant session graft",
+        summary: "Refresh-token disclosure, audience confusion, and weak cookie scope can be chained into cross-tenant access.",
+        severity: "critical"
+      },
+      reproduction: null,
       evidence: [{ sourceTool: "http-probe", quote: "Domain=.blackpine.internal", toolRunRef: "http-probe-3" }],
       sourceToolIds: ["http-probe"],
       sourceToolRunIds: [],

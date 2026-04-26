@@ -73,7 +73,16 @@ const report: ExecutionReportDetail = {
       summary: "The admin route is reachable without a protective gateway.",
       recommendation: "Restrict the admin route.",
       confidence: 0.91,
+      validationStatus: "single_source",
+      explanationSummary: "An authenticated admin route returned a direct 200 response from the target without a gateway challenge.",
+      confidenceReason: "The finding is backed by a direct probe response tied to a persisted tool run.",
       targetLabel: "https://target.local/admin",
+      derivedFromFindingIds: [],
+      relatedFindingIds: [],
+      enablesFindingIds: [],
+      relationshipExplanations: null,
+      chain: null,
+      reproduction: null,
       evidence: [{ sourceTool: "httpx", quote: "GET /admin returned 200", toolRunRef: "tool-run-1" }],
       sourceToolIds: ["httpx"],
       sourceToolRunIds: ["tool-run-1"],
@@ -189,8 +198,10 @@ describe("ExecutionReportsPage", () => {
     expect(screen.getByText("1 edges")).toBeInTheDocument();
     expect(screen.getAllByText("Admin response").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Admin surface exposed").length).toBeGreaterThan(0);
-    expect(screen.getByText("tool:tool-run-1")).toBeInTheDocument();
+    expect(screen.getAllByText("tool:tool-run-1").length).toBeGreaterThan(0);
     expect(screen.getAllByText("supports").length).toBeGreaterThan(0);
+    expect(screen.getByText("Why this finding exists")).toBeInTheDocument();
+    expect(screen.getByText("Verification")).toBeInTheDocument();
   });
 
   it("renders explainability markers for report sections", async () => {

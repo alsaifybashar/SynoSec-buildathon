@@ -26,6 +26,7 @@ export type NavigationId =
   | "workflows"
   | "execution-reports"
   | "attack-map"
+  | "attack-map-copy"
   | "design-stream"
   | "design-duplex"
   | "design-report-finding-map"
@@ -152,6 +153,16 @@ export const navigationTree: NavigationTreeEntry[] = [
       id: "attack-map",
       label: "Attack Map",
       path: "/attack-map",
+      icon: Orbit
+    })
+  },
+  {
+    kind: "item",
+    item: createNavigationItem({
+      id: "attack-map-copy",
+      label: "Attack Map Copy",
+      path: "/attack-map/copy",
+      matchPaths: ["/attack-map/copy", "/attack-map/workflows"],
       icon: Orbit
     })
   },

@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams } from "react-router-dom";
 import { AttackMapPage } from "@/features/attack-map/page";
+import { AttackMapPage as WorkflowAttackMapRoutePage } from "@/features/attack-map/workflow-route-page";
 import { ExecutionReportsPage } from "@/features/execution-reports/page";
 import { LoginPage } from "@/features/auth/login-page";
 import { DesignDuplex } from "@/features/designs/design-duplex";
@@ -177,6 +178,8 @@ export function AppContentRoutes({
       ]))}
 
       <Route path="/attack-map" element={protect(<AttackMapPage />)} />
+      <Route path="/attack-map/copy" element={protect(<WorkflowAttackMapRoutePage />)} />
+      <Route path="/attack-map/workflows/:workflowId" element={protect(<WorkflowAttackMapRoutePage />)} />
       <Route path="/execution-reports" element={protect(<ExecutionReportsRouteAdapter />)} />
       <Route path="/execution-reports/:reportId" element={protect(<ExecutionReportsRouteAdapter />)} />
       <Route path="/designs/stream" element={protect(<DesignStream />)} />

@@ -86,7 +86,59 @@ function GraphSection({ report }: { report: ExecutionReportDetail }) {
   );
 }
 
-function FindingsSection({ findings }: { findings: ExecutionReportFinding[] }) {
+function scrollToToolActivity(toolRunRef: string) {
+  document.getElementById(`tool-activity-${toolRunRef}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function relationshipLabel(kind: "derived" | "related" | "enables") {
+  switch (kind) {
+    case "derived":
+      return "Derived from";
+    case "related":
+      return "Related to";
+    case "enables":
+      return "Enables";
+  }
+}
+
+function FindingRelationshipRail({
+  title,
+  explanation,
+  findingIds,
+  findingLookup
+}: {
+  title: string;
+  explanation: string | null | undefined;
+  findingIds: string[];
+  findingLookup: Map<string, ExecutionReportFinding>;
+}) {
+  if (findingIds.length === 0 && !explanation) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border/70 bg-background/40 p-3">
+      <p className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">{title}</p>
+      {explanation ? <p className="text-sm leading-6 text-foreground/85">{explanation}</p> : null}
+      {findingIds.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {findingIds.map((findingId) => {
+            const related = findingLookup.get(findingId);
+            return (
+              <span key={findingId} className="rounded-full border border-border/70 px-2 py-1 text-[0.72rem] text-muted-foreground">
+                {related ? related.title : findingId}
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function FindingsSection({ report }: { report: ExecutionReportDetail }) {
+  const findingLookup = new Map(report.findings.map((finding) => [finding.id, finding]));
+
   return (
     <DetailFieldGroup title="Findings" className="bg-card/70">
       <div className="col-span-full space-y-3">
@@ -94,23 +146,147 @@ function FindingsSection({ findings }: { findings: ExecutionReportFinding[] }) {
           title="Persisted findings"
           hint="These are the structured issues saved to the report, not every intermediate observation the tools produced."
         />
-        {findings.length === 0 ? <p className="text-sm text-muted-foreground">No structured findings were reported for this execution.</p> : null}
-        {findings.map((finding) => (
-          <div key={finding.id} className="rounded-xl border border-border bg-background/50 px-4 py-4">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span className="rounded-full border border-border/70 px-2 py-1 font-mono uppercase tracking-[0.16em]">{finding.severity}</span>
-              <span>{finding.type}</span>
-              <span>{finding.targetLabel}</span>
+        {report.findings.length === 0 ? <p className="text-sm text-muted-foreground">No structured findings were reported for this execution.</p> : null}
+        {report.findings.map((finding) => (
+          <details key={finding.id} className="rounded-xl border border-border bg-background/50 px-4 py-4" open>
+            <summary className="cursor-pointer list-none">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="rounded-full border border-border/70 px-2 py-1 font-mono uppercase tracking-[0.16em]">{finding.severity}</span>
+                <span>{finding.type}</span>
+                <span>{finding.targetLabel}</span>
+                {finding.validationStatus ? (
+                  <span className="rounded-full border border-border/70 px-2 py-1 font-mono uppercase tracking-[0.16em]">{finding.validationStatus.replaceAll("_", " ")}</span>
+                ) : null}
+                {finding.confidence !== null ? (
+                  <span className="rounded-full border border-border/70 px-2 py-1 font-mono uppercase tracking-[0.16em]">
+                    conf {finding.confidence.toFixed(2)}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-3 text-sm font-semibold text-foreground">{finding.title}</p>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">{finding.summary}</p>
+            </summary>
+
+            <div className="mt-4 space-y-4 border-t border-border/70 pt-4">
+              {finding.explanationSummary ? (
+                <div className="space-y-2">
+                  <p className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">Why this finding exists</p>
+                  <p className="text-sm leading-6 text-foreground/85">{finding.explanationSummary}</p>
+                </div>
+              ) : null}
+
+              <div className="space-y-3">
+                <p className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">Evidence</p>
+                <div className="space-y-3">
+                  {finding.evidence.map((evidence, index) => (
+                    <div key={`${finding.id}:evidence:${index}`} className="rounded-lg border border-border/70 bg-background/40 p-3">
+                      <div className="flex flex-wrap items-center gap-2 text-[0.72rem] text-muted-foreground">
+                        <span className="rounded-full border border-border/70 px-2 py-1">{evidence.sourceTool}</span>
+                        {evidence.toolRunRef ? (
+                          <button
+                            type="button"
+                            className="rounded-full border border-border/70 px-2 py-1 transition hover:border-foreground/40 hover:text-foreground"
+                            onClick={() => scrollToToolActivity(evidence.toolRunRef as string)}
+                          >
+                            tool:{evidence.toolRunRef}
+                          </button>
+                        ) : null}
+                        {evidence.observationRef ? <span className="rounded-full border border-border/70 px-2 py-1">obs:{evidence.observationRef}</span> : null}
+                        {evidence.artifactRef ? <span className="rounded-full border border-border/70 px-2 py-1">artifact:{evidence.artifactRef}</span> : null}
+                      </div>
+                      <pre className="mt-3 overflow-x-auto rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">{evidence.quote}</pre>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {finding.derivedFromFindingIds.length > 0
+                || finding.relatedFindingIds.length > 0
+                || finding.enablesFindingIds.length > 0
+                || finding.relationshipExplanations
+                || finding.chain ? (
+                <div className="space-y-3">
+                  <p className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">Relationships</p>
+                  <FindingRelationshipRail
+                    title={relationshipLabel("derived")}
+                    explanation={finding.relationshipExplanations?.derivedFrom}
+                    findingIds={finding.derivedFromFindingIds}
+                    findingLookup={findingLookup}
+                  />
+                  <FindingRelationshipRail
+                    title={relationshipLabel("related")}
+                    explanation={finding.relationshipExplanations?.relatedTo}
+                    findingIds={finding.relatedFindingIds}
+                    findingLookup={findingLookup}
+                  />
+                  <FindingRelationshipRail
+                    title={relationshipLabel("enables")}
+                    explanation={finding.relationshipExplanations?.enables}
+                    findingIds={finding.enablesFindingIds}
+                    findingLookup={findingLookup}
+                  />
+                  {finding.chain ? (
+                    <div className="space-y-2 rounded-lg border border-border/70 bg-background/40 p-3">
+                      <p className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">Attack path</p>
+                      <p className="text-sm font-semibold text-foreground">{finding.chain.title}</p>
+                      <p className="text-sm leading-6 text-muted-foreground">{finding.chain.summary}</p>
+                      {finding.relationshipExplanations?.chainRole ? (
+                        <span className="inline-flex rounded-full border border-border/70 px-2 py-1 text-[0.72rem] text-muted-foreground">
+                          role: {finding.relationshipExplanations.chainRole}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {finding.validationStatus || finding.confidenceReason || finding.reproduction ? (
+                <div className="space-y-3">
+                  <p className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">Verification</p>
+                  <div className="rounded-lg border border-border/70 bg-background/40 p-3">
+                    <div className="flex flex-wrap items-center gap-2 text-[0.72rem] text-muted-foreground">
+                      {finding.validationStatus ? (
+                        <span className="rounded-full border border-border/70 px-2 py-1 font-mono uppercase tracking-[0.16em]">
+                          {finding.validationStatus.replaceAll("_", " ")}
+                        </span>
+                      ) : null}
+                      {finding.confidence !== null ? (
+                        <span className="rounded-full border border-border/70 px-2 py-1 font-mono uppercase tracking-[0.16em]">
+                          conf {finding.confidence.toFixed(2)}
+                        </span>
+                      ) : null}
+                    </div>
+                    {finding.confidenceReason ? <p className="mt-3 text-sm leading-6 text-foreground/85">{finding.confidenceReason}</p> : null}
+                    {finding.reproduction ? (
+                      <div className="mt-3 space-y-2">
+                        {finding.reproduction.commandPreview ? (
+                          <pre className="overflow-x-auto rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">{finding.reproduction.commandPreview}</pre>
+                        ) : null}
+                        <ol className="space-y-2 text-sm text-muted-foreground">
+                          {finding.reproduction.steps.map((step, index) => (
+                            <li key={`${finding.id}:step:${index}`}>{index + 1}. {step}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {finding.recommendation ? (
+                <div className="space-y-2">
+                  <p className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">Recommendation</p>
+                  <p className="text-sm leading-6 text-foreground/85">{finding.recommendation}</p>
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2 text-[0.7rem] text-muted-foreground">
+                {finding.sourceToolIds.map((toolId) => (
+                  <span key={toolId} className="rounded-full border border-border/70 px-2 py-1">{toolId}</span>
+                ))}
+              </div>
             </div>
-            <p className="mt-3 text-sm font-semibold text-foreground">{finding.title}</p>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">{finding.summary}</p>
-            {finding.recommendation ? <p className="mt-3 text-sm leading-6 text-foreground/85">{finding.recommendation}</p> : null}
-            <div className="mt-3 flex flex-wrap gap-2 text-[0.7rem] text-muted-foreground">
-              {finding.sourceToolIds.map((toolId) => (
-                <span key={toolId} className="rounded-full border border-border/70 px-2 py-1">{toolId}</span>
-              ))}
-            </div>
-          </div>
+          </details>
         ))}
       </div>
     </DetailFieldGroup>
@@ -127,7 +303,7 @@ function ToolActivitySection({ report }: { report: ExecutionReportDetail }) {
         />
         {report.toolActivity.length === 0 ? <p className="text-sm text-muted-foreground">No persisted tool activity is available for this execution.</p> : null}
         {report.toolActivity.map((activity) => (
-          <div key={activity.id} className="rounded-xl border border-border bg-background/50 px-4 py-4">
+          <div id={`tool-activity-${activity.id}`} key={activity.id} className="rounded-xl border border-border bg-background/50 px-4 py-4">
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span className="rounded-full border border-border/70 px-2 py-1 font-mono uppercase tracking-[0.16em]">{activity.status}</span>
               <span>{activity.phase}</span>
@@ -357,7 +533,7 @@ export function ExecutionReportsPage({
         </div>
       </DetailFieldGroup>
       <GraphSection report={report} />
-      <FindingsSection findings={report.findings} />
+      <FindingsSection report={report} />
       <ToolActivitySection report={report} />
     </DetailPage>
   );

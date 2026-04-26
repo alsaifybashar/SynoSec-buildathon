@@ -1,6 +1,16 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiAgent, AiProvider, AiTool, AuthSessionResponse, Target, Workflow } from "@synosec/contracts";
+import {
+  defaultWorkflowStageSystemPrompt,
+  defaultWorkflowTaskPromptTemplate,
+  type AiAgent,
+  type AiProvider,
+  type AiTool,
+  type AuthSessionResponse,
+  type Target,
+  type Workflow,
+  type WorkflowRun
+} from "@synosec/contracts";
 import App from "@/app/App";
 
 function createPaginatedPayload<T>(key: string, items: T[]) {
@@ -19,6 +29,7 @@ describe("App", () => {
   let agents: AiAgent[];
   let tools: AiTool[];
   let workflows: Workflow[];
+  let workflowRun: WorkflowRun;
   let authSession: AuthSessionResponse;
   let authSessionFailureCount: number;
 
@@ -129,10 +140,13 @@ describe("App", () => {
         id: "f5bbd721-7f5b-4336-b9f5-a8b3804cf1e1",
         name: "Local Vulnerable App Walkthrough",
         status: "active",
+        executionKind: "attack-map",
         description: "Seeded workflow for the local target",
         targetId: targets[0]?.id ?? "",
         agentId: agents[0]?.id ?? "",
         objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
+        stageSystemPrompt: defaultWorkflowStageSystemPrompt,
+        taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
         allowedToolIds: [],
         requiredEvidenceTypes: [],
         findingPolicy: {
@@ -164,6 +178,8 @@ describe("App", () => {
             agentId: agents[0]?.id ?? "",
             ord: 0,
             objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
+            stageSystemPrompt: defaultWorkflowStageSystemPrompt,
+            taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
             allowedToolIds: [],
             requiredEvidenceTypes: [],
             findingPolicy: {
@@ -194,6 +210,122 @@ describe("App", () => {
         updatedAt: "2026-04-12T12:00:00.000Z"
       }
     ];
+    workflowRun = {
+      id: "7ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+      workflowId: workflows[0]!.id,
+      executionKind: "attack-map",
+      status: "completed",
+      currentStepIndex: 0,
+      startedAt: "2026-04-12T12:05:00.000Z",
+      completedAt: "2026-04-12T12:06:00.000Z",
+      trace: [],
+      events: [
+        {
+          id: "evt-1",
+          workflowRunId: "7ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+          workflowId: workflows[0]!.id,
+          workflowStageId: workflows[0]!.stages[0]!.id,
+          stepIndex: 0,
+          ord: 0,
+          type: "system_message",
+          status: "completed",
+          title: "Recon completed",
+          summary: "Recon completed for the target.",
+          detail: null,
+          payload: {
+            body: JSON.stringify({
+              openPorts: [{ port: 443, protocol: "tcp", service: "https", version: "nginx" }],
+              technologies: ["nginx", "react"],
+              serverInfo: { webServer: "nginx" }
+            })
+          },
+          createdAt: "2026-04-12T12:05:10.000Z"
+        },
+        {
+          id: "evt-2",
+          workflowRunId: "7ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+          workflowId: workflows[0]!.id,
+          workflowStageId: workflows[0]!.stages[0]!.id,
+          stepIndex: 0,
+          ord: 1,
+          type: "system_message",
+          status: "completed",
+          title: "Attack plan created",
+          summary: "Attack plan created.",
+          detail: null,
+          payload: {
+            body: JSON.stringify({
+              overallRisk: "medium",
+              summary: "Focus on the portal workflow path first.",
+              phases: [{
+                id: "phase-1",
+                name: "Initial Recon",
+                priority: "medium",
+                rationale: "Enumerate the web surface.",
+                targetService: "portal.synosec.local:443",
+                tools: ["HTTPx"],
+                status: "completed"
+              }]
+            })
+          },
+          createdAt: "2026-04-12T12:05:20.000Z"
+        },
+        {
+          id: "evt-3",
+          workflowRunId: "7ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+          workflowId: workflows[0]!.id,
+          workflowStageId: workflows[0]!.stages[0]!.id,
+          stepIndex: 0,
+          ord: 2,
+          type: "tool_call",
+          status: "running",
+          title: "Tool started: HTTPx",
+          summary: "HTTPx started for recon.",
+          detail: "httpx https://portal.synosec.local",
+          payload: {
+            phase: "recon",
+            toolName: "HTTPx",
+            toolInput: "httpx https://portal.synosec.local"
+          },
+          createdAt: "2026-04-12T12:05:30.000Z"
+        },
+        {
+          id: "evt-4",
+          workflowRunId: "7ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+          workflowId: workflows[0]!.id,
+          workflowStageId: workflows[0]!.stages[0]!.id,
+          stepIndex: 0,
+          ord: 3,
+          type: "tool_result",
+          status: "completed",
+          title: "Tool completed: HTTPx",
+          summary: "HTTPx completed.",
+          detail: "https://portal.synosec.local [200]",
+          payload: {
+            phase: "recon",
+            toolName: "HTTPx",
+            output: "https://portal.synosec.local [200]",
+            exitCode: 0
+          },
+          createdAt: "2026-04-12T12:05:45.000Z"
+        },
+        {
+          id: "evt-5",
+          workflowRunId: "7ecf4a8e-df5f-4945-a7e1-230ef43eac80",
+          workflowId: workflows[0]!.id,
+          workflowStageId: workflows[0]!.stages[0]!.id,
+          stepIndex: 0,
+          ord: 4,
+          type: "run_completed",
+          status: "completed",
+          title: "Attack-map workflow completed",
+          summary: "Attack-map workflow completed.",
+          detail: null,
+          payload: {},
+          createdAt: "2026-04-12T12:06:00.000Z"
+        }
+      ]
+    };
     authSession = {
       authEnabled: false,
       authenticated: false,
@@ -213,6 +345,12 @@ describe("App", () => {
       key: vi.fn(),
       length: 0
     });
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    });
+    Element.prototype.scrollIntoView = vi.fn();
 
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -288,12 +426,48 @@ describe("App", () => {
       if ((url === "/api/workflows" || url.startsWith("/api/workflows?")) && method === "GET") {
         return new Response(JSON.stringify(createPaginatedPayload("workflows", workflows)));
       }
+      if (url === `/api/workflows/${workflows[0]!.id}/runs/latest` && method === "GET") {
+        return new Response(JSON.stringify(workflowRun));
+      }
+      if (url === `/api/workflows/${workflows[0]!.id}/runs` && method === "POST") {
+        return new Response(JSON.stringify(workflowRun), { status: 201 });
+      }
       if (url.startsWith("/api/workflows/") && method === "GET") {
         const id = url.split("/").pop() ?? "";
         const workflow = workflows.find((candidate) => candidate.id === id);
         return workflow
           ? new Response(JSON.stringify(workflow))
           : new Response(JSON.stringify({ message: "Workflow not found." }), { status: 404 });
+      }
+      if (url === `/api/workflow-runs/${workflowRun.id}/findings` && method === "GET") {
+        return new Response(JSON.stringify({
+          runId: workflowRun.id,
+          findings: [{
+            id: "finding-1",
+            workflowRunId: workflowRun.id,
+            workflowStageId: workflows[0]!.stages[0]!.id,
+            type: "other",
+            title: "Administrative endpoint exposed",
+            severity: "high",
+            confidence: 0.82,
+            target: {
+              host: "portal.synosec.local",
+              url: "https://portal.synosec.local/admin"
+            },
+            evidence: [{
+              sourceTool: "HTTPx",
+              quote: "https://portal.synosec.local/admin [200]"
+            }],
+            impact: "Administrative surface is reachable.",
+            recommendation: "Restrict or authenticate the administrative route.",
+            validationStatus: "single_source",
+            derivedFromFindingIds: [],
+            relatedFindingIds: [],
+            enablesFindingIds: [],
+            tags: ["attack-map"],
+            createdAt: "2026-04-12T12:05:50.000Z"
+          }]
+        }));
       }
       throw new Error(`Unhandled fetch: ${method} ${url}`);
     }));
@@ -311,6 +485,7 @@ describe("App", () => {
 
     await screen.findByRole("heading", { name: "Targets" });
     expect(screen.getAllByRole("link", { name: "AI Providers" })[0]).toHaveAttribute("href", "/ai/providers");
+    expect(screen.getAllByRole("link", { name: "Attack Map Copy" })[0]).toHaveAttribute("href", "/attack-map/copy");
     fireEvent.click(screen.getAllByRole("link", { name: "AI Providers" })[0]!);
     expect(await screen.findByRole("heading", { name: "AI Providers" })).toBeInTheDocument();
 
@@ -324,6 +499,24 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Workflows" })).toBeInTheDocument();
 
     expect(screen.queryByText("Templates")).not.toBeInTheDocument();
+  });
+
+  it("opens the attack-map copy route from the sidebar", async () => {
+    window.history.replaceState({}, "", "/");
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Targets" });
+    fireEvent.click(screen.getAllByRole("link", { name: "Attack Map Copy" })[0]!);
+
+    expect(window.location.pathname).toBe("/attack-map/copy");
+    expect(await screen.findByText("Workflow Copy")).toBeInTheDocument();
+    expect(await screen.findByText("Administrative endpoint exposed")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Launch Orchestration" }));
+
+    const requestedUrls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+    expect(requestedUrls.some((url) => url.startsWith("/api/orchestrator"))).toBe(false);
+    expect(requestedUrls).toContain(`/api/workflows/${workflows[0]!.id}/runs`);
   });
 
   it("opens AI provider detail pages through the url-backed list flow", async () => {
@@ -348,7 +541,7 @@ describe("App", () => {
     const fetchMock = vi.mocked(fetch);
     const requestedUrls = fetchMock.mock.calls.map(([input]) => String(input));
 
-    expect(requestedUrls.filter((url) => url === "/api/ai-agents/67043e91-4017-47b8-ac3f-81eb19f51538").length).toBeLessThanOrEqual(2);
+    expect(requestedUrls.filter((url) => url === "/api/ai-agents/67043e91-4017-47b8-ac3f-81eb19f51538").length).toBeLessThanOrEqual(3);
     expect(requestedUrls.filter((url) => url.startsWith("/api/ai-agents?")).length).toBeLessThanOrEqual(3);
     expect(requestedUrls.filter((url) => url.startsWith("/api/ai-providers?")).length).toBeLessThanOrEqual(2);
     expect(requestedUrls.filter((url) => url.startsWith("/api/ai-tools?")).length).toBeLessThanOrEqual(2);

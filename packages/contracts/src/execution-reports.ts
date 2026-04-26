@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { workflowReportedFindingSchema } from "./resources.js";
+import {
+  workflowFindingChainSchema,
+  workflowFindingRelationshipExplanationsSchema,
+  workflowFindingReproductionSchema,
+  workflowFindingValidationStatusSchema,
+  workflowReportedFindingSchema
+} from "./resources.js";
 import { securityVulnerabilitySchema, severitySchema, type SecurityVulnerability } from "./scan-core.js";
 import { createPaginatedResponseSchema, executionKindSchema, resourceListQuerySchema, sortDirectionSchema } from "./shared.js";
 
@@ -20,7 +26,16 @@ export const executionReportFindingSchema = z.object({
   summary: z.string().min(1),
   recommendation: z.string().nullable(),
   confidence: z.number().min(0).max(1).nullable(),
+  validationStatus: workflowFindingValidationStatusSchema.optional(),
+  explanationSummary: z.string().min(1).max(400).nullable().default(null),
+  confidenceReason: z.string().min(1).max(240).nullable().default(null),
   targetLabel: z.string().min(1),
+  derivedFromFindingIds: z.array(z.string().uuid()).default([]),
+  relatedFindingIds: z.array(z.string().uuid()).default([]),
+  enablesFindingIds: z.array(z.string().uuid()).default([]),
+  relationshipExplanations: workflowFindingRelationshipExplanationsSchema.nullable().default(null),
+  chain: workflowFindingChainSchema.nullable().default(null),
+  reproduction: workflowFindingReproductionSchema.nullable().default(null),
   evidence: z.array(z.object({
     sourceTool: z.string().min(1),
     quote: z.string().min(1),
@@ -260,11 +275,20 @@ export function executionReportFindingFromWorkflowFinding(
     summary: options?.summary ?? finding.impact,
     recommendation: options?.recommendation ?? finding.recommendation,
     confidence: options?.confidence ?? finding.confidence,
+    validationStatus: finding.validationStatus,
+    explanationSummary: finding.explanationSummary ?? null,
+    confidenceReason: finding.confidenceReason ?? null,
     targetLabel: options?.targetLabel ?? finding.target.url ?? [
       finding.target.host,
       finding.target.port ? `:${finding.target.port}` : "",
       finding.target.path ?? ""
     ].join(""),
+    derivedFromFindingIds: finding.derivedFromFindingIds,
+    relatedFindingIds: finding.relatedFindingIds,
+    enablesFindingIds: finding.enablesFindingIds,
+    relationshipExplanations: finding.relationshipExplanations ?? null,
+    chain: finding.chain ?? null,
+    reproduction: finding.reproduction ?? null,
     evidence: finding.evidence,
     sourceToolIds: uniqueExecutionReportValues(options?.sourceToolIds ?? finding.evidence.map((item) => item.sourceTool)),
     sourceToolRunIds: uniqueExecutionReportValues(options?.sourceToolRunIds ?? []),
