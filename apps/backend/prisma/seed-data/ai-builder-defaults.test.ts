@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  adaptivePlanningAttackMapWorkflowId,
   getSeededRoleDefinition,
   getSeededWorkflowDefinitions,
   localApplicationId,
@@ -22,10 +23,11 @@ describe("getSeededWorkflowDefinitions", () => {
     const workflows = getSeededWorkflowDefinitions();
     const workflow = workflows.find((candidate) => candidate.name === "Single-Agent");
     const attackMapWorkflow = workflows.find((candidate) => candidate.name === "Orchestration Attack Map");
+    const adaptiveAttackMapWorkflow = workflows.find((candidate) => candidate.id === adaptivePlanningAttackMapWorkflowId);
     const compactWorkflow = workflows.find((candidate) => candidate.id === osiCompactFamilyWorkflowId);
     const portfolioWorkflow = workflows.find((candidate) => candidate.id === portfolioEvidenceGraphWorkflowId);
 
-    expect(workflows).toHaveLength(4);
+    expect(workflows).toHaveLength(5);
     expect(workflow).toBeDefined();
     expect(workflow?.executionKind).toBe("workflow");
     expect(workflow?.description).toContain("transparent evidence pipeline");
@@ -41,6 +43,13 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(attackMapWorkflow?.executionKind).toBe("attack-map");
     expect(attackMapWorkflow?.stages.map((stage) => stage.label)).toEqual(["Attack Map"]);
     expect(attackMapWorkflow?.stages[0]?.agentId).toBe(seededAgentId("anthropic", "orchestrator"));
+    expect(adaptiveAttackMapWorkflow).toBeDefined();
+    expect(adaptiveAttackMapWorkflow?.executionKind).toBe("attack-map");
+    expect(adaptiveAttackMapWorkflow?.description).toContain("continuously updates its attack plan");
+    expect(adaptiveAttackMapWorkflow?.stages.map((stage) => stage.label)).toEqual(["Adaptive Attack Map"]);
+    expect(adaptiveAttackMapWorkflow?.stages[0]?.agentId).toBe(seededAgentId("anthropic", "orchestrator"));
+    expect(adaptiveAttackMapWorkflow?.stages[0]?.objective).toContain("update the plan after each completed phase");
+    expect(adaptiveAttackMapWorkflow?.stages[0]?.objective).toContain("skip stale paths");
     expect(compactWorkflow).toBeDefined();
     expect(compactWorkflow?.executionKind).toBe("workflow");
     expect(compactWorkflow?.stages.map((stage) => stage.label)).toEqual(["Compact Evaluation"]);
@@ -67,6 +76,7 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(workflow?.stages[0]?.objective).toContain("transparent evidence-backed pipeline");
     expect(workflow?.applicationId).toBe(localApplicationId);
     expect(attackMapWorkflow?.applicationId).toBe(localApplicationId);
+    expect(adaptiveAttackMapWorkflow?.applicationId).toBe(localApplicationId);
     expect(compactWorkflow?.applicationId).toBe(localApplicationId);
     expect(portfolioWorkflow?.applicationId).toBe(portfolioApplicationId);
   });

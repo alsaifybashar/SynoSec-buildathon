@@ -5,6 +5,7 @@ import {
   getSeededWorkflowDefinitions,
   localApplicationId,
   portfolioApplicationId,
+  securePentApplicationId,
   seededAgentId,
   seededRoleDefinitions as roleDefinitions,
   seededToolDefinitions as toolDefinitions
@@ -38,14 +39,15 @@ async function main() {
   await prisma.workflow.deleteMany({
     where: {
       application: {
-        id: { not: localApplicationId },
-        name: {
-          in: [
-            "Nils Wickman Portfolio",
-            "Operator Portal",
-            "Report Builder",
-            "Queue Reconciler",
-            "External Validation Slot"
+      id: { not: localApplicationId },
+      name: {
+        in: [
+          "Nils Wickman Portfolio",
+          "SecurePent",
+          "Operator Portal",
+          "Report Builder",
+          "Queue Reconciler",
+          "External Validation Slot"
           ]
         }
       }
@@ -54,10 +56,11 @@ async function main() {
 
   await prisma.application.deleteMany({
     where: {
-      id: { notIn: [localApplicationId, portfolioApplicationId] },
+      id: { notIn: [localApplicationId, portfolioApplicationId, securePentApplicationId] },
       name: {
         in: [
           "Nils Wickman Portfolio",
+          "SecurePent",
           "Operator Portal",
           "Report Builder",
           "Queue Reconciler",
@@ -99,6 +102,25 @@ async function main() {
       id: portfolioApplicationId,
       name: "Nils Wickman Portfolio",
       baseUrl: "https://nilswickman.com",
+      environment: "production",
+      status: "active",
+      lastScannedAt: null
+    }
+  });
+
+  await prisma.application.upsert({
+    where: { id: securePentApplicationId },
+    update: {
+      name: "SecurePent",
+      baseUrl: "https://securepent.com",
+      environment: "production",
+      status: "active",
+      lastScannedAt: null
+    },
+    create: {
+      id: securePentApplicationId,
+      name: "SecurePent",
+      baseUrl: "https://securepent.com",
       environment: "production",
       status: "active",
       lastScannedAt: null
@@ -207,6 +229,20 @@ async function main() {
     update: {},
     create: {
       applicationId: portfolioApplicationId,
+      constraintId: cloudflareConstraintId
+    }
+  });
+
+  await prisma.applicationConstraintBinding.upsert({
+    where: {
+      applicationId_constraintId: {
+        applicationId: securePentApplicationId,
+        constraintId: cloudflareConstraintId
+      }
+    },
+    update: {},
+    create: {
+      applicationId: securePentApplicationId,
       constraintId: cloudflareConstraintId
     }
   });

@@ -85,10 +85,12 @@ import type { AiTool } from "@synosec/contracts";
 
 export const localApplicationId = "5ecf4a8e-df5f-4945-a7e1-230ef43eac80";
 export const portfolioApplicationId = "1f92a3d7-4f70-4950-b750-9bf74c6f3591";
+export const securePentApplicationId = "4d8e9e0a-bfd4-4b24-8fb9-8656b511a2b8";
 export const anthropicProviderId = "88e995dc-c55d-4a74-b831-b64922f25858";
 export const localProviderId = "6fb18f09-f230-49df-b0ab-4f1bcedd230c";
 export const osiSingleAgentWorkflowId = "8b57f0e7-1dd7-4d6a-8db5-c4ff7be80a21";
 export const orchestrationAttackMapWorkflowId = "97fa61fd-8ae7-41d8-b267-d472413fcb9c";
+export const adaptivePlanningAttackMapWorkflowId = "69e1718f-7d2e-4507-a698-523752373809";
 export const osiCompactFamilyWorkflowId = "0e8e3912-c48f-4c34-9ac0-c54ec70df3f6";
 export const portfolioEvidenceGraphWorkflowId = "5edb1601-27cf-4a87-b7d4-a50873f5d985";
 
@@ -510,6 +512,51 @@ export function getSeededWorkflowDefinitions() {
           agentId: seededAgentId("anthropic", "orchestrator"),
           objective:
             "Run a workflow-native attack-map orchestration pass across the configured target. Prioritize realistic attack paths, execute approved tools to validate the strongest path candidates, report normalized evidence-backed workflow findings, and use complete_run to summarize the strongest supported path, the main residual blockers, and the next evidence needed to strengthen or reject the remaining paths.",
+          allowedToolIds: [
+            ...getSeededRoleDefinition("orchestrator")?.toolIds ?? [],
+            vulnAuditTool.id,
+            serviceScanTool.id
+          ],
+          requiredEvidenceTypes: [],
+          findingPolicy: {
+            taxonomy: "typed-core-v1",
+            allowedTypes: [
+              "service_exposure",
+              "content_discovery",
+              "missing_security_header",
+              "tls_weakness",
+              "injection_signal",
+              "auth_weakness",
+              "sensitive_data_exposure",
+              "misconfiguration",
+              "other"
+            ]
+          },
+          completionRule: {
+            requireStageResult: true,
+            requireToolCall: true,
+            allowEmptyResult: true,
+            minFindings: 0
+          },
+          resultSchemaVersion: 1,
+          handoffSchema: null
+        }
+      ]
+    },
+    {
+      id: adaptivePlanningAttackMapWorkflowId,
+      name: "Adaptive Planning Attack Map",
+      status: "active" as const,
+      executionKind: "attack-map" as const,
+      description: "Seeded workflow-backed attack-map run that continuously updates its attack plan as evidence lands, skips dead-end phases, and adds targeted follow-up validation.",
+      applicationId: localApplicationId,
+      stages: [
+        {
+          id: "9dc70355-e6c0-4fef-bba2-8527d110ec74",
+          label: "Adaptive Attack Map",
+          agentId: seededAgentId("anthropic", "orchestrator"),
+          objective:
+            "Run a workflow-native attack-map orchestration pass across the configured target using adaptive planning. Build an initial plan from recon, execute the highest-value pending phase, update the plan after each completed phase based on the confirmed evidence, skip stale paths, add tightly targeted new validation phases when warranted, report normalized evidence-backed workflow findings, and use complete_run to summarize which attack paths strengthened, which were deprioritized, and the minimum next evidence needed to reduce uncertainty.",
           allowedToolIds: [
             ...getSeededRoleDefinition("orchestrator")?.toolIds ?? [],
             vulnAuditTool.id,
