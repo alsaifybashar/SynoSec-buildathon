@@ -1,9 +1,13 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import type { ExecutionReportDetail } from "@synosec/contracts";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ExecutionReportDetail, ExecutionReportSummary } from "@synosec/contracts";
 import { ExecutionReportsPage } from "@/features/execution-reports/page";
 
-const report: ExecutionReportDetail = {
+const { fetchJsonMock } = vi.hoisted(() => ({
+  fetchJsonMock: vi.fn()
+}));
+
+const reportSummary: ExecutionReportSummary = {
   id: "report-1",
   executionId: "run-1",
   executionKind: "workflow",
@@ -16,7 +20,11 @@ const report: ExecutionReportDetail = {
   highestSeverity: "high",
   generatedAt: "2026-04-25T12:00:00.000Z",
   updatedAt: "2026-04-25T12:05:00.000Z",
-  archivedAt: null,
+  archivedAt: null
+};
+
+const report: ExecutionReportDetail = {
+  ...reportSummary,
   executiveSummary: "The workflow confirmed one evidence-backed finding.",
   graph: {
     nodes: [
@@ -87,9 +95,9 @@ const report: ExecutionReportDetail = {
 
 const resourceListState = {
   query: { page: 1, pageSize: 25, q: "", sortBy: "generatedAt", sortDirection: "desc" },
-  dataState: { state: "loaded", data: { items: [report], page: 1, pageSize: 25, total: 1, totalPages: 1 } },
-  items: [report],
-  meta: { items: [report], page: 1, pageSize: 25, total: 1, totalPages: 1 },
+  dataState: { state: "loaded", data: { items: [reportSummary], page: 1, pageSize: 25, total: 1, totalPages: 1 } },
+  items: [reportSummary],
+  meta: { items: [reportSummary], page: 1, pageSize: 25, total: 1, totalPages: 1 },
   setSearch: vi.fn(),
   setFilter: vi.fn(),
   setSort: vi.fn(),
@@ -110,10 +118,63 @@ vi.mock("@/shared/hooks/use-resource-detail", () => ({
 }));
 
 vi.mock("@/shared/lib/api", () => ({
-  fetchJson: vi.fn()
+  fetchJson: fetchJsonMock
 }));
 
 describe("ExecutionReportsPage", () => {
+  const createObjectURLMock = vi.fn<(blob: Blob) => string>();
+  const revokeObjectURLMock = vi.fn<(url: string) => void>();
+  const OriginalBlob = Blob;
+  let clickSpy: ReturnType<typeof vi.spyOn>;
+  let createdLink: HTMLAnchorElement | null;
+
+  beforeEach(() => {
+    createdLink = null;
+    fetchJsonMock.mockReset();
+    createObjectURLMock.mockReset();
+    revokeObjectURLMock.mockReset();
+    createObjectURLMock.mockReturnValue("blob:test-export");
+
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: createObjectURLMock
+    });
+
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: revokeObjectURLMock
+    });
+
+    vi.stubGlobal("Blob", class MockBlob {
+      readonly parts: BlobPart[];
+      readonly type: string;
+
+      constructor(parts: BlobPart[], options?: BlobPropertyBag) {
+        this.parts = parts;
+        this.type = options?.type ?? "";
+      }
+    });
+
+    clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    const originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation(((tagName: string, options?: ElementCreationOptions) => {
+      const element = originalCreateElement(tagName, options);
+      if (tagName.toLowerCase() === "a") {
+        createdLink = element as HTMLAnchorElement;
+      }
+      return element;
+    }) as typeof document.createElement);
+  });
+
+  afterEach(() => {
+    clickSpy.mockRestore();
+    vi.stubGlobal("Blob", OriginalBlob);
+    vi.restoreAllMocks();
+  });
+
   it("renders the execution graph before supporting findings and activity sections", () => {
     render(
       <ExecutionReportsPage
@@ -145,5 +206,47 @@ describe("ExecutionReportsPage", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent("Nodes capture persisted evidence or findings.");
     expect(screen.getByRole("button", { name: "Show guidance for Persisted findings" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show guidance for Persisted tool activity" })).toBeInTheDocument();
+  });
+
+  it("exports the list row by fetching canonical report detail", async () => {
+    fetchJsonMock.mockResolvedValue(report);
+
+    render(
+      <ExecutionReportsPage
+        onNavigateToList={vi.fn()}
+        onNavigateToDetail={vi.fn()}
+      />
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "Download report-1 as JSON" })[0]!);
+    });
+
+    expect(fetchJsonMock).toHaveBeenCalledWith("/api/execution-reports/report-1");
+    expect(createdLink?.download).toBe("report-1.json");
+    const blob = createObjectURLMock.mock.calls[0]?.[0] as { parts: BlobPart[]; type: string } | undefined;
+    expect(blob?.type).toBe("application/json;charset=utf-8");
+    expect(String(blob?.parts[0] ?? "")).toContain("\"executiveSummary\": \"The workflow confirmed one evidence-backed finding.\"");
+  });
+
+  it("exports the detail page by fetching canonical report detail", async () => {
+    fetchJsonMock.mockResolvedValue(report);
+
+    render(
+      <ExecutionReportsPage
+        reportId="report-1"
+        onNavigateToList={vi.fn()}
+        onNavigateToDetail={vi.fn()}
+      />
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Export JSON" }));
+    });
+
+    expect(fetchJsonMock).toHaveBeenCalledWith("/api/execution-reports/report-1");
+    const blob = createObjectURLMock.mock.calls[0]?.[0] as { parts: BlobPart[]; type: string } | undefined;
+    expect(String(blob?.parts[0] ?? "")).toContain("\"graph\": {");
+    expect(String(blob?.parts[0] ?? "")).toContain("\"findings\": [");
   });
 });

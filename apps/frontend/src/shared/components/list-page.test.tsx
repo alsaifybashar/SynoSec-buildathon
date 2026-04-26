@@ -3,6 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ListPage, type ListPageColumn } from "@/shared/components/list-page";
 import type { PaginatedResource } from "@/shared/lib/resource-client";
 
+const { toastErrorMock } = vi.hoisted(() => ({
+  toastErrorMock: vi.fn()
+}));
+
+vi.mock("sonner", () => ({
+  toast: Object.assign(vi.fn(), {
+    success: vi.fn(),
+    error: toastErrorMock
+  })
+}));
+
 type TestRow = {
   id: string;
   name: string;
@@ -43,6 +54,7 @@ describe("ListPage", () => {
   let createdLink: HTMLAnchorElement | null;
 
   beforeEach(() => {
+    toastErrorMock.mockReset();
     createdLink = null;
     createObjectURLMock.mockReturnValue("blob:test-export");
 
@@ -221,5 +233,91 @@ describe("ListPage", () => {
     });
     expect(handleDeleteRow).toHaveBeenCalledWith(items[0]);
     expect(handleRowClick).not.toHaveBeenCalled();
+  });
+
+  it("awaits async row export, shows a spinner, and clears it after success", async () => {
+    let resolveExport: (() => void) | null = null;
+    const handleExportRowJson = vi.fn().mockImplementation(() => new Promise<void>((resolve) => {
+      resolveExport = resolve;
+    }));
+
+    render(
+      <ListPage
+        title="Targets"
+        recordLabel="Target"
+        columns={columns}
+        query={{
+          page: 1,
+          pageSize: 25,
+          q: "",
+          sortBy: "name",
+          sortDirection: "asc"
+        }}
+        dataState={{ state: "loaded", data: meta }}
+        items={items}
+        meta={meta}
+        emptyMessage="No targets found."
+        onSearchChange={() => {}}
+        onFilterChange={() => {}}
+        onSortChange={() => {}}
+        onPageChange={() => {}}
+        onPageSizeChange={() => {}}
+        onRetry={() => {}}
+        getRowLabel={(row) => row.name}
+        onExportRowJson={handleExportRowJson}
+      />
+    );
+
+    const exportButton = screen.getAllByRole("button", { name: "Download Operator Portal as JSON" })[0]!;
+    fireEvent.click(exportButton);
+
+    expect(handleExportRowJson).toHaveBeenCalledWith(items[0]);
+    expect(exportButton).toBeDisabled();
+
+    await act(async () => {
+      resolveExport?.();
+    });
+
+    expect(screen.getAllByRole("button", { name: "Download Operator Portal as JSON" })[0]!).not.toBeDisabled();
+  });
+
+  it("shows an error toast when async row export fails", async () => {
+    const handleExportRowJson = vi.fn().mockRejectedValue(new Error("boom"));
+
+    render(
+      <ListPage
+        title="Targets"
+        recordLabel="Target"
+        columns={columns}
+        query={{
+          page: 1,
+          pageSize: 25,
+          q: "",
+          sortBy: "name",
+          sortDirection: "asc"
+        }}
+        dataState={{ state: "loaded", data: meta }}
+        items={items}
+        meta={meta}
+        emptyMessage="No targets found."
+        onSearchChange={() => {}}
+        onFilterChange={() => {}}
+        onSortChange={() => {}}
+        onPageChange={() => {}}
+        onPageSizeChange={() => {}}
+        onRetry={() => {}}
+        getRowLabel={(row) => row.name}
+        onExportRowJson={handleExportRowJson}
+      />
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "Download Operator Portal as JSON" })[0]!);
+    });
+
+    expect(toastErrorMock).toHaveBeenCalledWith("Target export failed", {
+      description: "boom"
+    });
+    expect(screen.getAllByRole("button", { name: "Download Operator Portal as JSON" })[0]!).not.toBeDisabled();
   });
 });

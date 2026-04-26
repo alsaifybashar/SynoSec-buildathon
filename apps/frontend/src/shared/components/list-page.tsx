@@ -102,7 +102,7 @@ export function ListPage<T extends { id: string }>({
   onRowClick?: (row: T) => void;
   onImportJson?: (file: File) => void | Promise<void>;
   getRowLabel?: (row: T) => string;
-  onExportRowJson?: (row: T) => void;
+  onExportRowJson?: (row: T) => void | Promise<void>;
   onDeleteRow?: (row: T) => void | Promise<void>;
   canExportRow?: (row: T) => boolean;
   canDeleteRow?: (row: T) => boolean;
@@ -111,6 +111,7 @@ export function ListPage<T extends { id: string }>({
   const importInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [exportingId, setExportingId] = useState<string | null>(null);
   const showRowActions = Boolean(onExportRowJson || onDeleteRow);
 
   function handleDefaultAddRecord() {
@@ -188,12 +189,31 @@ export function ListPage<T extends { id: string }>({
     }
   }
 
+  async function handleExportRow(row: T, event: MouseEvent<HTMLButtonElement>) {
+    stopRowClick(event);
+    if (!onExportRowJson) {
+      return;
+    }
+
+    setExportingId(row.id);
+    try {
+      await onExportRowJson(row);
+    } catch (error) {
+      toast.error(`${recordLabel} export failed`, {
+        description: error instanceof Error ? error.message : "Unknown error"
+      });
+    } finally {
+      setExportingId((current) => (current === row.id ? null : current));
+    }
+  }
+
   function renderRowActions(row: T) {
     const rowLabel = getRowLabel?.(row) ?? row.id;
     const canExport = onExportRowJson ? (canExportRow?.(row) ?? true) : false;
     const canDelete = onDeleteRow ? (canDeleteRow?.(row) ?? true) : false;
     const confirmingDelete = confirmDeleteId === row.id;
     const deleting = deletingId === row.id;
+    const exporting = exportingId === row.id;
 
     if (confirmingDelete && canDelete && onDeleteRow) {
       return (
@@ -251,11 +271,11 @@ export function ListPage<T extends { id: string }>({
             aria-label={`Download ${rowLabel} as JSON`}
             title="Download JSON"
             onClick={(event) => {
-              stopRowClick(event);
-              onExportRowJson(row);
+              void handleExportRow(row, event);
             }}
+            disabled={exporting}
           >
-            <Download className="h-3.5 w-3.5" />
+            {exporting ? <Spinner className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />}
           </Button>
         ) : null}
         {canDelete && onDeleteRow ? (

@@ -4,6 +4,7 @@ import {
   apiRoutes,
   type ExecutionReportDetail,
   type ExecutionReportFinding,
+  type ExecutionReportSummary,
   type ExecutionReportStatus
 } from "@synosec/contracts";
 import { toast } from "sonner";
@@ -155,6 +156,21 @@ export function ExecutionReportsPage({
   const [mutating, setMutating] = useState(false);
   const detail = useResourceDetail(executionReportsResource, reportId ?? null, detailReloadToken);
 
+  async function exportReportJson(id: string) {
+    const report = await fetchJson<ExecutionReportDetail>(`${apiRoutes.executionReports}/${id}`);
+    downloadJson(`${report.id}.json`, report);
+  }
+
+  async function handleDetailExport(id: string) {
+    try {
+      await exportReportJson(id);
+    } catch (error) {
+      toast.error("Execution report export failed", {
+        description: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  }
+
   async function archiveReport(id: string) {
     setMutating(true);
     try {
@@ -192,7 +208,7 @@ export function ExecutionReportsPage({
   }
 
   if (!reportId) {
-    const columns: ListPageColumn<ExecutionReportDetail>[] = [
+    const columns: ListPageColumn<ExecutionReportSummary>[] = [
       { id: "title", header: "Report", sortable: true, cell: (row) => row.title },
       { id: "executionKind", header: "Workflow type", sortable: true, cell: (row) => row.executionKind },
       { id: "status", header: "Status", sortable: true, cell: (row) => <StatusBadge status={row.status} /> },
@@ -239,7 +255,7 @@ export function ExecutionReportsPage({
         onPageSizeChange={list.setPageSize}
         onRetry={list.refetch}
         onRowClick={(row) => onNavigateToDetail(row.id, row.title)}
-        onExportRowJson={(row) => downloadJson(`${row.id}.json`, row)}
+        onExportRowJson={(row) => exportReportJson(row.id)}
         onDeleteRow={async (row) => {
           await fetchJson<void>(`${apiRoutes.executionReports}/${row.id}`, { method: "DELETE" });
           list.refetch();
@@ -272,7 +288,9 @@ export function ExecutionReportsPage({
       onBack={onNavigateToList}
       onSave={() => undefined}
       onDismiss={() => undefined}
-      onExportJson={() => downloadJson(`${report.id}.json`, report)}
+      onExportJson={() => {
+        void handleDetailExport(report.id);
+      }}
       actions={(
         <div className="flex flex-wrap items-center gap-2 px-0 py-0">
           <Button type="button" variant="outline" onClick={onNavigateToList} className="h-8 text-[0.72rem]">
@@ -304,7 +322,14 @@ export function ExecutionReportsPage({
             Delete
           </Button>
           <div className="ml-auto">
-            <Button type="button" variant="outline" onClick={() => downloadJson(`${report.id}.json`, report)} className="h-8 text-[0.72rem]">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void handleDetailExport(report.id);
+              }}
+              className="h-8 text-[0.72rem]"
+            >
               <Download className="h-4 w-4" />
               Export JSON
             </Button>
