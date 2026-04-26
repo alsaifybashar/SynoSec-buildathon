@@ -59,17 +59,14 @@ describe("MemoryAiToolsRepository", () => {
     });
 
     expect(builtinOnly.items.map((tool) => tool.id)).toEqual(expect.arrayContaining([
-      "builtin-attack-chain-correlation",
       "builtin-complete-run",
-      "builtin-deep-analysis",
-      "builtin-fail-run",
       "builtin-log-progress",
       "builtin-report-finding",
       "builtin-http-surface-assessment",
       "builtin-content-discovery",
       "builtin-network-host-discovery"
     ]));
-    expect(allTools.items.some((tool) => tool.id === "builtin-deep-analysis" && tool.source === "system")).toBe(true);
+    expect(allTools.items.some((tool) => tool.id === "builtin-complete-run" && tool.source === "system")).toBe(true);
   });
 
   it("returns builtin tools by id and rejects builtin mutation", async () => {

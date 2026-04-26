@@ -3,7 +3,6 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import {
   getSeededWorkflowDefinitions,
   localApplicationId,
-  orchestrationAttackMapWorkflowId,
   osiSingleAgentWorkflowId,
   portfolioApplicationId,
   portfolioEvidenceGraphWorkflowId,
@@ -373,7 +372,6 @@ async function main() {
       id: {
         in: [
           osiSingleAgentWorkflowId,
-          orchestrationAttackMapWorkflowId,
           portfolioEvidenceGraphWorkflowId
         ],
         notIn: seededWorkflowIds
@@ -414,6 +412,7 @@ async function main() {
           agentId: stage.agentId,
           ord: index,
           objective: stage.objective,
+          stageSystemPrompt: stage.stageSystemPrompt,
           allowedToolIds: stage.allowedToolIds,
           requiredEvidenceTypes: stage.requiredEvidenceTypes,
           findingPolicy: stage.findingPolicy,

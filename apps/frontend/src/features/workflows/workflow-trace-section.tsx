@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
-import type { AiAgent, AiTool, Target as WorkflowTarget, Workflow, WorkflowRun } from "@synosec/contracts";
+import type { AiAgent, AiTool, Observation, Target as WorkflowTarget, Workflow, WorkflowRun } from "@synosec/contracts";
 import { AlertTriangle, ChevronRight, LoaderCircle, Radio, Target } from "lucide-react";
 import { DetailHintTrigger } from "@/shared/components/detail-page";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
@@ -50,9 +50,21 @@ type DuplexAtom = {
   meta?: string;
   severity?: FindingsRailItem["severity"];
   code?: string;
-  observations?: string[];
+  observations?: Observation[];
+  observationSummaries?: string[];
   status?: string;
   expandableBody?: boolean;
+  usedToolName?: string | null;
+  fallbackUsed?: boolean;
+  attempts?: Array<{
+    toolId: string;
+    toolName: string;
+    status: string;
+    exitCode?: number | undefined;
+    statusReason?: string | undefined;
+    outputExcerpt: string;
+    selected: boolean;
+  }>;
   structuredToolSegment?: {
     summary: string;
     tools: Array<{
@@ -331,20 +343,6 @@ function createWorkflowBuiltinToolSegment(): StructuredToolSegment["tools"] {
           residualRisk: { type: "string" }
         }
       }, null, 2),
-    },
-    {
-      key: "builtin:fail_run",
-      name: "fail_run",
-      description: "Finish the workflow pipeline as failed.",
-      source: "builtin-action",
-      inputSchema: JSON.stringify({
-        type: "object",
-        required: ["reason"],
-        properties: {
-          reason: { type: "string" },
-          summary: { type: "string" }
-        }
-      }, null, 2),
     }
   ];
 }
@@ -478,8 +476,12 @@ function buildDuplexAtoms(input: {
               atom.summaryText = detail.summary;
               atom.body = detail.body ?? detail.summary;
               atom.observations = detail.observations;
+              atom.observationSummaries = detail.observationSummaries;
               atom.status = detail.status;
               atom.meta = detail.status;
+              atom.usedToolName = detail.usedToolName;
+              atom.fallbackUsed = detail.fallbackUsed;
+              atom.attempts = detail.attempts;
             }
           } else {
             toolAtoms.push({
@@ -492,8 +494,12 @@ function buildDuplexAtoms(input: {
               summaryText: detail.summary,
               body: detail.body ?? detail.summary,
               observations: detail.observations,
+              observationSummaries: detail.observationSummaries,
               status: detail.status,
-              meta: detail.status
+              meta: detail.status,
+              usedToolName: detail.usedToolName,
+              fallbackUsed: detail.fallbackUsed,
+              attempts: detail.attempts
             });
           }
           continue;
@@ -622,9 +628,11 @@ function getCompactToolOutput(atom: DuplexAtom, labelText: string) {
 
 function ToolObservations({
   observations,
+  observationSummaries,
   showHeading
 }: {
-  observations: string[];
+  observations: Observation[];
+  observationSummaries?: string[] | undefined;
   showHeading: boolean;
 }) {
   return (
@@ -633,7 +641,16 @@ function ToolObservations({
         <div className="font-mono text-[0.58rem] uppercase tracking-wider text-muted-foreground">Observations</div>
       ) : null}
       <ul className="space-y-0.5">
-        {observations.map((observation) => (
+        {observations.length > 0 ? observations.map((observation) => (
+          <li key={observation.id} className="grid grid-cols-[10px_1fr] gap-1.5 text-[0.76rem] leading-[1.5] text-foreground/85">
+            <span className="text-success">+</span>
+            <span>
+              <span className="text-foreground">{observation.title}</span>
+              <span className="text-muted-foreground"> · </span>
+              <span>{observation.summary}</span>
+            </span>
+          </li>
+        )) : (observationSummaries ?? []).map((observation) => (
           <li key={observation} className="grid grid-cols-[10px_1fr] gap-1.5 text-[0.76rem] leading-[1.5] text-foreground/85">
             <span className="text-success">+</span>
             <span>{observation}</span>
@@ -832,7 +849,10 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
   const structuredToolSegment = isStructuredToolContext ? atom.structuredToolSegment : null;
   const structuredSystemCard = atom.kind === "system" ? <StructuredSystemCard atom={atom} /> : null;
   const hideTranscriptBadge = Boolean(structuredSystemCard);
-  const hasObservations = Boolean(atom.observations && atom.observations.length > 0);
+  const hasObservations = Boolean(
+    (atom.observations && atom.observations.length > 0)
+      || (atom.observationSummaries && atom.observationSummaries.length > 0)
+  );
   const showObservationPreview = isTool && hasObservations && !showFullDetails && !isStructuredToolContext;
   const showCompactToolOutput = Boolean(compactToolOutput) && !showObservationPreview && !showFullDetails && !isStructuredToolContext;
 
@@ -924,8 +944,15 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
             </p>
           ) : null}
 
-          {showObservationPreview && atom.observations ? (
-            <ToolObservations observations={atom.observations} showHeading={false} />
+          {showObservationPreview ? (
+            <div className="space-y-2">
+              {(atom.usedToolName || atom.fallbackUsed) ? (
+                <p className="font-mono text-[0.64rem] uppercase tracking-[0.14em] text-muted-foreground">
+                  {atom.fallbackUsed ? `Fallback selected · ${atom.usedToolName ?? atom.label}` : `Selected tool · ${atom.usedToolName ?? atom.label}`}
+                </p>
+              ) : null}
+              <ToolObservations observations={atom.observations ?? []} observationSummaries={atom.observationSummaries} showHeading={false} />
+            </div>
           ) : null}
 
           {showFullDetails && atom.code ? (
@@ -965,12 +992,30 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
             )
           ) : null}
 
-          {showFullDetails && atom.observations && atom.observations.length > 0 ? (
+          {showFullDetails && hasObservations ? (
             <ToolDetailBlock
               label="Observations"
               hint="Structured evidence summaries derived from the tool run and surfaced by default in the compact view."
             >
-              <ToolObservations observations={atom.observations} showHeading={false} />
+              <ToolObservations observations={atom.observations ?? []} observationSummaries={atom.observationSummaries} showHeading={false} />
+            </ToolDetailBlock>
+          ) : null}
+
+          {showFullDetails && atom.attempts && atom.attempts.length > 0 ? (
+            <ToolDetailBlock
+              label="Attempts"
+              hint="Candidate tool executions attempted for this tool call, including fallback provenance and failure context."
+            >
+              <div className="space-y-2">
+                {atom.attempts.map((attempt) => (
+                  <div key={`${attempt.toolId}:${attempt.status}:${attempt.selected ? "selected" : "retry"}`} className="rounded-sm border border-border/70 bg-muted/20 px-2.5 py-2">
+                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.12em] text-muted-foreground">
+                      {attempt.selected ? "Selected" : "Not selected"} · {attempt.toolName} · {attempt.status}
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap text-[0.76rem] leading-[1.55] text-foreground/82">{attempt.outputExcerpt}</p>
+                  </div>
+                ))}
+              </div>
             </ToolDetailBlock>
           ) : null}
         </div>

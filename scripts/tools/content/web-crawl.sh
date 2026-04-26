@@ -23,6 +23,8 @@ function fetchPage(url) {
       res.on("end", () => resolve({
         url: target.toString(),
         statusCode: res.statusCode ?? 0,
+        location: typeof res.headers.location === "string" ? res.headers.location : null,
+        server: String(res.headers.server || ""),
         contentType: String(res.headers["content-type"] || ""),
         body
       }));
@@ -70,15 +72,32 @@ function extractLinks(baseUrl, html) {
   }
   const discovered = pages.filter((page) => page.statusCode > 0).map((page) => {
     const url = new URL(page.url);
-    return { path: `${url.pathname}${url.search}`, statusCode: page.statusCode, url: page.url };
+    return {
+      path: `${url.pathname}${url.search}`,
+      statusCode: page.statusCode,
+      url: page.url,
+      location: page.location,
+      server: page.server,
+      contentType: page.contentType
+    };
   });
   const observations = discovered.map((page) => ({
     key: `crawl:${page.path || "/"}`,
     title: `Crawled ${page.path || "/"}`,
-    summary: `${page.path || "/"} responded with HTTP ${page.statusCode}.`,
+    summary: page.path.startsWith("/cdn-cgi/")
+      ? `Infrastructure path ${page.path || "/"} returned HTTP ${page.statusCode}; likely intermediary edge content rather than application content.`
+      : page.location
+        ? `${page.path || "/"} redirected with HTTP ${page.statusCode} to ${page.location}.`
+        : `${page.path || "/"} returned HTTP ${page.statusCode} (${page.contentType || "unknown content type"}).`,
     severity: "info",
     confidence: 0.78,
-    evidence: `URL: ${page.url}\nStatus: ${page.statusCode}`,
+    evidence: [
+      `URL: ${page.url}`,
+      `Status: ${page.statusCode}`,
+      page.location ? `Location: ${page.location}` : null,
+      page.server ? `Server: ${page.server}` : null,
+      page.contentType ? `Content-Type: ${page.contentType}` : null
+    ].filter(Boolean).join("\n"),
     technique: "seeded web crawl"
   }));
   const output = discovered.length > 0

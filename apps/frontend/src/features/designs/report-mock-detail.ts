@@ -3,7 +3,7 @@ import type { ExecutionReportDetail } from "@synosec/contracts";
 export const mockReportDetail: ExecutionReportDetail = {
   id: "00000000-0000-4000-8000-000000000001",
   executionId: "exec_01J9F2KX7Y0M3R7Q4D9KQ2H4ZP",
-  executionKind: "attack-map",
+  executionKind: "workflow",
   sourceDefinitionId: null,
   status: "completed",
   title: "Edge Authority — Black Pine Quarter",
@@ -162,8 +162,8 @@ Combined, these turn a stale release artifact into a working session for **any t
     {
       id: "fn-02",
       executionId: "exec_01J9F2KX7Y0M3R7Q4D9KQ2H4ZP",
-      executionKind: "attack-map",
-      source: "attack-map-finding",
+      executionKind: "workflow",
+      source: "workflow-finding",
       severity: "critical",
       title: "Long-lived refresh token disclosure",
       type: "secret-disclosure",
@@ -201,8 +201,8 @@ Combined, these turn a stale release artifact into a working session for **any t
     {
       id: "fn-01",
       executionId: "exec_01J9F2KX7Y0M3R7Q4D9KQ2H4ZP",
-      executionKind: "attack-map",
-      source: "attack-map-finding",
+      executionKind: "workflow",
+      source: "workflow-finding",
       severity: "high",
       title: "Cross-origin credentialed read on /v1/session",
       type: "cors-misconfiguration",
@@ -233,8 +233,8 @@ Combined, these turn a stale release artifact into a working session for **any t
     {
       id: "fn-03",
       executionId: "exec_01J9F2KX7Y0M3R7Q4D9KQ2H4ZP",
-      executionKind: "attack-map",
-      source: "attack-map-finding",
+      executionKind: "workflow",
+      source: "workflow-finding",
       severity: "high",
       title: "Audience confusion in staging proxy",
       type: "auth-token-validation",
@@ -270,8 +270,8 @@ Combined, these turn a stale release artifact into a working session for **any t
     {
       id: "fn-04",
       executionId: "exec_01J9F2KX7Y0M3R7Q4D9KQ2H4ZP",
-      executionKind: "attack-map",
-      source: "attack-map-finding",
+      executionKind: "workflow",
+      source: "workflow-finding",
       severity: "medium",
       title: "Subdomain cookie sharing",
       type: "cookie-scope",
@@ -308,7 +308,7 @@ Combined, these turn a stale release artifact into a working session for **any t
     {
       id: "ta-01",
       executionId: "exec_01J9F2KX7Y0M3R7Q4D9KQ2H4ZP",
-      executionKind: "attack-map",
+      executionKind: "workflow",
       phase: "recon",
       toolId: "http-probe",
       toolName: "http-probe",
@@ -323,7 +323,7 @@ Combined, these turn a stale release artifact into a working session for **any t
     {
       id: "ta-02",
       executionId: "exec_01J9F2KX7Y0M3R7Q4D9KQ2H4ZP",
-      executionKind: "attack-map",
+      executionKind: "workflow",
       phase: "discovery",
       toolId: "artifact-scan",
       toolName: "artifact-scan",
@@ -338,7 +338,7 @@ Combined, these turn a stale release artifact into a working session for **any t
     {
       id: "ta-03",
       executionId: "exec_01J9F2KX7Y0M3R7Q4D9KQ2H4ZP",
-      executionKind: "attack-map",
+      executionKind: "workflow",
       phase: "exploitation",
       toolId: "jwt-fuzz",
       toolName: "jwt-fuzz",
@@ -352,7 +352,7 @@ Combined, these turn a stale release artifact into a working session for **any t
     {
       id: "ta-04",
       executionId: "exec_01J9F2KX7Y0M3R7Q4D9KQ2H4ZP",
-      executionKind: "attack-map",
+      executionKind: "workflow",
       phase: "synthesis",
       toolId: "chain-builder",
       toolName: "chain-builder",
@@ -367,12 +367,12 @@ Combined, these turn a stale release artifact into a working session for **any t
   ],
   coverageOverview: {},
   sourceSummary: {
-    executionKind: "attack-map",
+    executionKind: "workflow",
     runId: "00000000-0000-4000-8000-000000000099",
-    phase: "synthesis",
-    overallRisk: "critical",
-    chainCount: 1,
-    findingNodeCount: 4
+    workflowId: "00000000-0000-4000-8000-000000000088",
+    stopReason: null,
+    totalFindings: 4,
+    topFindingIds: ["fn-02", "fn-01", "fn-03", "fn-04"]
   },
   raw: {}
 };

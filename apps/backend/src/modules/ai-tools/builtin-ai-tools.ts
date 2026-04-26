@@ -117,37 +117,6 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     },
     createdAt: builtinTimestamp,
     updatedAt: builtinTimestamp
-  },
-  {
-    id: "builtin-fail-run",
-    name: "Fail Run",
-    status: "active",
-    source: "system",
-    description: "Workflow engine action for finishing a workflow run as failed with an explicit reason and optional summary.",
-    executorType: "builtin",
-    builtinActionKey: "fail_run",
-    bashSource: null,
-    capabilities: ["workflow-control"],
-    category: "utility",
-    riskTier: "passive",
-    timeoutMs: 1000,
-    inputSchema: {
-      type: "object",
-      properties: {
-        reason: { type: "string" },
-        summary: { type: "string" }
-      },
-      required: ["reason"]
-    },
-    outputSchema: {
-      type: "object",
-      properties: {
-        accepted: { type: "boolean" }
-      },
-      required: ["accepted"]
-    },
-    createdAt: builtinTimestamp,
-    updatedAt: builtinTimestamp
   }
 ];
 

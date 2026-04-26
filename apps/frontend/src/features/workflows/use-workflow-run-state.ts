@@ -25,12 +25,16 @@ async function fetchLegacyLatestWorkflowRun(workflowId: string) {
   return fetchJson<WorkflowRun>(`${apiRoutes.workflows}/${workflowId}/runs/latest`);
 }
 
+function isWorkflowRun(payload: WorkflowLaunch | WorkflowRun): payload is WorkflowRun {
+  return "targetId" in payload && "workflowLaunchId" in payload;
+}
+
 function normalizeWorkflowLaunch(
   payload: WorkflowLaunch | WorkflowRun,
   selectedTargetId: string | null,
   targets: Target[]
 ): WorkflowLaunch {
-  if ("runs" in payload && Array.isArray(payload.runs)) {
+  if (!isWorkflowRun(payload)) {
     return payload;
   }
 
@@ -221,10 +225,13 @@ export function useWorkflowRunState({
       return;
     }
 
-    const eventSources = runningRunIds.map((runId) => new EventSource(`${apiRoutes.workflowRuns}/${runId}/events`));
+    const streamEntries = runningRunIds.map((runId) => ({
+      runId,
+      eventSource: new EventSource(`${apiRoutes.workflowRuns}/${runId}/events`)
+    }));
     setRunStreamState("connecting");
 
-    for (const eventSource of eventSources) {
+    for (const { runId, eventSource } of streamEntries) {
       eventSource.onopen = () => {
         setRunStreamState("connected");
         setStreamError(null);
@@ -267,7 +274,7 @@ export function useWorkflowRunState({
     }
 
     return () => {
-      for (const eventSource of eventSources) {
+      for (const { eventSource } of streamEntries) {
         eventSource.close();
       }
     };

@@ -9,7 +9,6 @@ describe("builtin ai tools", () => {
       "builtin-log-progress",
       "builtin-report-finding",
       "builtin-complete-run",
-      "builtin-fail-run",
       "builtin-http-surface-assessment",
       "builtin-content-discovery",
       "builtin-auth-flow-assessment",
@@ -32,11 +31,6 @@ describe("builtin ai tools", () => {
       source: "system",
       executorType: "builtin",
       builtinActionKey: "complete_run"
-    });
-    expect(getBuiltinAiTool("builtin-fail-run")).toMatchObject({
-      source: "system",
-      executorType: "builtin",
-      builtinActionKey: "fail_run"
     });
     expect(getBuiltinAiTool("builtin-http-surface-assessment")).toMatchObject({
       source: "system",

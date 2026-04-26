@@ -54,6 +54,24 @@ function isUsableResult(toolRun: ToolRun, observationCount: number) {
   return toolRun.status === "completed" && observationCount > 0;
 }
 
+function createAttempt(input: {
+  toolId: string;
+  toolName: string;
+  toolRun: ToolRun;
+  output: string;
+  selected: boolean;
+}) {
+  return {
+    toolId: input.toolId,
+    toolName: input.toolName,
+    status: input.toolRun.status,
+    ...(input.toolRun.exitCode === undefined ? {} : { exitCode: input.toolRun.exitCode }),
+    ...(input.toolRun.statusReason ? { statusReason: input.toolRun.statusReason } : {}),
+    outputExcerpt: truncate(input.output, 400),
+    selected: input.selected
+  };
+}
+
 export async function executeSemanticFamilyTool(
   context: SemanticFamilyExecutionContext,
   rawInput: unknown
@@ -65,9 +83,13 @@ export async function executeSemanticFamilyTool(
     toolName: string;
     status: ToolRun["status"];
     outputPreview: string;
-    observations: string[];
+    rawOutput: string;
+    observations: ExecutedToolResult["observations"];
+    observationSummaries: string[];
     usedToolId: string;
     usedToolName: string;
+    fallbackUsed: boolean;
+    attempts: ExecutedToolResult["attempts"];
   };
 }> {
   const toolInput = normalizeToolInput(rawInput);
@@ -81,6 +103,7 @@ export async function executeSemanticFamilyTool(
 
   const executionTarget = parseExecutionTarget(toolInput, context.target);
   const failures: string[] = [];
+  const attempts: ExecutedToolResult["attempts"] = [];
 
   for (const candidateToolId of context.familyDefinition.candidateToolIds) {
     const resolvedCandidate = await context.toolRuntime.get(candidateToolId);
@@ -114,6 +137,13 @@ export async function executeSemanticFamilyTool(
     }
 
     if (!isUsableResult(toolRun, brokerResult.observations.length)) {
+      attempts.push(createAttempt({
+        toolId: resolvedCandidate.tool.id,
+        toolName: resolvedCandidate.tool.name,
+        toolRun,
+        output: toolRun.output ?? toolRun.statusReason ?? "",
+        selected: false
+      }));
       failures.push([
         `${resolvedCandidate.tool.name} returned no usable evidence.`,
         `status=${toolRun.status}`,
@@ -131,15 +161,26 @@ export async function executeSemanticFamilyTool(
       toolRequest: request,
       toolRun,
       status: toolRun.status,
-      observations: brokerResult.observations.map((observation) => observation.summary),
+      observations: brokerResult.observations,
       observationKeys: brokerResult.observations.map((observation) => observation.key),
+      observationSummaries: brokerResult.observations.map((observation) => observation.summary),
       outputPreview: truncate(
         brokerResult.observations[0]?.summary
           ?? toolRun.statusReason
           ?? toolRun.output
           ?? `${context.familyTool.name} completed.`
       ),
-      fullOutput: toolRun.output ?? toolRun.statusReason ?? ""
+      fullOutput: toolRun.output ?? toolRun.statusReason ?? "",
+      usedToolId: resolvedCandidate.tool.id,
+      usedToolName: resolvedCandidate.tool.name,
+      fallbackUsed: attempts.length > 0,
+      attempts: attempts.concat(createAttempt({
+        toolId: resolvedCandidate.tool.id,
+        toolName: resolvedCandidate.tool.name,
+        toolRun,
+        output: toolRun.output ?? toolRun.statusReason ?? "",
+        selected: true
+      }))
     };
 
     return {
@@ -150,9 +191,13 @@ export async function executeSemanticFamilyTool(
         toolName: result.toolName,
         status: toolRun.status,
         outputPreview: result.outputPreview,
+        rawOutput: result.fullOutput,
         observations: result.observations,
-        usedToolId: resolvedCandidate.tool.id,
-        usedToolName: resolvedCandidate.tool.name
+        observationSummaries: result.observationSummaries,
+        usedToolId: result.usedToolId,
+        usedToolName: result.usedToolName,
+        fallbackUsed: result.fallbackUsed,
+        attempts: result.attempts
       }
     };
   }

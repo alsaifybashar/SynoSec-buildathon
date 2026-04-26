@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  attackVectorPlanningWorkflowId,
   getSeededRoleDefinition,
   getSeededWorkflowDefinitions,
   osiCompactFamilyWorkflowId,
@@ -15,11 +16,12 @@ const canonicalPromptSections = [
 ] as const;
 
 describe("getSeededWorkflowDefinitions", () => {
-  it("seeds only the compact evaluation workflow", () => {
+  it("seeds the compact and attack-vector planning workflows", () => {
     const workflows = getSeededWorkflowDefinitions();
     const compactWorkflow = workflows.find((candidate) => candidate.id === osiCompactFamilyWorkflowId);
+    const planningWorkflow = workflows.find((candidate) => candidate.id === attackVectorPlanningWorkflowId);
 
-    expect(workflows).toHaveLength(1);
+    expect(workflows).toHaveLength(2);
     expect(compactWorkflow).toBeDefined();
     expect(compactWorkflow?.executionKind).toBe("workflow");
     expect(compactWorkflow?.stages.map((stage) => stage.label)).toEqual(["Compact Evaluation"]);
@@ -31,12 +33,35 @@ describe("getSeededWorkflowDefinitions", () => {
       "builtin-memory-forensics"
     ]));
     expect(compactWorkflow?.stages[0]?.objective).toContain("family capabilities rather than tool brands");
+
+    expect(planningWorkflow).toBeDefined();
+    expect(planningWorkflow?.executionKind).toBe("workflow");
+    expect(planningWorkflow?.stages.map((stage) => stage.label)).toEqual(["Attack Vector Planning"]);
+    expect(planningWorkflow?.stages[0]?.agentId).toBe(seededAgentId("attack-vector-planner"));
+    expect(planningWorkflow?.stages[0]?.allowedToolIds).toEqual(expect.arrayContaining([
+      "builtin-http-surface-assessment",
+      "builtin-content-discovery",
+      "builtin-network-host-discovery",
+      "builtin-memory-forensics"
+    ]));
+    expect(planningWorkflow?.stages[0]?.objective).toContain("link plausible vulnerabilities into explicit attack paths");
+    expect(planningWorkflow?.stages[0]?.objective).toContain("report_finding");
+    expect(planningWorkflow?.stages[0]?.objective).toContain("complete_run");
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("attack vectors and attack venues");
+    expect(planningWorkflow?.stages[0]?.handoffSchema).toMatchObject({
+      required: ["attackVenues", "attackVectors", "attackPaths"]
+    });
+    expect(planningWorkflow?.stages[0]?.handoffSchema?.["properties"]).toMatchObject({
+      attackVenues: expect.any(Object),
+      attackVectors: expect.any(Object),
+      attackPaths: expect.any(Object)
+    });
   });
 
   it("gives the seeded system prompts a canonical instruction shape", () => {
     const prompts = [
       getSeededRoleDefinition("compact-evaluator")?.systemPrompt,
-      getSeededRoleDefinition("portfolio-evaluator")?.systemPrompt
+      getSeededRoleDefinition("attack-vector-planner")?.systemPrompt
     ];
 
     for (const prompt of prompts) {
@@ -59,19 +84,19 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(compactEvaluator?.systemPrompt).not.toContain("stop when confidence stops improving");
   });
 
-  it("gives the portfolio workflow its own seeded evaluator agent", () => {
-    const portfolioEvaluator = getSeededRoleDefinition("portfolio-evaluator");
+  it("steers the attack vector planner toward linked vulnerability mapping", () => {
+    const attackVectorPlanner = getSeededRoleDefinition("attack-vector-planner");
 
-    expect(portfolioEvaluator).toBeDefined();
-    expect(portfolioEvaluator?.name).toBe("Portfolio Evaluator");
-    expect(portfolioEvaluator?.toolIds).toEqual([
+    expect(attackVectorPlanner).toBeDefined();
+    expect(attackVectorPlanner?.name).toBe("Attack Vector Planner");
+    expect(attackVectorPlanner?.toolIds).toEqual([
       ...getSeededRoleDefinition("compact-evaluator")?.toolIds ?? []
     ]);
-    expect(portfolioEvaluator?.systemPrompt).toContain("portfolio-style web targets");
-    expect(portfolioEvaluator?.systemPrompt).toContain("evidence-graph-first reporting");
-    expect(portfolioEvaluator?.systemPrompt).toContain("Treat OSI-inspired language only as shorthand");
-    expect(portfolioEvaluator?.systemPrompt).toContain("derivedFromFindingIds, relatedFindingIds, or enablesFindingIds");
-    expect(portfolioEvaluator?.systemPrompt).not.toContain("prerendered Nuxt site");
-    expect(portfolioEvaluator?.systemPrompt).not.toContain("headers, redirects, public assets, sitemap and robots exposure");
+    expect(attackVectorPlanner?.systemPrompt).toContain("map how weaknesses may connect");
+    expect(attackVectorPlanner?.systemPrompt).toContain("Focus on linking potential vulnerabilities");
+    expect(attackVectorPlanner?.systemPrompt).toContain("lower confidence and validationStatus such as suspected or unverified");
+    expect(attackVectorPlanner?.systemPrompt).toContain("relationshipExplanations, chain, explanationSummary, and confidenceReason");
+    expect(attackVectorPlanner?.systemPrompt).toContain("Do not ask for raw tool access");
+    expect(attackVectorPlanner?.systemPrompt).not.toContain("raw pentest catalog");
   });
 });

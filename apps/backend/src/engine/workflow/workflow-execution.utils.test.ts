@@ -15,8 +15,14 @@ const mockResult = {
   toolRun: {} as any,
   status: "completed" as const,
   observations: [],
+  observationKeys: [],
+  observationSummaries: [],
   outputPreview: "",
-  fullOutput: "HTTP/1.1 200 OK\nServer: Apache\n[+] /admin/ found via nikto"
+  fullOutput: "HTTP/1.1 200 OK\nServer: Apache\n[+] /admin/ found via nikto",
+  usedToolId: "seed-nikto",
+  usedToolName: "nikto",
+  fallbackUsed: false,
+  attempts: []
 };
 
 describe("verifyFindingEvidence", () => {

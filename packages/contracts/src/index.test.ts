@@ -12,7 +12,6 @@ import {
   executeDefensiveIteration,
   executionReportDetailSchema,
   executionReportsListQuerySchema,
-  orchestratorStreamMessageSchema,
   prioritizeDefensiveAction,
   healthResponseSchema,
   listTargetsResponseSchema,
@@ -241,22 +240,6 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
-  it("accepts orchestrator stream messages with live model output", () => {
-    const result = orchestratorStreamMessageSchema.safeParse({
-      type: "run_event",
-      liveModelOutput: {
-        runId: "11111111-1111-1111-1111-111111111111",
-        source: "hosted",
-        text: "{\"reasoningSummary\":\"Planning\"",
-        reasoning: "Prioritize the web surface first.",
-        final: false,
-        createdAt: "2026-04-26T00:00:00.000Z"
-      }
-    });
-
-    expect(result.success).toBe(true);
-  });
-
   it("accepts a structured security vulnerability with layer metadata", () => {
     const result = securityVulnerabilitySchema.safeParse({
       id: "vuln-1",
@@ -345,12 +328,12 @@ describe("contracts", () => {
     const result = executionReportDetailSchema.safeParse({
       id: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
       executionId: "run-1",
-      executionKind: "attack-map",
-      sourceDefinitionId: null,
+      executionKind: "workflow",
+      sourceDefinitionId: "11111111-1111-4111-8111-111111111111",
       status: "completed",
-      title: "Attack map run",
+      title: "Workflow run",
       targetLabel: "https://target.local",
-      sourceLabel: "Attack map",
+      sourceLabel: "Workflow",
       findingsCount: 1,
       highestSeverity: "high",
       generatedAt: "2026-04-25T12:00:00.000Z",
@@ -396,8 +379,8 @@ describe("contracts", () => {
         {
           id: "finding-1",
           executionId: "run-1",
-          executionKind: "attack-map",
-          source: "attack-map-finding",
+          executionKind: "workflow",
+          source: "workflow-finding",
           severity: "high",
           title: "Admin surface exposed",
           type: "phase-finding",
@@ -423,12 +406,12 @@ describe("contracts", () => {
       toolActivity: [],
       coverageOverview: {},
       sourceSummary: {
-        executionKind: "attack-map",
+        executionKind: "workflow",
         runId: "11111111-1111-4111-8111-111111111111",
-        phase: "complete",
-        overallRisk: "high",
-        chainCount: 1,
-        findingNodeCount: 1
+        workflowId: "22222222-2222-4222-8222-222222222222",
+        stopReason: null,
+        totalFindings: 1,
+        topFindingIds: ["finding-1"]
       },
       raw: {}
     });

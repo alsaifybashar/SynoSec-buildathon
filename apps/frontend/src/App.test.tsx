@@ -122,7 +122,7 @@ describe("App", () => {
         id: "f5bbd721-7f5b-4336-b9f5-a8b3804cf1e1",
         name: "Local Vulnerable App Walkthrough",
         status: "active",
-        executionKind: "attack-map",
+        executionKind: "workflow",
         description: "Seeded workflow for the local target",
         agentId: agents[0]?.id ?? "",
         objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
@@ -196,7 +196,7 @@ describe("App", () => {
       workflowId: workflows[0]!.id,
       workflowLaunchId: "launch-1",
       targetId: targets[0]!.id,
-      executionKind: "attack-map",
+      executionKind: "workflow",
       status: "completed",
       currentStepIndex: 0,
       startedAt: "2026-04-12T12:05:00.000Z",
@@ -438,7 +438,7 @@ describe("App", () => {
             derivedFromFindingIds: [],
             relatedFindingIds: [],
             enablesFindingIds: [],
-            tags: ["attack-map"],
+            tags: ["workflow"],
             createdAt: "2026-04-12T12:05:50.000Z"
           }]
         }));
@@ -467,6 +467,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getAllByRole("link", { name: "Workflows" })[0]!);
     expect(await screen.findByRole("heading", { name: "Workflows" })).toBeInTheDocument();
+    expect((await screen.findAllByText("Recon Agent")).length).toBeGreaterThan(0);
 
     expect(screen.queryByText("Templates")).not.toBeInTheDocument();
   });
@@ -480,7 +481,6 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "Recon Agent" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/ai/agents/67043e91-4017-47b8-ac3f-81eb19f51538");
-    expect(await screen.findByDisplayValue(fixedAiRuntimeLabel)).toBeInTheDocument();
   });
 
   it("loads the AI agent detail page without refetch loops", async () => {

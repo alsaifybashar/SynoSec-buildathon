@@ -4,6 +4,7 @@ import {
   coverageStatusSchema,
   scanLayerCoverageSchema
 } from "./scan-core.js";
+import { observationSchema } from "./tooling.js";
 import {
   type AiAgent,
   type AiTool,
@@ -47,7 +48,21 @@ export const workflowTranscriptToolResultDetailSchema = z.object({
   toolName: z.string().min(1),
   summary: z.string().min(1),
   body: z.string().nullable(),
-  observations: z.array(z.string().min(1)),
+  outputPreview: z.string().nullable().default(null),
+  observations: z.array(observationSchema).default([]),
+  observationSummaries: z.array(z.string().min(1)).default([]),
+  usedToolId: z.string().nullable().default(null),
+  usedToolName: z.string().nullable().default(null),
+  fallbackUsed: z.boolean().default(false),
+  attempts: z.array(z.object({
+    toolId: z.string().min(1),
+    toolName: z.string().min(1),
+    status: z.enum(["running", "completed", "failed"]),
+    exitCode: z.number().int().optional(),
+    statusReason: z.string().optional(),
+    outputExcerpt: z.string(),
+    selected: z.boolean()
+  })).default([]),
   status: z.enum(["running", "completed", "failed"])
 });
 export type WorkflowTranscriptToolResultDetail = z.infer<typeof workflowTranscriptToolResultDetailSchema>;
@@ -228,6 +243,50 @@ function getPayloadStringList(payload: Record<string, unknown> | null | undefine
   }
 
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function getPayloadObservationList(payload: Record<string, unknown> | null | undefined, key: string) {
+  const value = payload?.[key];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => observationSchema.safeParse(item))
+    .filter((result) => result.success)
+    .map((result) => result.data);
+}
+
+function getPayloadAttemptList(payload: Record<string, unknown> | null | undefined, key: string) {
+  const value = payload?.[key];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const attempts = value
+    .filter(isRecord)
+    .map((item) => {
+      const toolId = typeof item["toolId"] === "string" ? item["toolId"] : null;
+      const toolName = typeof item["toolName"] === "string" ? item["toolName"] : null;
+      const rawStatus = item["status"];
+      const outputExcerpt = typeof item["outputExcerpt"] === "string" ? item["outputExcerpt"] : "";
+      if (!toolId || !toolName || (rawStatus !== "running" && rawStatus !== "completed" && rawStatus !== "failed")) {
+        return null;
+      }
+      const status: "running" | "completed" | "failed" = rawStatus;
+
+      return {
+        toolId,
+        toolName,
+        status,
+        ...(typeof item["exitCode"] === "number" ? { exitCode: item["exitCode"] } : {}),
+        ...(typeof item["statusReason"] === "string" ? { statusReason: item["statusReason"] } : {}),
+        outputExcerpt,
+        selected: item["selected"] === true
+      };
+    });
+
+  return attempts.filter((item): item is Exclude<typeof item, null> => item !== null);
 }
 
 function parseWorkflowFinding(value: unknown): WorkflowReportedFinding | null {
@@ -679,7 +738,14 @@ export function buildWorkflowTranscript(input: {
         toolName: getToolName(event, input.toolLookup),
         summary: getPayloadString(payload, "summary") ?? getPayloadString(payload, "outputPreview") ?? event.summary,
         body: getLegacyToolOutput(payload, event) ?? serializedOutput,
-        observations: getPayloadStringList(payload, "observations").concat(getPayloadStringList(payload, "observationSummaries")),
+        outputPreview: getPayloadString(payload, "outputPreview"),
+        observations: getPayloadObservationList(payload, "observationRecords"),
+        observationSummaries: getPayloadStringList(payload, "observationSummaries")
+          .concat(getPayloadStringList(payload, "observations")),
+        usedToolId: getPayloadString(payload, "usedToolId"),
+        usedToolName: getPayloadString(payload, "usedToolName"),
+        fallbackUsed: payload["fallbackUsed"] === true,
+        attempts: getPayloadAttemptList(payload, "attempts"),
         status: event.status === "pending" ? "running" : event.status
       });
       continue;

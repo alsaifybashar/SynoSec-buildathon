@@ -167,7 +167,6 @@ export const toolBuiltinActionKeySchema = z.enum([
   "log_progress",
   "report_finding",
   "complete_run",
-  "fail_run",
   "http_surface_assessment",
   "web_crawl_mapping",
   "content_discovery",
@@ -540,13 +539,16 @@ export const workflowReportedFindingSchema = workflowFindingSubmissionSchema.ext
 export type WorkflowReportedFinding = z.infer<typeof workflowReportedFindingSchema>;
 
 export const defaultWorkflowStageSystemPrompt = [
-  "You are executing the \"{{stage.label}}\" stage of the workflow \"{{workflow.name}}\".",
+  "Role and goal:",
+  "Complete the current workflow stage for SynoSec using the approved tools exposed for this run.",
   "",
-  "Target: {{target.name}}",
-  "Target URL: {{target.url}}",
+  "Working style:",
+  "Keep progress updates concise and action-oriented.",
+  "Do not expose private chain-of-thought.",
   "",
-  "Report concrete findings with report_finding.",
-  "Use complete_run to submit the current stage result or fail_run to stop with an explicit failure."
+  "Evidence expectations:",
+  "Prefer concrete, evidence-backed findings over unsupported narrative.",
+  "Distinguish confirmed findings from weaker hypotheses when the evidence is incomplete."
 ].join("\n");
 
 export const defaultWorkflowTaskPromptTemplate = [

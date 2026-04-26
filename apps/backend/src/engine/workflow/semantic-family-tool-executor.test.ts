@@ -91,6 +91,22 @@ function comparableToolRunShape(toolRun: ToolRun) {
   };
 }
 
+function comparableObservationShape(observation: Awaited<ReturnType<typeof executeDirectSeededTool>>["observations"][number]) {
+  return {
+    toolId: observation.toolId ?? null,
+    tool: observation.tool,
+    target: observation.target,
+    key: observation.key,
+    title: observation.title,
+    summary: observation.summary,
+    severity: observation.severity,
+    confidence: observation.confidence,
+    evidence: observation.evidence,
+    technique: observation.technique,
+    relatedKeys: observation.relatedKeys
+  };
+}
+
 const scan: Scan = {
   id: "scan-semantic-family",
   scope: {
@@ -236,8 +252,11 @@ describe("executeSemanticFamilyTool", () => {
     expect(family.result.toolRequest.parameters.toolInput).toEqual(direct.request.parameters.toolInput);
     expect(comparableToolRunShape(family.result.toolRun)).toEqual(comparableToolRunShape(direct.toolRun));
     expect(family.result.fullOutput).toBe(direct.toolRun.output ?? direct.toolRun.statusReason ?? "");
-    expect(family.result.observations).toEqual(direct.observations.map((observation) => observation.summary));
+    expect(family.result.observations.map(comparableObservationShape)).toEqual(direct.observations.map(comparableObservationShape));
     expect(family.result.observationKeys).toEqual(direct.observations.map((observation) => observation.key));
+    expect(family.result.observationSummaries).toEqual(direct.observations.map((observation) => observation.summary));
     expect(family.response.outputPreview).toBe(direct.observations[0]?.summary ?? family.result.outputPreview);
+    expect(family.response.fallbackUsed).toBe(false);
+    expect(family.response.attempts).toHaveLength(1);
   });
 });

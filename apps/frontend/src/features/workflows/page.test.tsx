@@ -77,7 +77,7 @@ const agent: AiAgent = {
   id: "agent-1",
   name: "Local Orchestrator",
   status: "active",
-  description: "Local workflow orchestrator",
+  description: "Local workflow runner",
   systemPrompt: "Coordinate the next best step.",
   toolIds: [tool.id],
   createdAt: "2026-04-21T00:00:00.000Z",
@@ -88,7 +88,7 @@ const workflow: Workflow = {
   id: "workflow-1",
   name: "Evidence Workflow",
   status: "active",
-  executionKind: "attack-map",
+  executionKind: "workflow",
   description: "Stage timeline test",
   agentId: agent.id,
   objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
@@ -394,9 +394,10 @@ describe("WorkflowDetailPage", () => {
 
   it("renders the workflow detail layout and routes edit through navigation", async () => {
     const onNavigateToEdit = vi.fn();
+    const onNavigateToAgent = vi.fn();
     vi.stubGlobal("fetch", createFetchMock());
 
-    renderWorkflowDetailPage({ onNavigateToEdit });
+    renderWorkflowDetailPage({ onNavigateToEdit, onNavigateToAgent });
 
     expect(await screen.findByRole("button", { name: "Start Run" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Show Full Details" })).toBeEnabled();
@@ -408,6 +409,8 @@ describe("WorkflowDetailPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Workflow" }));
     expect(onNavigateToEdit).toHaveBeenCalledWith(workflow.id, workflow.name);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Agent" }));
+    expect(onNavigateToAgent).toHaveBeenCalledWith(agent.id);
   });
 
   it("starts a workflow run from the detail page without constraint confirmation", async () => {
@@ -529,7 +532,7 @@ describe("WorkflowsPage", () => {
     });
     expect(JSON.parse(String(patchCall?.[1]?.body))).toMatchObject({
       name: "Updated Workflow",
-      executionKind: "attack-map"
+      executionKind: "workflow"
     });
   });
 });

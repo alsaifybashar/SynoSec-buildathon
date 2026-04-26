@@ -91,10 +91,104 @@ export const portfolioApplicationId = "1f92a3d7-4f70-4950-b750-9bf74c6f3591";
 export const securePentApplicationId = "4d8e9e0a-bfd4-4b24-8fb9-8656b511a2b8";
 export const osiSingleAgentWorkflowId = "8b57f0e7-1dd7-4d6a-8db5-c4ff7be80a21";
 export const osiCompactFamilyWorkflowId = "0e8e3912-c48f-4c34-9ac0-c54ec70df3f6";
+export const attackVectorPlanningWorkflowId = "9b59b237-c956-44db-aab0-a46b9f4bf8b3";
 export const portfolioEvidenceGraphWorkflowId = "5edb1601-27cf-4a87-b7d4-a50873f5d985";
 
 const defaultWorkflowStagePrompts = {
   stageSystemPrompt: defaultWorkflowStageSystemPrompt
+} as const;
+
+const attackVectorPlanningStagePrompt = [
+  "Role and goal:",
+  "Complete the current workflow stage for SynoSec by mapping plausible attack vectors and attack venues across the approved target surface.",
+  "",
+  "Working style:",
+  "Keep progress updates concise and action-oriented.",
+  "Do not expose private chain-of-thought.",
+  "",
+  "Evidence expectations:",
+  "Prefer concrete, evidence-backed findings over unsupported narrative.",
+  "Distinguish confirmed findings from weaker hypotheses when the evidence is incomplete.",
+  "Link related weaknesses explicitly and capture what each venue exposes, what each vector requires, and which findings support the path.",
+  "",
+  "Stage result expectations:",
+  "Use the handoff to summarize attackVenues, attackVectors, and prioritized attackPaths that reference finding ids."
+].join("\n");
+
+const attackVectorPlanningHandoffSchema = {
+  type: "object",
+  properties: {
+    attackVenues: {
+      type: "array",
+      description: "Observed entrypoints or reachable surfaces that matter to the attack map.",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          label: { type: "string" },
+          venueType: { type: "string" },
+          targetLabel: { type: "string" },
+          summary: { type: "string" },
+          findingIds: {
+            type: "array",
+            items: { type: "string" }
+          }
+        },
+        required: ["id", "label", "venueType", "targetLabel", "summary", "findingIds"]
+      }
+    },
+    attackVectors: {
+      type: "array",
+      description: "Potential exploit or abuse routes derived from linked findings.",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          label: { type: "string" },
+          sourceVenueId: { type: "string" },
+          destinationVenueId: { type: "string" },
+          preconditions: {
+            type: "array",
+            items: { type: "string" }
+          },
+          impact: { type: "string" },
+          confidence: { type: "number" },
+          findingIds: {
+            type: "array",
+            items: { type: "string" }
+          }
+        },
+        required: ["id", "label", "preconditions", "impact", "confidence", "findingIds"]
+      }
+    },
+    attackPaths: {
+      type: "array",
+      description: "Prioritized end-to-end routes through the observed attack map.",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          title: { type: "string" },
+          summary: { type: "string" },
+          severity: { type: "string" },
+          venueIds: {
+            type: "array",
+            items: { type: "string" }
+          },
+          vectorIds: {
+            type: "array",
+            items: { type: "string" }
+          },
+          findingIds: {
+            type: "array",
+            items: { type: "string" }
+          }
+        },
+        required: ["id", "title", "summary", "severity", "venueIds", "vectorIds", "findingIds"]
+      }
+    }
+  },
+  required: ["attackVenues", "attackVectors", "attackPaths"]
 } as const;
 
 const fullSemanticFamilyToolIds = [
@@ -150,7 +244,7 @@ const webSemanticFamilyToolIds = [
   "builtin-dns-enumeration"
 ] as const;
 
-export type SeededRoleKey = "compact-evaluator" | "portfolio-evaluator";
+export type SeededRoleKey = "compact-evaluator" | "attack-vector-planner";
 
 function withConstraintProfile<
   T extends {
@@ -348,7 +442,7 @@ export const seededRoleDefinitions = [
         "Do not expose private chain-of-thought; provide concise action-oriented progress notes instead.",
         "",
         "Completion requirements:",
-        "Use report_finding for concrete supported findings and use complete_run or fail_run to end the workflow.",
+        "Use report_finding for concrete supported findings and use complete_run to end the workflow.",
         "",
         "Blocked or failed behavior:",
         "If evidence is incomplete or conflicting, keep unsupported claims out of findings, mark weaker leads as hypotheses, and close with the remaining uncertainty."
@@ -363,32 +457,34 @@ export const seededRoleDefinitions = [
     ] as const
   },
   {
-    key: "portfolio-evaluator" as const,
-    name: "Portfolio Evaluator",
-    description: "Assesses the seeded nilswickman.com workflow with compact family tools and evidence-graph-first reporting.",
+    key: "attack-vector-planner" as const,
+    name: "Attack Vector Planner",
+    description: "Maps plausible attack vectors across the semantic-family surface and links potential vulnerabilities into explicit finding chains.",
     systemPrompt:
       [
         "Role and goal:",
-        "You are the portfolio evaluation agent for SynoSec. Evaluate portfolio-style web targets with evidence-graph-first reporting and keep web-surface findings connected when the evidence supports that relationship.",
+        "You are the attack vector planning agent for SynoSec. Use semantic tool families to map how weaknesses may connect, identify plausible attack paths, and keep every linked vulnerability grounded in evidence or explicitly qualified uncertainty.",
         "",
         "Scope and safety boundaries:",
         "Use only the available semantic family tools and built-in workflow actions for this run.",
-        "Treat OSI-inspired language only as shorthand for dependency boundaries across network exposure, HTTP or TLS behavior, and application behavior.",
-        "Do not ask for raw tool access or alternate execution paths outside the exposed family surface.",
+        "Do not ask for raw tool access, brand-specific substitutions, or alternate execution paths outside the exposed family surface.",
         "",
         "Evidence and reporting requirements:",
         "Prefer structured evidence-backed findings over free-form narrative.",
+        "Focus on linking potential vulnerabilities, preconditions, and follow-on impact rather than reporting isolated observations with no attack-path context.",
         "Distinguish confirmed findings, plausible hypotheses, and rejected leads in your reporting.",
+        "Use report_finding for concrete supported findings and for plausible linked vulnerabilities when the evidence is partial, but mark those with lower confidence and validationStatus such as suspected or unverified.",
         "When findings connect, capture the relationship explicitly with derivedFromFindingIds, relatedFindingIds, or enablesFindingIds instead of implying the connection only in prose.",
-        "Each finding should describe the affected asset or URL, the preconditions that make the issue matter, the observed impact, and the most direct remediation.",
+        "Use relationshipExplanations, chain, explanationSummary, and confidenceReason to explain why a finding belongs in an attack path and what uncertainty remains.",
+        "Each finding should describe the affected asset or URL, the preconditions that make the issue matter, the observed or plausible impact, and the most direct remediation.",
         "Call log_progress for short operator-visible updates before tool calls and after meaningful results, but treat log_progress as secondary to high-quality report_finding calls.",
         "Do not expose private chain-of-thought; provide concise action-oriented progress notes instead.",
         "",
         "Completion requirements:",
-        "Use report_finding for concrete supported findings and use complete_run or fail_run to end the workflow.",
+        "Use report_finding for concrete supported findings and plausible linked vulnerabilities, and use complete_run to end the workflow.",
         "",
         "Blocked or failed behavior:",
-        "If the evidence does not support a finding relationship or attack path, keep it out of findings and close with a qualified summary of the remaining hypotheses."
+        "If evidence does not support a vulnerability link or attack path, keep it out of findings, preserve the original uncertainty, and close with a qualified summary of the remaining hypotheses."
       ].join("\n"),
     toolIds: [
       familyHttpSurfaceTool.id,
@@ -403,7 +499,7 @@ export const seededRoleDefinitions = [
 
 export const seededAgentIds = {
   "anthropic:compact-evaluator": "3d9992c0-a20b-4527-86d3-9479e86d6c3b",
-  "anthropic:portfolio-evaluator": "18adcb50-327a-40d3-a4c5-ff05ec4d2458"
+  "anthropic:attack-vector-planner": "4c526f02-d11c-4e01-aeb4-a84f271ec3bc"
 } as const;
 
 export function seededAgentId(roleKey: SeededRoleKey) {
@@ -428,7 +524,7 @@ export function getSeededWorkflowDefinitions() {
           label: "Compact Evaluation",
           agentId: seededAgentId("compact-evaluator"),
           objective:
-            "Run one evidence-backed compact-family evaluation across the configured target. Use only the semantic family tools for collection and validation, think in terms of family capabilities rather than tool brands, register concrete findings through report_finding, and end only through complete_run or fail_run.",
+            "Run one evidence-backed compact-family evaluation across the configured target. Use only the semantic family tools for collection and validation, think in terms of family capabilities rather than tool brands, register concrete findings through report_finding, and end only through complete_run.",
           ...defaultWorkflowStagePrompts,
           allowedToolIds: [
             ...fullSemanticFamilyToolIds
@@ -456,6 +552,49 @@ export function getSeededWorkflowDefinitions() {
           },
           resultSchemaVersion: 1,
           handoffSchema: null
+        }
+      ]
+    },
+    {
+      id: attackVectorPlanningWorkflowId,
+      name: "Attack Vector Planning",
+      status: "active" as const,
+      executionKind: "workflow" as const,
+      description: "Seeded Anthropic workflow for mapping attack vectors across the semantic-family tool surface and linking plausible vulnerabilities through the evidence graph.",
+      stages: [
+        {
+          id: "05a7fec4-548b-4857-a09f-7e4d81bb3f35",
+          label: "Attack Vector Planning",
+          agentId: seededAgentId("attack-vector-planner"),
+          objective:
+            "Run one evidence-backed attack-vector planning pass across the configured target. Use only the semantic family tools for discovery and validation, link plausible vulnerabilities into explicit attack paths, register supported and clearly qualified suspected findings through report_finding, and end only through complete_run.",
+          stageSystemPrompt: attackVectorPlanningStagePrompt,
+          allowedToolIds: [
+            ...fullSemanticFamilyToolIds
+          ],
+          requiredEvidenceTypes: [],
+          findingPolicy: {
+            taxonomy: "typed-core-v1",
+            allowedTypes: [
+              "service_exposure",
+              "content_discovery",
+              "missing_security_header",
+              "tls_weakness",
+              "injection_signal",
+              "auth_weakness",
+              "sensitive_data_exposure",
+              "misconfiguration",
+              "other"
+            ]
+          },
+          completionRule: {
+            requireStageResult: true,
+            requireToolCall: false,
+            allowEmptyResult: true,
+            minFindings: 0
+          },
+          resultSchemaVersion: 1,
+          handoffSchema: attackVectorPlanningHandoffSchema
         }
       ]
     }

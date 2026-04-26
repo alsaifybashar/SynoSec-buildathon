@@ -43,11 +43,28 @@ const commonFamilyOutputSchema = {
     toolName: { type: "string" },
     status: { type: "string" },
     outputPreview: { type: "string" },
+    rawOutput: { type: "string" },
     observations: { type: "array" },
+    observationSummaries: { type: "array" },
     usedToolId: { type: "string" },
-    usedToolName: { type: "string" }
+    usedToolName: { type: "string" },
+    fallbackUsed: { type: "boolean" },
+    attempts: { type: "array" }
   },
-  required: ["toolRunId", "toolId", "toolName", "status", "outputPreview", "observations", "usedToolId", "usedToolName"]
+  required: [
+    "toolRunId",
+    "toolId",
+    "toolName",
+    "status",
+    "outputPreview",
+    "rawOutput",
+    "observations",
+    "observationSummaries",
+    "usedToolId",
+    "usedToolName",
+    "fallbackUsed",
+    "attempts"
+  ]
 } as const;
 
 const commonFamilyInputProperties = {

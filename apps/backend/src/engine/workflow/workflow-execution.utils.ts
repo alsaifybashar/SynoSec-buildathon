@@ -1,4 +1,5 @@
 import type {
+  Observation,
   OsiLayer,
   SecurityValidationStatus,
   ToolRequest,
@@ -15,9 +16,23 @@ export type ExecutedToolResult = {
   toolRequest: ToolRequest;
   toolRun: ToolRun;
   status: ToolRun["status"];
-  observations: string[];
+  observations: Observation[];
+  observationKeys: string[];
+  observationSummaries: string[];
   outputPreview: string;
   fullOutput: string;
+  usedToolId: string;
+  usedToolName: string;
+  fallbackUsed: boolean;
+  attempts: Array<{
+    toolId: string;
+    toolName: string;
+    status: ToolRun["status"];
+    exitCode?: number;
+    statusReason?: string;
+    outputExcerpt: string;
+    selected: boolean;
+  }>;
 };
 
 type FindingDetailContext = {

@@ -41,7 +41,11 @@ function requestPath(base, path) {
   const observations = discoveries.map((item) => ({
     key: `content:${item.path}`,
     title: `Discovered content at ${item.path}`,
-    summary: `Path ${item.path} returned HTTP ${item.statusCode}.`,
+    summary: item.path.startsWith("/cdn-cgi/")
+      ? `Infrastructure path ${item.path} returned HTTP ${item.statusCode}; likely intermediary edge content rather than application content.`
+      : item.location
+        ? `Path ${item.path} redirected with HTTP ${item.statusCode} to ${item.location}.`
+        : `Path ${item.path} returned HTTP ${item.statusCode}.`,
     severity: item.path === "/admin" || item.path === "/api/users" ? "medium" : "info",
     confidence: item.path === "/" ? 0.72 : 0.8,
     evidence: `URL: ${item.url}\nStatus: ${item.statusCode}${item.location ? `\nLocation: ${item.location}` : ""}${item.snippet ? `\nSnippet: ${item.snippet}` : ""}`,

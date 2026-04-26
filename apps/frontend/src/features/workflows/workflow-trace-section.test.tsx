@@ -166,8 +166,7 @@ const run: WorkflowRun = {
         "",
         "log_progress: Persist one short operator-visible progress update for the workflow transcript.",
         "report_finding: Persist one evidence-backed workflow finding.",
-        "complete_run: Finish the workflow pipeline successfully.",
-        "fail_run: Finish the workflow pipeline as failed."
+        "complete_run: Finish the workflow pipeline successfully."
       ].join("\n"),
       payload: {
         title: "Tool context",
@@ -181,8 +180,7 @@ const run: WorkflowRun = {
           "",
           "log_progress: Persist one short operator-visible progress update for the workflow transcript.",
           "report_finding: Persist one evidence-backed workflow finding.",
-          "complete_run: Finish the workflow pipeline successfully.",
-          "fail_run: Finish the workflow pipeline as failed."
+          "complete_run: Finish the workflow pipeline successfully."
         ].join("\n")
       },
       createdAt: "2026-04-21T00:00:01.750Z"
@@ -933,7 +931,7 @@ describe("WorkflowTraceSection", () => {
       />
     );
 
-    expect(screen.getByText("5 tools and actions available to the model.")).toBeInTheDocument();
+    expect(screen.getByText("4 tools and actions available to the model.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Structured tool segment"));
 
@@ -941,7 +939,7 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getByText("log_progress")).toBeInTheDocument();
     expect(screen.getByText("report_finding")).toBeInTheDocument();
     expect(screen.getByText("complete_run")).toBeInTheDocument();
-    expect(screen.getByText("fail_run")).toBeInTheDocument();
+    expect(screen.queryByText("fail_run")).not.toBeInTheDocument();
     expect(screen.getAllByText("Input schema").length).toBeGreaterThan(0);
     expect(screen.getByText(/"required": \[\s*"url"/)).toBeInTheDocument();
     expect(screen.getAllByText(/"url"/).length).toBeGreaterThan(0);

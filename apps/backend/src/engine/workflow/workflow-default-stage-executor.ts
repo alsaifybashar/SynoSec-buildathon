@@ -33,7 +33,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     "Workflow execution contract:",
     "Use only the approved tools and built-in workflow actions exposed for this run.",
     "Report concrete evidence-backed findings with report_finding.",
-    "End every run explicitly with complete_run or fail_run."
+    "End every run explicitly with complete_run."
   ].join("\n");
 
   constructor(
@@ -94,8 +94,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     const builtinLifecycleToolNames = new Set([
       "log_progress",
       "report_finding",
-      "complete_run",
-      "fail_run"
+      "complete_run"
     ]);
     const evidenceToolEntries = tools.flatMap((tool) => {
       if (tool.executorType === "bash" && tool.bashSource) {
@@ -135,15 +134,28 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               toolRequest: request,
               toolRun,
               status: toolRun.status,
-              observations: brokerResult.observations.map((observation) => observation.summary),
+              observations: brokerResult.observations,
               observationKeys: brokerResult.observations.map((observation) => observation.key),
+              observationSummaries: brokerResult.observations.map((observation) => observation.summary),
               outputPreview: truncate(
                 brokerResult.observations[0]?.summary
                   ?? toolRun.statusReason
                   ?? toolRun.output
                   ?? `${tool.name} ${toolRun.status}.`
               ),
-              fullOutput: toolRun.output ?? toolRun.statusReason ?? ""
+              fullOutput: toolRun.output ?? toolRun.statusReason ?? "",
+              usedToolId: tool.id,
+              usedToolName: tool.name,
+              fallbackUsed: false,
+              attempts: [{
+                toolId: tool.id,
+                toolName: tool.name,
+                status: toolRun.status,
+                ...(toolRun.exitCode === undefined ? {} : { exitCode: toolRun.exitCode }),
+                ...(toolRun.statusReason ? { statusReason: toolRun.statusReason } : {}),
+                outputExcerpt: truncate(toolRun.output ?? toolRun.statusReason ?? "", 400),
+                selected: true
+              }]
             };
             executedResults.push(result);
 
@@ -153,7 +165,13 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               toolName: tool.id,
               status: toolRun.status,
               outputPreview: result.outputPreview,
-              observations: result.observations
+              rawOutput: result.fullOutput,
+              observations: result.observations,
+              observationSummaries: result.observationSummaries,
+              usedToolId: result.usedToolId,
+              usedToolName: result.usedToolName,
+              fallbackUsed: result.fallbackUsed,
+              attempts: result.attempts
             };
           }
         }];
@@ -204,8 +222,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         tools: [
           { name: "log_progress", description: "Persist one short operator-visible progress update for the workflow transcript." },
           { name: "report_finding", description: "Persist one evidence-backed workflow finding." },
-          { name: "complete_run", description: "Submit the current workflow stage result." },
-          { name: "fail_run", description: "Finish the workflow stage as failed." }
+          { name: "complete_run", description: "Submit the current workflow stage result." }
         ]
       }
     ]);
@@ -405,26 +422,6 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           abortController.abort("workflow-completed");
           return { accepted: true };
         }
-      }),
-      fail_run: createSdkTool({
-        description: "Finish the workflow stage as failed.",
-        inputSchema: z.object({
-          reason: z.string().min(1),
-          summary: z.string().min(1).optional()
-        }),
-        execute: async (rawInput) => {
-          const failure = z.object({
-            reason: z.string().min(1),
-            summary: z.string().min(1).optional()
-          }).parse(rawInput);
-          terminalState = {
-            status: "failed",
-            reason: failure.reason,
-            summary: failure.summary ?? failure.reason
-          };
-          abortController.abort("workflow-failed");
-          return { accepted: true };
-        }
       })
     };
 
@@ -524,18 +521,23 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               : null;
             const matchingResult = (toolRunId ? executedResults.find((candidate) => candidate.toolRun.id === toolRunId) : null)
               ?? executedResults.find((candidate) => candidate.toolName === part.toolName);
-            const resultStatus = part.toolName === "fail_run"
+            const resultStatus = matchingResult?.status === "failed"
               ? "failed"
-              : matchingResult?.status === "failed"
-                ? "failed"
-                : "completed";
+              : "completed";
             await appendEvent("tool_result", resultStatus, {
               toolCallId: part.toolCallId,
               toolName: part.toolName,
               toolId: matchingResult?.toolId ?? null,
               output: part.output,
               summary: matchingResult?.outputPreview ?? `${part.toolName} completed.`,
-              observations: matchingResult?.observations ?? []
+              outputPreview: matchingResult?.outputPreview ?? `${part.toolName} completed.`,
+              fullOutput: matchingResult?.fullOutput ?? null,
+              observations: matchingResult?.observationSummaries ?? [],
+              observationRecords: matchingResult?.observations ?? [],
+              usedToolId: matchingResult?.usedToolId ?? null,
+              usedToolName: matchingResult?.usedToolName ?? null,
+              fallbackUsed: matchingResult?.fallbackUsed ?? false,
+              attempts: matchingResult?.attempts ?? []
             }, `${part.toolName} returned`, matchingResult?.outputPreview ?? `${part.toolName} completed.`, matchingResult?.fullOutput ?? null, undefined, {
               rawStreamPartType: part.type
             });
@@ -602,36 +604,23 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     }
 
     if (!terminalState) {
-      throw new RequestError(500, "The model finished without calling complete_run or fail_run.");
+      throw new RequestError(500, "The model finished without calling complete_run.");
     }
 
     const finalTerminalState = terminalState as PipelineTerminalState;
-    let stageResult: WorkflowStageResult;
-    if (finalTerminalState.status === "completed") {
-      stageResult = {
-        status: "completed",
-        summary: finalTerminalState.summary,
-        findingIds: getWorkflowReportedFindings(currentRun).map((finding) => finding.id),
-        recommendedNextStep: finalTerminalState.recommendedNextStep,
-        residualRisk: finalTerminalState.residualRisk,
-        handoff: finalTerminalState.handoff,
-        submittedAt: new Date().toISOString()
-      };
-    } else {
-      stageResult = {
-        status: "blocked",
-        summary: finalTerminalState.summary,
-        findingIds: getWorkflowReportedFindings(currentRun).map((finding) => finding.id),
-        recommendedNextStep: finalTerminalState.reason,
-        residualRisk: finalTerminalState.reason,
-        handoff: null,
-        submittedAt: new Date().toISOString()
-      };
-    }
+    const stageResult: WorkflowStageResult = {
+      status: "completed",
+      summary: finalTerminalState.summary,
+      findingIds: getWorkflowReportedFindings(currentRun).map((finding) => finding.id),
+      recommendedNextStep: finalTerminalState.recommendedNextStep,
+      residualRisk: finalTerminalState.residualRisk,
+      handoff: finalTerminalState.handoff,
+      submittedAt: new Date().toISOString()
+    };
 
     currentRun = await appendEvent(
       "stage_result_submitted",
-      finalTerminalState.status === "completed" ? "completed" : "failed",
+      "completed",
       { stageResult },
       `Stage result submitted: ${stage.label}`,
       stageResult.summary,
