@@ -678,7 +678,7 @@ describe("WorkflowExecutionService", () => {
 
     streamTextMock.mockImplementationOnce((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
       fullStream: (async function* () {
-        const bashResult = await options.tools["seed-agent-bash-command"]?.execute({
+        const bashResult = await options.tools.bash?.execute({
           command: "cat; printf '\\n%s\\n' \"$GREETING\"",
           stdin: "piped-input",
           env: { GREETING: "hello-from-env" },
@@ -748,12 +748,88 @@ describe("WorkflowExecutionService", () => {
     });
 
     const exposedToolNames = Object.keys(streamTextMock.mock.calls.at(-1)?.[0]?.tools ?? {});
-    expect(exposedToolNames).toContain("seed-agent-bash-command");
+    expect(exposedToolNames).toContain("bash");
+    expect(exposedToolNames).not.toContain("seed-agent-bash-command");
     expect(exposedToolNames).toContain("log_progress");
     expect(exposedToolNames).toContain("report_finding");
     expect(exposedToolNames).toContain("complete_run");
     expect(bashToolRawOutput).toContain("piped-input");
     expect(bashToolRawOutput).toContain("hello-from-env");
+  });
+
+  it("persists successful bash tool results with empty output", async () => {
+    streamTextMock.mockImplementationOnce((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
+      fullStream: (async function* () {
+        yield {
+          type: "tool-call",
+          toolCallId: "call-empty-bash",
+          toolName: "bash",
+          input: {
+            command: "true"
+          }
+        };
+        const bashResult = await options.tools.bash?.execute({
+          command: "true"
+        });
+        yield {
+          type: "tool-result",
+          toolCallId: "call-empty-bash",
+          toolName: "bash",
+          output: bashResult
+        };
+        await options.tools.complete_run.execute({
+          summary: "Bash command completed with no output.",
+          recommendedNextStep: "Continue with follow-up evidence collection.",
+          residualRisk: "No residual risk was introduced by an empty command output."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const workflow = makeWorkflow({
+      stages: [
+        {
+          ...makeWorkflow().stages[0]!,
+          id: "70000000-0000-0000-0000-000000000052",
+          allowedToolIds: ["seed-agent-bash-command"],
+          completionRule: {
+            requireStageResult: true,
+            requireToolCall: true,
+            allowEmptyResult: true,
+            minFindings: 0,
+            requireReachableSurface: false,
+            requireEvidenceBackedWeakness: false,
+            requireOsiCoverageStatus: false,
+            requireChainedFindings: false
+          }
+        }
+      ]
+    });
+    const { service, createdRuns } = createService({
+      workflow,
+      aiToolById: {
+        "seed-agent-bash-command": makeSeededAgentBashCommandRuntimeTool()
+      }
+    });
+
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    const bashResultEvent = createdRuns[0]!.events.find((event) =>
+      event.type === "tool_result" && event.payload["toolCallId"] === "call-empty-bash"
+    );
+    expect(bashResultEvent).toMatchObject({
+      status: "completed",
+      summary: "Agent Bash Command completed."
+    });
   });
 
   it("launches only the selected target when local runtime is active", async () => {
@@ -885,6 +961,46 @@ describe("WorkflowExecutionService", () => {
     expect(executionReportsService.createForWorkflowRun).toHaveBeenCalledWith(createdRuns[0]!.id);
   });
 
+  it("recovers once when the model stream ends before complete_run", async () => {
+    streamTextMock
+      .mockImplementationOnce(() => ({
+        fullStream: (async function* () {
+          yield {
+            type: "finish",
+            finishReason: "stop",
+            rawFinishReason: "end_turn",
+            totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+          };
+        })()
+      }))
+      .mockImplementationOnce((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
+        fullStream: (async function* () {
+          expect(Object.keys(options.tools)).toEqual(["complete_run"]);
+          await options.tools.complete_run.execute({
+            summary: "Recovered completion from prior evidence.",
+            recommendedNextStep: "Review the partial run output.",
+            residualRisk: "Residual risk remains because recovery used available evidence only."
+          });
+          yield {
+            type: "finish",
+            finishReason: "stop",
+            rawFinishReason: "end_turn",
+            totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+          };
+        })()
+      }));
+
+    const { service, createdRuns } = createService();
+    await service.startRun("10000000-0000-0000-0000-000000000001");
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    expect(createdRuns[0]!.events.some((event) => event.title === "Run completion recovery requested")).toBe(true);
+    expect(createdRuns[0]!.events.some((event) => event.title === "Run completion accepted")).toBe(true);
+  });
+
   it("persists tool context, hides log_progress tool calls, and publishes live model output", async () => {
     streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
       fullStream: (async function* () {
@@ -1011,15 +1127,11 @@ describe("WorkflowExecutionService", () => {
 
     streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
       fullStream: (async function* () {
-        const completion = await options.tools.complete_run.execute({
+        await expect(options.tools.complete_run.execute({
           summary: "Nothing to report.",
           recommendedNextStep: "Stop.",
           residualRisk: "Unknown."
-        });
-        expect(completion).toMatchObject({
-          accepted: false,
-          error: expect.stringContaining("Workflow completion assertions failed")
-        });
+        })).rejects.toThrow("Workflow completion assertions failed");
         yield {
           type: "finish",
           finishReason: "stop",
@@ -1078,15 +1190,11 @@ describe("WorkflowExecutionService", () => {
 
     streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
       fullStream: (async function* () {
-        const completion = await options.tools.complete_run.execute({
+        await expect(options.tools.complete_run.execute({
           summary: "Done.",
           recommendedNextStep: "Review.",
           residualRisk: "Unknown."
-        });
-        expect(completion).toMatchObject({
-          accepted: false,
-          error: expect.stringContaining("requires a handoff")
-        });
+        })).rejects.toThrow("requires a handoff");
         yield {
           type: "finish",
           finishReason: "stop",
@@ -1211,7 +1319,7 @@ describe("WorkflowExecutionService", () => {
           impact: "The admin panel is reachable from the assessed surface.",
           recommendation: "Restrict access to trusted operators."
         });
-        const completion = await options.tools.complete_run.execute({
+        await expect(options.tools.complete_run.execute({
           summary: "Bogus handoff should fail.",
           recommendedNextStep: "Retry with real finding ids.",
           residualRisk: "Unknown.",
@@ -1246,11 +1354,7 @@ describe("WorkflowExecutionService", () => {
               ]
             }]
           }
-        });
-        expect(completion).toMatchObject({
-          accepted: false,
-          error: expect.stringContaining("handoff reference validation failed")
-        });
+        })).rejects.toThrow("handoff reference validation failed");
         yield {
           type: "finish",
           finishReason: "stop",
@@ -1329,7 +1433,7 @@ describe("WorkflowExecutionService", () => {
           impact: "The exposed admin panel can be chained with weak authentication checks.",
           recommendation: "Add authentication and network restrictions."
         });
-        const rejectedCompletion = await options.tools.complete_run.execute({
+        await expect(options.tools.complete_run.execute({
           summary: "Invalid handoff should be corrected.",
           recommendedNextStep: "Retry with real refs.",
           residualRisk: "Unknown.",
@@ -1361,11 +1465,7 @@ describe("WorkflowExecutionService", () => {
               findingIds: [firstFinding.findingId, secondFinding.findingId]
             }]
           }
-        });
-        expect(rejectedCompletion).toMatchObject({
-          accepted: false,
-          error: expect.stringContaining("unknown vector id vector-missing")
-        });
+        })).rejects.toThrow("unknown vector id vector-missing");
         await options.tools.complete_run.execute({
           summary: "Valid handoff accepted.",
           recommendedNextStep: "Review the attack path.",
@@ -1628,6 +1728,95 @@ describe("WorkflowExecutionService", () => {
       expect(createdRuns[0]?.status).toBe("completed");
     });
     expect(createdRuns[0]!.events.filter((event) => event.type === "finding_reported")).toHaveLength(2);
+    expect(createdRuns[0]!.events.filter((event) => event.type === "attack_vector_reported")).toHaveLength(1);
+  });
+
+  it("accepts numeric strings in report_attack_vector payloads", async () => {
+    const workflow = makeWorkflow({
+      stages: [{
+        ...makeWorkflow().stages[0]!,
+        allowedToolIds: ["custom-http-proof"]
+      }]
+    });
+
+    streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<any> }> }) => ({
+      fullStream: (async function* () {
+        const toolOutput = await options.tools["custom-http-proof"].execute({
+          baseUrl: "http://localhost:3000/admin"
+        });
+        const firstFinding = await options.tools.report_finding.execute({
+          mode: "finding",
+          type: "service_exposure",
+          title: "Admin Panel Reachable",
+          severity: "medium",
+          confidence: 0.95,
+          target: { host: "demo.local", url: "http://localhost:3000/admin" },
+          evidence: [{
+            sourceTool: "custom-http-proof",
+            quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
+            toolRunRef: toolOutput.toolRunId
+          }],
+          impact: "The admin panel is reachable from the assessed surface.",
+          recommendation: "Restrict access to trusted operators."
+        });
+        const secondFinding = await options.tools.report_finding.execute({
+          mode: "finding",
+          type: "auth_weakness",
+          title: "Weak Authentication on Admin Surface",
+          severity: "high",
+          confidence: 0.92,
+          target: { host: "demo.local", url: "http://localhost:3000/admin" },
+          evidence: [{
+            sourceTool: "custom-http-proof",
+            quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
+            toolRunRef: toolOutput.toolRunId
+          }],
+          impact: "Weak authentication can be exploited once the admin surface is reachable.",
+          recommendation: "Harden authentication and protect the admin entry point."
+        });
+        const compatibilityVector = await options.tools.report_attack_vector.execute({
+          kind: "enables",
+          sourceFindingId: firstFinding.findingId,
+          destinationFindingId: secondFinding.findingId,
+          summary: "Reachable admin panel enables direct authentication attacks.",
+          impact: "Supports a chained compromise path.",
+          confidence: "0.85",
+          transitionEvidence: [{
+            sourceTool: "custom-http-proof",
+            quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
+            toolRunRef: toolOutput.toolRunId
+          }]
+        });
+        expect(compatibilityVector).toMatchObject({
+          attackVectorId: expect.any(String),
+          sourceFindingId: firstFinding.findingId,
+          destinationFindingId: secondFinding.findingId
+        });
+        await options.tools.complete_run.execute({
+          summary: "Stringified numeric fields were accepted for workflow reporting tools.",
+          recommendedNextStep: "Keep coercion in place for hosted models that emit strings.",
+          residualRisk: "Risk remains until findings are remediated."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({
+      workflow,
+      aiToolById: {
+        "custom-http-proof": makeCustomHttpProofTool()
+      }
+    });
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
     expect(createdRuns[0]!.events.filter((event) => event.type === "attack_vector_reported")).toHaveLength(1);
   });
 

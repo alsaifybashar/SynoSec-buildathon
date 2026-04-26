@@ -46,7 +46,7 @@ export class WorkflowRunWriter implements WorkflowRunWriterPort {
       });
 
     this.appendQueues.set(run.id, next);
-    void next.finally(() => {
+    void next.catch(() => undefined).finally(() => {
       if (this.appendQueues.get(run.id) === next) {
         this.appendQueues.delete(run.id);
       }

@@ -20,6 +20,7 @@ import { executeSemanticFamilyTool } from "./semantic-family-tool-executor.js";
 import {
   applyWorkflowRuntimeTarget,
   enrichWorkflowFindingDetails,
+  firstNonBlankString,
   inferLayer,
   normalizeToolInput,
   parseExecutionTarget,
@@ -65,6 +66,9 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     "Prefer at most four strong findings. Stop once the main compromise path is proven.",
     "complete_run does not create findings and cannot satisfy missing evidence, missing finding, or missing chain requirements.",
     "If complete_run is rejected, call the missing required actions or evidence tools before trying completion again.",
+    "For blocked outcomes, complete_run still requires top-level summary, recommendedNextStep, and residualRisk.",
+    "For blocked.failedToolRunIds, reference actual failed toolRunId values returned by prior tool calls in this run.",
+    "When setting timeout_ms for bash tools, pass a numeric value, not a string.",
     "When requireChainedFindings is enabled, satisfy it through explicit validated attack vectors, finding relationship fields, chain metadata, or a handoff attack path referencing finding ids.",
     ATTACK_PATH_HANDOFF_HINT,
     "End every run explicitly with complete_run."
@@ -144,10 +148,17 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       "report_attack_vector",
       "complete_run"
     ]);
+    const exposedToolName = (tool: { id: string; executorType: string }) => {
+      if (tool.executorType === "bash" && tool.id === "seed-agent-bash-command") {
+        return "bash";
+      }
+      return tool.id;
+    };
     const evidenceToolEntries = tools.flatMap((tool) => {
       if (tool.executorType === "bash" && tool.bashSource) {
+        const exposedName = exposedToolName(tool);
         return [{
-          exposedName: tool.id,
+          exposedName,
           tool,
           description: tool.description ?? tool.name,
           execute: async (rawInput: unknown) => {
@@ -174,10 +185,16 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             if (!toolRun) {
               throw new Error(`Workflow tool execution did not create a tool run for ${tool.name}.`);
             }
+            const outputPreview = truncate(firstNonBlankString(
+              brokerResult.observations[0]?.summary,
+              toolRun.statusReason,
+              toolRun.output,
+              `${tool.name} ${toolRun.status}.`
+            )!);
 
             const result: ExecutedToolResult = {
               toolId: tool.id,
-              toolName: tool.id,
+              toolName: exposedName,
               toolInput,
               toolRequest: request,
               toolRun,
@@ -185,12 +202,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               observations: brokerResult.observations,
               observationKeys: brokerResult.observations.map((observation) => observation.key),
               observationSummaries: brokerResult.observations.map((observation) => observation.summary),
-              outputPreview: truncate(
-                brokerResult.observations[0]?.summary
-                  ?? toolRun.statusReason
-                  ?? toolRun.output
-                  ?? `${tool.name} ${toolRun.status}.`
-              ),
+              outputPreview,
               fullOutput: toolRun.output ?? toolRun.statusReason ?? "",
               commandPreview: toolRun.commandPreview,
               ...(toolRun.exitCode === undefined ? {} : { exitCode: toolRun.exitCode }),
@@ -212,7 +224,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             return {
               toolRunId: toolRun.id,
               toolId: tool.id,
-              toolName: tool.id,
+              toolName: exposedName,
               status: toolRun.status,
               outputPreview: result.outputPreview,
               rawOutput: result.fullOutput,
@@ -277,7 +289,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         tools: [
           { name: "log_progress", description: "Persist a short operator-visible progress update in the workflow transcript. Use this before or after meaningful tool calls to explain the current action or decision in one concise sentence. Provide `message`. Returns acceptance only; it does not create evidence, findings, or attack-path links." },
           { name: "report_finding", description: "Persist findings and attack-vector links through one mode-based action. Use `mode: \"finding\"` for evidence-backed findings (optionally with `attackVectors` between existing finding ids) and `mode: \"attack_vector\"` to submit one or more vectors between existing findings only. Non-related vectors require grounded transition evidence." },
-          { name: "complete_run", description: `Finish the workflow run last, after required evidence, report_finding calls, finding ids, and any handoff attack paths have been submitted. Use this only as the final action. Provide \`summary\`, \`recommendedNextStep\`, \`residualRisk\`, and optional \`handoff\`. It does not create findings and cannot satisfy missing evidence, finding, or chain requirements. ${ATTACK_PATH_HANDOFF_HINT}` }
+          { name: "complete_run", description: `Finish the workflow run last, after required evidence, report_finding calls, finding ids, and any handoff attack paths have been submitted. Use this only as the final action. Provide \`summary\`, \`recommendedNextStep\`, \`residualRisk\`, and optional \`handoff\`. For blocked outcomes, keep those top-level fields and include blocked.failedToolRunIds using actual failed toolRunId values from earlier tool results. It does not create findings and cannot satisfy missing evidence, finding, or chain requirements. ${ATTACK_PATH_HANDOFF_HINT}` }
         ]
       }
     ]);
@@ -510,7 +522,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       preconditions: z.array(z.string().min(1)).optional(),
       impact: z.string().min(1),
       transitionEvidence: z.array(relaxedFindingEvidenceToolInputSchema).optional(),
-      confidence: z.number(),
+      confidence: coerceNumericString(z.number().min(0).max(1)),
       validationStatus: z.enum(["unverified", "suspected", "single_source", "cross_validated", "reproduced", "blocked", "rejected"]).optional()
     });
     const reportFindingToolInputSchema = z.object({
@@ -518,10 +530,10 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       type: z.enum(["service_exposure", "content_discovery", "missing_security_header", "tls_weakness", "injection_signal", "auth_weakness", "sensitive_data_exposure", "misconfiguration", "other"]).optional(),
       title: z.string().min(1).optional(),
       severity: z.enum(["info", "low", "medium", "high", "critical"]).optional(),
-      confidence: z.number().optional(),
+      confidence: coerceNumericString(z.number().min(0).max(1)).optional(),
       target: z.object({
         host: z.string().min(1),
-        port: z.number().int().optional(),
+        port: coerceNumericString(z.number().int()).optional(),
         url: z.string().url().optional(),
         path: z.string().min(1).optional()
       }).optional(),
@@ -734,7 +746,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       }),
       report_attack_vector: createSdkTool({
         description: "Deprecated compatibility action for older workflow runs. Prefer report_finding with `mode: \"attack_vector\"` for new submissions. Non-related vectors require transitionEvidence grounded in persisted tool results.",
-        inputSchema: workflowAttackVectorSubmissionSchema,
+        inputSchema: relaxedAttackVectorSubmissionToolInputSchema,
         execute: async (rawInput) => {
           const attackVector = await submitAttackVector(rawInput);
           return {
@@ -771,7 +783,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               message,
               ...payload
             }, "Run completion rejected", message, detail ?? message);
-            return { accepted: false, error: message };
+            throw new RequestError(400, message);
           };
           const blockedCompletion = (() => {
             if (!completion.blocked) {
@@ -831,11 +843,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
                 : "The run satisfied the configured README coverage assertions.", JSON.stringify(completionAssertions.assertions, null, 2));
             }
             if (completionAssertions.failures.length > 0) {
-              return {
-                accepted: false,
-                error: `Workflow completion assertions failed: ${completionAssertions.failures.join("; ")}`,
-                failures: completionAssertions.failures
-              };
+              throw new RequestError(400, `Workflow completion assertions failed: ${completionAssertions.failures.join("; ")}`);
             }
           }
           const completionDetail = [
@@ -915,14 +923,15 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
                 const rawContent = typeof item.content === "string"
                   ? item.content
                   : JSON.stringify(item.content, null, 2);
+                const resultSummary = firstNonBlankString(rawContent, `${toolCall.toolName} returned no output.`)!;
                 await appendEvent("tool_result", item.is_error ? "failed" : "completed", {
                   toolCallId: item.tool_use_id,
                   toolName: toolCall.toolName,
                   toolId: toolCall.toolId,
                   output: item.content,
-                  summary: rawContent,
-                  outputPreview: rawContent,
-                  fullOutput: rawContent,
+                  summary: resultSummary,
+                  outputPreview: resultSummary,
+                  fullOutput: rawContent ?? "",
                   commandPreview: null,
                   exitCode: null,
                   observations: [],
@@ -931,7 +940,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
                   usedToolName: null,
                   fallbackUsed: false,
                   attempts: []
-                }, `${toolCall.toolName} returned`, rawContent, rawContent, undefined, {
+                }, `${toolCall.toolName} returned`, resultSummary, firstNonBlankString(rawContent), undefined, {
                   rawStreamPartType: "tool-result"
                 });
                 persistedToolResultIds.add(item.tool_use_id);
@@ -1015,15 +1024,22 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             const matchingResult = (toolRunId ? executedResults.find((candidate) => candidate.toolRun.id === toolRunId) : null)
               ?? executedResults.find((candidate) => candidate.toolName === part.toolName);
             const findingResult = part.toolName === "report_finding" ? formatFindingResult(part.output) : null;
-            const resultStatus = matchingResult?.status === "failed"
+            const partIsError = typeof part.isError === "boolean" && part.isError;
+            const completeRunRejected = part.toolName === "complete_run"
+              && typeof part.output === "object"
+              && part.output !== null
+              && "accepted" in part.output
+              && part.output.accepted === false;
+            const resultStatus = partIsError
+              || matchingResult?.status === "failed"
+              || matchingResult?.status === "denied"
+              || completeRunRejected
               ? "failed"
               : "completed";
             const outputPreview = matchingResult?.outputPreview
-              ?? findingResult?.summary
-              ?? `${part.toolName} completed.`;
-            const fullOutput = matchingResult?.fullOutput
-              ?? findingResult?.detail
-              ?? null;
+              ? firstNonBlankString(matchingResult.outputPreview, findingResult?.summary, `${part.toolName} completed.`)!
+              : firstNonBlankString(findingResult?.summary, `${part.toolName} completed.`)!;
+            const fullOutput = firstNonBlankString(matchingResult?.fullOutput, findingResult?.detail);
             persistedToolResultIds.add(part.toolCallId);
             await appendEvent("tool_result", resultStatus, {
               toolCallId: part.toolCallId,
@@ -1042,6 +1058,35 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               fallbackUsed: matchingResult?.fallbackUsed ?? false,
               attempts: matchingResult?.attempts ?? []
             }, `${part.toolName} returned`, outputPreview, fullOutput, undefined, {
+              rawStreamPartType: part.type
+            });
+            break;
+          }
+          case "tool-error": {
+            const matchingResult = executedResults.find((candidate) => candidate.toolName === part.toolName);
+            const rawError = part.error instanceof Error
+              ? firstNonBlankString(part.error.message, part.error.stack, "Tool execution failed.")!
+              : firstNonBlankString(typeof part.error === "string" ? part.error : JSON.stringify(part.error, null, 2), "Tool execution failed.")!;
+            persistedToolResultIds.add(part.toolCallId);
+            await appendEvent("tool_result", "failed", {
+              toolCallId: part.toolCallId,
+              toolName: part.toolName,
+              toolId: matchingResult?.toolId ?? null,
+              output: {
+                error: rawError
+              },
+              summary: rawError,
+              outputPreview: rawError,
+              fullOutput: rawError,
+              commandPreview: matchingResult?.commandPreview ?? null,
+              exitCode: matchingResult?.exitCode ?? null,
+              observations: matchingResult?.observationSummaries ?? [],
+              observationRecords: matchingResult?.observations ?? [],
+              usedToolId: matchingResult?.usedToolId ?? null,
+              usedToolName: matchingResult?.usedToolName ?? null,
+              fallbackUsed: matchingResult?.fallbackUsed ?? false,
+              attempts: matchingResult?.attempts ?? []
+            }, `${part.toolName} failed`, rawError, rawError, undefined, {
               rawStreamPartType: part.type
             });
             break;
@@ -1104,6 +1149,173 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           message: error instanceof Error ? error.message : String(error)
         }, "Workflow model execution failed", error instanceof Error ? error.message : String(error), error instanceof Error ? error.stack ?? error.message : String(error));
         throw error;
+      }
+    }
+
+    if (!terminalState) {
+      const recoveryPrompt = [
+        "The previous model stream ended without calling complete_run.",
+        "Use the collected tool results below and call complete_run now. Do not call additional evidence tools.",
+        "If the evidence is incomplete or tool failures blocked validation, include a blocked outcome with top-level summary, recommendedNextStep, and residualRisk.",
+        "",
+        "Tool results:",
+        ...(executedResults.length > 0
+          ? executedResults.map((result, index) => [
+              `${index + 1}. ${result.toolName} status=${result.status} toolRunId=${result.toolRun.id}`,
+              `   output=${firstNonBlankString(result.outputPreview, result.fullOutput, result.toolRun.statusReason, "no output")}`,
+              result.status === "failed" || result.status === "denied"
+                ? `   failedToolRunId=${result.toolRun.id}`
+                : null
+            ].filter(Boolean).join("\n"))
+          : ["No evidence tools were executed."]),
+        "",
+        `Reported findings: ${reportedFindings.size}`,
+        `Reported attack vectors: ${reportedAttackVectors.size}`
+      ].join("\n");
+
+      await appendEvent("verification", "failed", {
+        messageKind: "challenge",
+        action: "complete_run_recovery",
+        message: "The model stream ended before complete_run; requesting one final completion call."
+      }, "Run completion recovery requested", "The model ended without complete_run; requesting one final completion call.", recoveryPrompt);
+
+      const recoveryResult = streamText({
+        model: this.createLanguageModel(runtime),
+        system: systemPrompt,
+        prompt: recoveryPrompt,
+        tools: {
+          complete_run: systemTools.complete_run
+        },
+        stopWhen: stepCountIs(2),
+        abortSignal: abortController.signal
+      });
+
+      try {
+        const recoveryIterator = recoveryResult.fullStream[Symbol.asyncIterator]();
+        const modelStreamIdleTimeoutMs = getModelStreamIdleTimeoutMs();
+        while (true) {
+          const nextPart = await readNextModelStreamPart(recoveryIterator, modelStreamIdleTimeoutMs, abortController);
+          if (nextPart.done) {
+            break;
+          }
+
+          const part = nextPart.value as any;
+          switch (part.type) {
+            case "text": {
+              const nextLiveModelOutput = appendLiveText(part.text);
+              await appendEvent("model_decision", "running", {
+                text: part.text
+              }, "Model streamed text", truncate(part.text, 80), part.text, undefined, {
+                rawStreamPartType: part.type,
+                liveModelOutput: nextLiveModelOutput
+              });
+              break;
+            }
+            case "tool-call": {
+              toolCallsById.set(part.toolCallId, {
+                toolName: part.toolName,
+                toolId: null
+              });
+              await appendEvent("tool_call", "running", {
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                toolId: null,
+                input: JSON.stringify(part.input, null, 2)
+              }, `Calling ${part.toolName}`, `Invoked ${part.toolName}.`, JSON.stringify(part.input, null, 2), undefined, {
+                rawStreamPartType: part.type
+              });
+              break;
+            }
+            case "tool-result": {
+              const rawOutput = typeof part.output === "string"
+                ? part.output
+                : JSON.stringify(part.output, null, 2);
+              const outputPreview = firstNonBlankString(rawOutput, `${part.toolName} completed.`)!;
+              persistedToolResultIds.add(part.toolCallId);
+              await appendEvent("tool_result", "completed", {
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                toolId: null,
+                output: part.output,
+                summary: outputPreview,
+                outputPreview,
+                fullOutput: rawOutput ?? "",
+                commandPreview: null,
+                exitCode: null,
+                observations: [],
+                observationRecords: [],
+                usedToolId: null,
+                usedToolName: null,
+                fallbackUsed: false,
+                attempts: []
+              }, `${part.toolName} returned`, outputPreview, firstNonBlankString(rawOutput), undefined, {
+                rawStreamPartType: part.type
+              });
+              break;
+            }
+            case "tool-error": {
+              const rawError = part.error instanceof Error
+                ? firstNonBlankString(part.error.message, part.error.stack, "Tool execution failed.")!
+                : firstNonBlankString(typeof part.error === "string" ? part.error : JSON.stringify(part.error, null, 2), "Tool execution failed.")!;
+              persistedToolResultIds.add(part.toolCallId);
+              await appendEvent("tool_result", "failed", {
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                toolId: null,
+                output: {
+                  error: rawError
+                },
+                summary: rawError,
+                outputPreview: rawError,
+                fullOutput: rawError,
+                commandPreview: null,
+                exitCode: null,
+                observations: [],
+                observationRecords: [],
+                usedToolId: null,
+                usedToolName: null,
+                fallbackUsed: false,
+                attempts: []
+              }, `${part.toolName} failed`, rawError, rawError, undefined, {
+                rawStreamPartType: part.type
+              });
+              break;
+            }
+            case "finish": {
+              const finalLiveModelOutput = finalizeLiveModelOutput();
+              await appendEvent("system_message", part.finishReason === "error" ? "failed" : "completed", {
+                finishReason: part.finishReason,
+                rawFinishReason: part.rawFinishReason,
+                totalUsage: part.totalUsage
+              }, "Model recovery stream finished", `Recovery stream finished with reason: ${part.finishReason}.`, null, undefined, {
+                rawStreamPartType: part.type,
+                liveModelOutput: finalLiveModelOutput
+              });
+              break;
+            }
+            case "error": {
+              const finalLiveModelOutput = finalizeLiveModelOutput();
+              await appendEvent("verification", "failed", {
+                message: part.error instanceof Error ? part.error.message : String(part.error),
+                detail: part.error instanceof Error ? part.error.stack ?? part.error.message : String(part.error)
+              }, "Model recovery stream error", part.error instanceof Error ? part.error.message : String(part.error), part.error instanceof Error ? part.error.stack ?? part.error.message : String(part.error), undefined, {
+                rawStreamPartType: part.type,
+                liveModelOutput: finalLiveModelOutput
+              });
+              break;
+            }
+            default:
+              break;
+          }
+        }
+        await recoveryIterator.return?.();
+      } catch (error) {
+        if (!(error instanceof Error && error.name === "AbortError")) {
+          await appendEvent("verification", "failed", {
+            message: error instanceof Error ? error.message : String(error)
+          }, "Workflow completion recovery failed", error instanceof Error ? error.message : String(error), error instanceof Error ? error.stack ?? error.message : String(error));
+          throw error;
+        }
       }
     }
 
@@ -1422,6 +1634,22 @@ function parseWorkflowToolInput<TSchema extends z.ZodTypeAny>(
   }
 }
 
+function coerceNumericString(schema: z.ZodNumber) {
+  return z.preprocess((value) => {
+    if (typeof value !== "string") {
+      return value;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return value;
+    }
+
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : value;
+  }, schema);
+}
+
 function normalizeWorkflowToolInput(rawInput: unknown, label: string): unknown {
   const parsedInput = (() => {
     if (typeof rawInput !== "string") {
@@ -1445,7 +1673,7 @@ function normalizeWorkflowToolInput(rawInput: unknown, label: string): unknown {
 }
 
 function coerceWorkflowToolInput(rawInput: unknown, label: string): unknown {
-  if (label !== "Finding submission") {
+  if (label !== "Finding submission" && label !== "Attack vector submission") {
     return rawInput;
   }
 
@@ -1460,6 +1688,10 @@ function coerceWorkflowToolInput(rawInput: unknown, label: string): unknown {
     if (Number.isFinite(parsedConfidence)) {
       normalized["confidence"] = parsedConfidence;
     }
+  }
+
+  if (label !== "Finding submission") {
+    return normalized;
   }
 
   if (typeof normalized["target"] === "string") {

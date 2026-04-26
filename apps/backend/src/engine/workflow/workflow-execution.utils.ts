@@ -58,6 +58,17 @@ export function truncate(value: string, maxLength = 220) {
   return `${trimmed.slice(0, maxLength - 1)}…`;
 }
 
+export function firstNonBlankString(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const trimmed = typeof value === "string" ? value.trim() : "";
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+
+  return null;
+}
+
 export function parseTarget(baseUrl: string | null | undefined) {
   if (!baseUrl?.trim()) {
     throw new RequestError(400, "Workflow target requires a real base URL before execution.", {

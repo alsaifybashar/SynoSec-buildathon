@@ -21,7 +21,10 @@ export class WorkflowExecutionService implements WorkflowExecutionEngine {
   async startRun(workflowId: string, input: StartWorkflowRunBody = {}): Promise<WorkflowLaunch> {
     const { launch, runIds } = await this.launcher.launch(workflowId, input);
     for (const runId of runIds) {
-      void this.sessionRunner.runWorkflow(runId);
+      void this.sessionRunner.runWorkflow(runId).catch((error: unknown) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        console.error(`Workflow session runner crashed for run ${runId}: ${message}`);
+      });
     }
     return launch;
   }
