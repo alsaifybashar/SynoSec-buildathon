@@ -1,10 +1,7 @@
 import {
-  apiRoutes,
   type AiAgent,
-  type AiProvider,
   type AiTool,
   type CreateAiAgentBody,
-  type ListAiProvidersResponse,
   type ListAiToolsResponse
 } from "@synosec/contracts";
 import {
@@ -23,20 +20,12 @@ import { fetchJson } from "@/shared/lib/api";
 import type { AiAgentsQuery } from "@/shared/lib/resource-client";
 
 async function loadAiAgentContext(): Promise<AiAgentDefinitionContext> {
-  const [providersPayload, toolsPayload] = await Promise.all([
-    fetchJson<ListAiProvidersResponse>(`${apiRoutes.aiProviders}?page=1&pageSize=100&sortBy=name&sortDirection=asc`),
-    fetchJson<ListAiToolsResponse>(`${apiRoutes.aiTools}?page=1&pageSize=100&sortBy=name&sortDirection=asc`)
-  ]);
-
-  const providers = Array.isArray(providersPayload["providers"]) ? providersPayload["providers"] as AiProvider[] : [];
+  const toolsPayload = await fetchJson<ListAiToolsResponse>("/api/ai-tools?page=1&pageSize=100&sortBy=name&sortDirection=asc");
   const tools = Array.isArray(toolsPayload["tools"]) ? toolsPayload["tools"] as AiTool[] : [];
-  const providerLookup = Object.fromEntries(providers.map((provider) => [provider.id, provider.name]));
 
   return {
-    providers,
     tools,
-    providerLookup,
-    defaultProviderId: providers[0]?.id ?? ""
+    runtimeLabel: "Anthropic · claude-sonnet-4-6"
   };
 }
 
@@ -57,11 +46,10 @@ export const aiAgentsController = createCrudFeatureController<
     q: "",
     sortBy: "name",
     sortDirection: "asc",
-    status: undefined,
-    providerId: undefined
+    status: undefined
   },
   loadContext: loadAiAgentContext,
-  createEmptyFormValues: (context) => createEmptyFormValues(context?.defaultProviderId ?? ""),
+  createEmptyFormValues: () => createEmptyFormValues(),
   toFormValues,
   parseRequestBody: ({ formValues }) => {
     const errors = validateForm(formValues);
@@ -75,22 +63,5 @@ export const aiAgentsController = createCrudFeatureController<
     };
   },
   getItemLabel: (agent) => agent.name,
-  applyContextDefaults: ({ formValues, initialValues, context }) => {
-    if (formValues.providerId || !context.defaultProviderId) {
-      return { formValues, initialValues };
-    }
-
-    const nextFormValues = {
-      ...formValues,
-      providerId: context.defaultProviderId
-    };
-
-    return {
-      formValues: nextFormValues,
-      initialValues: {
-        ...initialValues,
-        providerId: context.defaultProviderId
-      }
-    };
-  }
+  applyContextDefaults: ({ formValues, initialValues }) => ({ formValues, initialValues })
 });

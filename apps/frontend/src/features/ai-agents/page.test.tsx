@@ -1,21 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AiAgent, AiProvider, AiTool } from "@synosec/contracts";
+import { fixedAiRuntimeLabel, type AiAgent, type AiTool } from "@synosec/contracts";
 import { AiAgentsPage } from "@/features/ai-agents/page";
-
-const provider: AiProvider = {
-  id: "provider-1",
-  name: "Anthropic",
-  kind: "anthropic",
-  status: "active",
-  description: "Primary provider",
-  baseUrl: null,
-  model: "claude-sonnet-4-5",
-  apiKeyConfigured: true,
-  createdAt: "2026-04-20T00:00:00.000Z",
-  updatedAt: "2026-04-21T00:00:00.000Z"
-};
 
 const tool: AiTool = {
   id: "tool-1",
@@ -42,9 +29,7 @@ const agent: AiAgent = {
   name: "Recon Agent",
   status: "active",
   description: "Uses passive reconnaissance first.",
-  providerId: provider.id,
   systemPrompt: "Inspect the target first.",
-  modelOverride: null,
   toolIds: [tool.id],
   createdAt: "2026-04-21T00:00:00.000Z",
   updatedAt: "2026-04-21T00:00:00.000Z"
@@ -53,16 +38,6 @@ const agent: AiAgent = {
 function createFetchMock() {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-
-    if (url.startsWith("/api/ai-providers?")) {
-      return new Response(JSON.stringify({
-        providers: [provider],
-        page: 1,
-        pageSize: 100,
-        total: 1,
-        totalPages: 1
-      }));
-    }
 
     if (url.startsWith("/api/ai-tools?")) {
       return new Response(JSON.stringify({
@@ -111,7 +86,7 @@ describe("AiAgentsPage", () => {
     );
 
     expect((await screen.findAllByText("Recon Agent")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Anthropic").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(fixedAiRuntimeLabel).length).toBeGreaterThan(0);
   });
 
   it("renders create detail after context loads", async () => {

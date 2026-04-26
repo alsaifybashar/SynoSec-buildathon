@@ -4,8 +4,7 @@ import { orchestratorStreamMessageSchema } from "@synosec/contracts";
 import type { OrchestratorEventStream, OrchestratorExecutionEngine } from "@/engine/contracts.js";
 
 const createRunBodySchema = z.object({
-  targetUrl: z.string().url().min(1),
-  providerId: z.string().uuid()
+  targetUrl: z.string().url().min(1)
 });
 
 function writeSse(res: { write: (chunk: string) => void }, event: unknown) {
@@ -42,7 +41,7 @@ export function registerOrchestratorRoutes(
   app.post("/api/orchestrator/runs", async (req, res, next) => {
     try {
       const body = createRunBodySchema.parse(req.body);
-      const run = await service.createRun(body.targetUrl, body.providerId);
+      const run = await service.createRun(body.targetUrl);
       service.startAsync(run.id);
       res.status(201).json(run);
     } catch (error) {

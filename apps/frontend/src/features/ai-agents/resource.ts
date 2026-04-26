@@ -10,7 +10,6 @@ export const aiAgentsResource = createResourceClient<AiAgent, AiAgentsQuery, Lis
     q: "",
     sortBy: "name",
     sortDirection: "asc",
-    status: undefined,
-    providerId: undefined
+    status: undefined
   }
 });

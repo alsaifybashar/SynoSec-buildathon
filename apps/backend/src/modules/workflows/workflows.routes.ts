@@ -3,6 +3,7 @@ import {
   createWorkflowBodySchema,
   listWorkflowsResponseSchema,
   startWorkflowRunBodySchema,
+  workflowLaunchSchema,
   workflowRunCoverageResponseSchema,
   workflowRunFindingsResponseSchema,
   workflowRunReportSchema,
@@ -49,13 +50,13 @@ export function registerWorkflowsRoutes(
         request.params.id,
         startWorkflowRunBodySchema.parse(request.body ?? {})
       );
-      response.status(201).json(workflowRunSchema.parse(run));
+      response.status(201).json(workflowLaunchSchema.parse(run));
     } catch (error) {
       next(error);
     }
   });
 
-  app.get(`${apiRoutes.workflows}/:id/runs/latest`, async (request, response, next) => {
+  app.get(`${apiRoutes.workflows}/:id/launches/latest`, async (request, response, next) => {
     try {
       const workflow = await repository.getById(request.params.id);
       if (!workflow) {
@@ -63,13 +64,13 @@ export function registerWorkflowsRoutes(
         return;
       }
 
-      const run = await repository.getLatestRunByWorkflowId(request.params.id);
-      if (!run) {
-        response.status(404).json({ message: "Workflow run not found." });
+      const launch = await repository.getLatestLaunchByWorkflowId(request.params.id);
+      if (!launch) {
+        response.status(404).json({ message: "Workflow launch not found." });
         return;
       }
 
-      response.json(workflowRunSchema.parse(run));
+      response.json(workflowLaunchSchema.parse(launch));
     } catch (error) {
       next(error);
     }

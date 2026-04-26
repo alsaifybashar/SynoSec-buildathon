@@ -2,6 +2,7 @@ import type {
   AiTool,
   Scan,
   StartWorkflowRunBody,
+  WorkflowLaunch,
   ToolRequest,
   ToolRun,
   Workflow,
@@ -19,10 +20,10 @@ import type { OrchestratorExecutionEngineService } from "@/engine/orchestrator/i
 import type { ToolRuntime } from "@/modules/ai-tools/index.js";
 import type { ExecutionReportsService } from "@/modules/execution-reports/index.js";
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
-import type { AiProvidersRepository, StoredAiProvider } from "@/modules/ai-providers/index.js";
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
 import type { TargetsRepository } from "@/modules/targets/index.js";
 import type { WorkflowsRepository } from "@/modules/workflows/workflows.repository.js";
+import type { FixedAnthropicRuntime } from "@/shared/config/fixed-ai-runtime.js";
 import type { EffectiveExecutionConstraintSet } from "./execution-constraints.js";
 import type { WorkflowRunStream } from "./workflow-run-stream.js";
 
@@ -37,12 +38,12 @@ export interface WorkflowRuntimePorts {
   workflowsRepository: WorkflowsRepository;
   targetsRepository: TargetsRepository;
   aiAgentsRepository: AiAgentsRepository;
-  aiProvidersRepository: AiProvidersRepository;
   aiToolsRepository: AiToolsRepository;
   toolRuntime: ToolRuntime;
   workflowRunStream: WorkflowRunStream;
   orchestratorExecutionEngine: OrchestratorExecutionEngineService;
   executionReportsService: ExecutionReportsService;
+  fixedAnthropicRuntime: FixedAnthropicRuntime;
 }
 
 export type RuntimeStartContext = {
@@ -69,9 +70,14 @@ export type StageExecutionTarget = {
 
 export type StageDependencies = {
   agent: NonNullable<Awaited<ReturnType<AiAgentsRepository["getById"]>>>;
-  provider: StoredAiProvider;
+  runtime: FixedAnthropicRuntime;
   target: StageExecutionTarget;
   tools: AiTool[];
+  excludedTools: Array<{
+    id: string;
+    name: string;
+    reason: string;
+  }>;
 };
 
 export type ExecutedToolResult = {
@@ -172,4 +178,9 @@ export function createWorkflowScan(run: WorkflowRun, constraints: EffectiveExecu
 export type WorkflowRunLaunchInput = {
   workflowId: string;
   input?: StartWorkflowRunBody;
+};
+
+export type WorkflowLaunchResult = {
+  launch: WorkflowLaunch;
+  runIds: string[];
 };

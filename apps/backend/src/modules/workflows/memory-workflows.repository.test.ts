@@ -23,9 +23,7 @@ describe("MemoryWorkflowsRepository", () => {
       name: "Pipeline Agent",
       status: "active",
       description: null,
-      providerId: "30000000-0000-0000-0000-000000000001",
       systemPrompt: "Work the target.",
-      modelOverride: null,
       toolIds: ["tool:http-recon"],
       createdAt: "2026-04-24T10:00:00.000Z",
       updatedAt: "2026-04-24T10:00:00.000Z"
@@ -40,7 +38,6 @@ describe("MemoryWorkflowsRepository", () => {
       name: "Pipeline Workflow",
       status: "active",
       description: "Runs one transparent pipeline.",
-      targetId: "10000000-0000-0000-0000-000000000001",
       agentId: "20000000-0000-0000-0000-000000000001",
       objective: "Collect evidence and stop through system tools.",
       stageSystemPrompt: defaultWorkflowStageSystemPrompt,
@@ -88,9 +85,7 @@ describe("MemoryWorkflowsRepository", () => {
       name: "Pipeline Agent",
       status: "active",
       description: null,
-      providerId: "30000000-0000-0000-0000-000000000001",
       systemPrompt: "Work the target.",
-      modelOverride: null,
       toolIds: [],
       createdAt: "2026-04-24T10:00:00.000Z",
       updatedAt: "2026-04-24T10:00:00.000Z"
@@ -104,7 +99,6 @@ describe("MemoryWorkflowsRepository", () => {
         name: "Pipeline Workflow",
         status: "active",
         description: null,
-        targetId: "10000000-0000-0000-0000-000000000001",
         agentId: "20000000-0000-0000-0000-000000000001",
         objective: "Collect evidence and stop through system tools.",
         stageSystemPrompt: defaultWorkflowStageSystemPrompt,
@@ -129,7 +123,12 @@ describe("MemoryWorkflowsRepository", () => {
       }]
     );
 
-    const run = await repository.createRun("40000000-0000-0000-0000-000000000001");
+    const launch = await repository.createLaunch("40000000-0000-0000-0000-000000000001");
+    const run = await repository.createRun(
+      "40000000-0000-0000-0000-000000000001",
+      launch!.id,
+      "10000000-0000-0000-0000-000000000001"
+    );
 
     expect(run?.status).toBe("running");
     expect(run?.currentStepIndex).toBe(0);

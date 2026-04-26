@@ -1,10 +1,12 @@
 import { localDemoTargetDefaults } from "@synosec/contracts";
 import { Prisma, PrismaClient } from "@prisma/client";
 import {
-  getSeededProviderDefinitions,
   getSeededWorkflowDefinitions,
   localApplicationId,
+  orchestrationAttackMapWorkflowId,
+  osiSingleAgentWorkflowId,
   portfolioApplicationId,
+  portfolioEvidenceGraphWorkflowId,
   securePentApplicationId,
   seededAgentId,
   seededRoleDefinitions as roleDefinitions,
@@ -34,8 +36,6 @@ const deprecatedSeededAgentIds = [
 ] as const;
 
 async function main() {
-  const providerDefinitions = getSeededProviderDefinitions();
-  const seededAgentProviders = providerDefinitions.filter((provider) => provider.key === "anthropic");
   await prisma.workflow.deleteMany({
     where: {
       application: {
@@ -248,33 +248,6 @@ async function main() {
   });
 
   await Promise.all(
-    providerDefinitions.map((provider) =>
-      prisma.aiProvider.upsert({
-        where: { id: provider.id },
-        update: {
-          name: provider.name,
-          kind: provider.kind,
-          status: "active",
-          description: provider.description,
-          baseUrl: provider.baseUrl,
-          model: provider.model,
-          apiKey: provider.apiKey
-        },
-        create: {
-          id: provider.id,
-          name: provider.name,
-          kind: provider.kind,
-          status: "active",
-          description: provider.description,
-          baseUrl: provider.baseUrl,
-          model: provider.model,
-          apiKey: provider.apiKey
-        }
-      })
-    )
-  );
-
-  await Promise.all(
     toolDefinitions.map((tool) =>
       prisma.aiTool.upsert({
         where: { id: tool.id },
@@ -335,35 +308,27 @@ async function main() {
   });
 
   await Promise.all(
-    seededAgentProviders.flatMap((provider) =>
-      roleDefinitions.map((role) =>
-        prisma.aiAgent.upsert({
-          where: { id: seededAgentId(provider.key, role.key) },
-          update: {
-            name: `${provider.name} ${role.name}`,
-            status: "active",
-            description: role.description,
-            providerId: provider.id,
-            systemPrompt: role.systemPrompt,
-            modelOverride: null
-          },
-          create: {
-            id: seededAgentId(provider.key, role.key),
-            name: `${provider.name} ${role.name}`,
-            status: "active",
-            description: role.description,
-            providerId: provider.id,
-            systemPrompt: role.systemPrompt,
-            modelOverride: null
-          }
-        })
-      )
+    roleDefinitions.map((role) =>
+      prisma.aiAgent.upsert({
+        where: { id: seededAgentId(role.key) },
+        update: {
+          name: `Anthropic ${role.name}`,
+          status: "active",
+          description: role.description,
+          systemPrompt: role.systemPrompt
+        },
+        create: {
+          id: seededAgentId(role.key),
+          name: `Anthropic ${role.name}`,
+          status: "active",
+          description: role.description,
+          systemPrompt: role.systemPrompt
+        }
+      })
     )
   );
 
-  const seededAgentIdList = seededAgentProviders.flatMap((provider) =>
-    roleDefinitions.map((role) => seededAgentId(provider.key, role.key))
-  );
+  const seededAgentIdList = roleDefinitions.map((role) => seededAgentId(role.key));
 
   await prisma.aiAgentTool.deleteMany({
     where: {
@@ -372,14 +337,12 @@ async function main() {
   });
 
   await prisma.aiAgentTool.createMany({
-    data: seededAgentProviders.flatMap((provider) =>
-      roleDefinitions.flatMap((role) =>
-        role.toolIds.map((toolId, index) => ({
-          agentId: seededAgentId(provider.key, role.key),
-          toolId,
-          ord: index
-        }))
-      )
+    data: roleDefinitions.flatMap((role) =>
+      role.toolIds.map((toolId, index) => ({
+        agentId: seededAgentId(role.key),
+        toolId,
+        ord: index
+      }))
     )
   });
 
@@ -405,6 +368,19 @@ async function main() {
     }
   });
 
+  await prisma.workflow.deleteMany({
+    where: {
+      id: {
+        in: [
+          osiSingleAgentWorkflowId,
+          orchestrationAttackMapWorkflowId,
+          portfolioEvidenceGraphWorkflowId
+        ],
+        notIn: seededWorkflowIds
+      }
+    }
+  });
+
   await Promise.all(
     workflowDefinitions.map(async (workflow) => {
       await prisma.workflow.upsert({
@@ -414,7 +390,7 @@ async function main() {
           status: workflow.status,
           executionKind: workflow.executionKind,
           description: workflow.description,
-          applicationId: workflow.applicationId
+          applicationId: null
         },
         create: {
           id: workflow.id,
@@ -422,7 +398,7 @@ async function main() {
           status: workflow.status,
           executionKind: workflow.executionKind,
           description: workflow.description,
-          applicationId: workflow.applicationId
+          applicationId: null
         }
       });
 

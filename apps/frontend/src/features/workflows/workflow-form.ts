@@ -11,19 +11,17 @@ export type WorkflowFormValues = {
   status: WorkflowStatus;
   executionKind: ExecutionKind;
   description: string;
-  targetId: string;
   agentId: string;
   systemPrompt: string;
   allowedToolIds: string[];
 };
 
-export function createEmptyFormValues(defaultTargetId = "", defaultAgentId = ""): WorkflowFormValues {
+export function createEmptyFormValues(defaultAgentId = ""): WorkflowFormValues {
   return {
     name: "",
     status: "draft",
     executionKind: "workflow",
     description: "",
-    targetId: defaultTargetId,
     agentId: defaultAgentId,
     systemPrompt: defaultWorkflowStageSystemPrompt,
     allowedToolIds: []
@@ -36,7 +34,6 @@ export function toWorkflowFormValues(workflow: Workflow): WorkflowFormValues {
     status: workflow.status,
     executionKind: workflow.executionKind ?? "workflow",
     description: workflow.description ?? "",
-    targetId: workflow.targetId,
     agentId: workflow.agentId,
     systemPrompt: workflow.stageSystemPrompt,
     allowedToolIds: workflow.allowedToolIds
@@ -49,7 +46,6 @@ export function toWorkflowRequestBody(values: WorkflowFormValues): CreateWorkflo
     status: values.status,
     executionKind: values.executionKind,
     description: values.description.trim() || null,
-    targetId: values.targetId,
     agentId: values.agentId,
     objective: "Run the configured workflow using the linked agent, allowed tools, and structured reporting.",
     stageSystemPrompt: values.systemPrompt.trim(),
@@ -85,9 +81,6 @@ export function validateWorkflowForm(values: WorkflowFormValues) {
 
   if (!values.name.trim()) {
     errors["name"] = "Name is required.";
-  }
-  if (!values.targetId) {
-    errors["targetId"] = "Target is required.";
   }
   if (!values.agentId) {
     errors["agentId"] = "Agent is required.";

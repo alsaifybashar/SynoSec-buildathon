@@ -58,7 +58,6 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
     status: "active",
     executionKind: "workflow",
     description: null,
-    targetId: "20000000-0000-0000-0000-000000000001",
     agentId: stage.agentId,
     objective: stage.objective,
     stageSystemPrompt: stage.stageSystemPrompt,
@@ -100,7 +99,7 @@ function createService(overrides: {
   workflow?: Workflow | null;
   target?: Target;
   agentsById?: Record<string, Record<string, unknown>>;
-  provider?: Record<string, unknown> | null;
+  fixedRuntime?: Record<string, unknown>;
   workflowRunStream?: WorkflowRunStream;
   orchestrator?: Record<string, unknown>;
   aiToolById?: Record<string, Record<string, unknown>>;
@@ -113,29 +112,34 @@ function createService(overrides: {
       name: "Pipeline Agent",
       status: "active",
       description: null,
-      providerId: "40000000-0000-0000-0000-000000000001",
       systemPrompt: "Work the target.",
-      modelOverride: null,
       toolIds: [],
       createdAt: "2026-04-24T10:00:00.000Z",
       updatedAt: "2026-04-24T10:00:00.000Z"
     }
   };
-  const provider = overrides.provider ?? {
-    id: "40000000-0000-0000-0000-000000000001",
-    name: "Anthropic",
-    kind: "anthropic",
-    status: "active",
-    description: null,
-    baseUrl: null,
-    model: "claude-sonnet-4-20250514",
-    apiKey: "test-key",
-    apiKeyConfigured: true,
-    createdAt: "2026-04-24T10:00:00.000Z",
-    updatedAt: "2026-04-24T10:00:00.000Z"
+  const fixedRuntime = overrides.fixedRuntime ?? {
+    providerName: "Anthropic",
+    model: "claude-sonnet-4-6",
+    apiKey: "test-key"
   };
   const workflowRunStream = overrides.workflowRunStream ?? new WorkflowRunStream();
   const createdRuns: WorkflowRun[] = [];
+  const createdLaunch = {
+    id: "60000000-0000-0000-0000-000000000001",
+    workflowId: workflow?.id ?? "10000000-0000-0000-0000-000000000001",
+    status: "running" as const,
+    startedAt: "2026-04-24T10:00:00.000Z",
+    completedAt: null,
+    runs: [] as Array<{
+      targetId: string;
+      runId: string;
+      status: "pending" | "running" | "completed" | "failed";
+      startedAt: string;
+      completedAt: string | null;
+      errorMessage: string | null;
+    }>
+  };
   const executionReportsService = {
     createForWorkflowRun: vi.fn(async () => undefined)
   };
@@ -152,10 +156,25 @@ function createService(overrides: {
       update: async () => workflow as any,
       remove: async () => true,
       migrateWorkflowStageContracts: async () => workflow as any,
-      createRun: async (workflowId: string) => {
+      createLaunch: async (workflowId: string) => ({
+        ...createdLaunch,
+        workflowId,
+        runs: createdLaunch.runs.slice()
+      }),
+      getLaunchById: async () => ({
+        ...createdLaunch,
+        runs: createdLaunch.runs.slice()
+      }),
+      getLatestLaunchByWorkflowId: async () => ({
+        ...createdLaunch,
+        runs: createdLaunch.runs.slice()
+      }),
+      createRun: async (workflowId: string, workflowLaunchId: string, targetId: string) => {
         const run: WorkflowRun = {
           id: "50000000-0000-0000-0000-000000000001",
           workflowId,
+          workflowLaunchId,
+          targetId,
           executionKind: workflow?.executionKind,
           status: "running",
           currentStepIndex: 0,
@@ -165,10 +184,17 @@ function createService(overrides: {
           events: []
         };
         createdRuns[0] = run;
+        createdLaunch.runs[0] = {
+          targetId,
+          runId: run.id,
+          status: "running",
+          startedAt: run.startedAt,
+          completedAt: null,
+          errorMessage: null
+        };
         return run;
       },
       getRunById: async () => createdRuns[0] ?? null,
-      getLatestRunByWorkflowId: async () => createdRuns[0] ?? null,
       appendRunEvent: async (_runId: string, event: WorkflowTraceEvent, patch: Partial<WorkflowRun> = {}) => {
         const current = createdRuns[0]!;
         const updated: WorkflowRun = {
@@ -178,6 +204,11 @@ function createService(overrides: {
           events: [...current.events, event]
         };
         createdRuns[0] = updated;
+        createdLaunch.runs[0] = {
+          ...createdLaunch.runs[0],
+          status: updated.status,
+          completedAt: updated.completedAt
+        };
         return updated;
       },
       updateRunState: async (_runId: string, patch: Partial<WorkflowRun>) => {
@@ -189,13 +220,18 @@ function createService(overrides: {
           events: current.events.slice()
         };
         createdRuns[0] = updated;
+        createdLaunch.runs[0] = {
+          ...createdLaunch.runs[0],
+          status: updated.status,
+          completedAt: updated.completedAt
+        };
         return updated;
       },
       updateRun: async (run: WorkflowRun) => run
     },
     targetsRepository: {
       getById: async () => target,
-      list: async () => ({ items: [], page: 1, pageSize: 25, total: 0, totalPages: 0 }),
+      list: async () => ({ items: [target], page: 1, pageSize: 25, total: 1, totalPages: 1 }),
       create: async () => { throw new Error("not implemented"); },
       update: async () => { throw new Error("not implemented"); },
       remove: async () => false
@@ -203,22 +239,45 @@ function createService(overrides: {
     aiAgentsRepository: {
       getById: async (id: string) => agentsById[id] ?? null
     } as any,
-    aiProvidersRepository: {
-      getStoredById: async () => provider as any
-    } as any,
     aiToolsRepository,
     toolRuntime: createToolRuntime(aiToolsRepository),
     workflowRunStream,
     orchestratorExecutionEngine: (overrides.orchestrator ?? {}) as any,
-    executionReportsService: executionReportsService as any
+    executionReportsService: executionReportsService as any,
+    fixedAnthropicRuntime: fixedRuntime as any
   });
 
-  return { service, createdRuns, workflowRunStream, executionReportsService };
+  return { service, createdRuns, createdLaunch, workflowRunStream, executionReportsService };
+}
+
+function parseAttackMapPromptFindings(prompt: string) {
+  const match = prompt.match(/Confirmed findings:\n([\s\S]*?)\n\nReview the confirmed findings\./);
+  if (!match?.[1]) {
+    throw new Error("Attack-map analysis prompt did not include serialized findings.");
+  }
+
+  return JSON.parse(match[1]) as Array<{
+    id: string;
+    title: string;
+    severity: string;
+    description: string;
+    vector: string;
+  }>;
 }
 
 describe("WorkflowExecutionService", () => {
   beforeEach(() => {
     streamTextMock.mockReset();
+    streamTextMock.mockImplementation(() => ({
+      fullStream: (async function* () {
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
   });
 
   it("does not allow manual stepping for pipeline runs", async () => {
@@ -229,30 +288,23 @@ describe("WorkflowExecutionService", () => {
     });
   });
 
-  it("fails loudly before run creation when a workflow stage provider is unsupported", async () => {
-    const { service, createdRuns } = createService({
-      provider: {
-        id: "40000000-0000-0000-0000-000000000001",
-        name: "Local",
-        kind: "local",
-        status: "active",
-        description: null,
-        baseUrl: "http://localhost:11434",
-        model: "qwen",
-        apiKey: null,
-        apiKeyConfigured: false,
-        createdAt: "2026-04-24T10:00:00.000Z",
-        updatedAt: "2026-04-24T10:00:00.000Z"
-      }
-    });
+  it("filters incompatible tools per constrained target run and continues with the compatible set", async () => {
+    streamTextMock.mockImplementationOnce((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
+      fullStream: (async function* () {
+        await options.tools.complete_run.execute({
+          summary: "Completed with the compatible tool set.",
+          recommendedNextStep: "Review the scoped evidence.",
+          residualRisk: "Residual risk remains bounded by target policy."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
 
-    await expect(service.startRun("10000000-0000-0000-0000-000000000001")).rejects.toMatchObject({
-      message: "Workflow pipeline execution requires an Anthropic provider."
-    });
-    expect(createdRuns).toHaveLength(0);
-  });
-
-  it("starts a constrained portfolio-style workflow when passive family probes remain policy-compatible", async () => {
     const cloudflareConstraint: ExecutionConstraint = {
       id: "seed-constraint-cloudflare-v1",
       name: "Cloudflare Owned Asset Policy",
@@ -273,8 +325,22 @@ describe("WorkflowExecutionService", () => {
       createdAt: "2026-04-25T00:00:00.000Z",
       updatedAt: "2026-04-25T00:00:00.000Z"
     };
+    const constrainedTarget = makeTarget({
+      id: "20000000-0000-0000-0000-000000000009",
+      name: "Constrained Portfolio",
+      baseUrl: "https://portfolio.example.com",
+      hostname: "portfolio.example.com",
+      ipAddress: null,
+      provider: "cloudflare",
+      constraintBindings: [
+        {
+          constraintId: cloudflareConstraint.id,
+          createdAt: "2026-04-25T00:00:00.000Z",
+          constraint: cloudflareConstraint
+        }
+      ]
+    });
     const workflow = makeWorkflow({
-      targetId: "20000000-0000-0000-0000-000000000009",
       stages: [
         {
           id: "70000000-0000-0000-0000-000000000009",
@@ -282,7 +348,9 @@ describe("WorkflowExecutionService", () => {
           agentId: "30000000-0000-0000-0000-000000000001",
           ord: 0,
           objective: "Assess the target with family tools.",
-          allowedToolIds: ["seed-family-http-surface"],
+          stageSystemPrompt: defaultWorkflowStageSystemPrompt,
+          taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
+          allowedToolIds: ["seed-family-http-surface", "seed-family-sql-injection-validation"],
           requiredEvidenceTypes: [],
           findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
           completionRule: {
@@ -296,23 +364,9 @@ describe("WorkflowExecutionService", () => {
         }
       ]
     });
-    const { service } = createService({
+    const { service, createdRuns } = createService({
       workflow,
-      target: makeTarget({
-        id: workflow.targetId,
-        name: "Constrained Portfolio",
-        baseUrl: "https://portfolio.example.com",
-        hostname: "portfolio.example.com",
-        ipAddress: null,
-        provider: "cloudflare",
-        constraintBindings: [
-          {
-            constraintId: cloudflareConstraint.id,
-            createdAt: "2026-04-25T00:00:00.000Z",
-            constraint: cloudflareConstraint
-          }
-        ]
-      }),
+      target: constrainedTarget,
       aiToolById: {
         "seed-family-http-surface": {
           id: "seed-family-http-surface",
@@ -333,8 +387,48 @@ describe("WorkflowExecutionService", () => {
             networkBehavior: "outbound-read",
             mutationClass: "none",
             supportsHostAllowlist: true,
-            supportsPathExclusions: false,
-            supportsRateLimit: false
+            supportsPathExclusions: true,
+            supportsRateLimit: true
+          },
+          inputSchema: {
+            type: "object",
+            properties: {
+              target: { type: "string" },
+              baseUrl: { type: "string" }
+            },
+            required: ["baseUrl"]
+          },
+          outputSchema: {
+            type: "object",
+            properties: {
+              output: { type: "string" }
+            },
+            required: ["output"]
+          },
+          createdAt: "2026-04-25T00:00:00.000Z",
+          updatedAt: "2026-04-25T00:00:00.000Z"
+        },
+        "seed-family-sql-injection-validation": {
+          id: "seed-family-sql-injection-validation",
+          name: "SQL Injection Validation",
+          status: "active",
+          source: "system",
+          description: "Controlled SQL injection validation",
+          builtinActionKey: "sql_injection_validation",
+          category: "web",
+          riskTier: "controlled-exploit",
+          executorType: "builtin",
+          bashSource: null,
+          capabilities: ["semantic-family", "sqli", "controlled-exploit"],
+          timeoutMs: 120000,
+          constraintProfile: {
+            enforced: true,
+            targetKinds: ["host", "domain", "url"],
+            networkBehavior: "outbound-active",
+            mutationClass: "exploit",
+            supportsHostAllowlist: true,
+            supportsPathExclusions: true,
+            supportsRateLimit: true
           },
           inputSchema: {
             type: "object",
@@ -361,6 +455,131 @@ describe("WorkflowExecutionService", () => {
       workflowId: workflow.id,
       status: "running"
     });
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    const streamTools = Object.keys(streamTextMock.mock.calls.at(-1)?.[0]?.tools ?? {});
+    expect(streamTools).toContain("seed-family-http-surface");
+    expect(streamTools).not.toContain("sql_injection_validation");
+    expect(createdRuns[0]!.events.some((event) => event.title === "Policy-filtered tools")).toBe(true);
+  });
+
+  it("fails a constrained target run when every allowed tool is filtered out by target policy", async () => {
+    const cloudflareConstraint: ExecutionConstraint = {
+      id: "seed-constraint-cloudflare-v1",
+      name: "Cloudflare Owned Asset Policy",
+      kind: "provider_policy",
+      provider: "cloudflare",
+      version: 1,
+      description: null,
+      bypassForLocalTargets: false,
+      denyProviderOwnedTargets: true,
+      requireVerifiedOwnership: true,
+      allowActiveExploit: false,
+      requireRateLimitSupport: true,
+      rateLimitRps: 3,
+      requireHostAllowlistSupport: true,
+      requirePathExclusionSupport: true,
+      documentationUrls: [],
+      excludedPaths: ["/cdn-cgi/"],
+      createdAt: "2026-04-25T00:00:00.000Z",
+      updatedAt: "2026-04-25T00:00:00.000Z"
+    };
+    const constrainedTarget = makeTarget({
+      id: "20000000-0000-0000-0000-000000000010",
+      name: "Constrained Validation Target",
+      baseUrl: "https://validation.example.com",
+      hostname: "validation.example.com",
+      ipAddress: null,
+      provider: "cloudflare",
+      constraintBindings: [
+        {
+          constraintId: cloudflareConstraint.id,
+          createdAt: "2026-04-25T00:00:00.000Z",
+          constraint: cloudflareConstraint
+        }
+      ]
+    });
+    const workflow = makeWorkflow({
+      stages: [
+        {
+          id: "70000000-0000-0000-0000-000000000010",
+          label: "Validation",
+          agentId: "30000000-0000-0000-0000-000000000001",
+          ord: 0,
+          objective: "Validate the target with exploit-grade tooling.",
+          stageSystemPrompt: defaultWorkflowStageSystemPrompt,
+          taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
+          allowedToolIds: ["seed-family-sql-injection-validation"],
+          requiredEvidenceTypes: [],
+          findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
+          completionRule: {
+            requireStageResult: true,
+            requireToolCall: false,
+            allowEmptyResult: true,
+            minFindings: 0
+          },
+          resultSchemaVersion: 1,
+          handoffSchema: null
+        }
+      ]
+    });
+    const { service, createdRuns } = createService({
+      workflow,
+      target: constrainedTarget,
+      aiToolById: {
+        "seed-family-sql-injection-validation": {
+          id: "seed-family-sql-injection-validation",
+          name: "SQL Injection Validation",
+          status: "active",
+          source: "system",
+          description: "Controlled SQL injection validation",
+          builtinActionKey: "sql_injection_validation",
+          category: "web",
+          riskTier: "controlled-exploit",
+          executorType: "builtin",
+          bashSource: null,
+          capabilities: ["semantic-family", "sqli", "controlled-exploit"],
+          timeoutMs: 120000,
+          constraintProfile: {
+            enforced: true,
+            targetKinds: ["host", "domain", "url"],
+            networkBehavior: "outbound-active",
+            mutationClass: "exploit",
+            supportsHostAllowlist: true,
+            supportsPathExclusions: true,
+            supportsRateLimit: true
+          },
+          inputSchema: {
+            type: "object",
+            properties: {
+              target: { type: "string" },
+              baseUrl: { type: "string" }
+            },
+            required: ["baseUrl"]
+          },
+          outputSchema: {
+            type: "object",
+            properties: {
+              output: { type: "string" }
+            },
+            required: ["output"]
+          },
+          createdAt: "2026-04-25T00:00:00.000Z",
+          updatedAt: "2026-04-25T00:00:00.000Z"
+        }
+      }
+    });
+
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("failed");
+    });
+
+    expect(createdRuns[0]!.events.at(-1)?.summary ?? "").toContain("no allowed tools are compatible");
   });
 
   it("dispatches attack-map workflows through the attack-map handler and preserves tool activity ordering", async () => {
@@ -370,19 +589,6 @@ describe("WorkflowExecutionService", () => {
     });
     const { service, createdRuns, executionReportsService } = createService({
       workflow,
-      provider: {
-        id: "40000000-0000-0000-0000-000000000001",
-        name: "Local",
-        kind: "local",
-        status: "active",
-        description: null,
-        baseUrl: "http://localhost:11434",
-        model: "qwen",
-        apiKey: null,
-        apiKeyConfigured: false,
-        createdAt: "2026-04-24T10:00:00.000Z",
-        updatedAt: "2026-04-24T10:00:00.000Z"
-      },
       orchestrator: {
         runRecon: async () => ({
           openPorts: [{ port: 80, protocol: "tcp", service: "http", version: "Apache" }],
@@ -421,8 +627,8 @@ describe("WorkflowExecutionService", () => {
       }
     });
 
-    const run = await service.startRun(workflow.id);
-    expect(run.executionKind).toBe("attack-map");
+    const launch = await service.startRun(workflow.id);
+    expect(launch.status).toBe("running");
 
     await vi.waitFor(() => {
       expect(createdRuns[0]?.events.some((event) => event.title === "Recon completed")).toBe(true);
@@ -571,19 +777,6 @@ describe("WorkflowExecutionService", () => {
 
     const { service, createdRuns } = createService({
       workflow,
-      provider: {
-        id: "40000000-0000-0000-0000-000000000001",
-        name: "Local",
-        kind: "local",
-        status: "active",
-        description: null,
-        baseUrl: "http://localhost:11434",
-        model: "qwen",
-        apiKey: null,
-        apiKeyConfigured: false,
-        createdAt: "2026-04-24T10:00:00.000Z",
-        updatedAt: "2026-04-24T10:00:00.000Z"
-      },
       orchestrator: {
         runRecon: async () => ({
           openPorts: [{ port: 443, protocol: "tcp", service: "https", version: "nginx" }],
@@ -674,19 +867,6 @@ describe("WorkflowExecutionService", () => {
 
     const { service, createdRuns } = createService({
       workflow,
-      provider: {
-        id: "40000000-0000-0000-0000-000000000001",
-        name: "Local",
-        kind: "local",
-        status: "active",
-        description: null,
-        baseUrl: "http://localhost:11434",
-        model: "qwen",
-        apiKey: null,
-        apiKeyConfigured: false,
-        createdAt: "2026-04-24T10:00:00.000Z",
-        updatedAt: "2026-04-24T10:00:00.000Z"
-      },
       orchestrator: {
         runRecon: async () => ({
           openPorts: [{ port: 443, protocol: "tcp", service: "https", version: "nginx" }],
@@ -787,6 +967,214 @@ describe("WorkflowExecutionService", () => {
     });
 
     expect(createdRuns[0]!.events.some((event) => event.type === "run_completed")).toBe(true);
+  });
+
+  it("runs deep analysis and attack chain correlation only when the attack-map model explicitly calls the built-ins", async () => {
+    const deepDiveFinding = vi.fn(async () => [{
+      id: "child-finding-node",
+      type: "finding" as const,
+      label: "Reachable privileged console",
+      status: "vulnerable" as const,
+      severity: "critical" as const,
+      data: {
+        description: "The confirmed admin surface leads to a reachable privileged console.",
+        vector: "Post-auth privileged console"
+      }
+    }]);
+    const correlateAttackChains = vi.fn(async (findings: Array<{ id: string }>) => [{
+      title: "Admin Surface To Privileged Console",
+      description: "The exposed admin route can be chained into a privileged console.",
+      severity: "critical" as const,
+      findingIds: findings.map((finding) => finding.id).slice(0, 2),
+      exploitation: "Reach the admin surface, then pivot into the privileged console.",
+      impact: "Attacker gains privileged application control."
+    }]);
+
+    streamTextMock.mockImplementation((options: {
+      prompt: string;
+      tools: Record<string, { execute: (input: unknown) => Promise<unknown> }>;
+    }) => {
+      if (!("deep_analysis" in options.tools)) {
+        return {
+          fullStream: (async function* () {
+            yield {
+              type: "finish",
+              finishReason: "stop",
+              rawFinishReason: "end_turn",
+              totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+            };
+          })()
+        };
+      }
+
+      return {
+        fullStream: (async function* () {
+          const findings = parseAttackMapPromptFindings(options.prompt);
+          const parentFinding = findings[0]!;
+          yield {
+            type: "tool-call",
+            toolCallId: "call-deep-analysis",
+            toolName: "deep_analysis",
+            input: parentFinding
+          };
+          const deepResult = await options.tools.deep_analysis.execute({
+            findingId: parentFinding.id,
+            title: parentFinding.title,
+            severity: parentFinding.severity,
+            description: parentFinding.description,
+            vector: parentFinding.vector
+          }) as { findings: Array<{ findingId: string }> };
+          yield {
+            type: "tool-result",
+            toolCallId: "call-deep-analysis",
+            toolName: "deep_analysis",
+            output: deepResult
+          };
+          yield {
+            type: "tool-call",
+            toolCallId: "call-correlation",
+            toolName: "attack_chain_correlation",
+            input: {
+              findings: [
+                { id: parentFinding.id },
+                { id: deepResult.findings[0]!.findingId }
+              ]
+            }
+          };
+          const chainResult = await options.tools.attack_chain_correlation.execute({
+            findings: [
+              { id: parentFinding.id },
+              { id: deepResult.findings[0]!.findingId }
+            ]
+          });
+          yield {
+            type: "tool-result",
+            toolCallId: "call-correlation",
+            toolName: "attack_chain_correlation",
+            output: chainResult
+          };
+          yield {
+            type: "finish",
+            finishReason: "stop",
+            rawFinishReason: "end_turn",
+            totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+          };
+        })()
+      };
+    });
+
+    const workflow = makeWorkflow({
+      executionKind: "attack-map",
+      name: "Attack Map Workflow",
+      stages: [{
+        ...makeWorkflow().stages[0]!,
+        allowedToolIds: ["tool-nuclei"]
+      }]
+    });
+    const { service, createdRuns } = createService({
+      workflow,
+      orchestrator: {
+        runRecon: async () => ({
+          openPorts: [{ port: 443, protocol: "tcp", service: "https", version: "nginx" }],
+          technologies: ["nginx"],
+          httpHeaders: { Server: "nginx" },
+          serverInfo: { webServer: "nginx" },
+          interestingPaths: [],
+          probes: [],
+          rawNmap: "443/tcp open https nginx",
+          rawCurl: "HTTP/1.1 200 OK"
+        }),
+        createPlan: async () => ({
+          phases: [{
+            id: "phase-1",
+            name: "Initial Web Probe",
+            priority: "high" as const,
+            rationale: "HTTPS service discovered.",
+            targetService: "https",
+            tools: ["Nuclei"],
+            status: "pending" as const
+          }],
+          overallRisk: "medium" as const,
+          summary: "Initial plan."
+        }),
+        adaptAttackPlan: async (
+          _targetUrl: string,
+          plan: { phases: Array<Record<string, unknown>>; overallRisk: string; summary: string }
+        ) => plan,
+        executePhase: async () => ({
+          findings: [{
+            title: "Exposed admin surface",
+            severity: "high",
+            description: "Admin route is reachable without gating.",
+            vector: "/admin"
+          }],
+          probeCommand: "nuclei -u https://localhost:3000",
+          probeOutput: "admin surface discovered",
+          toolAttempts: [{
+            toolRunId: "tool-run-1",
+            toolName: "Nuclei",
+            output: "admin surface discovered"
+          }]
+        }),
+        deepDiveFinding,
+        correlateAttackChains
+      },
+      aiToolById: {
+        "tool-nuclei": {
+          id: "tool-nuclei",
+          name: "Nuclei",
+          status: "active",
+          source: "system",
+          description: "Template-driven web validation.",
+          builtinActionKey: null,
+          executorType: "bash",
+          bashSource: "nuclei -u {{baseUrl}}",
+          category: "web",
+          riskTier: "passive",
+          capabilities: ["semantic-family", "http-surface", "passive"],
+          timeoutMs: 60_000,
+          constraintProfile: {
+            enforced: true,
+            targetKinds: ["host", "domain", "url"],
+            networkBehavior: "outbound-read",
+            mutationClass: "none",
+            supportsHostAllowlist: true,
+            supportsPathExclusions: true,
+            supportsRateLimit: true
+          },
+          inputSchema: {
+            type: "object",
+            properties: {
+              baseUrl: { type: "string" }
+            },
+            required: ["baseUrl"]
+          },
+          outputSchema: {
+            type: "object",
+            properties: {
+              output: { type: "string" }
+            },
+            required: ["output"]
+          },
+          createdAt: "2026-04-24T10:00:00.000Z",
+          updatedAt: "2026-04-24T10:00:00.000Z"
+        }
+      }
+    });
+
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    expect(deepDiveFinding).toHaveBeenCalledTimes(1);
+    expect(correlateAttackChains).toHaveBeenCalledTimes(1);
+    expect(createdRuns[0]!.events.some((event) => event.type === "tool_call" && event.payload?.["toolName"] === "deep_analysis")).toBe(true);
+    expect(createdRuns[0]!.events.some((event) => event.type === "tool_call" && event.payload?.["toolName"] === "attack_chain_correlation")).toBe(true);
+    expect(createdRuns[0]!.events.some((event) => event.title === "Built-in tool context")).toBe(true);
+    expect(createdRuns[0]!.events.some((event) => event.type === "finding_reported" && event.payload?.["phase"] === "deep_analysis")).toBe(true);
+    expect(createdRuns[0]!.events.find((event) => event.type === "run_completed")?.summary).toContain("2 findings reported, 1 attack chains identified");
   });
 
   it("executes workflow stages in order and stops when a later stage fails", async () => {
@@ -917,6 +1305,7 @@ describe("WorkflowExecutionService", () => {
       : toolContextEvent?.detail;
     expect(toolContextBody).toContain("Built-in actions");
     expect(toolContextBody).toContain("complete_run: Submit the current workflow stage result.");
+    expect(toolContextBody).not.toContain("deep_analysis");
 
     const systemPromptEvent = createdRuns[0]!.events.find((event) => event.title === "Rendered system prompt");
     expect(systemPromptEvent?.detail).toContain("You are executing the \"Pipeline\" stage of the workflow \"Pipeline Workflow\".");

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { OrchestratorStreamMessage, WorkflowLiveModelOutput } from "@synosec/contracts";
+import { fixedAiRuntimeLabel, type OrchestratorStreamMessage, type WorkflowLiveModelOutput } from "@synosec/contracts";
 import { fetchJson } from "@/shared/lib/api";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -98,16 +98,6 @@ type OrchestratorRun = {
   summary: string | null;
   error: string | null;
   createdAt: string;
-};
-
-type AiProvider = {
-  id: string;
-  name: string;
-  kind: "local" | "anthropic";
-  status: "active" | "inactive" | "error";
-  model: string;
-  baseUrl: string | null;
-  apiKeyConfigured: boolean;
 };
 
 // ─── Node styling ─────────────────────────────────────────────────────────────
@@ -945,8 +935,6 @@ function Legend({ theme }: { theme: AttackMapTheme }) {
 export function AttackMapPage() {
   const [targetUrl, setTargetUrl] = useState("http://localhost:3000");
   const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
-  const [providers, setProviders] = useState<AiProvider[]>([]);
-  const [selectedProviderId, setSelectedProviderId] = useState("");
   const [runs, setRuns] = useState<OrchestratorRun[]>([]);
   const [activeRun, setActiveRun] = useState<OrchestratorRun | null>(null);
   const [nodes, setNodes] = useState<MapNode[]>([]);
@@ -986,25 +974,7 @@ export function AttackMapPage() {
     } catch { /* ignore */ }
   }, []);
 
-  const loadProviders = useCallback(async () => {
-    try {
-      const data = await fetchJson<{ providers: AiProvider[] }>("/api/ai-providers?status=active&page=1&pageSize=100");
-      setProviders(data.providers);
-      setSelectedProviderId((current) => {
-        if (current) {
-          return current;
-        }
-        const preferredAnthropic = data.providers.find((provider) => provider.kind === "anthropic" && provider.apiKeyConfigured);
-        return preferredAnthropic?.id ?? data.providers[0]?.id ?? "";
-      });
-    } catch {
-      setProviders([]);
-      setSelectedProviderId("");
-    }
-  }, []);
-
   useEffect(() => { void loadRuns(); }, [loadRuns]);
-  useEffect(() => { void loadProviders(); }, [loadProviders]);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1134,7 +1104,7 @@ export function AttackMapPage() {
   }, [loadRuns]);
 
   const startRun = async () => {
-    if (!targetUrl.trim() || !selectedProviderId || isStarting) return;
+    if (!targetUrl.trim() || isStarting) return;
     setIsStarting(true);
     setLogs([]);
     setCurrentCommand(null);
@@ -1143,7 +1113,7 @@ export function AttackMapPage() {
       const run = await fetchJson<OrchestratorRun>("/api/orchestrator/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetUrl: targetUrl.trim(), providerId: selectedProviderId })
+        body: JSON.stringify({ targetUrl: targetUrl.trim() })
       });
       await loadRuns();
       connectToRun(run);
@@ -1155,7 +1125,6 @@ export function AttackMapPage() {
   };
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
-  const selectedProvider = providers.find((provider) => provider.id === selectedProviderId) ?? null;
   const activeTool = toolActivity.find((item) => item.status === "running") ?? null;
   const findings = nodes.filter((n) => n.type === "finding");
   const critCount = findings.filter((n) => n.severity === "critical").length;
@@ -1226,43 +1195,18 @@ export function AttackMapPage() {
             placeholder="http://target.com"
           />
           <div className="text-[0.6rem] font-semibold uppercase tracking-wider" style={{ color: theme.textSubtle }}>Decision AI</div>
-          <select
-            value={selectedProviderId}
-            onChange={(e) => setSelectedProviderId(e.target.value)}
-            className="w-full rounded border px-3 py-1.5 text-xs font-mono focus:outline-none"
+          <div
+            className="w-full rounded border px-3 py-1.5 text-xs font-mono"
             style={{ background: theme.inputBg, borderColor: theme.borderStrong, color: theme.text }}
           >
-            <option value="" disabled>Select provider</option>
-            {providers.map((provider) => (
-              <option key={provider.id} value={provider.id}>
-                {provider.name} · {provider.kind} · {provider.model}
-              </option>
-            ))}
-          </select>
-          {selectedProvider && (
-            <div className="flex items-center gap-1.5">
-              <span
-                className="h-1.5 w-1.5 rounded-full flex-none"
-                style={{
-                  background: selectedProvider.kind === "anthropic"
-                    ? (selectedProvider.apiKeyConfigured ? "#22c55e" : "#ef4444")
-                    : (selectedProvider.baseUrl ? "#22c55e" : "#ef4444")
-                }}
-              />
-              <span className="text-[0.58rem] font-mono" style={{ color: theme.textSubtle }}>
-                {selectedProvider.kind === "local" ? "local" : "anthropic"} · {selectedProvider.model}
-              </span>
-              {selectedProvider.kind === "anthropic" && !selectedProvider.apiKeyConfigured && (
-                <span className="text-[0.55rem] font-mono text-red-500">no key</span>
-              )}
-            </div>
-          )}
+            {fixedAiRuntimeLabel}
+          </div>
           <div className="text-[0.55rem] font-mono" style={{ color: theme.textFaint }}>
             70+ tools: network · web · content · subdomain · password · forensics
           </div>
           <button
             onClick={() => void startRun()}
-            disabled={isStarting || !targetUrl.trim() || !selectedProviderId}
+            disabled={isStarting || !targetUrl.trim()}
             className="w-full rounded px-3 py-1.5 text-xs font-semibold text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ background: isStarting ? theme.buttonActive : theme.button }}
           >

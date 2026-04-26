@@ -1,5 +1,6 @@
-import type { Workflow, WorkflowRun, WorkflowTraceEvent } from "@synosec/contracts";
+import type { Workflow, WorkflowLaunch, WorkflowRun, WorkflowTraceEvent } from "@synosec/contracts";
 import type {
+  WorkflowLaunch as WorkflowLaunchRow,
   Workflow as WorkflowRow,
   WorkflowRun as WorkflowRunRow,
   WorkflowStage as WorkflowStageRow,
@@ -73,7 +74,6 @@ export function mapWorkflowRow(
     status: row.status,
     executionKind: row.executionKind as Workflow["executionKind"],
     description: row.description,
-    targetId: row.applicationId,
     agentId: primaryContract.agentId,
     objective: primaryContract.objective,
     stageSystemPrompt: primaryContract.stageSystemPrompt,
@@ -115,6 +115,8 @@ export function mapWorkflowRunRow(
   return {
     id: row.id,
     workflowId: row.workflowId,
+    workflowLaunchId: row.workflowLaunchId,
+    targetId: row.targetId,
     executionKind: row.executionKind as WorkflowRun["executionKind"],
     status: row.status,
     currentStepIndex: row.currentStepIndex,
@@ -122,5 +124,30 @@ export function mapWorkflowRunRow(
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
     trace: [],
     events: row.traceEvents.sort((left, right) => left.ord - right.ord).map(mapWorkflowTraceEventRow)
+  };
+}
+
+export function mapWorkflowLaunchRow(
+  row: WorkflowLaunchRow & {
+    runs: Array<WorkflowRunRow & { traceEvents?: WorkflowTraceEventRow[] }>;
+  }
+): WorkflowLaunch {
+  return {
+    id: row.id,
+    workflowId: row.workflowId,
+    status: row.status as WorkflowLaunch["status"],
+    startedAt: row.startedAt.toISOString(),
+    completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+    runs: row.runs
+      .slice()
+      .sort((left, right) => left.startedAt.getTime() - right.startedAt.getTime())
+      .map((run) => ({
+        targetId: run.targetId,
+        runId: run.id,
+        status: run.status as WorkflowLaunch["runs"][number]["status"],
+        startedAt: run.startedAt.toISOString(),
+        completedAt: run.completedAt ? run.completedAt.toISOString() : null,
+        errorMessage: null
+      }))
   };
 }

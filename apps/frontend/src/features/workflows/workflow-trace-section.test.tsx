@@ -16,7 +16,6 @@ const workflow: Workflow = {
   name: "OSI Single-Agent",
   status: "active",
   description: "Workflow debug transcript test",
-  targetId: "20000000-0000-0000-0000-000000000001",
   agentId: "50000000-0000-0000-0000-000000000001",
   objective: "Run one evidence-backed workflow pass.",
   stageSystemPrompt: defaultWorkflowStageSystemPrompt,
@@ -67,6 +66,8 @@ const workflow: Workflow = {
 const run: WorkflowRun = {
   id: "60000000-0000-0000-0000-000000000001",
   workflowId: workflow.id,
+  workflowLaunchId: "61000000-0000-0000-0000-000000000001",
+  targetId: "20000000-0000-0000-0000-000000000001",
   status: "completed",
   currentStepIndex: 1,
   startedAt: "2026-04-21T00:00:00.000Z",
@@ -379,9 +380,7 @@ const agents: AiAgent[] = [{
   name: "Local Orchestrator",
   status: "active",
   description: "Execution agent",
-  providerId: "provider-1",
   systemPrompt: "Use evidence-backed actions only.",
-  modelOverride: null,
   toolIds: ["tool-1"],
   createdAt: "2026-04-21T00:00:00.000Z",
   updatedAt: "2026-04-21T00:00:00.000Z"

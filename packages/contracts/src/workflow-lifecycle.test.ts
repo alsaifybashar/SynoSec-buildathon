@@ -11,6 +11,8 @@ function createRun(overrides: Partial<WorkflowRun> = {}): WorkflowRun {
   return {
     id: "10000000-0000-0000-0000-000000000001",
     workflowId: "20000000-0000-0000-0000-000000000001",
+    workflowLaunchId: "30000000-0000-0000-0000-000000000001",
+    targetId: "40000000-0000-0000-0000-000000000001",
     executionKind: "workflow",
     status: "running",
     currentStepIndex: 0,

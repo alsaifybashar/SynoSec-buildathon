@@ -7,6 +7,8 @@ describe("mapWorkflowRunRow", () => {
     const mapped = mapWorkflowRunRow({
       id: "10000000-0000-0000-0000-000000000001",
       workflowId: "20000000-0000-0000-0000-000000000001",
+      workflowLaunchId: "40000000-0000-0000-0000-000000000001",
+      targetId: "50000000-0000-0000-0000-000000000001",
       executionKind: "attack-map",
       status: "running",
       currentStepIndex: 0,

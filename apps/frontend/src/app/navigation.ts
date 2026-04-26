@@ -4,7 +4,6 @@ import {
   Columns2,
   FileSearch,
   Orbit,
-  PlugZap,
   Route,
   ScrollText,
   Shapes,
@@ -19,14 +18,12 @@ import {
 
 export type NavigationId =
   | "targets"
-  | "ai-providers"
   | "ai-agents"
   | "ai-tools"
   | "execution-constraints"
   | "workflows"
   | "execution-reports"
   | "attack-map"
-  | "attack-map-copy"
   | "design-stream"
   | "design-duplex"
   | "design-report-finding-map"
@@ -59,7 +56,6 @@ export type NavigationTreeEntry =
 
 export type CrudNavigationId =
   | "targets"
-  | "ai-providers"
   | "ai-agents"
   | "ai-tools"
   | "execution-constraints"
@@ -89,13 +85,6 @@ export const crudRouteConfigs: Record<CrudNavigationId, CrudRouteConfig> = {
     createPath: "/targets/new",
     detailPath: "/targets/:targetId",
     paramName: "targetId"
-  },
-  "ai-providers": {
-    id: "ai-providers",
-    listPath: "/ai/providers",
-    createPath: "/ai/providers/new",
-    detailPath: "/ai/providers/:providerId",
-    paramName: "providerId"
   },
   "ai-agents": {
     id: "ai-agents",
@@ -157,16 +146,6 @@ export const navigationTree: NavigationTreeEntry[] = [
     })
   },
   {
-    kind: "item",
-    item: createNavigationItem({
-      id: "attack-map-copy",
-      label: "Attack Map Copy",
-      path: "/attack-map/copy",
-      matchPaths: ["/attack-map/copy", "/attack-map/workflows"],
-      icon: Orbit
-    })
-  },
-  {
     kind: "group",
     group: {
       id: "configuration",
@@ -178,12 +157,6 @@ export const navigationTree: NavigationTreeEntry[] = [
           label: "Targets",
           path: crudRouteConfigs.targets.listPath,
           icon: AppWindow
-        }),
-        createNavigationItem({
-          id: "ai-providers",
-          label: "AI Providers",
-          path: crudRouteConfigs["ai-providers"].listPath,
-          icon: PlugZap
         }),
         createNavigationItem({
           id: "ai-agents",

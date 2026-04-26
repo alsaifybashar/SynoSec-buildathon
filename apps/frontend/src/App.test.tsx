@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultWorkflowStageSystemPrompt,
   defaultWorkflowTaskPromptTemplate,
+  fixedAiRuntimeLabel,
   type AiAgent,
-  type AiProvider,
   type AiTool,
   type AuthSessionResponse,
   type Target,
@@ -25,7 +25,6 @@ function createPaginatedPayload<T>(key: string, items: T[]) {
 
 describe("App", () => {
   let targets: Target[];
-  let providers: AiProvider[];
   let agents: AiAgent[];
   let tools: AiTool[];
   let workflows: Workflow[];
@@ -55,21 +54,6 @@ describe("App", () => {
             updatedAt: "2026-04-12T12:00:00.000Z"
           }
         ],
-        createdAt: "2026-04-12T12:00:00.000Z",
-        updatedAt: "2026-04-12T12:00:00.000Z"
-      }
-    ];
-
-    providers = [
-      {
-        id: "2ef12df8-fdf6-4ef0-89ce-01d34b4f3af7",
-        name: "Primary Anthropic",
-        kind: "anthropic",
-        status: "active",
-        description: "Default cloud provider",
-        baseUrl: null,
-        model: "claude-sonnet-4-5",
-        apiKeyConfigured: true,
         createdAt: "2026-04-12T12:00:00.000Z",
         updatedAt: "2026-04-12T12:00:00.000Z"
       }
@@ -126,9 +110,7 @@ describe("App", () => {
         name: "Recon Agent",
         status: "active",
         description: "Primary recon worker",
-        providerId: providers[0]?.id ?? "",
         systemPrompt: "Enumerate the target and summarize the result.",
-        modelOverride: null,
         toolIds: ["httpx"],
         createdAt: "2026-04-12T12:00:00.000Z",
         updatedAt: "2026-04-12T12:00:00.000Z"
@@ -142,7 +124,6 @@ describe("App", () => {
         status: "active",
         executionKind: "attack-map",
         description: "Seeded workflow for the local target",
-        targetId: targets[0]?.id ?? "",
         agentId: agents[0]?.id ?? "",
         objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
         stageSystemPrompt: defaultWorkflowStageSystemPrompt,
@@ -213,6 +194,8 @@ describe("App", () => {
     workflowRun = {
       id: "7ecf4a8e-df5f-4945-a7e1-230ef43eac80",
       workflowId: workflows[0]!.id,
+      workflowLaunchId: "launch-1",
+      targetId: targets[0]!.id,
       executionKind: "attack-map",
       status: "completed",
       currentStepIndex: 0,
@@ -326,6 +309,21 @@ describe("App", () => {
         }
       ]
     };
+    const workflowLaunch = {
+      id: "launch-1",
+      workflowId: workflows[0]!.id,
+      status: "completed",
+      startedAt: workflowRun.startedAt,
+      completedAt: workflowRun.completedAt,
+      runs: [{
+        targetId: targets[0]!.id,
+        runId: workflowRun.id,
+        status: workflowRun.status,
+        startedAt: workflowRun.startedAt,
+        completedAt: workflowRun.completedAt,
+        errorMessage: null
+      }]
+    };
     authSession = {
       authEnabled: false,
       authenticated: false,
@@ -380,33 +378,6 @@ describe("App", () => {
       if (url.startsWith("/api/targets/") && method === "GET") {
         return new Response(JSON.stringify(targets[0]));
       }
-      if ((url === "/api/ai-providers" || url.startsWith("/api/ai-providers?")) && method === "GET") {
-        return new Response(JSON.stringify(createPaginatedPayload("providers", providers)));
-      }
-      if (url.startsWith("/api/ai-providers/") && method === "GET") {
-        const id = url.split("/").pop() ?? "";
-        const provider = providers.find((candidate) => candidate.id === id);
-        return provider
-          ? new Response(JSON.stringify(provider))
-          : new Response(JSON.stringify({ message: "AI provider not found." }), { status: 404 });
-      }
-      if (url === "/api/ai-providers" && method === "POST") {
-        const body = JSON.parse(String(init?.body)) as Omit<AiProvider, "id" | "createdAt" | "updatedAt" | "apiKeyConfigured"> & { apiKey?: string };
-        const created: AiProvider = {
-          id: "cb2a6a1d-36ad-49eb-b8dd-a4474b88f393",
-          name: body.name,
-          kind: body.kind,
-          status: body.status,
-          description: body.description ?? null,
-          baseUrl: body.baseUrl ?? null,
-          model: body.model,
-          apiKeyConfigured: Boolean(body.apiKey),
-          createdAt: "2026-04-12T13:00:00.000Z",
-          updatedAt: "2026-04-12T13:00:00.000Z"
-        };
-        providers = [...providers, created];
-        return new Response(JSON.stringify(created), { status: 201 });
-      }
       if ((url === "/api/ai-agents" || url.startsWith("/api/ai-agents?")) && method === "GET") {
         return new Response(JSON.stringify(createPaginatedPayload("agents", agents)));
       }
@@ -426,11 +397,14 @@ describe("App", () => {
       if ((url === "/api/workflows" || url.startsWith("/api/workflows?")) && method === "GET") {
         return new Response(JSON.stringify(createPaginatedPayload("workflows", workflows)));
       }
-      if (url === `/api/workflows/${workflows[0]!.id}/runs/latest` && method === "GET") {
-        return new Response(JSON.stringify(workflowRun));
+      if (url === `/api/workflows/${workflows[0]!.id}/launches/latest` && method === "GET") {
+        return new Response(JSON.stringify(workflowLaunch));
       }
       if (url === `/api/workflows/${workflows[0]!.id}/runs` && method === "POST") {
-        return new Response(JSON.stringify(workflowRun), { status: 201 });
+        return new Response(JSON.stringify(workflowLaunch), { status: 201 });
+      }
+      if (url === `/api/workflow-runs/${workflowRun.id}` && method === "GET") {
+        return new Response(JSON.stringify(workflowRun));
       }
       if (url.startsWith("/api/workflows/") && method === "GET") {
         const id = url.split("/").pop() ?? "";
@@ -484,13 +458,9 @@ describe("App", () => {
     render(<App />);
 
     await screen.findByRole("heading", { name: "Targets" });
-    expect(screen.getAllByRole("link", { name: "AI Providers" })[0]).toHaveAttribute("href", "/ai/providers");
-    expect(screen.getAllByRole("link", { name: "Attack Map Copy" })[0]).toHaveAttribute("href", "/attack-map/copy");
-    fireEvent.click(screen.getAllByRole("link", { name: "AI Providers" })[0]!);
-    expect(await screen.findByRole("heading", { name: "AI Providers" })).toBeInTheDocument();
-
     fireEvent.click(screen.getAllByRole("link", { name: "AI Agents" })[0]!);
     expect(await screen.findByRole("heading", { name: "AI Agents" })).toBeInTheDocument();
+    expect((await screen.findAllByText(fixedAiRuntimeLabel)).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getAllByRole("link", { name: "AI Tools" })[0]!);
     expect(await screen.findByRole("heading", { name: "AI Tools" })).toBeInTheDocument();
@@ -501,34 +471,16 @@ describe("App", () => {
     expect(screen.queryByText("Templates")).not.toBeInTheDocument();
   });
 
-  it("opens the attack-map copy route from the sidebar", async () => {
-    window.history.replaceState({}, "", "/");
-
+  it("opens AI agent detail pages through the url-backed list flow", async () => {
     render(<App />);
 
     await screen.findByRole("heading", { name: "Targets" });
-    fireEvent.click(screen.getAllByRole("link", { name: "Attack Map Copy" })[0]!);
+    fireEvent.click(screen.getAllByRole("link", { name: "AI Agents" })[0]!);
+    fireEvent.click((await screen.findAllByText("Recon Agent"))[0]!);
 
-    expect(window.location.pathname).toBe("/attack-map/copy");
-    expect(await screen.findByText("Workflow Copy")).toBeInTheDocument();
-    expect(await screen.findByText("Administrative endpoint exposed")).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: "Launch Orchestration" }));
-
-    const requestedUrls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
-    expect(requestedUrls.some((url) => url.startsWith("/api/orchestrator"))).toBe(false);
-    expect(requestedUrls).toContain(`/api/workflows/${workflows[0]!.id}/runs`);
-  });
-
-  it("opens AI provider detail pages through the url-backed list flow", async () => {
-    render(<App />);
-
-    await screen.findByRole("heading", { name: "Targets" });
-    fireEvent.click(screen.getAllByRole("link", { name: "AI Providers" })[0]!);
-    fireEvent.click((await screen.findAllByText("Primary Anthropic"))[0]!);
-
-    expect(await screen.findByRole("heading", { name: "Primary Anthropic" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/ai/providers/2ef12df8-fdf6-4ef0-89ce-01d34b4f3af7");
-    expect(await screen.findByPlaceholderText("Configured; leave blank to keep current value")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Recon Agent" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/ai/agents/67043e91-4017-47b8-ac3f-81eb19f51538");
+    expect(await screen.findByDisplayValue(fixedAiRuntimeLabel)).toBeInTheDocument();
   });
 
   it("loads the AI agent detail page without refetch loops", async () => {
@@ -543,19 +495,18 @@ describe("App", () => {
 
     expect(requestedUrls.filter((url) => url === "/api/ai-agents/67043e91-4017-47b8-ac3f-81eb19f51538").length).toBeLessThanOrEqual(3);
     expect(requestedUrls.filter((url) => url.startsWith("/api/ai-agents?")).length).toBeLessThanOrEqual(3);
-    expect(requestedUrls.filter((url) => url.startsWith("/api/ai-providers?")).length).toBeLessThanOrEqual(2);
     expect(requestedUrls.filter((url) => url.startsWith("/api/ai-tools?")).length).toBeLessThanOrEqual(2);
   });
 
-  it("opens the AI provider create page from the list add-record action", async () => {
+  it("opens the AI agent create page from the list add-record action", async () => {
     render(<App />);
 
     await screen.findByRole("heading", { name: "Targets" });
-    fireEvent.click(screen.getAllByRole("link", { name: "AI Providers" })[0]!);
-    fireEvent.click(await screen.findByRole("button", { name: "Add AI Provider" }));
+    fireEvent.click(screen.getAllByRole("link", { name: "AI Agents" })[0]!);
+    fireEvent.click(await screen.findByRole("button", { name: "Add AI Agent" }));
 
-    expect(window.location.pathname).toBe("/ai/providers/new");
-    expect(await screen.findByRole("heading", { name: "New AI provider" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/ai/agents/new");
+    expect(await screen.findByRole("heading", { name: "New AI agent" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Name" })).toBeInTheDocument();
   });
 
@@ -567,13 +518,13 @@ describe("App", () => {
       googleClientId: "google-client-id",
       user: null
     };
-    window.history.replaceState({}, "", "/ai/providers");
+    window.history.replaceState({}, "", "/ai/agents");
 
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: "Sign in to SynoSec" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/login");
-    expect(window.location.search).toContain("redirectTo=%2Fai%2Fproviders");
+    expect(window.location.search).toContain("redirectTo=%2Fai%2Fagents");
   });
 
   it("retries session bootstrap before loading the app", async () => {

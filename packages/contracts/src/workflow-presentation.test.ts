@@ -13,7 +13,6 @@ const workflow: Workflow = {
   name: "Streaming Workflow",
   status: "active",
   description: null,
-  targetId: "20000000-0000-0000-0000-000000000001",
   agentId: "30000000-0000-0000-0000-000000000001",
   objective: "Preserve streamed text and tools.",
   stageSystemPrompt: defaultWorkflowStageSystemPrompt,
@@ -42,9 +41,7 @@ const agents: AiAgent[] = [{
   name: "Streaming Agent",
   status: "active",
   description: null,
-  providerId: "40000000-0000-0000-0000-000000000001",
   systemPrompt: "Be precise.",
-  modelOverride: null,
   toolIds: ["tool-1"],
   createdAt: "2026-04-25T00:00:00.000Z",
   updatedAt: "2026-04-25T00:00:00.000Z"
@@ -55,6 +52,8 @@ describe("buildWorkflowTranscript", () => {
     const run: WorkflowRun = {
       id: "50000000-0000-0000-0000-000000000001",
       workflowId: workflow.id,
+      workflowLaunchId: "60000000-0000-0000-0000-000000000001",
+      targetId: "70000000-0000-0000-0000-000000000001",
       status: "running",
       currentStepIndex: 0,
       startedAt: "2026-04-25T00:00:00.000Z",
@@ -187,6 +186,8 @@ describe("buildWorkflowTranscript", () => {
     const run: WorkflowRun = {
       id: "50000000-0000-0000-0000-000000000002",
       workflowId: workflow.id,
+      workflowLaunchId: "60000000-0000-0000-0000-000000000002",
+      targetId: "70000000-0000-0000-0000-000000000002",
       status: "completed",
       currentStepIndex: 0,
       startedAt: "2026-04-25T00:00:00.000Z",
@@ -264,6 +265,8 @@ describe("buildWorkflowTranscript", () => {
     const run: WorkflowRun = {
       id: "50000000-0000-0000-0000-000000000002a",
       workflowId: workflow.id,
+      workflowLaunchId: "60000000-0000-0000-0000-000000000002a",
+      targetId: "70000000-0000-0000-0000-000000000002",
       status: "completed",
       currentStepIndex: 0,
       startedAt: "2026-04-25T00:00:00.000Z",
@@ -317,6 +320,8 @@ describe("buildWorkflowTranscript", () => {
     const run: WorkflowRun = {
       id: "50000000-0000-0000-0000-000000000003",
       workflowId: workflow.id,
+      workflowLaunchId: "60000000-0000-0000-0000-000000000003",
+      targetId: "70000000-0000-0000-0000-000000000003",
       status: "completed",
       currentStepIndex: 0,
       startedAt: "2026-04-25T00:00:00.000Z",
@@ -402,6 +407,8 @@ describe("buildWorkflowTranscript", () => {
     const run: WorkflowRun = {
       id: "50000000-0000-0000-0000-000000000004",
       workflowId: workflow.id,
+      workflowLaunchId: "60000000-0000-0000-0000-000000000004",
+      targetId: "70000000-0000-0000-0000-000000000004",
       status: "running",
       currentStepIndex: 0,
       startedAt: "2026-04-25T00:00:00.000Z",

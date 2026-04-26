@@ -7,7 +7,6 @@ export function createRouteServices(dependencies: Pick<
   AppDependencies,
   | "targetsRepository"
   | "executionConstraintsRepository"
-  | "aiProvidersRepository"
   | "aiAgentsRepository"
   | "aiToolsRepository"
   | "workflowsRepository"

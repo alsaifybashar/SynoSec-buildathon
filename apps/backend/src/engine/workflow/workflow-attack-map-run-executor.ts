@@ -1,11 +1,15 @@
 import { randomUUID } from "node:crypto";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { stepCountIs, streamText, tool as createSdkTool, type LanguageModel } from "ai";
 import type { WorkflowRun, WorkflowStageResult, WorkflowTraceEvent } from "@synosec/contracts";
 import { getWorkflowReportedFindings } from "@synosec/contracts";
+import { z } from "zod";
 import type { AttackMapNode, AttackPlan, AttackPlanPhase } from "@/engine/orchestrator/index.js";
 import type { ResolvedAiTool } from "@/modules/ai-tools/index.js";
 import { RequestError } from "@/shared/http/request-error.js";
 import { createAttackMapFindingSubmission, createWorkflowReportedFinding } from "./workflow-finding-factory.js";
 import type {
+  StageDependencies,
   RuntimeStartContext,
   WorkflowRuntimePorts,
   WorkflowRunWriterPort
@@ -20,6 +24,15 @@ function clipText(value: unknown, maxLength: number, fallback = "") {
   return value.slice(0, maxLength);
 }
 
+type AttackChain = {
+  title: string;
+  description: string;
+  severity: "info" | "low" | "medium" | "high" | "critical";
+  findingIds: string[];
+  exploitation: string;
+  impact: string;
+};
+
 export class AttackMapWorkflowRunExecutor {
   constructor(
     private readonly ports: WorkflowRuntimePorts,
@@ -30,8 +43,8 @@ export class AttackMapWorkflowRunExecutor {
   async execute(context: RuntimeStartContext): Promise<void> {
     const { workflow, run, targetRecord, constraintSet } = context;
     const stage = this.preflight.getOrderedStages(workflow)[0]!;
-    const { agent, provider } = await this.preflight.loadStageDependencies(stage, targetRecord, constraintSet, "attack-map");
-    const orchestrator = this.ports.orchestratorExecutionEngine as unknown as any;
+    const { agent, runtime, tools, excludedTools } = await this.preflight.loadStageDependencies(stage, targetRecord, constraintSet, "attack-map");
+    const orchestrator = this.ports.orchestratorExecutionEngine;
 
     const target = {
       baseUrl: constraintSet.normalizedTarget.baseUrl ?? targetRecord.baseUrl ?? `http://${constraintSet.normalizedTarget.host}`,
@@ -39,8 +52,8 @@ export class AttackMapWorkflowRunExecutor {
       ...(constraintSet.normalizedTarget.port === undefined ? {} : { port: constraintSet.normalizedTarget.port })
     };
     const plannerTools = (
-      await Promise.all(stage.allowedToolIds.map((toolId) => this.ports.toolRuntime.get(toolId)))
-    ).filter((candidate): candidate is ResolvedAiTool => Boolean(candidate));
+      await Promise.all(tools.map((tool) => this.ports.toolRuntime.get(tool.id)))
+    ).filter((candidate): candidate is ResolvedAiTool => Boolean(candidate?.runtime));
 
     let currentRun = await this.writer.appendEvent(
       run,
@@ -171,7 +184,23 @@ export class AttackMapWorkflowRunExecutor {
       );
     }
 
-    const recon = await orchestrator.runRecon(target.baseUrl, run.id, provider, provider.model, (phase: string, title: string, summary: string) => {
+    if (excludedTools.length > 0) {
+      const excludedToolSummary = excludedTools.map((tool) => `${tool.name}: ${tool.reason}`).join("\n");
+      await appendEvent(
+        "system_message",
+        "completed",
+        {
+          title: "Policy-filtered tools",
+          summary: `Excluded ${excludedTools.length} tool${excludedTools.length === 1 ? "" : "s"} for this target run because they were not compatible with the active target constraints.`,
+          excludedTools
+        },
+        "Policy-filtered tools",
+        `Excluded ${excludedTools.length} incompatible tool${excludedTools.length === 1 ? "" : "s"} for this target run.`,
+        excludedToolSummary
+      );
+    }
+
+    const recon = await orchestrator.runRecon(target.baseUrl, run.id, runtime, runtime.model, (phase: string, title: string, summary: string) => {
       void emitReasoning(phase, title, summary);
     });
     for (const probe of recon.probes) {
@@ -191,7 +220,7 @@ export class AttackMapWorkflowRunExecutor {
       clipText(recon.rawCurl, 1000)
     );
 
-    let plan = await orchestrator.createPlan(target.baseUrl, recon, plannerTools, provider, provider.model, (phase: string, title: string, summary: string) => {
+    let plan = await orchestrator.createPlan(target.baseUrl, recon, plannerTools, runtime, runtime.model, (phase: string, title: string, summary: string) => {
       void emitReasoning(phase, title, summary);
     });
     await appendEvent(
@@ -210,6 +239,7 @@ export class AttackMapWorkflowRunExecutor {
     );
 
     const findingNodes: AttackMapNode[] = [];
+    const confirmedFindings: Array<{ title: string; severity: string; description: string; vector: string }> = [];
     let phaseIndex = 0;
     while (phaseIndex < plan.phases.length) {
       const phase = plan.phases[phaseIndex] as AttackPlanPhase | undefined;
@@ -223,8 +253,8 @@ export class AttackMapWorkflowRunExecutor {
         phase,
         recon,
         run.id,
-        provider,
-        provider.model,
+        runtime,
+        runtime.model,
         (reasonPhase: string, title: string, summary: string) => {
           void emitReasoning(reasonPhase, title, summary);
         },
@@ -278,6 +308,12 @@ export class AttackMapWorkflowRunExecutor {
             vector: finding.vector
           }
         });
+        confirmedFindings.push({
+          title: finding.title,
+          severity,
+          description: finding.description,
+          vector: finding.vector
+        });
       }
 
       plan = {
@@ -293,11 +329,11 @@ export class AttackMapWorkflowRunExecutor {
           plan,
           phase,
           result.findings,
-          getWorkflowReportedFindings(currentRun),
+          confirmedFindings,
           recon,
           plannerTools,
-          provider,
-          provider.model,
+          runtime,
+          runtime.model,
           (reasonPhase: string, title: string, summary: string) => {
             void emitReasoning(reasonPhase, title, summary);
           }
@@ -319,62 +355,21 @@ export class AttackMapWorkflowRunExecutor {
       }
     }
 
-    for (const finding of findingNodes.filter((node) => node.severity === "critical" || node.severity === "high" || node.severity === "medium").slice(0, 4)) {
-      const deepFindings = await orchestrator.deepDiveFinding(
-        target.baseUrl,
-        finding,
-        findingNodes,
-        recon,
-        provider,
-        provider.model,
-        (phase: string, title: string, summary: string) => {
-          void emitReasoning(phase, title, summary);
-        }
-      );
-      for (const child of deepFindings) {
-        const workflowFinding = createWorkflowReportedFinding({
-          runId: currentRun.id,
-          submission: createAttackMapFindingSubmission({
-            target,
-            title: child.label,
-            severity: child.severity ?? "medium",
-            description: String(child.data["description"] ?? ""),
-            vector: String(child.data["vector"] ?? ""),
-            evidence: [{
-              sourceTool: "deep_analysis",
-              quote: clipText(child.data["description"] ?? child.label, 600, child.label),
-              externalUrl: target.baseUrl
-            }],
-            tags: ["attack-map", "workflow-orchestrator", "deep-analysis"]
-          })
-        });
-        await appendEvent(
-          "finding_reported",
-          "completed",
-          { finding: workflowFinding, phase: "deep_analysis", derivedFrom: finding.label },
-          `Finding reported: ${workflowFinding.title}`,
-          `${workflowFinding.severity.toUpperCase()} ${workflowFinding.type} on ${workflowFinding.target.host}.`,
-          workflowFinding.impact
-        );
-        findingNodes.push({
-          id: workflowFinding.id,
-          type: "finding",
-          label: workflowFinding.title,
-          status: "completed",
-          severity: workflowFinding.severity,
-          data: {
-            description: workflowFinding.impact,
-            vector: String(child.data["vector"] ?? "")
-          }
-        });
-      }
-    }
-
-    const chains = findingNodes.length >= 2
-      ? await orchestrator.correlateAttackChains(findingNodes, target.baseUrl, provider, provider.model, (phase: string, title: string, summary: string) => {
-          void emitReasoning(phase, title, summary);
-        })
-      : [];
+    const chains = await this.runAdaptiveAnalysis({
+      workflowId: workflow.id,
+      workflowName: workflow.name,
+      stageId: stage.id,
+      stageLabel: stage.label,
+      stageObjective: stage.objective,
+      agentSystemPrompt: agent.systemPrompt,
+      runtime,
+      target,
+      appendEvent,
+      currentRun: () => currentRun,
+      orchestrator,
+      recon,
+      findingNodes
+    });
     const executedPhaseCount = plan.phases.filter((phase: AttackPlanPhase) => phase.status === "completed").length;
     const skippedPhaseCount = plan.phases.filter((phase: AttackPlanPhase) => phase.status === "skipped").length;
 
@@ -438,5 +433,286 @@ export class AttackMapWorkflowRunExecutor {
       })
       .filter((section): section is string => Boolean(section))
       .join("\n\n");
+  }
+
+  private async runAdaptiveAnalysis(input: {
+    workflowId: string;
+    workflowName: string;
+    stageId: string;
+    stageLabel: string;
+    stageObjective: string;
+    agentSystemPrompt: string;
+    runtime: StageDependencies["runtime"];
+    target: { baseUrl: string; host: string; port?: number };
+    appendEvent: (
+      type: WorkflowTraceEvent["type"],
+      status: WorkflowTraceEvent["status"],
+      payload: Record<string, unknown>,
+      title: string,
+      summary: string,
+      detail?: string | null
+    ) => Promise<WorkflowRun>;
+    currentRun: () => WorkflowRun;
+    orchestrator: WorkflowRuntimePorts["orchestratorExecutionEngine"];
+    recon: Awaited<ReturnType<WorkflowRuntimePorts["orchestratorExecutionEngine"]["runRecon"]>>;
+    findingNodes: AttackMapNode[];
+  }): Promise<AttackChain[]> {
+    if (input.findingNodes.length === 0) {
+      return [];
+    }
+
+    const builtinToolContext = this.formatToolContextSections([{
+      title: "Attack-map built-in actions",
+      tools: [
+        { name: "deep_analysis", description: "Perform deeper analysis on one confirmed finding and report any newly confirmed child findings." },
+        { name: "attack_chain_correlation", description: "Correlate confirmed findings into higher-impact chained attack paths." }
+      ]
+    }]);
+    await input.appendEvent(
+      "system_message",
+      "completed",
+      {
+        title: "Built-in tool context",
+        summary: "Persisted the attack-map built-in actions exposed to the analysis model.",
+        body: builtinToolContext
+      },
+      "Built-in tool context",
+      "Persisted the attack-map built-in actions exposed to the analysis model.",
+      builtinToolContext
+    );
+
+    const findingsSummary = input.findingNodes.map((finding) => ({
+      id: finding.id,
+      title: finding.label,
+      severity: finding.severity ?? "info",
+      description: String(finding.data["description"] ?? ""),
+      vector: String(finding.data["vector"] ?? "")
+    }));
+    const systemPrompt = [
+      input.agentSystemPrompt,
+      "",
+      `You are executing the "${input.stageLabel}" stage of the workflow "${input.workflowName}".`,
+      `Objective: ${input.stageObjective}`,
+      "",
+      "Attack-map analysis contract:",
+      "Use deep_analysis only when one concrete confirmed finding justifies deeper reachable exploitation paths.",
+      "Use attack_chain_correlation only when two or more confirmed findings can be combined into a meaningful chained attack path.",
+      "Do not invent evidence. If no deeper analysis or correlation is justified, do not call any tool."
+    ].join("\n");
+
+    const attackChains: AttackChain[] = [];
+    const deepAnalysisSchema = z.object({
+      findingId: z.string().min(1),
+      title: z.string().min(1),
+      severity: z.string().min(1),
+      description: z.string().min(1),
+      vector: z.string().min(1)
+    });
+    const correlationSchema = z.object({
+      findings: z.array(z.object({
+        id: z.string().min(1)
+      })).min(2)
+    });
+    const tools = {
+      deep_analysis: createSdkTool({
+        description: "Perform deeper analysis on one confirmed finding and report any newly confirmed child findings.",
+        inputSchema: deepAnalysisSchema,
+        execute: async (rawInput) => {
+          const request = deepAnalysisSchema.parse(rawInput);
+          const parentFinding = input.findingNodes.find((candidate) => candidate.id === request.findingId);
+          if (!parentFinding) {
+            throw new RequestError(400, `Unknown finding reference: ${request.findingId}`);
+          }
+          const deepFindings = await input.orchestrator.deepDiveFinding(
+            input.target.baseUrl,
+            parentFinding,
+            input.findingNodes,
+            input.recon,
+            input.runtime,
+            input.runtime.model,
+            (phase: string, title: string, summary: string) => {
+              void input.appendEvent("reasoning", "completed", { phase, title, summary }, title, summary, null);
+            }
+          );
+          const reported = [];
+          for (const child of deepFindings) {
+            const workflowFinding = createWorkflowReportedFinding({
+              runId: input.currentRun().id,
+              submission: createAttackMapFindingSubmission({
+                target: input.target,
+                title: child.label,
+                severity: child.severity ?? "medium",
+                description: String(child.data["description"] ?? ""),
+                vector: String(child.data["vector"] ?? ""),
+                evidence: [{
+                  sourceTool: "deep_analysis",
+                  quote: clipText(child.data["description"] ?? child.label, 600, child.label),
+                  externalUrl: input.target.baseUrl
+                }],
+                tags: ["attack-map", "workflow-orchestrator", "deep-analysis"]
+              })
+            });
+            await input.appendEvent(
+              "finding_reported",
+              "completed",
+              { finding: workflowFinding, phase: "deep_analysis", derivedFrom: parentFinding.label },
+              `Finding reported: ${workflowFinding.title}`,
+              `${workflowFinding.severity.toUpperCase()} ${workflowFinding.type} on ${workflowFinding.target.host}.`,
+              workflowFinding.impact
+            );
+            input.findingNodes.push({
+              id: workflowFinding.id,
+              type: "finding",
+              label: workflowFinding.title,
+              status: "completed",
+              severity: workflowFinding.severity,
+              data: {
+                description: workflowFinding.impact,
+                vector: String(child.data["vector"] ?? "")
+              }
+            });
+            reported.push({
+              findingId: workflowFinding.id,
+              title: workflowFinding.title,
+              severity: workflowFinding.severity,
+              host: workflowFinding.target.host
+            });
+          }
+          return { findings: reported };
+        }
+      }),
+      attack_chain_correlation: createSdkTool({
+        description: "Correlate confirmed findings into higher-impact chained attack paths.",
+        inputSchema: correlationSchema,
+        execute: async (rawInput) => {
+          const request = correlationSchema.parse(rawInput);
+          const requestedIds = new Set(request.findings.map((finding) => finding.id));
+          const candidateFindings = input.findingNodes.filter((finding) => requestedIds.has(finding.id));
+          if (candidateFindings.length < 2) {
+            throw new RequestError(400, "Attack chain correlation requires at least two known findings.");
+          }
+          const chains = await input.orchestrator.correlateAttackChains(
+            candidateFindings,
+            input.target.baseUrl,
+            input.runtime,
+            input.runtime.model,
+            (phase: string, title: string, summary: string) => {
+              void input.appendEvent("reasoning", "completed", { phase, title, summary }, title, summary, null);
+            }
+          );
+          attackChains.splice(0, attackChains.length, ...chains);
+          await input.appendEvent(
+            "system_message",
+            "completed",
+            {
+              title: "Attack chains correlated",
+              summary: chains.length > 0
+                ? `Correlated ${chains.length} chained attack path${chains.length === 1 ? "" : "s"}.`
+                : "No meaningful chained attack paths were confirmed.",
+              body: JSON.stringify(chains, null, 2),
+              phase: "correlation"
+            },
+            "Attack chains correlated",
+            chains.length > 0
+              ? `Correlated ${chains.length} chained attack path${chains.length === 1 ? "" : "s"}.`
+              : "No meaningful chained attack paths were confirmed.",
+            JSON.stringify(chains, null, 2)
+          );
+          return { chains };
+        }
+      })
+    };
+
+    const result = streamText({
+      model: this.createAnthropicLanguageModel(input.runtime.apiKey, input.runtime.model),
+      system: systemPrompt,
+      prompt: [
+        "Confirmed findings:",
+        JSON.stringify(findingsSummary, null, 2),
+        "",
+        "Review the confirmed findings. Call attack-map built-ins only when the evidence justifies it."
+      ].join("\n"),
+      tools,
+      stopWhen: stepCountIs(8)
+    });
+    await input.appendEvent(
+      "start",
+      "running",
+      {
+        title: "Attack-map analysis started",
+        summary: "Started the attack-map built-in analysis model stream."
+      },
+      "Attack-map analysis started",
+      "Started the attack-map built-in analysis model stream."
+    );
+    for await (const rawPart of result.fullStream) {
+      const part = rawPart as any;
+      switch (part.type) {
+        case "text":
+        case "reasoning":
+          await input.appendEvent(
+            "model_decision",
+            "running",
+            { text: part.text },
+            part.type === "reasoning" ? "Model streamed reasoning" : "Model streamed text",
+            clipText(part.text, 80, ""),
+            part.text
+          );
+          break;
+        case "tool-call":
+          await input.appendEvent(
+            "tool_call",
+            "running",
+            {
+              toolCallId: part.toolCallId,
+              toolName: part.toolName,
+              input: JSON.stringify(part.input, null, 2)
+            },
+            `Calling ${part.toolName}`,
+            `Invoked ${part.toolName}.`,
+            JSON.stringify(part.input, null, 2)
+          );
+          break;
+        case "tool-result":
+          await input.appendEvent(
+            "tool_result",
+            "completed",
+            {
+              toolCallId: part.toolCallId,
+              toolName: part.toolName,
+              output: part.output
+            },
+            `${part.toolName} returned`,
+            `${part.toolName} completed.`,
+            JSON.stringify(part.output, null, 2)
+          );
+          break;
+        case "finish":
+          await input.appendEvent(
+            "system_message",
+            part.finishReason === "error" ? "failed" : "completed",
+            {
+              finishReason: part.finishReason,
+              rawFinishReason: part.rawFinishReason,
+              totalUsage: part.totalUsage
+            },
+            "Attack-map analysis finished",
+            `Analysis stream finished with reason: ${part.finishReason}.`,
+            null
+          );
+          break;
+        case "error":
+          throw part.error instanceof Error ? part.error : new Error(String(part.error));
+        default:
+          break;
+      }
+    }
+
+    return attackChains;
+  }
+
+  private createAnthropicLanguageModel(apiKey: string, model: string): LanguageModel {
+    const anthropic = createAnthropic({ apiKey });
+    return anthropic(model);
   }
 }

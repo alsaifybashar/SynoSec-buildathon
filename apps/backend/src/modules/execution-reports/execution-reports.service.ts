@@ -566,7 +566,7 @@ export class ExecutionReportsService {
       sourceDefinitionId: run.workflowId,
       status: normalizeExecutionReportStatus(workflowRun.status),
       title: run.workflow.name,
-      targetLabel: run.workflow.application.name,
+      targetLabel: run.workflow.application?.name ?? "Unknown target",
       sourceLabel: run.workflow.name,
       findingsCount: findings.length,
       highestSeverity: summarizeHighestSeverity(findings),

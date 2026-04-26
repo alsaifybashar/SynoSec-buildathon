@@ -25,17 +25,6 @@ enum ExecutionConstraintKind {
   workflow_gate
 }
 
-enum AiProviderKind {
-  local
-  anthropic
-}
-
-enum AiProviderStatus {
-  active
-  inactive
-  error
-}
-
 enum AiAgentStatus {
   draft
   active
@@ -121,6 +110,7 @@ model Application {
   createdAt     DateTime               @default(now()) @map("created_at")
   updatedAt     DateTime               @updatedAt @map("updated_at")
   workflows     Workflow[]
+  workflowRuns  WorkflowRun[]
   constraintBindings ApplicationConstraintBinding[]
 
   @@index([name])
@@ -168,44 +158,19 @@ model ApplicationConstraintBinding {
   @@map("application_constraint_bindings")
 }
 
-model AiProvider {
-  id          String           @id @db.Uuid
-  name        String
-  kind        AiProviderKind
-  status      AiProviderStatus
-  description String?
-  baseUrl     String?          @map("base_url")
-  model       String
-  apiKey      String?          @map("api_key")
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
-  agents      AiAgent[]
-
-  @@index([name])
-  @@index([status, kind])
-  @@index([createdAt])
-  @@index([updatedAt])
-  @@index([model])
-  @@map("ai_providers")
-}
-
 model AiAgent {
   id             String          @id @db.Uuid
   name           String
   status         AiAgentStatus
   description    String?
-  providerId     String          @map("provider_id") @db.Uuid
   systemPrompt   String          @map("system_prompt")
-  modelOverride  String?         @map("model_override")
   createdAt      DateTime        @default(now()) @map("created_at")
   updatedAt      DateTime        @updatedAt @map("updated_at")
-  provider       AiProvider      @relation(fields: [providerId], references: [id], onDelete: Restrict)
   tools          AiAgentTool[]
   workflowStages WorkflowStage[]
 
-  @@index([providerId])
   @@index([name])
-  @@index([status, providerId])
+  @@index([status])
   @@index([createdAt])
   @@index([updatedAt])
   @@map("ai_agents")
@@ -253,21 +218,34 @@ model Workflow {
   status        WorkflowStatus
   executionKind String               @default("workflow") @map("execution_kind")
   description   String?
-  applicationId String               @map("application_id") @db.Uuid
+  applicationId String?              @map("application_id") @db.Uuid
   createdAt     DateTime             @default(now()) @map("created_at")
   updatedAt     DateTime             @updatedAt @map("updated_at")
-  application   Application          @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  application   Application?         @relation(fields: [applicationId], references: [id], onDelete: SetNull)
   stages        WorkflowStage[]
+  launches      WorkflowLaunch[]
   runs          WorkflowRun[]
   traceEntries  WorkflowTraceEntry[]
   traceEvents   WorkflowTraceEvent[]
 
   @@index([applicationId])
   @@index([name])
-  @@index([status, applicationId])
   @@index([createdAt])
   @@index([updatedAt])
   @@map("workflows")
+}
+
+model WorkflowLaunch {
+  id          String        @id @db.Uuid
+  workflowId  String        @map("workflow_id") @db.Uuid
+  status      String
+  startedAt   DateTime      @default(now()) @map("started_at")
+  completedAt DateTime?     @map("completed_at")
+  workflow    Workflow      @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  runs        WorkflowRun[]
+
+  @@index([workflowId, startedAt])
+  @@map("workflow_launches")
 }
 
 model WorkflowStage {
@@ -299,16 +277,22 @@ model WorkflowStage {
 model WorkflowRun {
   id               String               @id @db.Uuid
   workflowId       String               @map("workflow_id") @db.Uuid
+  workflowLaunchId String               @map("workflow_launch_id") @db.Uuid
+  targetId         String               @map("target_id") @db.Uuid
   executionKind    String               @default("workflow") @map("execution_kind")
   status           WorkflowRunStatus
   currentStepIndex Int                  @default(0) @map("current_step_index")
   startedAt        DateTime             @default(now()) @map("started_at")
   completedAt      DateTime?            @map("completed_at")
   workflow         Workflow             @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  launch           WorkflowLaunch       @relation(fields: [workflowLaunchId], references: [id], onDelete: Cascade)
+  target           Application          @relation(fields: [targetId], references: [id], onDelete: Restrict)
   traceEntries     WorkflowTraceEntry[]
   traceEvents      WorkflowTraceEvent[]
 
+  @@index([workflowLaunchId])
   @@index([workflowId])
+  @@index([targetId])
   @@map("workflow_runs")
 }
 
@@ -608,21 +592,20 @@ model EscalationRouteFinding {
 }
 
 model OrchestratorRun {
-  id        String   @id @db.Uuid
-  targetUrl String   @map("target_url")
-  providerId String  @map("provider_id") @db.Uuid
-  status    String   @default("pending")
-  phase     String   @default("pending")
-  recon     Json?
-  plan      Json?
-  mapNodes  Json?    @map("map_nodes")
-  mapEdges  Json?    @map("map_edges")
-  findings  Json?
-  toolActivity Json? @map("tool_activity")
-  summary   String?
-  error     String?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id           String   @id @db.Uuid
+  targetUrl    String   @map("target_url")
+  status       String   @default("pending")
+  phase        String   @default("pending")
+  recon        Json?
+  plan         Json?
+  mapNodes     Json?    @map("map_nodes")
+  mapEdges     Json?    @map("map_edges")
+  findings     Json?
+  toolActivity Json?    @map("tool_activity")
+  summary      String?
+  error        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@index([status])
   @@index([createdAt])

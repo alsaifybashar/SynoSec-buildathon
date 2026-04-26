@@ -17,7 +17,6 @@ export class PrismaAiAgentsRepository implements AiAgentsRepository {
   async list(query: AiAgentsListQuery): Promise<PaginatedResult<AiAgent>> {
     const where = {
       ...(query.status ? { status: query.status } : {}),
-      ...(query.providerId ? { providerId: query.providerId } : {}),
       ...(query.q
         ? {
             OR: [
@@ -30,9 +29,7 @@ export class PrismaAiAgentsRepository implements AiAgentsRepository {
     };
     const orderBy = query.sortBy === "toolIds"
       ? { tools: { _count: query.sortDirection } }
-      : query.sortBy === "providerId"
-        ? { provider: { name: query.sortDirection } }
-        : { [query.sortBy ?? "name"]: query.sortDirection };
+      : { [query.sortBy ?? "name"]: query.sortDirection };
     const skip = (query.page - 1) * query.pageSize;
     const [items, total] = await Promise.all([
       this.prisma.aiAgent.findMany({
@@ -63,7 +60,7 @@ export class PrismaAiAgentsRepository implements AiAgentsRepository {
   }
 
   async create(input: CreateAiAgentBody): Promise<AiAgent> {
-    await this.assertReferences(input.providerId, input.toolIds);
+    await this.assertReferences(input.toolIds);
 
     const agent = await this.prisma.aiAgent.create({
       data: {
@@ -71,9 +68,7 @@ export class PrismaAiAgentsRepository implements AiAgentsRepository {
         name: input.name,
         status: input.status,
         description: input.description,
-        providerId: input.providerId,
         systemPrompt: input.systemPrompt,
-        modelOverride: input.modelOverride,
         tools: {
           create: input.toolIds.map((toolId, index) => ({
             toolId,
@@ -96,9 +91,8 @@ export class PrismaAiAgentsRepository implements AiAgentsRepository {
       return null;
     }
 
-    const nextProviderId = input.providerId ?? current.providerId;
     const nextToolIds = input.toolIds ?? current.tools.sort((left, right) => left.ord - right.ord).map((tool) => tool.toolId);
-    await this.assertReferences(nextProviderId, nextToolIds);
+    await this.assertReferences(nextToolIds);
 
     const agent = await this.prisma.aiAgent.update({
       where: { id },
@@ -106,9 +100,7 @@ export class PrismaAiAgentsRepository implements AiAgentsRepository {
         name: input.name ?? current.name,
         status: input.status ?? current.status,
         description: input.description === undefined ? current.description : input.description,
-        providerId: nextProviderId,
         systemPrompt: input.systemPrompt ?? current.systemPrompt,
-        modelOverride: input.modelOverride === undefined ? current.modelOverride : input.modelOverride,
         tools: {
           deleteMany: {},
           create: nextToolIds.map((toolId, index) => ({
@@ -132,15 +124,7 @@ export class PrismaAiAgentsRepository implements AiAgentsRepository {
     }
   }
 
-  private async assertReferences(providerId: string, toolIds: string[]) {
-    const provider = await this.prisma.aiProvider.findUnique({
-      where: { id: providerId },
-      select: { id: true }
-    });
-    if (!provider) {
-      throw new RequestError(400, "AI provider not found.");
-    }
-
+  private async assertReferences(toolIds: string[]) {
     if (toolIds.length === 0) {
       return;
     }

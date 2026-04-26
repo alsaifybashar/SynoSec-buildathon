@@ -1,11 +1,11 @@
-import type { StartWorkflowRunBody, WorkflowRun } from "@synosec/contracts";
+import type { StartWorkflowRunBody } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
 import { DefaultWorkflowStageExecutor } from "./workflow-default-stage-executor.js";
 import { AttackMapWorkflowRunExecutor } from "./workflow-attack-map-run-executor.js";
 import { WorkflowRunExecutor } from "./workflow-run-executor.js";
 import { WorkflowRunPreflight } from "./workflow-run-preflight.js";
 import { WorkflowRunWriter } from "./workflow-run-writer.js";
-import type { WorkflowRuntimePorts } from "./workflow-runtime-types.js";
+import type { WorkflowLaunchResult, WorkflowRuntimePorts } from "./workflow-runtime-types.js";
 
 export type { WorkflowArtifactReader, WorkflowRuntimePorts } from "./workflow-runtime-types.js";
 
@@ -24,18 +24,46 @@ export class WorkflowRuntimeService {
     this.runExecutor = new WorkflowRunExecutor(this.preflight, this.writer, this.stageExecutor, this.attackMapExecutor);
   }
 
-  async launchWorkflowRun(workflowId: string, input: StartWorkflowRunBody = {}): Promise<WorkflowRun> {
+  async launchWorkflowRun(workflowId: string, input: StartWorkflowRunBody = {}): Promise<WorkflowLaunchResult> {
     void input;
 
     await this.preflight.prepareWorkflowStart(workflowId);
 
-    const run = await this.ports.workflowsRepository.createRun(workflowId);
-    if (!run) {
+    const launch = await this.ports.workflowsRepository.createLaunch(workflowId);
+    if (!launch) {
       throw new RequestError(404, "Workflow not found.");
     }
 
-    this.writer.publishSnapshot(run);
-    return run;
+    const targets = await this.ports.targetsRepository.list({
+      page: 1,
+      pageSize: 100,
+      q: "",
+      sortBy: "name",
+      sortDirection: "asc"
+    });
+
+    const targetRuns = await Promise.all(
+      targets.items
+        .filter((target) => Boolean(target.baseUrl?.trim()))
+        .map(async (target) => {
+          const run = await this.ports.workflowsRepository.createRun(workflowId, launch.id, target.id);
+          if (!run) {
+            throw new RequestError(500, `Failed to create workflow run for target ${target.id}.`);
+          }
+          this.writer.publishSnapshot(run);
+          return run.id;
+        })
+    );
+
+    const hydratedLaunch = await this.ports.workflowsRepository.getLaunchById(launch.id);
+    if (!hydratedLaunch) {
+      throw new RequestError(404, "Workflow launch not found.");
+    }
+
+    return {
+      launch: hydratedLaunch,
+      runIds: targetRuns
+    };
   }
 
   async runWorkflowRun(runId: string): Promise<void> {

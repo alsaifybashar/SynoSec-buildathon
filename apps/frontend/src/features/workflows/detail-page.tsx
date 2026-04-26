@@ -37,6 +37,7 @@ export function WorkflowDetailPage({
   const [detailReloadToken, setDetailReloadToken] = useState(0);
   const [workflowOverride, setWorkflowOverride] = useState<Workflow | null>(null);
   const [agentOverride, setAgentOverride] = useState<AiAgent | null>(null);
+  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const context = useWorkflowDefinitionContext();
   const workflowDetail = useResourceDetail(workflowsResource, workflowId ?? null, detailReloadToken);
 
@@ -63,6 +64,7 @@ export function WorkflowDetailPage({
     [agentOverride, context.agents]
   );
   const {
+    currentLaunch,
     currentRun,
     runPending,
     persistedTranscript,
@@ -72,15 +74,19 @@ export function WorkflowDetailPage({
     startRun
   } = useWorkflowRunState({
     workflow,
-    targets: context.targets
+    targets: context.targets,
+    selectedTargetId
   });
 
   const workflowAgent = workflow
     ? (agentOverride?.id === workflow.agentId ? agentOverride : context.agentLookup[workflow.agentId] ?? null)
     : null;
-  const workflowTarget = workflow
-    ? context.targets.find((item) => item.id === workflow.targetId) ?? null
-    : null;
+  const targetTabs = useMemo(() => context.targets.map((target) => ({
+    target,
+    summary: currentLaunch?.runs.find((item) => item.targetId === target.id) ?? null,
+    runnable: Boolean(target.baseUrl?.trim())
+  })), [context.targets, currentLaunch]);
+  const activeTarget = targetTabs.find((item) => item.target.id === selectedTargetId)?.target ?? null;
   const approvedToolCount = workflow
     ? (workflow.allowedToolIds.length > 0 ? workflow.allowedToolIds.length : workflowAgent?.toolIds.length ?? 0)
     : 0;
@@ -92,6 +98,24 @@ export function WorkflowDetailPage({
     const visibleToolIds = workflow.allowedToolIds.length > 0 ? workflow.allowedToolIds : workflowAgent?.toolIds ?? [];
     return visibleToolIds.map((toolId) => context.toolLookup[toolId] ?? toolId);
   }, [context.toolLookup, workflow, workflowAgent?.toolIds]);
+
+  useEffect(() => {
+    if (targetTabs.length === 0) {
+      setSelectedTargetId(null);
+      return;
+    }
+
+    if (selectedTargetId && targetTabs.some((item) => item.target.id === selectedTargetId)) {
+      return;
+    }
+
+    const preferred = targetTabs.find((item) => item.summary?.status === "running")
+      ?? targetTabs.find((item) => item.summary?.status === "failed")
+      ?? targetTabs.find((item) => item.summary?.status === "completed")
+      ?? targetTabs.find((item) => item.runnable)
+      ?? targetTabs[0];
+    setSelectedTargetId(preferred?.target.id ?? null);
+  }, [selectedTargetId, targetTabs]);
 
   function handlePromptDraftChange<Key extends keyof PromptEditDraft>(field: Key, value: PromptEditDraft[Key]) {
     setPromptDraft((current) => ({
@@ -239,8 +263,38 @@ export function WorkflowDetailPage({
         sidebar={null}
         relatedContent={null}
       >
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            Targets
+          </span>
+          <div className="inline-flex flex-wrap rounded-full border border-border bg-muted/40 p-1">
+            {targetTabs.map(({ target }) => {
+              const active = target.id === selectedTargetId;
+              return (
+                <button
+                  key={target.id}
+                  type="button"
+                  onClick={() => setSelectedTargetId(target.id)}
+                  className={`rounded-full px-3 py-1 text-xs transition ${
+                    active
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {target.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {activeTarget && !activeTarget.baseUrl ? (
+          <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700">
+            This target is not runnable because it does not have a base URL configured.
+          </div>
+        ) : null}
         <WorkflowTraceSection
           workflow={loadedWorkflow}
+          activeTarget={activeTarget}
           targets={context.targets}
           agents={effectiveAgents}
           tools={context.tools}
@@ -261,7 +315,7 @@ export function WorkflowDetailPage({
         open={showPromptEditor}
         workflow={workflow}
         agent={workflowAgent}
-        target={workflowTarget}
+        target={activeTarget}
         draft={promptDraft}
         saving={promptSavePending}
         error={promptSaveError}

@@ -11,9 +11,7 @@ export function mapAiAgentRow(row: AgentWithTools): ContractAiAgent {
     name: row.name,
     status: row.status,
     description: row.description,
-    providerId: row.providerId,
     systemPrompt: row.systemPrompt,
-    modelOverride: row.modelOverride,
     toolIds: [...row.tools].sort((left, right) => left.ord - right.ord).map((tool) => tool.toolId),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()

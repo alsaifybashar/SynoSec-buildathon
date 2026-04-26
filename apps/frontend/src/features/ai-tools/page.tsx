@@ -157,7 +157,7 @@ function describeBuiltinAction(tool: AiTool) {
     return null;
   }
 
-  const labels: Record<ToolBuiltinActionKey, string> = {
+  const labels: Partial<Record<ToolBuiltinActionKey, string>> = {
     log_progress: "Workflow built-in: persists a short operator-visible progress update into the workflow transcript.",
     report_finding: "Workflow built-in: persists a structured finding and supplies the metadata used to project execution-report graph nodes and edges.",
     complete_run: "Workflow built-in: marks the current workflow run as complete.",
@@ -166,7 +166,7 @@ function describeBuiltinAction(tool: AiTool) {
     attack_chain_correlation: "Attack map built-in: correlates confirmed findings into chained attack paths."
   };
 
-  return labels[actionKey];
+  return labels[actionKey] ?? null;
 }
 
 function definedString(value: string | undefined) {

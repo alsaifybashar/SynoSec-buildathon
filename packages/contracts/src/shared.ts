@@ -6,11 +6,11 @@ export const apiRoutes = {
   authLogout: "/api/auth/logout",
   authSession: "/api/auth/session",
   targets: "/api/targets",
-  aiProviders: "/api/ai-providers",
   aiAgents: "/api/ai-agents",
   aiTools: "/api/ai-tools",
   executionConstraints: "/api/execution-constraints",
   workflows: "/api/workflows",
+  workflowLaunches: "/api/workflow-launches",
   workflowRuns: "/api/workflow-runs",
   workflowRunEvents: "/api/workflow-runs/:id/events",
   workflowRunTranscript: "/api/workflow-runs/:id/transcript",
@@ -28,6 +28,10 @@ export const apiRoutes = {
   connectorTestDispatch: "/api/connectors/test-dispatch",
   connectorStatus: "/api/connectors/status"
 } as const;
+
+export const fixedAiProviderName = "Anthropic";
+export const fixedAiModel = "claude-sonnet-4-6";
+export const fixedAiRuntimeLabel = `${fixedAiProviderName} · ${fixedAiModel}`;
 
 export const localDemoTargetDefaults = {
   internalHost: "synosec-target",

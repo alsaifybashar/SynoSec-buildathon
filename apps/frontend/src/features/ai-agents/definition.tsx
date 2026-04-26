@@ -4,36 +4,29 @@ import {
   apiRoutes,
   type AiAgent,
   type AiAgentStatus,
-  type AiProvider,
   type AiTool,
   type CreateAiAgentBody
 } from "@synosec/contracts";
 import { aiAgentsResource } from "@/features/ai-agents/resource";
 import { aiAgentTransfer } from "@/features/ai-agents/transfer";
-import { aiProvidersResource } from "@/features/ai-providers/resource";
 import { aiToolsResource } from "@/features/ai-tools/resource";
 import type { CrudFeatureDefinition } from "@/shared/crud/crud-feature";
 import { DetailField, DetailFieldGroup, DetailSidebarItem } from "@/shared/components/detail-page";
 import type { AiAgentsQuery } from "@/shared/lib/resource-client";
 import { Input } from "@/shared/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
 import { Textarea } from "@/shared/ui/textarea";
 
 export type AgentFormValues = {
   name: string;
   status: AiAgentStatus;
   description: string;
-  providerId: string;
   systemPrompt: string;
-  modelOverride: string;
   toolIds: string[];
 };
 
 export type AiAgentDefinitionContext = {
-  providers: AiProvider[];
   tools: AiTool[];
-  providerLookup: Record<string, string>;
-  defaultProviderId: string;
+  runtimeLabel: string;
 };
 
 export const statusLabels: Record<AiAgentStatus, string> = {
@@ -42,14 +35,12 @@ export const statusLabels: Record<AiAgentStatus, string> = {
   archived: "Archived"
 };
 
-export function createEmptyFormValues(defaultProviderId = ""): AgentFormValues {
+export function createEmptyFormValues(): AgentFormValues {
   return {
     name: "",
     status: "draft",
     description: "",
-    providerId: defaultProviderId,
     systemPrompt: "",
-    modelOverride: "",
     toolIds: []
   };
 }
@@ -59,9 +50,7 @@ export function toFormValues(agent: AiAgent): AgentFormValues {
     name: agent.name,
     status: agent.status,
     description: agent.description ?? "",
-    providerId: agent.providerId,
     systemPrompt: agent.systemPrompt,
-    modelOverride: agent.modelOverride ?? "",
     toolIds: [...agent.toolIds]
   };
 }
@@ -71,9 +60,7 @@ export function toRequestBody(values: AgentFormValues): CreateAiAgentBody {
     name: values.name.trim(),
     status: values.status,
     description: values.description.trim() || null,
-    providerId: values.providerId,
     systemPrompt: values.systemPrompt.trim(),
-    modelOverride: values.modelOverride.trim() || null,
     toolIds: values.toolIds
   };
 }
@@ -83,9 +70,6 @@ export function validateForm(values: AgentFormValues) {
 
   if (!values.name.trim()) {
     errors.name = "Name is required.";
-  }
-  if (!values.providerId) {
-    errors.providerId = "Provider is required.";
   }
   if (!values.systemPrompt.trim()) {
     errors.systemPrompt = "System prompt is required.";
@@ -103,22 +87,17 @@ export function definedString(value: string | undefined) {
 }
 
 function useAiAgentDefinitionContext(): AiAgentDefinitionContext {
-  const [providers, setProviders] = useState<AiProvider[]>([]);
   const [tools, setTools] = useState<AiTool[]>([]);
 
   useEffect(() => {
     let active = true;
 
-    void Promise.all([
-      aiProvidersResource.list({ ...aiProvidersResource.defaultQuery, pageSize: 100 }),
-      aiToolsResource.list({ ...aiToolsResource.defaultQuery, pageSize: 100 })
-    ])
-      .then(([providerResult, toolResult]) => {
+    void aiToolsResource.list({ ...aiToolsResource.defaultQuery, pageSize: 100 })
+      .then((toolResult) => {
         if (!active) {
           return;
         }
 
-        setProviders(providerResult.items);
         setTools(toolResult.items);
       })
       .catch((error) => {
@@ -132,19 +111,12 @@ function useAiAgentDefinitionContext(): AiAgentDefinitionContext {
     };
   }, []);
 
-  const providerLookup = useMemo(
-    () => Object.fromEntries(providers.map((provider) => [provider.id, provider.name])),
-    [providers]
-  );
-
   return useMemo(
     () => ({
-      providers,
       tools,
-      providerLookup,
-      defaultProviderId: providers[0]?.id ?? ""
+      runtimeLabel: "Anthropic · claude-sonnet-4-6"
     }),
-    [providerLookup, providers, tools]
+    [tools]
   );
 }
 
@@ -161,14 +133,8 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
   resource: aiAgentsResource,
   transfer: aiAgentTransfer,
   useContext: useAiAgentDefinitionContext,
-  useSetup: ({ recordId, context, formValues, handleFieldChange }) => {
-    useEffect(() => {
-      if (!recordId && !formValues.providerId && context.defaultProviderId) {
-        handleFieldChange("providerId", context.defaultProviderId);
-      }
-    }, [context.defaultProviderId, formValues.providerId, handleFieldChange, recordId]);
-  },
-  createEmptyFormValues: (context) => createEmptyFormValues(context.defaultProviderId),
+  useSetup: () => {},
+  createEmptyFormValues: () => createEmptyFormValues(),
   toFormValues,
   parseRequestBody: (formValues) => {
     const errors = validateForm(formValues);
@@ -187,7 +153,7 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
     emptyMessage: "No AI agents have been configured yet.",
     columns: (context) => [
       { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
-      { id: "providerId", header: "Provider", cell: (row) => <span className="text-muted-foreground">{context.providerLookup[row.providerId] ?? "Unknown"}</span> },
+      { id: "runtime", header: "Runtime", cell: () => <span className="text-muted-foreground">{context.runtimeLabel}</span> },
       { id: "toolIds", header: "Tools", cell: (row) => <span className="text-muted-foreground">{row.toolIds.length}</span> }
     ],
     filters: () => []
@@ -199,7 +165,7 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
     renderSidebar: ({ item, context }) => (
       <>
         <DetailSidebarItem label="Status" hint="Lifecycle state of the agent definition in SynoSec.">{statusLabels[item.status]}</DetailSidebarItem>
-        <DetailSidebarItem label="Provider" hint="The model provider this agent uses by default for workflow execution.">{context.providerLookup[item.providerId] ?? "Unknown"}</DetailSidebarItem>
+        <DetailSidebarItem label="Runtime" hint="All agent execution is hardcoded to the fixed Anthropic runtime.">{context.runtimeLabel}</DetailSidebarItem>
         <DetailSidebarItem label="Tools" hint="Count of agent-managed AI tools currently granted to this agent.">{item.toolIds.length}</DetailSidebarItem>
         <DetailSidebarItem label="Updated">{formatTimestamp(item.updatedAt)}</DetailSidebarItem>
       </>
@@ -220,20 +186,8 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
             <DetailField label="Name" required hint="Operator-facing agent name shown when wiring workflows." {...definedString(errors["name"] as string | undefined)}>
               <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
             </DetailField>
-            <DetailField label="Provider" required hint="Base provider used for model execution unless the workflow routes elsewhere." {...definedString(errors["providerId"] as string | undefined)}>
-              <Select value={formValues.providerId} onValueChange={(value) => handleFieldChange("providerId", value)}>
-                <SelectTrigger aria-label="Provider">
-                  <SelectValue placeholder="Select provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  {context.providers.map((providerItem) => (
-                    <SelectItem key={providerItem.id} value={providerItem.id}>{providerItem.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </DetailField>
-            <DetailField label="Model override" hint="Optional model identifier that overrides the provider default for this agent only.">
-              <Input value={formValues.modelOverride} onChange={(event) => handleFieldChange("modelOverride", event.target.value)} aria-label="Model override" />
+            <DetailField label="Runtime" hint="Workflow execution is fixed to Anthropic Sonnet 4.6 for every agent.">
+              <Input value={context.runtimeLabel} aria-label="Runtime" readOnly />
             </DetailField>
             <DetailField label="Description" hint="Optional summary of the agent's role or specialization." className="md:col-span-2">
               <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" />

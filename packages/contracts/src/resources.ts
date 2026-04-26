@@ -154,75 +154,6 @@ export const updateTargetBodySchema = targetBodyBaseSchema.partial().refine((val
 });
 export type UpdateTargetBody = z.infer<typeof updateTargetBodySchema>;
 
-export const aiProviderKindSchema = z.enum(["local", "anthropic"]);
-export type AiProviderKind = z.infer<typeof aiProviderKindSchema>;
-
-export const aiProviderStatusSchema = z.enum(["active", "inactive", "error"]);
-export type AiProviderStatus = z.infer<typeof aiProviderStatusSchema>;
-
-export const aiProviderSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1),
-  kind: aiProviderKindSchema,
-  status: aiProviderStatusSchema,
-  description: z.string().nullable(),
-  baseUrl: z.string().url().nullable(),
-  model: z.string().min(1),
-  apiKeyConfigured: z.boolean(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
-});
-export type AiProvider = z.infer<typeof aiProviderSchema>;
-
-export const aiProvidersListQuerySchema = resourceListQuerySchema.extend({
-  status: aiProviderStatusSchema.optional(),
-  kind: aiProviderKindSchema.optional(),
-  sortBy: z.enum(["name", "kind", "status", "model", "apiKey", "createdAt", "updatedAt"]).optional()
-});
-export type AiProvidersListQuery = z.infer<typeof aiProvidersListQuerySchema>;
-
-export const listAiProvidersResponseSchema = createPaginatedResponseSchema("providers", aiProviderSchema);
-export type ListAiProvidersResponse = z.infer<typeof listAiProvidersResponseSchema>;
-
-const aiProviderBodyBaseSchema = z.object({
-  name: z.string().trim().min(1),
-  kind: aiProviderKindSchema,
-  status: aiProviderStatusSchema,
-  description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
-  baseUrl: z.union([z.string().trim().url(), z.literal(""), z.null()]).transform((value) => value || null),
-  model: z.string().trim().min(1),
-  apiKey: z.string().trim().min(1).optional()
-});
-
-const requireLocalAiProviderBaseUrl = <T extends { kind: "local" | "anthropic"; baseUrl: string | null }>(value: T, ctx: z.RefinementCtx) => {
-  if (value.kind === "local" && !value.baseUrl) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Base URL is required for local providers.",
-      path: ["baseUrl"]
-    });
-  }
-};
-
-export const createAiProviderBodySchema = aiProviderBodyBaseSchema.superRefine(requireLocalAiProviderBaseUrl);
-export type CreateAiProviderBody = z.infer<typeof createAiProviderBodySchema>;
-
-export const updateAiProviderBodySchema = aiProviderBodyBaseSchema
-  .partial()
-  .refine((value) => Object.keys(value).length > 0, {
-    message: "At least one field is required."
-  })
-  .superRefine((value, ctx) => {
-    if (value.kind === "local" && !value.baseUrl) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Base URL is required for local providers.",
-        path: ["baseUrl"]
-      });
-    }
-  });
-export type UpdateAiProviderBody = z.infer<typeof updateAiProviderBodySchema>;
-
 export const aiToolSourceSchema = z.enum(["system", "custom"]);
 export type AiToolSource = z.infer<typeof aiToolSourceSchema>;
 
@@ -465,9 +396,7 @@ export const aiAgentSchema = z.object({
   name: z.string().min(1),
   status: aiAgentStatusSchema,
   description: z.string().nullable(),
-  providerId: z.string().uuid(),
   systemPrompt: z.string().min(1),
-  modelOverride: z.string().nullable(),
   toolIds: z.array(z.string().min(1)).default([]),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
@@ -476,8 +405,7 @@ export type AiAgent = z.infer<typeof aiAgentSchema>;
 
 export const aiAgentsListQuerySchema = resourceListQuerySchema.extend({
   status: aiAgentStatusSchema.optional(),
-  providerId: z.string().uuid().optional(),
-  sortBy: z.enum(["name", "status", "providerId", "toolIds", "createdAt", "updatedAt"]).optional()
+  sortBy: z.enum(["name", "status", "toolIds", "createdAt", "updatedAt"]).optional()
 });
 export type AiAgentsListQuery = z.infer<typeof aiAgentsListQuerySchema>;
 
@@ -488,9 +416,7 @@ const aiAgentBodyBaseSchema = z.object({
   name: z.string().trim().min(1),
   status: aiAgentStatusSchema,
   description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
-  providerId: z.string().uuid(),
   systemPrompt: z.string().min(1),
-  modelOverride: z.union([z.string().trim().min(1), z.literal(""), z.null()]).transform((value) => value || null),
   toolIds: z.array(z.string().min(1)).default([])
 });
 
@@ -698,7 +624,6 @@ export const workflowSchema = z.object({
   status: workflowStatusSchema,
   executionKind: executionKindSchema.optional(),
   description: z.string().nullable(),
-  targetId: z.string().uuid(),
   agentId: z.string().uuid(),
   objective: z.string().min(1),
   stageSystemPrompt: z.string().min(1),
@@ -725,8 +650,7 @@ export type Workflow = z.infer<typeof workflowSchema>;
 
 export const workflowsListQuerySchema = resourceListQuerySchema.extend({
   status: workflowStatusSchema.optional(),
-  targetId: z.string().uuid().optional(),
-  sortBy: z.enum(["name", "status", "targetId", "agentId", "createdAt", "updatedAt"]).optional()
+  sortBy: z.enum(["name", "status", "agentId", "createdAt", "updatedAt"]).optional()
 });
 export type WorkflowsListQuery = z.infer<typeof workflowsListQuerySchema>;
 
@@ -762,7 +686,6 @@ const workflowBodyBaseSchema = z.object({
   status: workflowStatusSchema,
   executionKind: executionKindSchema.optional(),
   description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
-  targetId: z.string().uuid(),
   agentId: z.string().uuid(),
   objective: z.string().trim().min(1),
   stageSystemPrompt: z.string().trim().min(1),
@@ -871,6 +794,8 @@ export type WorkflowTraceEntry = z.infer<typeof workflowTraceEntrySchema>;
 export const workflowRunSchema = z.object({
   id: z.string().uuid(),
   workflowId: z.string().uuid(),
+  workflowLaunchId: z.string().uuid(),
+  targetId: z.string().uuid(),
   executionKind: executionKindSchema.optional(),
   status: workflowRunStatusSchema,
   currentStepIndex: z.number().int().min(0).default(0),
@@ -880,6 +805,32 @@ export const workflowRunSchema = z.object({
   events: z.array(workflowTraceEventSchema).default([])
 });
 export type WorkflowRun = z.infer<typeof workflowRunSchema>;
+
+export const workflowLaunchStatusSchema = z.enum(["pending", "running", "completed", "failed", "partial"]);
+export type WorkflowLaunchStatus = z.infer<typeof workflowLaunchStatusSchema>;
+
+export const workflowLaunchTargetStatusSchema = z.enum(["pending", "running", "completed", "failed"]);
+export type WorkflowLaunchTargetStatus = z.infer<typeof workflowLaunchTargetStatusSchema>;
+
+export const workflowLaunchTargetRunSchema = z.object({
+  targetId: z.string().uuid(),
+  runId: z.string().uuid(),
+  status: workflowLaunchTargetStatusSchema,
+  startedAt: z.string().datetime(),
+  completedAt: z.string().datetime().nullable(),
+  errorMessage: z.string().nullable().default(null)
+});
+export type WorkflowLaunchTargetRun = z.infer<typeof workflowLaunchTargetRunSchema>;
+
+export const workflowLaunchSchema = z.object({
+  id: z.string().uuid(),
+  workflowId: z.string().uuid(),
+  status: workflowLaunchStatusSchema,
+  startedAt: z.string().datetime(),
+  completedAt: z.string().datetime().nullable(),
+  runs: z.array(workflowLaunchTargetRunSchema).default([])
+});
+export type WorkflowLaunch = z.infer<typeof workflowLaunchSchema>;
 
 export const liveModelOutputSchema = z.object({
   runId: z.string().uuid(),
@@ -935,7 +886,6 @@ export type OrchestratorAttackPlan = z.infer<typeof orchestratorAttackPlanSchema
 export const orchestratorRunSchema = z.object({
   id: z.string().uuid(),
   targetUrl: z.string().url(),
-  providerId: z.string().uuid(),
   status: z.string().min(1),
   phase: z.string().min(1),
   recon: z.unknown(),

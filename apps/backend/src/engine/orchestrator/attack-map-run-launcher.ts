@@ -1,7 +1,7 @@
 import type { OrchestratorRunRecord } from "./orchestrator-execution-service.js";
 
 export interface AttackMapRunLaunchPort {
-  createRun(targetUrl: string, providerId: string): Promise<OrchestratorRunRecord>;
+  createRun(targetUrl: string): Promise<OrchestratorRunRecord>;
 }
 
 export interface AttackMapRunStartPort {
@@ -14,8 +14,8 @@ export class AttackMapRunLauncher {
     private readonly startPort: AttackMapRunStartPort
   ) {}
 
-  create(targetUrl: string, providerId: string): Promise<OrchestratorRunRecord> {
-    return this.createPort.createRun(targetUrl, providerId);
+  create(targetUrl: string): Promise<OrchestratorRunRecord> {
+    return this.createPort.createRun(targetUrl);
   }
 
   start(runId: string): void {

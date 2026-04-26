@@ -12,7 +12,6 @@ export type WorkflowDefinitionContext = {
   targetLookup: Record<string, string>;
   agentLookup: Record<string, AiAgent>;
   toolLookup: Record<string, string>;
-  defaultTargetId: string;
   defaultAgentId: string;
 };
 
@@ -70,7 +69,6 @@ export function useWorkflowDefinitionContext(): WorkflowDefinitionContext {
       targetLookup,
       agentLookup,
       toolLookup,
-      defaultTargetId: targets[0]?.id ?? "",
       defaultAgentId: agents[0]?.id ?? ""
     }),
     [agentLookup, agents, targetLookup, targets, toolLookup, tools]

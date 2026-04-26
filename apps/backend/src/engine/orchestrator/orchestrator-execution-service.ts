@@ -29,9 +29,9 @@ import { OrchestratorStream } from "@/engine/orchestrator/orchestrator-stream.js
 import { executeScriptedTool } from "@/engine/tools/script-executor.js";
 import { ExecutionReportsService } from "@/modules/execution-reports/index.js";
 import { prisma } from "@/shared/database/prisma-client.js";
+import { loadFixedAnthropicRuntime, type FixedAnthropicRuntime } from "@/shared/config/fixed-ai-runtime.js";
 import { RequestError } from "@/shared/http/request-error.js";
 import type { AiToolsRepository, ResolvedAiTool, ToolRuntime } from "@/modules/ai-tools/index.js";
-import type { AiProvidersRepository, StoredAiProvider } from "@/modules/ai-providers/index.js";
 import { createAttackMapFindingSubmission, createWorkflowReportedFinding } from "@/engine/workflow/workflow-finding-factory.js";
 import { AttackMapRunLauncher } from "./attack-map-run-launcher.js";
 
@@ -45,7 +45,6 @@ type ResolvedOrchestratorTool = {
 export type OrchestratorRunRecord = {
   id: string;
   targetUrl: string;
-  providerId: string;
   status: string;
   phase: string;
   recon: unknown;
@@ -98,6 +97,8 @@ type DecisionModelStreamOptions = {
   onTextDelta?: (delta: string) => void;
   onReasoningDelta?: (delta: string) => void;
 };
+
+type StoredAiProvider = FixedAnthropicRuntime;
 
 type AdaptivePlanDecision = {
   skipPhaseIds?: string[];
@@ -370,7 +371,6 @@ type ScriptedToolResultBoundary = {
 function mapRow(row: {
   id: string;
   targetUrl: string;
-  providerId: string;
   status: string;
   phase: string;
   recon: unknown;
@@ -385,7 +385,16 @@ function mapRow(row: {
   updatedAt: Date;
 }): OrchestratorRunRecord {
   return {
-    ...row,
+    id: row.id,
+    targetUrl: row.targetUrl,
+    status: row.status,
+    phase: row.phase,
+    recon: row.recon,
+    plan: row.plan,
+    mapNodes: row.mapNodes,
+    mapEdges: row.mapEdges,
+    summary: row.summary,
+    error: row.error,
     findings: Array.isArray(row.findings)
       ? row.findings
           .map((entry) => executionReportFindingSchema.safeParse(entry))
@@ -408,24 +417,31 @@ function toJson(value: unknown): any { return JSON.parse(JSON.stringify(value));
 
 export class OrchestratorExecutionEngineService {
   private readonly launcher: AttackMapRunLauncher;
+  private readonly fixedRuntime: FixedAnthropicRuntime;
 
   constructor(
     private readonly stream: OrchestratorStream,
-    private readonly aiProvidersRepository: AiProvidersRepository,
     private readonly aiToolsRepository: AiToolsRepository,
     private readonly toolRuntime: ToolRuntime,
     private readonly executionReportsService: ExecutionReportsService = new ExecutionReportsService()
   ) {
     this.launcher = new AttackMapRunLauncher(this, this);
+    this.fixedRuntime = loadFixedAnthropicRuntime();
   }
 
-  async createRun(targetUrl: string, providerId: string): Promise<OrchestratorRunRecord> {
-    const provider = await this.aiProvidersRepository.getStoredById(providerId);
-    this.assertProviderSupportsOrchestration(provider);
-
+  async createRun(targetUrl: string): Promise<OrchestratorRunRecord> {
     const id = randomUUID();
     const row = await prisma.orchestratorRun.create({
-      data: { id, targetUrl, providerId, status: "pending", phase: "pending", mapNodes: [], mapEdges: [], findings: [], toolActivity: [] }
+      data: {
+        id,
+        targetUrl,
+        status: "pending",
+        phase: "pending",
+        mapNodes: [],
+        mapEdges: [],
+        findings: [],
+        toolActivity: []
+      }
     });
     return mapRow(row);
   }
@@ -519,12 +535,12 @@ export class OrchestratorExecutionEngineService {
       throw new RequestError(404, "Orchestrator run not found.");
     }
 
-    await this.executeWithFailureHandling(run.id, run.targetUrl, run.providerId);
+    await this.executeWithFailureHandling(run.id, run.targetUrl);
   }
 
-  private async executeWithFailureHandling(runId: string, targetUrl: string, providerId: string) {
+  private async executeWithFailureHandling(runId: string, targetUrl: string) {
     try {
-      await this.execute(runId, targetUrl, providerId);
+      await this.execute(runId, targetUrl);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await (async () => {
@@ -541,12 +557,10 @@ export class OrchestratorExecutionEngineService {
     }
   }
 
-  private async execute(runId: string, targetUrl: string, providerId: string) {
-    const provider = await this.aiProvidersRepository.getStoredById(providerId);
-    this.assertProviderSupportsOrchestration(provider);
-
+  private async execute(runId: string, targetUrl: string) {
+    const provider = this.fixedRuntime;
     const modelName = provider.model;
-    const providerLabel = `${provider.name} (${provider.kind}:${modelName})`;
+    const providerLabel = `${provider.providerName} (${modelName})`;
     const nodes: AttackMapNode[] = [];
     const edges: AttackMapEdge[] = [];
     const reportedFindings: ExecutionReportFinding[] = [];
@@ -1020,7 +1034,7 @@ export class OrchestratorExecutionEngineService {
     emit({ type: "completed", summary });
   }
 
-  private async runRecon(
+  async runRecon(
     targetUrl: string,
     runId: string,
     provider: StoredAiProvider,
@@ -1064,7 +1078,7 @@ export class OrchestratorExecutionEngineService {
       rawNmap = error instanceof Error ? error.message : String(error);
     }
 
-    emit(`Parsing recon results with ${provider.name}`);
+    emit(`Parsing recon results with ${provider.providerName}`);
     const parsed = await this.parseReconWithAI(rawNmap, rawCurl, targetUrl, port, provider, model, emitReasoning, streamOptions);
     return {
       ...parsed,
@@ -1120,7 +1134,7 @@ export class OrchestratorExecutionEngineService {
     };
   }
 
-  private async createPlan(
+  async createPlan(
     targetUrl: string,
     recon: ReconResult,
     plannerTools: ResolvedAiTool[],
@@ -1171,7 +1185,7 @@ export class OrchestratorExecutionEngineService {
     };
   }
 
-  private async adaptAttackPlan(
+  async adaptAttackPlan(
     targetUrl: string,
     currentPlan: AttackPlan,
     completedPhase: AttackPlanPhase,
@@ -1309,7 +1323,7 @@ export class OrchestratorExecutionEngineService {
     };
   }
 
-  private async executePhase(
+  async executePhase(
     targetUrl: string,
     phase: AttackPlanPhase,
     recon: ReconResult,
@@ -1516,7 +1530,7 @@ export class OrchestratorExecutionEngineService {
     return attempts;
   }
 
-  private async deepDiveFinding(
+  async deepDiveFinding(
     targetUrl: string,
     finding: AttackMapNode,
     siblingFindings: AttackMapNode[],
@@ -1587,8 +1601,8 @@ export class OrchestratorExecutionEngineService {
             description: candidate.description,
             vector: candidate.vector,
             sourceType: "ai",
-            source: `Deep analysis of: ${finding.label} via ${provider.name}`,
-            command: `AI-guided deep analysis (${provider.name}:${model})`,
+            source: `Deep analysis of: ${finding.label} via ${provider.providerName}`,
+            command: `AI-guided deep analysis (${provider.providerName}:${model})`,
             rawOutput: `Derived from: ${finding.label}\n\nVector: ${candidate.vector}\n\nAdversarial verification: Accepted\nReasoning: ${verification.reasoning}`
           }
         });
@@ -1645,7 +1659,7 @@ export class OrchestratorExecutionEngineService {
     };
   }
 
-  private async correlateAttackChains(
+  async correlateAttackChains(
     allFindings: AttackMapNode[],
     targetUrl: string,
     provider: StoredAiProvider,
@@ -1698,24 +1712,9 @@ export class OrchestratorExecutionEngineService {
       .filter((chain) => chain.findingIds.length >= 2);
   }
 
-  private assertProviderSupportsOrchestration(provider: StoredAiProvider | null): asserts provider is StoredAiProvider {
-    if (!provider) {
-      throw new RequestError(400, "Attack map provider not found.");
-    }
-
-    if (provider.kind === "anthropic" && !provider.apiKey) {
-      throw new RequestError(400, "Attack map runs require an Anthropic API key when the selected provider is Anthropic.");
-    }
-
-    if (provider.kind === "local" && !provider.baseUrl) {
-      throw new RequestError(400, "Attack map runs require a base URL when the selected provider is local.");
-    }
-  }
-
   private createAnthropicLanguageModel(provider: StoredAiProvider, model: string) {
     const anthropic = createAnthropic({
-      ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
-      ...(provider.baseUrl ? { baseURL: provider.baseUrl } : {})
+      apiKey: provider.apiKey
     });
 
     return anthropic(model);
@@ -1727,10 +1726,6 @@ export class OrchestratorExecutionEngineService {
     prompt: string,
     streamOptions?: DecisionModelStreamOptions
   ) {
-    if (provider.kind === "local") {
-      return this.callLocalDecisionModel(provider, model, prompt, streamOptions);
-    }
-
     return this.callHostedDecisionModel(provider, model, prompt, streamOptions);
   }
 
@@ -1740,7 +1735,7 @@ export class OrchestratorExecutionEngineService {
     prompt: string,
     streamOptions?: DecisionModelStreamOptions
   ): Promise<DecisionEnvelope<T>> {
-    const liveOutputSource: LiveModelOutput["source"] = provider.kind === "local" ? "local" : "hosted";
+    const liveOutputSource: LiveModelOutput["source"] = "hosted";
     let liveModelOutput: LiveModelOutput | null = null;
     const publishLiveModelOutput = () => {
       if (liveModelOutput && streamOptions?.onLiveModelOutput) {
@@ -1906,92 +1901,4 @@ export class OrchestratorExecutionEngineService {
     return trimmed;
   }
 
-  private async callLocalDecisionModel(
-    provider: StoredAiProvider,
-    model: string,
-    prompt: string,
-    streamOptions?: DecisionModelStreamOptions
-  ) {
-    const baseUrl = provider.baseUrl;
-    if (!baseUrl) {
-      throw new Error("Local attack-map execution requires a provider base URL.");
-    }
-
-    const response = await fetch(new URL("/api/chat", baseUrl), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model,
-        stream: true,
-        format: "json",
-        options: {
-          temperature: 0
-        },
-        messages: [
-          {
-            role: "user",
-            content: prompt
-          }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Local provider request failed with status ${response.status}.`);
-    }
-
-    if (!response.body) {
-      throw new Error("Local provider returned an empty attack-map response.");
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let content = "";
-    const publishDelta = (delta: string) => {
-      if (delta.length === 0) {
-        return;
-      }
-      content = `${content}${delta}`;
-      streamOptions?.onTextDelta?.(delta);
-    };
-    const parseLine = (line: string) => {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        return;
-      }
-      const payload = JSON.parse(trimmed) as { message?: { content?: string } };
-      const delta = payload.message?.content;
-      if (typeof delta === "string" && delta.length > 0) {
-        publishDelta(delta);
-      }
-    };
-
-    const reader = response.body.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      buffer += decoder.decode(value, { stream: true });
-      let newlineIndex = buffer.indexOf("\n");
-      while (newlineIndex !== -1) {
-        parseLine(buffer.slice(0, newlineIndex));
-        buffer = buffer.slice(newlineIndex + 1);
-        newlineIndex = buffer.indexOf("\n");
-      }
-    }
-    buffer += decoder.decode();
-    if (buffer.trim().length > 0) {
-      parseLine(buffer);
-    }
-
-    const trimmed = content.trim();
-    if (!trimmed) {
-      throw new Error("Local provider returned an empty attack-map response.");
-    }
-
-    return trimmed;
-  }
 }

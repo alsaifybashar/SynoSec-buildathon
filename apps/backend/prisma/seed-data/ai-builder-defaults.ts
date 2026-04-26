@@ -89,8 +89,6 @@ import {
 export const localApplicationId = "5ecf4a8e-df5f-4945-a7e1-230ef43eac80";
 export const portfolioApplicationId = "1f92a3d7-4f70-4950-b750-9bf74c6f3591";
 export const securePentApplicationId = "4d8e9e0a-bfd4-4b24-8fb9-8656b511a2b8";
-export const anthropicProviderId = "88e995dc-c55d-4a74-b831-b64922f25858";
-export const localProviderId = "6fb18f09-f230-49df-b0ab-4f1bcedd230c";
 export const osiSingleAgentWorkflowId = "8b57f0e7-1dd7-4d6a-8db5-c4ff7be80a21";
 export const orchestrationAttackMapWorkflowId = "97fa61fd-8ae7-41d8-b267-d472413fcb9c";
 export const adaptivePlanningAttackMapWorkflowId = "69e1718f-7d2e-4507-a698-523752373809";
@@ -154,33 +152,7 @@ const webSemanticFamilyToolIds = [
   "builtin-dns-enumeration"
 ] as const;
 
-export type SeededProviderKey = "anthropic";
 export type SeededRoleKey = "orchestrator" | "compact-evaluator" | "portfolio-evaluator";
-
-export function getSeededProviderDefinitions(env: NodeJS.ProcessEnv = process.env) {
-  return [
-    {
-      id: anthropicProviderId,
-      key: "anthropic" as const,
-      name: "Anthropic",
-      kind: "anthropic" as const,
-      description: "Default hosted Anthropic provider for production-grade agent workflows.",
-      baseUrl: null,
-      model: env["CLAUDE_MODEL"] ?? "claude-sonnet-4-6",
-      apiKey: env["ANTHROPIC_API_KEY"] ?? null
-    },
-    {
-      id: localProviderId,
-      key: "local" as const,
-      name: "Local",
-      kind: "local" as const,
-      description: "Local model endpoint seeded from repo defaults for offline or lab execution.",
-      baseUrl: env["LLM_LOCAL_BASE_URL"] ?? "http://127.0.0.1:11434",
-      model: env["LLM_LOCAL_MODEL"] ?? "qwen3:1.7b",
-      apiKey: null
-    }
-  ] as const;
-}
 
 function withConstraintProfile<
   T extends {
@@ -504,8 +476,8 @@ export const seededAgentIds = {
   "anthropic:portfolio-evaluator": "18adcb50-327a-40d3-a4c5-ff05ec4d2458"
 } as const;
 
-export function seededAgentId(providerKey: SeededProviderKey, roleKey: SeededRoleKey) {
-  return seededAgentIds[`${providerKey}:${roleKey}` as const];
+export function seededAgentId(roleKey: SeededRoleKey) {
+  return seededAgentIds[`anthropic:${roleKey}`];
 }
 
 export function getSeededRoleDefinition(roleKey: SeededRoleKey) {
@@ -515,107 +487,16 @@ export function getSeededRoleDefinition(roleKey: SeededRoleKey) {
 export function getSeededWorkflowDefinitions() {
   return [
     {
-      id: osiSingleAgentWorkflowId,
-      name: "Single-Agent",
-      status: "active" as const,
-      executionKind: "workflow" as const,
-      description: "Seeded Anthropic workflow that runs one prompt-driven transparent evidence pipeline with approved tools, native finding registration, and explicit completion control.",
-      applicationId: localApplicationId,
-      stages: [
-        {
-          id: "6e54b520-366c-4acb-9e36-a6cfe1c07fd3",
-          label: "Pipeline",
-          agentId: seededAgentId("anthropic", "orchestrator"),
-          objective:
-            "Run one transparent evidence-backed pipeline across the configured target. Use the approved tools to collect concrete evidence, choose the next useful step based on what the evidence currently supports, keep progress updates short and operator-visible, register concrete findings through report_finding, and end only through complete_run or fail_run.",
-          ...defaultWorkflowStagePrompts,
-          allowedToolIds: [
-            ...fullSemanticFamilyToolIds
-          ],
-          requiredEvidenceTypes: [],
-          findingPolicy: {
-            taxonomy: "typed-core-v1",
-            allowedTypes: [
-              "service_exposure",
-              "content_discovery",
-              "missing_security_header",
-              "tls_weakness",
-              "injection_signal",
-              "auth_weakness",
-              "sensitive_data_exposure",
-              "misconfiguration",
-              "other"
-            ]
-          },
-          completionRule: {
-            requireStageResult: true,
-            requireToolCall: false,
-            allowEmptyResult: true,
-            minFindings: 0
-          },
-          resultSchemaVersion: 1,
-          handoffSchema: null
-        }
-      ]
-    },
-    {
-      id: orchestrationAttackMapWorkflowId,
-      name: "Orchestration Attack Map",
-      status: "active" as const,
-      executionKind: "attack-map" as const,
-      description: "Seeded workflow-backed attack-map orchestration run that plans high-value attack paths, executes approved tools, and reports normalized workflow findings.",
-      applicationId: localApplicationId,
-      stages: [
-        {
-          id: "0586f03f-27e2-4c5a-a12c-abcb1b68e841",
-          label: "Attack Map",
-          agentId: seededAgentId("anthropic", "orchestrator"),
-          objective:
-            "Run a workflow-native attack-map orchestration pass across the configured target. Prioritize realistic attack paths, execute approved tools to validate the strongest path candidates, report normalized evidence-backed workflow findings, and use complete_run to summarize the strongest supported path, the main residual blockers, and the next evidence needed to strengthen or reject the remaining paths.",
-          ...defaultWorkflowStagePrompts,
-          allowedToolIds: [
-            ...getSeededRoleDefinition("orchestrator")?.toolIds ?? [],
-            vulnAuditTool.id,
-            serviceScanTool.id
-          ],
-          requiredEvidenceTypes: [],
-          findingPolicy: {
-            taxonomy: "typed-core-v1",
-            allowedTypes: [
-              "service_exposure",
-              "content_discovery",
-              "missing_security_header",
-              "tls_weakness",
-              "injection_signal",
-              "auth_weakness",
-              "sensitive_data_exposure",
-              "misconfiguration",
-              "other"
-            ]
-          },
-          completionRule: {
-            requireStageResult: true,
-            requireToolCall: true,
-            allowEmptyResult: true,
-            minFindings: 0
-          },
-          resultSchemaVersion: 1,
-          handoffSchema: null
-        }
-      ]
-    },
-    {
       id: adaptivePlanningAttackMapWorkflowId,
       name: "Adaptive Planning Attack Map",
       status: "active" as const,
       executionKind: "attack-map" as const,
       description: "Seeded workflow-backed attack-map run that continuously updates its attack plan as evidence lands, skips dead-end phases, and adds targeted follow-up validation.",
-      applicationId: localApplicationId,
       stages: [
         {
           id: "9dc70355-e6c0-4fef-bba2-8527d110ec74",
           label: "Adaptive Attack Map",
-          agentId: seededAgentId("anthropic", "orchestrator"),
+          agentId: seededAgentId("orchestrator"),
           objective:
             "Run a workflow-native attack-map orchestration pass across the configured target using adaptive planning. Build an initial plan from recon, execute the highest-value pending phase, update the plan after each completed phase based on the confirmed evidence, skip stale paths, add tightly targeted new validation phases when warranted, report normalized evidence-backed workflow findings, and use complete_run to summarize which attack paths strengthened, which were deprioritized, and the minimum next evidence needed to reduce uncertainty.",
           ...defaultWorkflowStagePrompts,
@@ -656,61 +537,16 @@ export function getSeededWorkflowDefinitions() {
       status: "active" as const,
       executionKind: "workflow" as const,
       description: "Seeded Anthropic workflow for evaluating a compact semantic-family tool surface against the same local target and evidence pipeline.",
-      applicationId: localApplicationId,
       stages: [
         {
           id: "d6be6af5-fc56-42fa-a802-702d002b4bf6",
           label: "Compact Evaluation",
-          agentId: seededAgentId("anthropic", "compact-evaluator"),
+          agentId: seededAgentId("compact-evaluator"),
           objective:
             "Run one evidence-backed compact-family evaluation across the configured target. Use only the semantic family tools for collection and validation, think in terms of family capabilities rather than tool brands, register concrete findings through report_finding, and end only through complete_run or fail_run.",
           ...defaultWorkflowStagePrompts,
           allowedToolIds: [
             ...fullSemanticFamilyToolIds
-          ],
-          requiredEvidenceTypes: [],
-          findingPolicy: {
-            taxonomy: "typed-core-v1",
-            allowedTypes: [
-              "service_exposure",
-              "content_discovery",
-              "missing_security_header",
-              "tls_weakness",
-              "injection_signal",
-              "auth_weakness",
-              "sensitive_data_exposure",
-              "misconfiguration",
-              "other"
-            ]
-          },
-          completionRule: {
-            requireStageResult: true,
-            requireToolCall: false,
-            allowEmptyResult: true,
-            minFindings: 0
-          },
-          resultSchemaVersion: 1,
-          handoffSchema: null
-        }
-      ]
-    },
-    {
-      id: portfolioEvidenceGraphWorkflowId,
-      name: "Portfolio Evidence Graph",
-      status: "active" as const,
-      executionKind: "workflow" as const,
-      description: "Seeded Anthropic workflow for evaluating nilswickman.com with compact family tools and evidence-graph-oriented reporting.",
-      applicationId: portfolioApplicationId,
-      stages: [
-        {
-          id: "78f81dbf-b482-4d8d-b63f-a6e63cd3d38f",
-          label: "Portfolio Assessment",
-          agentId: seededAgentId("anthropic", "portfolio-evaluator"),
-          objective:
-            "Assess the configured portfolio target as a prerendered Nuxt site using only the compact semantic family tools. Focus on realistic portfolio surfaces such as headers, redirects, public assets, sitemap and robots exposure, content discovery, web crawl findings, and deployment or CDN assumptions. Register concrete findings through report_finding with evidence-backed URLs or assets, explicit preconditions, and plain-language remediation. When one finding depends on, correlates with, or enables another, populate derivedFromFindingIds, relatedFindingIds, or enablesFindingIds. Do not present speculative exploit chains as confirmed; keep weaker links as hypotheses in the final summary. Use complete_run to summarize the highest-confidence connected findings, the strongest remaining hypothesis chain, and the minimum-cut remediation that breaks the most paths.",
-          ...defaultWorkflowStagePrompts,
-          allowedToolIds: [
-            ...webSemanticFamilyToolIds
           ],
           requiredEvidenceTypes: [],
           findingPolicy: {

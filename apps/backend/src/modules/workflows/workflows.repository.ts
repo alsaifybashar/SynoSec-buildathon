@@ -1,6 +1,7 @@
 import type {
   CreateWorkflowBody,
   UpdateWorkflowBody,
+  WorkflowLaunch,
   Workflow,
   WorkflowRun,
   WorkflowTraceEvent,
@@ -21,9 +22,11 @@ export interface WorkflowsRepository {
   update(id: string, input: UpdateWorkflowBody): Promise<Workflow | null>;
   remove(id: string): Promise<boolean>;
   migrateWorkflowStageContracts(workflowId: string, fallbackToolIdsByAgentId?: Record<string, string[]>): Promise<Workflow | null>;
-  createRun(workflowId: string): Promise<WorkflowRun | null>;
+  createLaunch(workflowId: string): Promise<WorkflowLaunch | null>;
+  getLaunchById(launchId: string): Promise<WorkflowLaunch | null>;
+  getLatestLaunchByWorkflowId(workflowId: string): Promise<WorkflowLaunch | null>;
+  createRun(workflowId: string, workflowLaunchId: string, targetId: string): Promise<WorkflowRun | null>;
   getRunById(runId: string): Promise<WorkflowRun | null>;
-  getLatestRunByWorkflowId(workflowId: string): Promise<WorkflowRun | null>;
   appendRunEvent(runId: string, event: WorkflowTraceEvent, patch?: WorkflowRunStatePatch): Promise<WorkflowRun>;
   appendTraceEntry?(runId: string, traceEntry: WorkflowRun["trace"][number], patch?: WorkflowRunStatePatch): Promise<WorkflowRun>;
   updateRunState(runId: string, patch: WorkflowRunStatePatch): Promise<WorkflowRun>;

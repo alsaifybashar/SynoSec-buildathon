@@ -43,25 +43,13 @@ export type TargetsQuery = {
   [key: string]: number | string | undefined;
 };
 
-export type AiProvidersQuery = {
-  page: number;
-  pageSize: number;
-  q: string;
-  sortBy: "name" | "kind" | "status" | "model" | "apiKey" | "createdAt" | "updatedAt";
-  sortDirection: SortDirection;
-  kind: OptionalString;
-  status: OptionalString;
-  [key: string]: number | string | undefined;
-};
-
 export type AiAgentsQuery = {
   page: number;
   pageSize: number;
   q: string;
-  sortBy: "name" | "status" | "providerId" | "toolIds" | "createdAt" | "updatedAt";
+  sortBy: "name" | "status" | "toolIds" | "createdAt" | "updatedAt";
   sortDirection: SortDirection;
   status: OptionalString;
-  providerId: OptionalString;
   [key: string]: number | string | undefined;
 };
 
@@ -82,10 +70,9 @@ export type WorkflowsQuery = {
   page: number;
   pageSize: number;
   q: string;
-  sortBy: "name" | "status" | "targetId" | "agentId" | "createdAt" | "updatedAt";
+  sortBy: "name" | "status" | "agentId" | "createdAt" | "updatedAt";
   sortDirection: SortDirection;
   status: OptionalString;
-  targetId: OptionalString;
   [key: string]: number | string | undefined;
 };
 

@@ -1,6 +1,6 @@
 import http from "node:http";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { AiTool, Scan } from "@synosec/contracts";
+import type { AiTool, Scan, ToolRun } from "@synosec/contracts";
 import { createToolRuntime, getSemanticFamilyDefinition } from "@/modules/ai-tools/index.js";
 import { getBuiltinAiTool } from "@/modules/ai-tools/builtin-ai-tools.js";
 import { MemoryAiToolsRepository } from "@/modules/ai-tools/memory-ai-tools.repository.js";
@@ -35,6 +35,59 @@ function createSeededTool(id: string): AiTool {
     outputSchema: { ...definition.outputSchema },
     createdAt: "2026-04-26T00:00:00.000Z",
     updatedAt: "2026-04-26T00:00:00.000Z"
+  };
+}
+
+async function executeDirectSeededTool(input: {
+  broker: ToolBroker;
+  runtime: ReturnType<typeof createToolRuntime>;
+  tool: AiTool;
+  rawInput: Record<string, string | number | boolean | string[]>;
+}) {
+  const configuredBaseUrl = typeof input.rawInput.baseUrl === "string" ? input.rawInput.baseUrl : null;
+  const parsedBaseUrl = configuredBaseUrl ? new URL(configuredBaseUrl) : null;
+  const target = typeof input.rawInput.target === "string" && input.rawInput.target.length > 0
+    ? input.rawInput.target
+    : parsedBaseUrl?.hostname ?? "127.0.0.1";
+  const port = parsedBaseUrl?.port ? Number(parsedBaseUrl.port) : undefined;
+  const request = await input.runtime.compile(input.tool.id, {
+    target,
+    layer: "L7",
+    justification: `Direct comparison run for ${input.tool.name}.`,
+    ...(port === undefined ? {} : { port }),
+    toolInput: input.rawInput
+  });
+
+  const brokerResult = await input.broker.executeRequests({
+    scan,
+    tacticId: "tactic-direct",
+    agentId: "agent-direct",
+    requests: [request],
+    toolLookup: {
+      [input.tool.id]: input.tool
+    }
+  });
+
+  const toolRun = brokerResult.toolRuns[0];
+  if (!toolRun) {
+    throw new Error(`Missing direct tool run for ${input.tool.name}`);
+  }
+
+  return {
+    request,
+    toolRun,
+    observations: brokerResult.observations
+  };
+}
+
+function comparableToolRunShape(toolRun: ToolRun) {
+  return {
+    status: toolRun.status,
+    output: toolRun.output ?? null,
+    exitCode: toolRun.exitCode ?? null,
+    statusReason: toolRun.statusReason ?? null,
+    target: toolRun.target,
+    port: toolRun.port ?? null
   };
 }
 
@@ -133,5 +186,58 @@ describe("executeSemanticFamilyTool", () => {
     expect(execution.response.status).toBe("completed");
     expect(execution.result.observations.length).toBeGreaterThan(0);
     expect(execution.result.fullOutput).toContain("Semantic Family Test");
+  });
+
+  it("targets the same host and preserves the same evidence as the delegated bash tool", async () => {
+    const familyTool = getBuiltinAiTool("builtin-http-surface-assessment");
+    const familyDefinition = getSemanticFamilyDefinition("http_surface_assessment");
+    const directTool = createSeededTool("seed-http-recon");
+
+    if (!familyTool || !familyDefinition) {
+      throw new Error("Missing builtin semantic family tool definition");
+    }
+
+    const runtime = createToolRuntime(new MemoryAiToolsRepository([
+      directTool,
+      createSeededTool("seed-httpx"),
+      createSeededTool("seed-http-headers"),
+      createSeededTool("seed-whatweb")
+    ]));
+    const broker = new ToolBroker({ broadcast: () => undefined });
+    const rawInput = {
+      target: "127.0.0.1",
+      baseUrl
+    };
+
+    const direct = await executeDirectSeededTool({
+      broker,
+      runtime,
+      tool: directTool,
+      rawInput
+    });
+
+    const family = await executeSemanticFamilyTool({
+      broker,
+      toolRuntime: runtime,
+      familyTool,
+      familyDefinition,
+      target: {
+        baseUrl,
+        host: "127.0.0.1"
+      },
+      scan,
+      tacticId: "tactic-family-compare",
+      agentId: "agent-family-compare"
+    }, rawInput);
+
+    expect(family.response.usedToolId).toBe(directTool.id);
+    expect(family.result.toolRequest.target).toBe(direct.request.target);
+    expect(family.result.toolRequest.port ?? null).toBe(direct.request.port ?? null);
+    expect(family.result.toolRequest.parameters.toolInput).toEqual(direct.request.parameters.toolInput);
+    expect(comparableToolRunShape(family.result.toolRun)).toEqual(comparableToolRunShape(direct.toolRun));
+    expect(family.result.fullOutput).toBe(direct.toolRun.output ?? direct.toolRun.statusReason ?? "");
+    expect(family.result.observations).toEqual(direct.observations.map((observation) => observation.summary));
+    expect(family.result.observationKeys).toEqual(direct.observations.map((observation) => observation.key));
+    expect(family.response.outputPreview).toBe(direct.observations[0]?.summary ?? family.result.outputPreview);
   });
 });

@@ -186,7 +186,7 @@ const KIND_ACCENT: Record<DuplexAtomKind, { label: string; dot: string }> = {
 
 const WORKFLOW_METADATA_HINTS = {
   status: "Lifecycle state of the workflow definition itself, separate from the currently selected run.",
-  target: "Target context this workflow is currently bound to for targeting and reporting.",
+  target: "Target context for the currently selected per-target run.",
   agent: "AI agent definition that provides the standing prompt, provider, and default tool grants.",
   currentRun: "Latest persisted run state and the number of workflow events currently attached to it.",
   updated: "Last time the workflow definition record changed."
@@ -1089,6 +1089,7 @@ function EmptyRunState({
 
 export function WorkflowTraceSection({
   workflow,
+  activeTarget,
   targets,
   agents,
   tools,
@@ -1102,6 +1103,7 @@ export function WorkflowTraceSection({
   streamError
 }: {
   workflow: Workflow | null;
+  activeTarget: WorkflowTarget | null;
   targets: WorkflowTarget[];
   agents: AiAgent[];
   tools: AiTool[];
@@ -1142,9 +1144,7 @@ export function WorkflowTraceSection({
     () => workflow ? agents.find((item) => item.id === workflow.agentId) ?? null : null,
     [workflow, agents]
   );
-  const applicationName = workflow
-    ? (targets.find((item) => item.id === workflow.targetId)?.name ?? "Unknown target")
-    : "Unknown target";
+  const applicationName = activeTarget?.name ?? "Unknown target";
   const visibleToolNames = workflow
     ? (summaryCard.toolNames.length > 0
       ? summaryCard.toolNames

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type {
   CreateWorkflowBody,
   UpdateWorkflowBody,
+  WorkflowLaunch,
   Workflow,
   WorkflowRun,
   WorkflowTraceEvent,
@@ -10,9 +11,29 @@ import type {
 import { Prisma, PrismaClient } from "@prisma/client";
 import type { PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import { RequestError } from "@/shared/http/request-error.js";
-import { mapWorkflowRow, mapWorkflowRunRow } from "./workflows.mapper.js";
+import { mapWorkflowLaunchRow, mapWorkflowRow, mapWorkflowRunRow } from "./workflows.mapper.js";
 import type { WorkflowRunStatePatch, WorkflowsRepository } from "./workflows.repository.js";
 import { normalizeWorkflowStageContract } from "./workflow-stage-contract.js";
+
+function computeWorkflowLaunchStatus(runs: Array<{ status: WorkflowRun["status"] }>): WorkflowLaunch["status"] {
+  if (runs.length === 0) {
+    return "pending";
+  }
+
+  if (runs.some((run) => run.status === "running" || run.status === "pending")) {
+    return "running";
+  }
+
+  if (runs.every((run) => run.status === "completed")) {
+    return "completed";
+  }
+
+  if (runs.every((run) => run.status === "failed")) {
+    return "failed";
+  }
+
+  return "partial";
+}
 
 function toWorkflowStageCreateManyInput(
   stage: { id?: string; label: string; agentId: string } & Record<string, unknown>,
@@ -42,7 +63,6 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
   async list(query: WorkflowsListQuery): Promise<PaginatedResult<Workflow>> {
     const where = {
       ...(query.status ? { status: query.status } : {}),
-      ...(query.targetId ? { applicationId: query.targetId } : {}),
       ...(query.q
         ? {
             OR: [
@@ -52,9 +72,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
           }
         : {})
     };
-    const orderBy = query.sortBy === "targetId"
-        ? { application: { name: query.sortDirection } }
-        : { [query.sortBy ?? "name"]: query.sortDirection };
+    const orderBy = { [query.sortBy ?? "name"]: query.sortDirection };
     const skip = (query.page - 1) * query.pageSize;
     const [matching, total] = await Promise.all([
       this.prisma.workflow.findMany({
@@ -85,7 +103,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
   }
 
   async create(input: CreateWorkflowBody): Promise<Workflow> {
-    await this.assertReferences(input.targetId, [input.agentId]);
+    await this.assertAgentReferences([input.agentId]);
 
     const workflow = await this.prisma.workflow.create({
       data: {
@@ -94,7 +112,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
         status: input.status,
         ...(input.executionKind ? { executionKind: input.executionKind } : { executionKind: "workflow" }),
         description: input.description,
-        applicationId: input.targetId,
+        applicationId: null,
         stages: {
           createMany: {
             data: [toWorkflowStageCreateManyInput({
@@ -139,10 +157,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
       allowedToolIds: input.allowedToolIds ?? (Array.isArray(currentPrimaryStage.allowedToolIds) ? currentPrimaryStage.allowedToolIds.map(String) : [])
     };
 
-    await this.assertReferences(
-      input.targetId ?? current.applicationId,
-      [nextStage.agentId]
-    );
+    await this.assertAgentReferences([nextStage.agentId]);
 
     const workflow = await this.prisma.$transaction(async (transaction) => {
       await transaction.workflowStage.deleteMany({
@@ -158,7 +173,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
             ? { executionKind: input.executionKind ?? current.executionKind }
             : {}),
           description: input.description === undefined ? current.description : input.description,
-          applicationId: input.targetId ?? current.applicationId,
+          applicationId: current.applicationId,
           stages: {
             createMany: {
               data: [toWorkflowStageCreateManyInput({
@@ -233,9 +248,46 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
     return mapWorkflowRow(workflow);
   }
 
-  async createRun(workflowId: string): Promise<WorkflowRun | null> {
+  async createLaunch(workflowId: string): Promise<WorkflowLaunch | null> {
     const workflow = await this.prisma.workflow.findUnique({ where: { id: workflowId } });
     if (!workflow) {
+      return null;
+    }
+
+    const launch = await this.prisma.workflowLaunch.create({
+      data: {
+        id: randomUUID(),
+        workflowId,
+        status: "pending"
+      },
+      include: { runs: true }
+    });
+
+    return mapWorkflowLaunchRow(launch as Parameters<typeof mapWorkflowLaunchRow>[0]);
+  }
+
+  async getLaunchById(launchId: string): Promise<WorkflowLaunch | null> {
+    const launch = await this.prisma.workflowLaunch.findUnique({
+      where: { id: launchId },
+      include: { runs: true }
+    });
+    return launch ? mapWorkflowLaunchRow(launch as Parameters<typeof mapWorkflowLaunchRow>[0]) : null;
+  }
+
+  async getLatestLaunchByWorkflowId(workflowId: string): Promise<WorkflowLaunch | null> {
+    const launch = await this.prisma.workflowLaunch.findFirst({
+      where: { workflowId },
+      include: { runs: true },
+      orderBy: [{ startedAt: "desc" }, { id: "desc" }]
+    });
+    return launch ? mapWorkflowLaunchRow(launch as Parameters<typeof mapWorkflowLaunchRow>[0]) : null;
+  }
+
+  async createRun(workflowId: string, workflowLaunchId: string, targetId: string): Promise<WorkflowRun | null> {
+    const workflow = await this.prisma.workflow.findUnique({ where: { id: workflowId } });
+    const target = await this.prisma.application.findUnique({ where: { id: targetId } });
+    const launch = await this.prisma.workflowLaunch.findUnique({ where: { id: workflowLaunchId } });
+    if (!workflow || !target || !launch) {
       return null;
     }
 
@@ -243,11 +295,15 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
       data: {
         id: randomUUID(),
         workflowId,
+        workflowLaunchId,
+        targetId,
         executionKind: workflow.executionKind ?? "workflow",
         status: "running"
       },
       include: { traceEvents: true }
     });
+
+    await this.refreshLaunchState(workflowLaunchId);
 
     return mapWorkflowRunRow(run as Parameters<typeof mapWorkflowRunRow>[0]);
   }
@@ -257,16 +313,6 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
       where: { id: runId },
       include: { traceEvents: true }
     });
-    return run ? mapWorkflowRunRow(run) : null;
-  }
-
-  async getLatestRunByWorkflowId(workflowId: string): Promise<WorkflowRun | null> {
-    const run = await this.prisma.workflowRun.findFirst({
-      where: { workflowId },
-      include: { traceEvents: true },
-      orderBy: [{ startedAt: "desc" }, { completedAt: "desc" }, { id: "desc" }]
-    });
-
     return run ? mapWorkflowRunRow(run) : null;
   }
 
@@ -297,6 +343,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
       include: { traceEvents: true }
     });
 
+    await this.refreshLaunchState(updated.workflowLaunchId);
     return mapWorkflowRunRow(updated as Parameters<typeof mapWorkflowRunRow>[0]);
   }
 
@@ -311,6 +358,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
       include: { traceEvents: true }
     });
 
+    await this.refreshLaunchState(updated.workflowLaunchId);
     return mapWorkflowRunRow(updated as Parameters<typeof mapWorkflowRunRow>[0]);
   }
 
@@ -348,23 +396,43 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
       });
     });
 
+    await this.refreshLaunchState(updated.workflowLaunchId);
     return mapWorkflowRunRow(updated as Parameters<typeof mapWorkflowRunRow>[0]);
   }
 
-  private async assertReferences(targetId: string, agentIds: string[]) {
-    const [targetRecord, agents] = await Promise.all([
-      this.prisma.application.findUnique({ where: { id: targetId } }),
-      this.prisma.aiAgent.findMany({ where: { id: { in: agentIds } } })
-    ]);
-
-    if (!targetRecord) {
-      throw new RequestError(400, "Target not found.");
-    }
+  private async assertAgentReferences(agentIds: string[]) {
+    const agents = await this.prisma.aiAgent.findMany({ where: { id: { in: agentIds } } });
 
     if (agents.length !== new Set(agentIds).size) {
       const knownIds = new Set(agents.map((agent) => agent.id));
       const missingId = agentIds.find((agentId) => !knownIds.has(agentId));
       throw new RequestError(400, `AI agent not found: ${missingId}`);
     }
+  }
+
+  private async refreshLaunchState(workflowLaunchId: string) {
+    const launch = await this.prisma.workflowLaunch.findUnique({
+      where: { id: workflowLaunchId },
+      include: {
+        runs: {
+          select: {
+            status: true
+          }
+        }
+      }
+    });
+
+    if (!launch) {
+      return;
+    }
+
+    const status = computeWorkflowLaunchStatus(launch.runs);
+    await this.prisma.workflowLaunch.update({
+      where: { id: workflowLaunchId },
+      data: {
+        status,
+        completedAt: status === "running" || status === "pending" ? null : new Date()
+      }
+    });
   }
 }

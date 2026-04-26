@@ -25,10 +25,8 @@ export function AiAgentsPage({
   });
   const breadcrumbsLabel = aiAgentsDefinition.detail.breadcrumbsLabel ?? aiAgentsDefinition.list.title;
   const context = controller.contextState.context ?? {
-    providers: [],
     tools: [],
-    providerLookup: {},
-    defaultProviderId: ""
+    runtimeLabel: "Anthropic · claude-sonnet-4-6"
   };
 
   if (!agentId) {

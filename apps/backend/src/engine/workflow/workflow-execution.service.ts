@@ -1,4 +1,4 @@
-import type { StartWorkflowRunBody, WorkflowRun } from "@synosec/contracts";
+import type { StartWorkflowRunBody, WorkflowLaunch } from "@synosec/contracts";
 import type { WorkflowExecutionEngine } from "@/engine/contracts.js";
 import { ExecutionSessionRunner } from "@/engine/execution-session-runner.js";
 import type { WorkflowRuntimePorts } from "./workflow-runtime.js";
@@ -18,10 +18,12 @@ export class WorkflowExecutionService implements WorkflowExecutionEngine {
     });
   }
 
-  async startRun(workflowId: string, input: StartWorkflowRunBody = {}): Promise<WorkflowRun> {
-    const run = await this.launcher.launch(workflowId, input);
-    void this.sessionRunner.runWorkflow(run.id);
-    return run;
+  async startRun(workflowId: string, input: StartWorkflowRunBody = {}): Promise<WorkflowLaunch> {
+    const { launch, runIds } = await this.launcher.launch(workflowId, input);
+    for (const runId of runIds) {
+      void this.sessionRunner.runWorkflow(runId);
+    }
+    return launch;
   }
 
   stepRun(runId: string): Promise<void> {

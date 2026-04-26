@@ -1,6 +1,5 @@
 import type { ComponentType } from "react";
 import { AiAgentsPage } from "@/features/ai-agents/page";
-import { AiProvidersPage } from "@/features/ai-providers/page";
 import { AiToolsPage } from "@/features/ai-tools/page";
 import { ExecutionConstraintsPage } from "@/features/execution-constraints/page";
 import { TargetsPage } from "@/features/targets/page";
@@ -23,12 +22,6 @@ export const crudRouteRegistry: CrudRouteRegistryEntry[] = [
     component: TargetsPage as ComponentType<Record<string, unknown>>,
     detailIdProp: "targetId",
     detailLabelProp: "targetNameHint"
-  },
-  {
-    id: "ai-providers",
-    component: AiProvidersPage as ComponentType<Record<string, unknown>>,
-    detailIdProp: "providerId",
-    detailLabelProp: "providerNameHint"
   },
   {
     id: "ai-agents",
@@ -62,8 +55,6 @@ export const legacyCrudRedirects = [
   { path: "/applications", redirectTo: crudRouteConfigs.targets.listPath },
   { path: "/applications/new", redirectTo: crudRouteConfigs.targets.createPath },
   { path: "/applications/:applicationId", section: "targets", legacyParamName: "applicationId" },
-  { path: "/ai-providers", redirectTo: crudRouteConfigs["ai-providers"].listPath },
-  { path: "/ai-providers/:providerId", section: "ai-providers", legacyParamName: "providerId" },
   { path: "/ai-agents", redirectTo: crudRouteConfigs["ai-agents"].listPath },
   { path: "/ai-agents/:agentId", section: "ai-agents", legacyParamName: "agentId" },
   { path: "/ai-tools", redirectTo: crudRouteConfigs["ai-tools"].listPath },

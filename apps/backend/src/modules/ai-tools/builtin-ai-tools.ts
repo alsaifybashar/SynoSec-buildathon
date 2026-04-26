@@ -179,7 +179,11 @@ const lifecycleBuiltinAiTools: AiTool[] = [
         findings: {
           type: "array",
           items: {
-            type: "object"
+            type: "object",
+            properties: {
+              id: { type: "string" }
+            },
+            required: ["id"]
           }
         }
       },

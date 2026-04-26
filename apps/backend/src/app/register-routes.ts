@@ -7,7 +7,6 @@ import {
 } from "@/modules/auth/index.js";
 import { registerHealthRoutes } from "@/modules/health/index.js";
 import { registerExecutionConstraintsRoutes, type ExecutionConstraintsRepository } from "@/modules/execution-constraints/index.js";
-import { registerAiProvidersRoutes, type AiProvidersRepository } from "@/modules/ai-providers/index.js";
 import { registerAiAgentsRoutes, type AiAgentsRepository } from "@/modules/ai-agents/index.js";
 import {
   registerAiToolCapabilityRoutes,
@@ -25,7 +24,6 @@ export function registerRoutes(app: Express, dependencies: {
   authConfig: AuthConfig;
   targetsRepository: TargetsRepository;
   executionConstraintsRepository: ExecutionConstraintsRepository;
-  aiProvidersRepository: AiProvidersRepository;
   aiAgentsRepository: AiAgentsRepository;
   aiToolsRepository: AiToolsRepository;
   workflowsRepository: WorkflowsRepository;
@@ -40,7 +38,6 @@ export function registerRoutes(app: Express, dependencies: {
 
   registerTargetsRoutes(app, dependencies.targetsRepository);
   registerExecutionConstraintsRoutes(app, dependencies.executionConstraintsRepository);
-  registerAiProvidersRoutes(app, dependencies.aiProvidersRepository);
   registerAiAgentsRoutes(app, dependencies.aiAgentsRepository);
   registerAiToolsRoutes(app, dependencies.aiToolsRepository, routeServices.toolRuntime);
   registerAiToolCapabilityRoutes(app, routeServices.toolRuntime);

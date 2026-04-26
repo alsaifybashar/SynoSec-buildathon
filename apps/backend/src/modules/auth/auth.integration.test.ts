@@ -228,7 +228,6 @@ describe("auth integration", () => {
     const app = createApp({
       targetsRepository: {} as never,
       executionConstraintsRepository: {} as never,
-      aiProvidersRepository: {} as never,
       aiAgentsRepository: {} as never,
       aiToolsRepository: {} as never,
       workflowsRepository: {} as never
@@ -407,13 +406,13 @@ describe("auth integration", () => {
     setAuthEnv(true);
     const app = createTestApp();
     const response = await request(app)
-      .post(`${apiRoutes.authGoogleLogin}?redirectTo=%2Fai-providers`)
+      .post(`${apiRoutes.authGoogleLogin}?redirectTo=%2Fai-agents`)
       .set("Content-Type", "application/x-www-form-urlencoded")
       .set("Cookie", "g_csrf_token=csrf-value")
       .send("credential=google-id-token&g_csrf_token=csrf-value")
       .expect(303);
 
-    expect(response.headers["location"]).toBe("/ai-providers");
+    expect(response.headers["location"]).toBe("/ai-agents");
     expect(response.headers["set-cookie"]?.join(";")).toContain("synosec_session=");
     expect(verifyGoogleIdToken).toHaveBeenCalledWith("google-id-token", "google-client-id");
     expect(authRepository.createSession).toHaveBeenCalled();

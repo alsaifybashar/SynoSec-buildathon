@@ -10,7 +10,6 @@ export const workflowsResource = createResourceClient<Workflow, WorkflowsQuery, 
     q: "",
     sortBy: "name",
     sortDirection: "asc",
-    status: undefined,
-    targetId: undefined
+    status: undefined
   }
 });

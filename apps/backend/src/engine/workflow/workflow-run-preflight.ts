@@ -1,7 +1,6 @@
 import type { AiTool, Workflow, WorkflowStage } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
 import { derivePrivilegeProfile, deriveSandboxProfile } from "@/modules/ai-tools/tool-execution-config.js";
-import type { StoredAiProvider } from "@/modules/ai-providers/index.js";
 import {
   authorizeToolAgainstConstraints,
   resolveEffectiveExecutionConstraints,
@@ -23,33 +22,12 @@ export class WorkflowRunPreflight implements WorkflowPreflightReader {
     if (!workflow) {
       throw new RequestError(404, "Workflow not found.");
     }
-
-    const targetRecord = await this.ports.targetsRepository.getById(workflow.targetId);
-    if (!targetRecord) {
-      throw new RequestError(400, "Workflow target not found.");
-    }
-
-    const constraintSet = resolveEffectiveExecutionConstraints(targetRecord, 5);
-    const orderedStages = this.getOrderedStages(workflow);
-    for (const stage of orderedStages) {
-      await this.loadStageDependencies(
-        stage,
-        targetRecord,
-        constraintSet,
-        workflow.executionKind === "attack-map" ? "attack-map" : "workflow"
-      );
-    }
-
-    return {
-      workflow,
-      targetRecord,
-      constraintSet
-    };
+    return { workflow };
   }
 
   async loadRuntimeStartContextForRun(runId: string): Promise<RuntimeStartContext> {
     const { run, workflow } = await this.loadRunContext(runId);
-    const targetRecord = await this.ports.targetsRepository.getById(workflow.targetId);
+    const targetRecord = await this.ports.targetsRepository.getById(run.targetId);
     if (!targetRecord) {
       throw new RequestError(400, "Workflow target not found.");
     }
@@ -87,13 +65,7 @@ export class WorkflowRunPreflight implements WorkflowPreflightReader {
     if (!agent) {
       throw new RequestError(400, "Workflow agent not found.");
     }
-
-    const provider = await this.ports.aiProvidersRepository.getStoredById(agent.providerId);
-    if (executionKind === "attack-map") {
-      this.assertProviderSupportsAttackMapWorkflowExecution(provider);
-    } else {
-      this.assertProviderSupportsWorkflowExecution(provider);
-    }
+    const runtime = this.loadRuntimeForExecution(executionKind);
 
     const target = {
       baseUrl: constraintSet.normalizedTarget.baseUrl ?? targetRecord.baseUrl ?? `http://${constraintSet.normalizedTarget.host}`,
@@ -105,42 +77,63 @@ export class WorkflowRunPreflight implements WorkflowPreflightReader {
       await Promise.all(stage.allowedToolIds.map(async (toolId) => this.ports.aiToolsRepository.getById(toolId)))
     ).filter((candidate): candidate is AiTool => Boolean(candidate));
 
-    if (!constraintSet.localhostException) {
-      const incompatibleTool = tools.find((tool) => !authorizeToolAgainstConstraints(constraintSet, tool, {
-        toolId: tool.id,
-        tool: tool.name,
-        executorType: "bash",
-        capabilities: tool.capabilities,
-        target: target.host,
-        ...(target.port === undefined ? {} : { port: target.port }),
-        layer: inferLayer(tool.category),
-        riskTier: tool.riskTier,
-        justification: `Preflight compatibility check for ${tool.name}.`,
-        sandboxProfile: deriveSandboxProfile(tool.riskTier),
-        privilegeProfile: derivePrivilegeProfile(tool.riskTier),
-        parameters: {
-          bashSource: tool.bashSource ?? "",
-          commandPreview: tool.name,
-          toolInput: {
-            target: target.host,
-            ...(target.baseUrl ? { baseUrl: target.baseUrl } : {})
-          }
-        }
-      }).allowed);
+    const excludedTools: StageDependencies["excludedTools"] = [];
+    let compatibleTools = tools;
 
-      if (incompatibleTool) {
-        throw new RequestError(400, `Workflow cannot start because ${incompatibleTool.name} is not compatible with the active target constraints.`, {
-          code: "WORKFLOW_TOOL_CONSTRAINT_INCOMPATIBLE",
-          userFriendlyMessage: `Workflow cannot start because ${incompatibleTool.name} cannot enforce the active target policy.`
+    if (!constraintSet.localhostException) {
+      compatibleTools = tools.filter((tool) => {
+        const decision = authorizeToolAgainstConstraints(constraintSet, tool, {
+          toolId: tool.id,
+          tool: tool.name,
+          executorType: "bash",
+          capabilities: tool.capabilities,
+          target: target.host,
+          ...(target.port === undefined ? {} : { port: target.port }),
+          layer: inferLayer(tool.category),
+          riskTier: tool.riskTier,
+          justification: `Preflight compatibility check for ${tool.name}.`,
+          sandboxProfile: deriveSandboxProfile(tool.riskTier),
+          privilegeProfile: derivePrivilegeProfile(tool.riskTier),
+          parameters: {
+            bashSource: tool.bashSource ?? "",
+            commandPreview: tool.name,
+            toolInput: {
+              target: target.host,
+              ...(target.baseUrl ? { baseUrl: target.baseUrl } : {})
+            }
+          }
         });
-      }
+
+        if (!decision.allowed) {
+          excludedTools.push({
+            id: tool.id,
+            name: tool.name,
+            reason: decision.reason
+          });
+        }
+
+        return decision.allowed;
+      });
+    }
+
+    if (tools.length > 0 && compatibleTools.length === 0) {
+      const firstExcluded = excludedTools[0];
+      throw new RequestError(
+        400,
+        `Workflow cannot start because no allowed tools are compatible with the active target constraints.${firstExcluded ? ` First blocked tool: ${firstExcluded.name}.` : ""}`,
+        {
+          code: "WORKFLOW_TOOL_CONSTRAINT_INCOMPATIBLE",
+          userFriendlyMessage: "Workflow cannot start because none of its allowed tools can enforce the active target policy."
+        }
+      );
     }
 
     return {
       agent,
-      provider,
+      runtime,
       target,
-      tools
+      tools: compatibleTools,
+      excludedTools
     };
   }
 
@@ -158,31 +151,11 @@ export class WorkflowRunPreflight implements WorkflowPreflightReader {
     return { run, workflow };
   }
 
-  private assertProviderSupportsWorkflowExecution(provider: StoredAiProvider | null): asserts provider is StoredAiProvider {
-    if (!provider) {
-      throw new RequestError(400, "Workflow agent provider not found.");
+  private loadRuntimeForExecution(_executionKind: Workflow["executionKind"]) {
+    if (!this.ports.fixedAnthropicRuntime.apiKey) {
+      throw new RequestError(400, "Anthropic workflow execution requires an API key.");
     }
 
-    if (provider.kind !== "anthropic") {
-      throw new RequestError(400, "Workflow pipeline execution requires an Anthropic provider.");
-    }
-
-    if (!provider.apiKey) {
-      throw new RequestError(400, "Workflow pipeline execution requires an Anthropic API key.");
-    }
-  }
-
-  private assertProviderSupportsAttackMapWorkflowExecution(provider: StoredAiProvider | null): asserts provider is StoredAiProvider {
-    if (!provider) {
-      throw new RequestError(400, "Workflow agent provider not found.");
-    }
-
-    if (provider.kind === "anthropic" && !provider.apiKey) {
-      throw new RequestError(400, "Attack-map workflow execution requires an Anthropic API key.");
-    }
-
-    if (provider.kind === "local" && !provider.baseUrl) {
-      throw new RequestError(400, "Attack-map workflow execution requires a local provider base URL.");
-    }
+    return this.ports.fixedAnthropicRuntime;
   }
 }

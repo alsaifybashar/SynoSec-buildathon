@@ -49,24 +49,15 @@ function createService(tools: AiTool[]) {
   const repository = new MemoryAiToolsRepository(tools);
   return new OrchestratorExecutionEngineService(
     new OrchestratorStream(),
-    { getStoredById: async () => null } as never,
     repository,
     createToolRuntime(repository)
   );
 }
 
 const provider = {
-  id: "provider-1",
-  name: "Claude",
-  kind: "anthropic",
-  status: "active",
-  description: null,
-  baseUrl: null,
+  providerName: "Anthropic",
   model: "sonnet",
-  apiKeyConfigured: true,
-  apiKey: "secret",
-  createdAt: "",
-  updatedAt: ""
+  apiKey: "secret"
 } as const;
 
 const recon = {
@@ -82,6 +73,7 @@ const recon = {
 
 describe("OrchestratorExecutionEngineService", () => {
   beforeEach(() => {
+    process.env["ANTHROPIC_API_KEY"] = "test-key";
     executeScriptedToolMock.mockReset();
     streamTextMock.mockReset();
   });

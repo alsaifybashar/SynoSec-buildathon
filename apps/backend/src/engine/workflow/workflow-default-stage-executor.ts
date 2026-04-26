@@ -46,7 +46,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
 
   async run(context: WorkflowStageExecutionContext): Promise<WorkflowStageExecutionOutcome> {
     const { workflow, run, stage, targetRecord, constraintSet } = context;
-    const { agent, provider, target, tools } = await this.preflight.loadStageDependencies(stage, targetRecord, constraintSet, workflow.executionKind);
+    const { agent, runtime, target, tools, excludedTools } = await this.preflight.loadStageDependencies(stage, targetRecord, constraintSet, workflow.executionKind);
 
     let currentRun = run;
     let ord = currentRun.events.length;
@@ -231,6 +231,15 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       }, "Tool context", "Persisted the tool inventory exposed to the workflow model.", toolContext);
     }
 
+    if (excludedTools.length > 0) {
+      const excludedToolSummary = excludedTools.map((tool) => `${tool.name}: ${tool.reason}`).join("\n");
+      await appendEvent("system_message", "completed", {
+        title: "Policy-filtered tools",
+        summary: `Excluded ${excludedTools.length} tool${excludedTools.length === 1 ? "" : "s"} for this target run because they were not compatible with the active target constraints.`,
+        excludedTools
+      }, "Policy-filtered tools", `Excluded ${excludedTools.length} incompatible tool${excludedTools.length === 1 ? "" : "s"} for this target run.`, excludedToolSummary);
+    }
+
     const scan = createWorkflowScan(currentRun, constraintSet);
     await this.ensureWorkflowScan(scan, targetRecord.id, agent.id);
     const executedResults: ExecutedToolResult[] = [];
@@ -238,7 +247,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     let terminalState: PipelineTerminalState | null = null;
     let liveModelOutput: WorkflowLiveModelOutput | null = null;
     const abortController = new AbortController();
-    const liveOutputSource: WorkflowLiveModelOutput["source"] = provider.kind === "local" ? "local" : "hosted";
+    const liveOutputSource: WorkflowLiveModelOutput["source"] = "hosted";
 
     const hasTraceEvent = (traceEventId: string) => currentRun.events.some((event) => event.id === traceEventId);
     const hasToolRunRef = (toolRunRef: string) => executedResults.some((result) => result.toolRun.id === toolRunRef);
@@ -422,7 +431,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     };
 
     const result = streamText({
-      model: this.createAnthropicLanguageModel(provider, agent.modelOverride ?? provider.model),
+      model: this.createAnthropicLanguageModel(runtime.apiKey, runtime.model),
       system: systemPrompt,
       prompt: "Proceed.",
       tools: {
@@ -677,10 +686,9 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       .join("\n\n");
   }
 
-  private createAnthropicLanguageModel(provider: { apiKey: string | null; baseUrl: string | null }, model: string): LanguageModel {
+  private createAnthropicLanguageModel(apiKey: string, model: string): LanguageModel {
     const anthropic = createAnthropic({
-      apiKey: provider.apiKey as string,
-      ...(provider.baseUrl ? { baseURL: provider.baseUrl } : {})
+      apiKey
     });
 
     return anthropic(model);

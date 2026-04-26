@@ -36,8 +36,8 @@ function inferRequestContext(url: string, init?: RequestInit): RequestContext {
   if (pathname.match(/\/api\/ai-tools\/[^/]+\/run$/)) {
     return { method, action: "run AI tool", singularLabel: "AI tool", pluralLabel: "AI tools" };
   }
-  if (pathname.match(/\/api\/workflows\/[^/]+\/runs\/latest$/)) {
-    return { method, action: "load the latest workflow run", singularLabel: "workflow run", pluralLabel: "workflow runs" };
+  if (pathname.match(/\/api\/workflows\/[^/]+\/launches\/latest$/)) {
+    return { method, action: "load the latest workflow launch", singularLabel: "workflow launch", pluralLabel: "workflow launches" };
   }
   if (pathname.match(/\/api\/workflows\/[^/]+\/runs$/) && method === "POST") {
     return { method, action: "start workflow run", singularLabel: "workflow run", pluralLabel: "workflow runs" };
@@ -56,7 +56,6 @@ function inferRequestContext(url: string, init?: RequestInit): RequestContext {
   const resource = resourceMatch?.[1] ?? "resource";
   const labels: Record<string, { singular: string; plural: string }> = {
     targets: { singular: "Target", plural: "Targets" },
-    "ai-providers": { singular: "AI provider", plural: "AI providers" },
     "ai-agents": { singular: "AI agent", plural: "AI agents" },
     "ai-tools": { singular: "AI tool", plural: "AI tools" },
     workflows: { singular: "Workflow", plural: "Workflows" },

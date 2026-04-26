@@ -17,7 +17,6 @@ export const workflowTransfer = {
     status: workflow.status,
     executionKind: workflow.executionKind,
     description: workflow.description,
-    targetId: workflow.targetId,
     agentId: workflow.agentId,
     objective: workflow.objective,
     stageSystemPrompt: workflow.stageSystemPrompt,

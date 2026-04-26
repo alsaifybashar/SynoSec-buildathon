@@ -9,7 +9,7 @@ describe("LoginPage", () => {
   beforeEach(() => {
     initialize.mockReset();
     renderButton.mockReset();
-    window.history.replaceState({}, "", "/login?redirectTo=%2Fai-providers");
+    window.history.replaceState({}, "", "/login?redirectTo=%2Fai-agents");
     window.google = {
       accounts: {
         id: {

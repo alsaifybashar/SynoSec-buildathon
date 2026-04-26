@@ -8,6 +8,7 @@ import {
   type AiTool,
   type Target,
   type Workflow,
+  type WorkflowLaunch,
   type WorkflowRun
 } from "@synosec/contracts";
 import { WorkflowDetailPage } from "@/features/workflows/detail-page";
@@ -77,9 +78,7 @@ const agent: AiAgent = {
   name: "Local Orchestrator",
   status: "active",
   description: "Local workflow orchestrator",
-  providerId: "provider-1",
   systemPrompt: "Coordinate the next best step.",
-  modelOverride: null,
   toolIds: [tool.id],
   createdAt: "2026-04-21T00:00:00.000Z",
   updatedAt: "2026-04-21T00:00:00.000Z"
@@ -91,7 +90,6 @@ const workflow: Workflow = {
   status: "active",
   executionKind: "attack-map",
   description: "Stage timeline test",
-  targetId: target.id,
   agentId: agent.id,
   objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
   stageSystemPrompt: defaultWorkflowStageSystemPrompt,
@@ -162,6 +160,8 @@ const workflow: Workflow = {
 const run: WorkflowRun = {
   id: "run-1",
   workflowId: workflow.id,
+  workflowLaunchId: "launch-1",
+  targetId: target.id,
   status: "running",
   currentStepIndex: 1,
   startedAt: "2026-04-21T00:00:00.000Z",
@@ -246,6 +246,22 @@ const run: WorkflowRun = {
   ]
 };
 
+const launch: WorkflowLaunch = {
+  id: "launch-1",
+  workflowId: workflow.id,
+  status: "running",
+  startedAt: run.startedAt,
+  completedAt: null,
+  runs: [{
+    targetId: target.id,
+    runId: run.id,
+    status: run.status,
+    startedAt: run.startedAt,
+    completedAt: run.completedAt,
+    errorMessage: null
+  }]
+};
+
 function paginatedResponse<T>(key: string, items: T[]) {
   return {
     [key]: items,
@@ -278,10 +294,13 @@ function createFetchMock() {
     if (url === `/api/ai-agents/${agent.id}` && (!init?.method || init.method === "GET")) {
       return new Response(JSON.stringify(agent));
     }
-    if (url === `/api/workflows/${workflow.id}/runs/latest`) {
-      return new Response(JSON.stringify(run));
+    if (url === `/api/workflows/${workflow.id}/launches/latest`) {
+      return new Response(JSON.stringify(launch));
     }
     if (url === `/api/workflows/${workflow.id}/runs` && init?.method === "POST") {
+      return new Response(JSON.stringify(launch));
+    }
+    if (url === `/api/workflow-runs/${run.id}`) {
       return new Response(JSON.stringify(run));
     }
     if (url === "/api/workflows" && init?.method === "POST") {
@@ -488,7 +507,6 @@ describe("WorkflowsPage", () => {
 
     expect(await screen.findByText("Workflow Configuration")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show guidance for Execution kind" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Show guidance for Target" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show guidance for Agent" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show guidance for System prompt" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show guidance for Linked agent" })).toBeInTheDocument();

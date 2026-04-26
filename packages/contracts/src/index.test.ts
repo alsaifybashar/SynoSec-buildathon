@@ -3,8 +3,8 @@ import {
   connectorPollResponseSchema,
   connectorRegistrationRequestSchema,
   connectorTestDispatchRequestSchema,
+  createAiAgentBodySchema,
   createAiToolBodySchema,
-  createAiProviderBodySchema,
   createTargetBodySchema,
   defensiveIterationRecordSchema,
   defensiveLoopContract,
@@ -24,7 +24,6 @@ import {
   toolRequestSchema,
   toolRunSchema,
   workflowFindingSubmissionSchema,
-  updateAiProviderBodySchema,
   updateTargetBodySchema
 } from "./index.js";
 import { workflowTraceEventSchema } from "./index.js";
@@ -118,22 +117,13 @@ describe("contracts", () => {
     expect(result.success).toBe(false);
   });
 
-  it("requires a base URL when creating a local AI provider", () => {
-    const result = createAiProviderBodySchema.safeParse({
-      name: "Local Ollama",
-      kind: "local",
+  it("accepts AI agent create bodies without provider overrides", () => {
+    const result = createAiAgentBodySchema.safeParse({
+      name: "Recon Agent",
       status: "active",
-      description: "",
-      baseUrl: "",
-      model: "qwen3:4b"
-    });
-
-    expect(result.success).toBe(false);
-  });
-
-  it("accepts partial AI provider updates", () => {
-    const result = updateAiProviderBodySchema.safeParse({
-      model: "claude-sonnet-4"
+      description: "Handles reconnaissance",
+      systemPrompt: "Investigate the target.",
+      toolIds: ["httpx"]
     });
 
     expect(result.success).toBe(true);

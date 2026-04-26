@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto";
 import type {
   CreateWorkflowBody,
   UpdateWorkflowBody,
+  WorkflowLaunch,
   Workflow,
   WorkflowRun,
   WorkflowTraceEvent,
   WorkflowsListQuery
 } from "@synosec/contracts";
-import { selectLatestWorkflowRun } from "@synosec/contracts";
 import { paginateItems, type PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import { RequestError } from "@/shared/http/request-error.js";
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
@@ -15,8 +15,13 @@ import type { TargetsRepository } from "@/modules/targets/index.js";
 import type { WorkflowRunStatePatch, WorkflowsRepository } from "./workflows.repository.js";
 import { normalizeWorkflowStageContract } from "./workflow-stage-contract.js";
 
+function compareStartedAtDescending(left: { startedAt: string }, right: { startedAt: string }) {
+  return Date.parse(right.startedAt) - Date.parse(left.startedAt);
+}
+
 export class MemoryWorkflowsRepository implements WorkflowsRepository {
   private readonly workflows = new Map<string, Workflow>();
+  private readonly launches = new Map<string, WorkflowLaunch>();
   private readonly runs = new Map<string, WorkflowRun>();
 
   constructor(
@@ -37,7 +42,6 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     const normalizedQuery = query.q?.trim().toLowerCase();
     const sorted = [...this.workflows.values()]
       .filter((workflow) => !query.status || workflow.status === query.status)
-      .filter((workflow) => !query.targetId || workflow.targetId === query.targetId)
       .filter((workflow) => {
         if (!normalizedQuery) {
           return true;
@@ -67,7 +71,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
 
   async create(input: CreateWorkflowBody): Promise<Workflow> {
     const agentId = input.agentId;
-    await this.assertReferences(input.targetId, [agentId]);
+    await this.assertAgentReferences([agentId]);
     const timestamp = new Date().toISOString();
     const normalizedContract = normalizeWorkflowStageContract({
       label: "Pipeline",
@@ -81,7 +85,6 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       status: input.status,
       executionKind: input.executionKind,
       description: input.description,
-      targetId: input.targetId,
       agentId,
       objective: normalizedContract.objective,
       stageSystemPrompt: normalizedContract.stageSystemPrompt,
@@ -112,10 +115,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       return null;
     }
 
-    await this.assertReferences(
-      input.targetId ?? current.targetId,
-      [input.agentId ?? current.agentId]
-    );
+    await this.assertAgentReferences([input.agentId ?? current.agentId]);
 
     const nextStageContract = normalizeWorkflowStageContract({
       label: "Pipeline",
@@ -130,7 +130,6 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       status: input.status ?? current.status,
       executionKind: input.executionKind ?? current.executionKind,
       description: input.description === undefined ? current.description : input.description,
-      targetId: input.targetId ?? current.targetId,
       agentId: input.agentId ?? current.agentId,
       objective: nextStageContract.objective,
       stageSystemPrompt: nextStageContract.stageSystemPrompt,
@@ -194,15 +193,46 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     return updated;
   }
 
-  async createRun(workflowId: string): Promise<WorkflowRun | null> {
+  async createLaunch(workflowId: string): Promise<WorkflowLaunch | null> {
     const workflow = this.workflows.get(workflowId);
     if (!workflow) {
+      return null;
+    }
+
+    const launch: WorkflowLaunch = {
+      id: randomUUID(),
+      workflowId,
+      status: "pending",
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      runs: []
+    };
+    this.launches.set(launch.id, launch);
+    return launch;
+  }
+
+  async getLaunchById(launchId: string): Promise<WorkflowLaunch | null> {
+    return this.launches.get(launchId) ?? null;
+  }
+
+  async getLatestLaunchByWorkflowId(workflowId: string): Promise<WorkflowLaunch | null> {
+    return [...this.launches.values()]
+      .filter((launch) => launch.workflowId === workflowId)
+      .sort(compareStartedAtDescending)[0] ?? null;
+  }
+
+  async createRun(workflowId: string, workflowLaunchId: string, targetId: string): Promise<WorkflowRun | null> {
+    const workflow = this.workflows.get(workflowId);
+    const launch = this.launches.get(workflowLaunchId);
+    if (!workflow || !launch) {
       return null;
     }
 
     const run: WorkflowRun = {
       id: randomUUID(),
       workflowId,
+      workflowLaunchId,
+      targetId,
       executionKind: workflow.executionKind,
       status: "running",
       currentStepIndex: 0,
@@ -213,17 +243,20 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     };
 
     this.runs.set(run.id, run);
+    launch.runs = [...launch.runs, {
+      targetId,
+      runId: run.id,
+      status: run.status,
+      startedAt: run.startedAt,
+      completedAt: run.completedAt,
+      errorMessage: null
+    }];
+    this.updateLaunchStateForRun(workflowLaunchId, run);
     return run;
   }
 
   async getRunById(runId: string): Promise<WorkflowRun | null> {
     return this.runs.get(runId) ?? null;
-  }
-
-  async getLatestRunByWorkflowId(workflowId: string): Promise<WorkflowRun | null> {
-    return selectLatestWorkflowRun(
-      [...this.runs.values()].filter((run) => run.workflowId === workflowId)
-    );
   }
 
   async appendRunEvent(runId: string, event: WorkflowTraceEvent, patch: WorkflowRunStatePatch = {}): Promise<WorkflowRun> {
@@ -239,6 +272,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       events: [...current.events, event]
     };
     this.runs.set(runId, updated);
+    this.updateLaunchStateForRun(updated.workflowLaunchId, updated);
     return updated;
   }
 
@@ -255,25 +289,60 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       events: current.events.slice()
     };
     this.runs.set(runId, updated);
+    this.updateLaunchStateForRun(updated.workflowLaunchId, updated);
     return updated;
   }
 
   async updateRun(run: WorkflowRun): Promise<WorkflowRun> {
     this.runs.set(run.id, run);
+    this.updateLaunchStateForRun(run.workflowLaunchId, run);
     return run;
   }
 
-  private async assertReferences(targetId: string, agentIds: string[]) {
-    const targetRecord = await this.targetsRepository.getById(targetId);
-    if (!targetRecord) {
-      throw new RequestError(400, "Target not found.");
-    }
-
+  private async assertAgentReferences(agentIds: string[]) {
     for (const agentId of agentIds) {
       const agent = await this.aiAgentsRepository.getById(agentId);
       if (!agent) {
         throw new RequestError(400, `AI agent not found: ${agentId}`);
       }
     }
+  }
+
+  private updateLaunchStateForRun(launchId: string, run: WorkflowRun) {
+    const launch = this.launches.get(launchId);
+    if (!launch) {
+      return;
+    }
+
+    launch.runs = launch.runs.map((entry) => (
+      entry.runId === run.id
+        ? {
+            ...entry,
+            status: run.status,
+            completedAt: run.completedAt,
+            errorMessage: run.status === "failed"
+              ? (run.events.at(-1)?.summary ?? run.events.at(-1)?.detail ?? "Workflow run failed.")
+              : null
+          }
+        : entry
+    ));
+
+    const statuses = launch.runs.map((entry) => entry.status);
+    if (statuses.length === 0) {
+      launch.status = "pending";
+      launch.completedAt = null;
+      return;
+    }
+
+    if (statuses.some((status) => status === "running" || status === "pending")) {
+      launch.status = "running";
+      launch.completedAt = null;
+      return;
+    }
+
+    const allFailed = statuses.every((status) => status === "failed");
+    const allCompleted = statuses.every((status) => status === "completed");
+    launch.status = allCompleted ? "completed" : allFailed ? "failed" : "partial";
+    launch.completedAt = new Date().toISOString();
   }
 }

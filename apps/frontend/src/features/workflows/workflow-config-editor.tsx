@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import type { AiAgent, ExecutionKind, Target, WorkflowStatus } from "@synosec/contracts";
+import type { AiAgent, ExecutionKind, WorkflowStatus } from "@synosec/contracts";
 import { definedFieldError, type WorkflowFormValues } from "@/features/workflows/workflow-form";
 import { DetailField, DetailFieldGroup } from "@/shared/components/detail-page";
 import { Button } from "@/shared/ui/button";
@@ -28,7 +28,6 @@ const workflowFieldHints = {
 export function WorkflowConfigEditor({
   formValues,
   errors,
-  targets,
   agents,
   agentLookup,
   toolLookup,
@@ -36,7 +35,6 @@ export function WorkflowConfigEditor({
 }: {
   formValues: WorkflowFormValues;
   errors: Record<string, string>;
-  targets: Target[];
   agents: AiAgent[];
   agentLookup: Record<string, AiAgent>;
   toolLookup: Record<string, string>;
@@ -61,18 +59,6 @@ export function WorkflowConfigEditor({
             <SelectContent>
               {Object.entries(workflowExecutionKindLabels).map(([value, label]) => (
                 <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </DetailField>
-        <DetailField label="Target" required hint="Primary target context used to resolve target assets, constraints, and reporting." {...definedFieldError(errors["targetId"])}>
-          <Select value={formValues.targetId} onValueChange={(value) => onFieldChange("targetId", value)}>
-            <SelectTrigger aria-label="Target">
-              <SelectValue placeholder="Select target" />
-            </SelectTrigger>
-            <SelectContent>
-              {targets.map((target) => (
-                <SelectItem key={target.id} value={target.id}>{target.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
