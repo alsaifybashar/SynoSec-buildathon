@@ -45,6 +45,16 @@ export function WorkflowConfigEditor({
   const effectiveToolIds = workflowProvidedToolIds.length > 0 ? workflowProvidedToolIds : inheritedToolIds;
   const workflowActions = ["Complete run", "Fail run"];
 
+  function normalizeAllowedToolIds(nextAgentId: string) {
+    const nextInheritedToolIds = agentLookup[nextAgentId]?.toolIds ?? [];
+    if (formValues.allowedToolIds.length === 0) {
+      return [];
+    }
+
+    const filtered = formValues.allowedToolIds.filter((toolId) => nextInheritedToolIds.includes(toolId));
+    return [...new Set(filtered)];
+  }
+
   return (
     <>
       <DetailFieldGroup title="Workflow Configuration" className="bg-card/70">
@@ -70,7 +80,20 @@ export function WorkflowConfigEditor({
 
       <DetailFieldGroup title="Execution Contract" className="bg-card/70">
         <DetailField label="Agent" required hint={workflowFieldHints.agent} {...definedFieldError(errors["agentId"])}>
-          <Select value={formValues.agentId} onValueChange={(value) => onFieldChange("agentId", value)}>
+          <Select value={formValues.agentId} onValueChange={(value) => {
+            if (value === formValues.agentId) {
+              return;
+            }
+
+            const normalizedAllowedToolIds = normalizeAllowedToolIds(value);
+            onFieldChange("agentId", value);
+            if (
+              normalizedAllowedToolIds.length !== formValues.allowedToolIds.length
+              || normalizedAllowedToolIds.some((toolId, index) => toolId !== formValues.allowedToolIds[index])
+            ) {
+              onFieldChange("allowedToolIds", normalizedAllowedToolIds);
+            }
+          }}>
             <SelectTrigger aria-label="Agent">
               <SelectValue placeholder="Select agent" />
             </SelectTrigger>

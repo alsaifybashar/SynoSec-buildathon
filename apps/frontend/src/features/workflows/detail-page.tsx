@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, ExternalLink, Pencil, Workflow as WorkflowIcon } from "lucide-react";
+import { Download, Eye, EyeOff, GitBranch, Pencil, Square, Workflow as WorkflowIcon } from "lucide-react";
 import { toast } from "sonner";
 import { apiRoutes, type AiAgent, type UpdateWorkflowBody, type Workflow } from "@synosec/contracts";
 import { workflowsResource } from "@/features/workflows/resource";
@@ -19,13 +19,15 @@ export function WorkflowDetailPage({
   workflowNameHint,
   onNavigateToList,
   onNavigateToEdit,
-  onNavigateToAgent
+  onNavigateToAgent,
+  onNavigateToGraph
 }: {
   workflowId?: string;
   workflowNameHint?: string;
   onNavigateToList: () => void;
   onNavigateToEdit?: (id: string, label?: string) => void;
   onNavigateToAgent?: (id: string) => void;
+  onNavigateToGraph?: (id: string) => void;
 }) {
   const [showFullDetails, setShowFullDetails] = useState(false);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
@@ -223,8 +225,13 @@ export function WorkflowDetailPage({
 
   const loadedWorkflow = workflow ?? workflowDetail.item;
 
+  const runActive = runPending || currentRun?.status === "running";
+
   async function handleStartRun() {
     await startRun();
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    }
   }
 
   return (
@@ -238,24 +245,37 @@ export function WorkflowDetailPage({
         onDismiss={() => {}}
         actions={(
           <>
-            <Button type="button" onClick={() => void handleStartRun()} disabled={runPending}>
-              <WorkflowIcon className="h-4 w-4" />
-              Start Run
-            </Button>
+            {runActive ? (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => void cancelRun()}
+                disabled={cancelPending}
+              >
+                <Square className="h-4 w-4 fill-current" />
+                {cancelPending ? "Canceling" : "Cancel Run"}
+              </Button>
+            ) : (
+              <Button type="button" onClick={() => void handleStartRun()} disabled={runPending}>
+                <WorkflowIcon className="h-4 w-4" />
+                Start Run
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={openPromptEditor}>
               <Pencil className="h-4 w-4" />
               Edit Prompts
             </Button>
             <Button type="button" variant="outline" onClick={() => setShowFullDetails((value) => !value)}>
+              {showFullDetails ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               {showFullDetails ? "Hide Full Details" : "Show Full Details"}
             </Button>
             <Button type="button" variant="outline" onClick={() => onNavigateToEdit?.(loadedWorkflow.id, loadedWorkflow.name)} disabled={!onNavigateToEdit}>
               <Pencil className="h-4 w-4" />
               Edit Workflow
             </Button>
-            <Button type="button" variant="outline" onClick={() => workflowAgent && onNavigateToAgent?.(workflowAgent.id)} disabled={!workflowAgent || !onNavigateToAgent}>
-              <ExternalLink className="h-4 w-4" />
-              Edit Agent
+            <Button type="button" variant="outline" onClick={() => onNavigateToGraph?.(loadedWorkflow.id)} disabled={!onNavigateToGraph}>
+              <GitBranch className="h-4 w-4" />
+              View Graph
             </Button>
             <div className="ml-auto">
               <Button type="button" variant="outline" onClick={handleExportJson} className="h-9 text-[0.75rem]">
@@ -345,8 +365,6 @@ export function WorkflowDetailPage({
           latestRunError={latestRunError}
           transcriptError={transcriptError}
           streamError={streamError}
-          cancelPending={cancelPending}
-          onCancelRun={() => void cancelRun()}
         />
       </DetailPage>
       <PromptEditModal

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { getWorkflowRunContextTokenEstimate, getWorkflowRunModelStepCount, type AiAgent, type AiTool, type AttackPathSummary, type Observation, type Target as WorkflowTarget, type Workflow, type WorkflowRun } from "@synosec/contracts";
-import { AlertTriangle, ChevronRight, LoaderCircle, Radio, Square, Target } from "lucide-react";
+import { AlertTriangle, ChevronRight, LoaderCircle, Radio, Target } from "lucide-react";
 import { AttackPathsSection } from "@/features/attack-paths/attack-paths-section";
 import { DetailHintTrigger } from "@/shared/components/detail-page";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
@@ -402,6 +402,56 @@ function buildDuplexAtoms(input: {
   errors: string[];
 }) {
   const atoms: DuplexAtom[] = [];
+  const pendingToolAtoms: DuplexAtom[] = [];
+
+  const findPendingToolAtom = (detail: { toolCallId: string | null; toolName: string }) => {
+    if (detail.toolCallId) {
+      return [...pendingToolAtoms].reverse().find((atom) => atom.status === undefined && atom.toolCallId === detail.toolCallId) ?? null;
+    }
+
+    const normalizedToolName = normalizeInlineText(detail.toolName);
+    return [...pendingToolAtoms].reverse().find((atom) =>
+      atom.status === undefined && normalizeInlineText(atom.label) === normalizedToolName
+    ) ?? null;
+  };
+
+  const stopTrackingPendingToolAtom = (atom: DuplexAtom) => {
+    const index = pendingToolAtoms.indexOf(atom);
+    if (index >= 0) {
+      pendingToolAtoms.splice(index, 1);
+    }
+  };
+
+  const applyToolResultToAtom = (
+    atom: DuplexAtom,
+    detail: {
+      summary: string;
+      body: string | null;
+      observations: Observation[];
+      observationSummaries: string[];
+      status: string;
+      usedToolName?: string | null;
+      fallbackUsed?: boolean;
+      attempts?: DuplexAtom["attempts"];
+    }
+  ) => {
+    atom.summaryText = detail.summary;
+    atom.body = detail.body ?? detail.summary;
+    atom.observations = detail.observations;
+    atom.observationSummaries = detail.observationSummaries;
+    atom.status = detail.status;
+    atom.meta = detail.status;
+    if (detail.usedToolName !== undefined) {
+      atom.usedToolName = detail.usedToolName;
+    }
+    if (detail.fallbackUsed !== undefined) {
+      atom.fallbackUsed = detail.fallbackUsed;
+    }
+    if (detail.attempts !== undefined) {
+      atom.attempts = detail.attempts;
+    }
+    stopTrackingPendingToolAtom(atom);
+  };
 
   for (const error of input.errors) {
     atoms.push({
@@ -468,7 +518,17 @@ function buildDuplexAtoms(input: {
 
       for (const detail of item.details) {
         if (detail.kind === "tool_call") {
-          toolAtoms.push({
+          const existingPendingAtom = detail.toolCallId ? findPendingToolAtom(detail) : null;
+          if (existingPendingAtom) {
+            existingPendingAtom.label = detail.toolName;
+            existingPendingAtom.title = detail.title;
+            if (detail.body) {
+              existingPendingAtom.code = detail.body;
+            }
+            continue;
+          }
+
+          const toolAtom: DuplexAtom = {
             key: detail.id,
             side: "left",
             kind: "tool-call",
@@ -477,33 +537,17 @@ function buildDuplexAtoms(input: {
             title: detail.title,
             meta: "requested",
             ...(detail.body ? { code: detail.body } : {})
-          });
+          };
+          toolAtoms.push(toolAtom);
+          pendingToolAtoms.push(toolAtom);
           continue;
         }
 
         if (detail.kind === "tool_result") {
-          const matchingToolAtoms = [...toolAtoms].filter((atom) =>
-            atom.kind === "tool-call"
-              && atom.status === undefined
-              && (
-                (detail.toolCallId && atom.toolCallId === detail.toolCallId)
-                || (!detail.toolCallId && atom.label === detail.toolName)
-              )
-          );
-          const existingToolAtom = matchingToolAtoms[matchingToolAtoms.length - 1];
+          const existingToolAtom = findPendingToolAtom(detail);
 
           if (existingToolAtom) {
-            for (const atom of matchingToolAtoms) {
-              atom.summaryText = detail.summary;
-              atom.body = detail.body ?? detail.summary;
-              atom.observations = detail.observations;
-              atom.observationSummaries = detail.observationSummaries;
-              atom.status = detail.status;
-              atom.meta = detail.status;
-              atom.usedToolName = detail.usedToolName;
-              atom.fallbackUsed = detail.fallbackUsed;
-              atom.attempts = detail.attempts;
-            }
+            applyToolResultToAtom(existingToolAtom, detail);
           } else {
             toolAtoms.push({
               key: detail.id,
@@ -573,6 +617,22 @@ function buildDuplexAtoms(input: {
       continue;
     }
 
+    const pendingToolOutcomeStatus = item.status === "failed" ? "failed" : "no_result";
+    const pendingToolOutcomeSummary = item.status === "failed"
+      ? "Tool result was not recorded before the run failed."
+      : "Tool result was not recorded before the run sealed.";
+    for (const pendingAtom of [...pendingToolAtoms]) {
+      if (pendingAtom.status !== undefined) {
+        continue;
+      }
+
+      pendingAtom.status = pendingToolOutcomeStatus;
+      pendingAtom.meta = pendingToolOutcomeStatus;
+      pendingAtom.summaryText = pendingAtom.summaryText ?? pendingToolOutcomeSummary;
+      pendingAtom.body = pendingAtom.body ?? pendingToolOutcomeSummary;
+      stopTrackingPendingToolAtom(pendingAtom);
+    }
+
     atoms.push({
       key: item.id,
       side: "right",
@@ -589,6 +649,27 @@ function buildDuplexAtoms(input: {
 function formatToolLine(atom: DuplexAtom) {
   const verb = atom.status ? "Called" : "Calling";
   return `${verb} ${atom.label}`;
+}
+
+function getToolStatusPresentation(status: string | undefined) {
+  const normalizedStatus = normalizeInlineText(status);
+  if (!normalizedStatus || normalizedStatus === "requested" || normalizedStatus === "running") {
+    return { label: "loading", tone: "text-blue-500", loading: true };
+  }
+
+  if (normalizedStatus === "completed" || normalizedStatus === "done") {
+    return { label: "done", tone: "text-green-500", loading: false };
+  }
+
+  if (normalizedStatus === "failed") {
+    return { label: "failed", tone: "text-red-500", loading: false };
+  }
+
+  if (normalizedStatus === "no_result" || normalizedStatus === "no result") {
+    return { label: "no result", tone: "text-muted-foreground", loading: false };
+  }
+
+  return { label: normalizedStatus, tone: "text-muted-foreground", loading: false };
 }
 
 function normalizeInlineText(value: string | undefined) {
@@ -623,7 +704,7 @@ function getCompactToolInput(atom: DuplexAtom) {
 function getCompactToolOutput(atom: DuplexAtom, labelText: string) {
   const preferredSource = collapseWhitespace(atom.summaryText) || collapseWhitespace(atom.body);
   if (!preferredSource) {
-    return atom.status ? `${atom.status} with no summarized output.` : null;
+    return atom.status ? `${getToolStatusPresentation(atom.status).label} with no summarized output.` : null;
   }
 
   const normalizedSummary = normalizeInlineText(preferredSource);
@@ -636,7 +717,7 @@ function getCompactToolOutput(atom: DuplexAtom, labelText: string) {
   const repeatsStatus = normalizedStatus.length > 0 && normalizedSummary.includes(normalizedStatus);
 
   if (repeatsLabel || (repeatsName && repeatsStatus)) {
-    return atom.status ? `${atom.status} with no summarized output.` : null;
+    return atom.status ? `${getToolStatusPresentation(atom.status).label} with no summarized output.` : null;
   }
 
   const lines = preferredSource.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -862,6 +943,7 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
   const isSystemTone = atom.kind === "objective" || atom.kind === "system-prompt" || atom.kind === "system" || atom.kind === "verification";
   const isErrorTone = atom.kind === "error";
   const labelText = isTool ? formatToolLine(atom) : atom.label;
+  const toolStatusPresentation = isTool ? getToolStatusPresentation(atom.status ?? atom.meta) : null;
   const compactToolInput = isTool ? getCompactToolInput(atom) : null;
   const compactToolOutput = isTool ? getCompactToolOutput(atom, labelText) : null;
   const showTitle = Boolean(atom.title) && (!isTool || normalizeInlineText(atom.title) !== normalizeInlineText(labelText));
@@ -900,7 +982,14 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
             {atom.meta ? (
               <>
                 <span className="text-border">·</span>
-                <span>{atom.meta}</span>
+                {toolStatusPresentation ? (
+                  <span className={cn("inline-flex items-center gap-1 font-semibold", toolStatusPresentation.tone)}>
+                    {toolStatusPresentation.loading ? <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" /> : null}
+                    {toolStatusPresentation.label}
+                  </span>
+                ) : (
+                  <span>{atom.meta}</span>
+                )}
               </>
             ) : null}
           </div>
@@ -1143,9 +1232,7 @@ export function WorkflowTraceSection({
   showFullDetails = false,
   latestRunError,
   transcriptError,
-  streamError,
-  cancelPending = false,
-  onCancelRun
+  streamError
 }: {
   workflow: Workflow | null;
   activeTarget: WorkflowTarget | null;
@@ -1161,8 +1248,6 @@ export function WorkflowTraceSection({
   latestRunError?: string | null;
   transcriptError?: string | null;
   streamError?: string | null;
-  cancelPending?: boolean;
-  onCancelRun?: () => void;
 }) {
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const shouldFollowRef = useRef(false);
@@ -1214,7 +1299,6 @@ export function WorkflowTraceSection({
     }
 
     return [
-      { label: "Status", value: workflow.status, hint: WORKFLOW_METADATA_HINTS.status },
       { label: "Target", value: applicationName, hint: WORKFLOW_METADATA_HINTS.target },
       { label: "Agent", value: agent?.name ?? "Unknown", hint: WORKFLOW_METADATA_HINTS.agent },
       { label: "Current Run", value: run ? `${run.status} · ${run.events.length} events` : "No active run", hint: WORKFLOW_METADATA_HINTS.currentRun },
@@ -1312,6 +1396,7 @@ export function WorkflowTraceSection({
           <AttackPathsSection
             attackPaths={effectiveAttackPaths}
             findingTitles={new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding.title]))}
+            findingSeverities={new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding.severity]))}
             summary="Ranked attack paths are the primary outcome of the run. The transcript below is the evidence trail that supports each path and finding."
             emptyMessage="No linked attack paths were derived from this run yet. Standalone findings still appear in the support rail."
           />
@@ -1326,28 +1411,26 @@ export function WorkflowTraceSection({
 
                 {run?.status === "running" ? (
                   <div className="flex w-full justify-start pr-[8%]">
-                    <div className="flex items-center gap-2 rounded-md border bg-card px-3 py-1.5 font-mono text-[0.64rem] text-muted-foreground">
-                      <Radio className="h-3 w-3 text-primary" />
-                      <span>{pendingToolAtom ? `Tool running · ${pendingToolAtom.label}` : "Agent typing"}</span>
-                      <span className="duplex-typing inline-flex items-center gap-0.5">
-                        <span>•</span>
-                        <span>•</span>
-                        <span>•</span>
-                      </span>
-                      {onCancelRun ? (
-                        <button
-                          type="button"
-                          onClick={onCancelRun}
-                          disabled={cancelPending}
-                          className="ml-1 inline-flex h-6 items-center gap-1 rounded border border-destructive/30 px-2 text-[0.62rem] text-destructive transition hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
-                          aria-label="Cancel workflow run"
-                          title="Cancel workflow run"
-                        >
-                          <Square className="h-3 w-3 fill-current" />
-                          {cancelPending ? "Canceling" : "Cancel"}
-                        </button>
-                      ) : null}
-                    </div>
+                    {pendingToolAtom ? (
+                      <div className="flex items-center gap-2 font-mono text-[0.7rem] font-semibold text-warning">
+                        <span>Tool running · {pendingToolAtom.label}</span>
+                        <span className="duplex-typing inline-flex items-center gap-0.5">
+                          <span>•</span>
+                          <span>•</span>
+                          <span>•</span>
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 rounded-md border bg-card px-3 py-1.5 font-mono text-[0.64rem] text-muted-foreground">
+                        <Radio className="h-3 w-3 text-primary" />
+                        <span>Agent typing</span>
+                        <span className="duplex-typing inline-flex items-center gap-0.5">
+                          <span>•</span>
+                          <span>•</span>
+                          <span>•</span>
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ) : null}
               </div>

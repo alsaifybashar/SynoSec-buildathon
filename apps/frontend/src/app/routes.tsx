@@ -1,10 +1,16 @@
 import type { ComponentType, ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ExecutionReportsPage } from "@/features/execution-reports/page";
+import { WorkflowGraphPage } from "@/features/workflows/workflow-graph-page";
 import { LoginPage } from "@/features/auth/login-page";
 import { DesignReportFindingSplitCanvasVectors } from "@/features/designs/design-report-finding-split-canvas-vectors";
 import { DesignReportFindingSplitCanvasVectorsRadial } from "@/features/designs/design-report-finding-split-canvas-vectors-radial";
 import { DesignReportFindingSplitCanvasVectorsCinema } from "@/features/designs/design-report-finding-split-canvas-vectors-cinema";
+import { DesignReportFindingVectorsPillars } from "@/features/designs/design-report-finding-vectors-pillars";
+import { DesignReportFindingVectorsMatrix } from "@/features/designs/design-report-finding-vectors-matrix";
+import { DesignReportFindingVectorsTape } from "@/features/designs/design-report-finding-vectors-tape";
+import { DesignReportFindingVectorsCompass } from "@/features/designs/design-report-finding-vectors-compass";
+import { DesignReportFindingVectorsStrata } from "@/features/designs/design-report-finding-vectors-strata";
 import { crudRouteRegistry, legacyCrudRedirects } from "@/app/crud-route-registry";
 import {
   crudRouteConfigs,
@@ -113,7 +119,8 @@ function CrudGeneratedRoute({ routeId }: { routeId: CrudNavigationId }) {
       {...(definition.onNavigateToRelatedDetail
         ? {
             onNavigateToRelatedDetail: (navigate: ReturnType<typeof useNavigate>) => ({
-              onNavigateToAgent: (id: string) => navigate(getDetailPath("ai-agents", id))
+              onNavigateToAgent: (id: string) => navigate(getDetailPath("ai-agents", id)),
+              onNavigateToGraph: (id: string) => navigate(`/workflows/${id}/graph`)
             })
           }
         : {})}
@@ -131,6 +138,11 @@ function ExecutionReportsRouteAdapter() {
       onNavigateToDetail={(id: string) => navigate(`/execution-reports/${id}`)}
     />
   );
+}
+
+function WorkflowGraphRouteAdapter() {
+  const params = useParams();
+  return <WorkflowGraphPage {...(params["workflowId"] ? { workflowId: params["workflowId"] } : {})} />;
 }
 
 export function AppContentRoutes({
@@ -174,9 +186,15 @@ export function AppContentRoutes({
 
       <Route path="/execution-reports" element={protect(<ExecutionReportsRouteAdapter />)} />
       <Route path="/execution-reports/:reportId" element={protect(<ExecutionReportsRouteAdapter />)} />
+      <Route path="/workflows/:workflowId/graph" element={protect(<WorkflowGraphRouteAdapter />)} />
       <Route path="/designs/report-finding-split-canvas-vectors" element={protect(<DesignReportFindingSplitCanvasVectors />)} />
       <Route path="/designs/report-finding-split-canvas-vectors-radial" element={protect(<DesignReportFindingSplitCanvasVectorsRadial />)} />
       <Route path="/designs/report-finding-split-canvas-vectors-cinema" element={protect(<DesignReportFindingSplitCanvasVectorsCinema />)} />
+      <Route path="/designs/report-finding-vectors-pillars" element={protect(<DesignReportFindingVectorsPillars />)} />
+      <Route path="/designs/report-finding-vectors-matrix" element={protect(<DesignReportFindingVectorsMatrix />)} />
+      <Route path="/designs/report-finding-vectors-tape" element={protect(<DesignReportFindingVectorsTape />)} />
+      <Route path="/designs/report-finding-vectors-compass" element={protect(<DesignReportFindingVectorsCompass />)} />
+      <Route path="/designs/report-finding-vectors-strata" element={protect(<DesignReportFindingVectorsStrata />)} />
 
       {legacyCrudRedirects.map((redirect) => (
         "redirectTo" in redirect

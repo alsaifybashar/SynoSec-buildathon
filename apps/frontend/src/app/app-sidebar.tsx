@@ -193,7 +193,14 @@ function pickInitials(input?: string | null) {
 
 function SidebarBrand() {
   return (
-    <div className="px-5 pb-4 text-center">
+    <div className="flex items-center justify-center gap-2.5 px-5 pb-4">
+      <img
+        src="/logo-transparent.png"
+        alt=""
+        aria-hidden
+        className="h-9 w-9 shrink-0 select-none"
+        draggable={false}
+      />
       <p
         className="text-[1.6rem] font-bold uppercase leading-none tracking-[0.1em] text-sidebar-foreground"
         style={{ fontFamily: "'Chakra Petch', system-ui, sans-serif" }}
@@ -211,7 +218,6 @@ function SidebarBrand() {
           />
           Sec
         </span>
-        {"AI"}
       </p>
     </div>
   );

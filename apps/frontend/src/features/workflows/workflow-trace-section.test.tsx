@@ -627,6 +627,110 @@ const streamedToolLifecycleRun: WorkflowRun = {
   ]
 };
 
+const crossTurnToolResultRun: WorkflowRun = {
+  id: "60000000-0000-0000-0000-000000000021",
+  workflowId: workflow.id,
+  workflowLaunchId: "61000000-0000-0000-0000-000000000021",
+  targetId: "20000000-0000-0000-0000-000000000001",
+  status: "completed",
+  currentStepIndex: 1,
+  startedAt: "2026-04-21T00:00:00.000Z",
+  completedAt: "2026-04-21T00:00:01.000Z",
+  tokenUsage: emptyTokenUsage,
+  trace: [],
+  events: [
+    {
+      id: "cross-turn-1",
+      workflowRunId: "60000000-0000-0000-0000-000000000021",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 0,
+      type: "system_message",
+      status: "completed",
+      title: "Model step started",
+      summary: "Started a new model step.",
+      detail: null,
+      payload: {
+        rawStreamPartType: "start-step"
+      },
+      createdAt: "2026-04-21T00:00:00.100Z"
+    },
+    {
+      id: "cross-turn-2",
+      workflowRunId: "60000000-0000-0000-0000-000000000021",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 1,
+      type: "tool_call",
+      status: "running",
+      title: "Calling parameter_discovery",
+      summary: "Invoked parameter_discovery.",
+      detail: "{\"baseUrl\":\"http://localhost:8890\"}",
+      payload: {
+        rawStreamPartType: "tool-call",
+        toolName: "parameter_discovery",
+        input: "{\"baseUrl\":\"http://localhost:8890\"}"
+      },
+      createdAt: "2026-04-21T00:00:00.200Z"
+    },
+    {
+      id: "cross-turn-3",
+      workflowRunId: "60000000-0000-0000-0000-000000000021",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 2,
+      type: "system_message",
+      status: "completed",
+      title: "Model step finished",
+      summary: "Finished a model step.",
+      detail: null,
+      payload: {
+        rawStreamPartType: "finish-step"
+      },
+      createdAt: "2026-04-21T00:00:00.300Z"
+    },
+    {
+      id: "cross-turn-4",
+      workflowRunId: "60000000-0000-0000-0000-000000000021",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 1,
+      ord: 3,
+      type: "system_message",
+      status: "completed",
+      title: "Model step started",
+      summary: "Started a new model step.",
+      detail: null,
+      payload: {
+        rawStreamPartType: "start-step"
+      },
+      createdAt: "2026-04-21T00:00:00.400Z"
+    },
+    {
+      id: "cross-turn-5",
+      workflowRunId: "60000000-0000-0000-0000-000000000021",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 1,
+      ord: 4,
+      type: "tool_result",
+      status: "failed",
+      title: "parameter_discovery returned",
+      summary: "Parameter Discovery failed while running Arjun.",
+      detail: "No likely parameters were discovered.",
+      payload: {
+        rawStreamPartType: "tool-result",
+        toolName: "parameter_discovery",
+        summary: "Parameter Discovery failed while running Arjun."
+      },
+      createdAt: "2026-04-21T00:00:00.500Z"
+    }
+  ]
+};
+
 const rejectedModelRun: WorkflowRun = {
   id: "60000000-0000-0000-0000-000000000099",
   workflowId: workflow.id,
@@ -892,6 +996,7 @@ describe("WorkflowTraceSection", () => {
     expect(screen.queryByText("Built-in actions")).not.toBeInTheDocument();
     expect(screen.getByText("Probe the exposed web surface first.")).toBeInTheDocument();
     expect(screen.getByText(/Called Web Probe/)).toBeInTheDocument();
+    expect(screen.getByText("done")).toHaveClass("text-green-500");
     expect(screen.getByText(/\{ "url": "http:\/\/localhost.../)).toBeInTheDocument();
     expect(screen.getByText("HTTP service responded with 200 OK.")).toBeInTheDocument();
     expect(screen.getByText("Headers were returned immediately.")).toBeInTheDocument();
@@ -977,7 +1082,7 @@ describe("WorkflowTraceSection", () => {
       />
     );
 
-    expect(screen.getByText("completed with no summarized output.")).toBeInTheDocument();
+    expect(screen.getByText("done with no summarized output.")).toBeInTheDocument();
   });
 
   it("keeps the Duplex workflow thread visible while the workflow run is still active", () => {
@@ -1001,6 +1106,59 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getByText("Prompt context")).toBeInTheDocument();
     expect(screen.getAllByText("Agent typing").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Standalone findings").length).toBeGreaterThan(0);
+  });
+
+  it("renders requested tool calls as a blue loading state", () => {
+    const pendingToolRun: WorkflowRun = {
+      ...activeRun,
+      events: activeRun.events.filter((event) => event.type !== "tool_result" && event.type !== "stage_completed")
+    };
+
+    render(
+      <WorkflowTraceSection
+        workflow={workflow}
+        targets={targets}
+        agents={agents}
+        tools={tools}
+        run={pendingToolRun}
+        running={true}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails={false}
+      />
+    );
+
+    expect(screen.getByText(/Calling Web Probe/)).toBeInTheDocument();
+    expect(screen.getByText("loading")).toHaveClass("text-blue-500");
+  });
+
+  it("does not keep tool calls in loading state after the run is sealed", () => {
+    const sealedWithoutToolResultRun: WorkflowRun = {
+      ...run,
+      events: run.events.filter((event) => event.type !== "tool_result")
+    };
+
+    render(
+      <WorkflowTraceSection
+        workflow={workflow}
+        targets={targets}
+        agents={agents}
+        tools={tools}
+        run={sealedWithoutToolResultRun}
+        running={false}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails={false}
+      />
+    );
+
+    expect(screen.getByText("Run sealed")).toBeInTheDocument();
+    expect(screen.queryByText("loading")).not.toBeInTheDocument();
+    expect(screen.getByText("no result")).toBeInTheDocument();
   });
 
   it("renders streamed narration separately from tool activity for active runs", () => {
@@ -1044,7 +1202,31 @@ describe("WorkflowTraceSection", () => {
     );
 
     expect(screen.getByText("Agent typing")).toBeInTheDocument();
+    expect(screen.getAllByText(/Called report_finding/)).toHaveLength(1);
     expect(screen.queryByText("Tool running · report_finding")).not.toBeInTheDocument();
+  });
+
+  it("reconciles tool results that arrive in a later assistant turn", () => {
+    render(
+      <WorkflowTraceSection
+        workflow={workflow}
+        targets={targets}
+        agents={agents}
+        tools={tools}
+        run={crossTurnToolResultRun}
+        running={false}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails={false}
+      />
+    );
+
+    expect(screen.getByText(/Called parameter_discovery/)).toBeInTheDocument();
+    expect(screen.queryByText("loading")).not.toBeInTheDocument();
+    expect(screen.getByText("failed")).toHaveClass("text-red-500");
+    expect(screen.getByText(/Parameter Discovery failed while running Arjun/)).toBeInTheDocument();
   });
 
   it("renders standardized model and tool error atoms with retry guidance", () => {
@@ -1085,7 +1267,7 @@ describe("WorkflowTraceSection", () => {
 
     expect(screen.getByText("Web Probe error")).toBeInTheDocument();
     expect(screen.getByText(/Tool status: failed/)).toBeInTheDocument();
-    expect(screen.getAllByText("failed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("failed").some((element) => element.classList.contains("text-red-500"))).toBe(true);
   });
 
   it("keeps the transcript rail quiet when no run exists yet", () => {
