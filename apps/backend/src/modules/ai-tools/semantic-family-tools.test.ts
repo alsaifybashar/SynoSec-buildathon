@@ -23,4 +23,34 @@ describe("semantic family tools", () => {
       }
     }
   });
+
+  it("keeps the delegated bash candidates aligned with the family tool target contract", () => {
+    const definitions = getSemanticFamilyDefinitions();
+    const toolsById = new Map(seededToolDefinitions.map((tool) => [tool.id, tool]));
+
+    for (const definition of definitions) {
+      for (const candidateToolId of definition.candidateToolIds) {
+        const candidate = toolsById.get(candidateToolId);
+        expect(candidate, `${definition.tool.name} is missing candidate ${candidateToolId}`).toBeDefined();
+        expect(candidate?.executorType).toBe("bash");
+
+        const candidateProperties = candidate?.inputSchema?.properties ?? {};
+        if (definition.tool.constraintProfile.networkBehavior !== "none") {
+          expect(candidateProperties, `${candidateToolId} must accept target input for ${definition.tool.name}`).toHaveProperty("target");
+        }
+
+        if ("baseUrl" in candidateProperties) {
+          expect(definition.tool.inputSchema.properties).toHaveProperty("baseUrl");
+        }
+
+        if ("port" in candidateProperties) {
+          expect(definition.tool.inputSchema.properties).toHaveProperty("port");
+        }
+
+        for (const requiredField of definition.requiredInputFields) {
+          expect(candidateProperties, `${candidateToolId} must accept ${requiredField} for ${definition.tool.name}`).toHaveProperty(requiredField);
+        }
+      }
+    }
+  });
 });

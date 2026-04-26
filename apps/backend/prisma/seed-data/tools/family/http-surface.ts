@@ -13,7 +13,7 @@ export const familyHttpSurfaceTool = createSeededFamilyTool({
   notes: "Semantic family wrapper over HTTP recon with HTTP headers as the ordered fallback path.",
   sandboxProfile: "network-recon",
   privilegeProfile: "read-only-network",
-  timeoutMs: 120000,
+  timeoutMs: 10000,
   inputSchema: {
     type: "object",
     properties: {

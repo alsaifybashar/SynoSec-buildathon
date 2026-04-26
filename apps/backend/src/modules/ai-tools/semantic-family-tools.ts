@@ -127,7 +127,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "web",
     riskTier: "passive",
     capabilities: ["semantic-family", "web", "http-surface", "passive"],
-    timeoutMs: 120000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "outbound-read",
@@ -155,7 +155,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "content",
     riskTier: "passive",
     capabilities: ["semantic-family", "web-crawl", "passive"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "content-enumeration",
       networkBehavior: "outbound-read",
@@ -187,7 +187,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "content",
     riskTier: "active",
     capabilities: ["semantic-family", "content-discovery", "active-recon"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "content-enumeration",
       networkBehavior: "outbound-active",
@@ -221,7 +221,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "web",
     riskTier: "passive",
     capabilities: ["semantic-family", "parameter-discovery", "passive"],
-    timeoutMs: 120000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "content-enumeration",
       networkBehavior: "outbound-read",
@@ -246,7 +246,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "web",
     riskTier: "active",
     capabilities: ["semantic-family", "web-vuln-audit", "active-recon"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "active-validation",
       networkBehavior: "outbound-active",
@@ -275,7 +275,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "web",
     riskTier: "controlled-exploit",
     capabilities: ["semantic-family", "sqli", "controlled-exploit"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "exploit",
       networkBehavior: "outbound-active",
@@ -300,7 +300,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "web",
     riskTier: "active",
     capabilities: ["semantic-family", "xss", "active-recon"],
-    timeoutMs: 120000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "active-validation",
       networkBehavior: "outbound-active",
@@ -323,7 +323,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "web",
     riskTier: "active",
     capabilities: ["semantic-family", "wordpress", "active-recon"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "active-validation",
       networkBehavior: "outbound-active",
@@ -346,7 +346,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "auth",
     riskTier: "active",
     capabilities: ["semantic-family", "auth", "session", "active-recon"],
-    timeoutMs: 60000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "active-validation",
       networkBehavior: "outbound-active",
@@ -369,7 +369,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "auth",
     riskTier: "passive",
     capabilities: ["semantic-family", "auth", "jwt", "offline-analysis"],
-    timeoutMs: 30000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "none",
@@ -390,7 +390,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "network",
     riskTier: "passive",
     capabilities: ["semantic-family", "network", "host-discovery", "passive"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "outbound-read",
@@ -418,7 +418,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "network",
     riskTier: "passive",
     capabilities: ["semantic-family", "network", "service-enumeration", "passive"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "outbound-read",
@@ -445,7 +445,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "network",
     riskTier: "passive",
     capabilities: ["semantic-family", "tls", "passive"],
-    timeoutMs: 120000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "outbound-read",
@@ -466,7 +466,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "topology",
     riskTier: "passive",
     capabilities: ["semantic-family", "topology", "passive"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "outbound-read",
@@ -487,7 +487,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "subdomain",
     riskTier: "passive",
     capabilities: ["semantic-family", "subdomain", "passive"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "outbound-read",
@@ -515,7 +515,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "dns",
     riskTier: "passive",
     capabilities: ["semantic-family", "dns", "passive"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "outbound-read",
@@ -538,7 +538,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "password",
     riskTier: "passive",
     capabilities: ["semantic-family", "password", "identification", "offline-analysis"],
-    timeoutMs: 120000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "none",
@@ -560,7 +560,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "password",
     riskTier: "active",
     capabilities: ["semantic-family", "password", "online-attack", "active-recon"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "active-validation",
       networkBehavior: "outbound-active",
@@ -586,7 +586,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "password",
     riskTier: "controlled-exploit",
     capabilities: ["semantic-family", "password", "offline-cracking", "controlled-exploit"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "exploit",
       networkBehavior: "none",
@@ -599,9 +599,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
       "seed-ophcrack"
     ],
     candidateToolIds: [
-      "seed-hashcat-crack",
-      "seed-john-the-ripper",
-      "seed-ophcrack"
+      "seed-hashcat-crack"
     ]
   }),
   createSemanticFamilyDefinition({
@@ -611,7 +609,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "windows",
     riskTier: "active",
     capabilities: ["semantic-family", "windows", "enumeration", "active-recon"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "active-validation",
       networkBehavior: "outbound-active",
@@ -639,7 +637,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "windows",
     riskTier: "controlled-exploit",
     capabilities: ["semantic-family", "windows", "remote-access", "controlled-exploit"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "exploit",
       networkBehavior: "outbound-active",
@@ -661,7 +659,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "windows",
     riskTier: "controlled-exploit",
     capabilities: ["semantic-family", "windows", "poisoning", "controlled-exploit"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "exploit",
       networkBehavior: "outbound-active",
@@ -683,7 +681,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "exploitation",
     riskTier: "controlled-exploit",
     capabilities: ["semantic-family", "controlled-exploit", "framework"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "exploit",
       networkBehavior: "outbound-active",
@@ -705,7 +703,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "cloud",
     riskTier: "passive",
     capabilities: ["semantic-family", "cloud", "posture-audit", "passive"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "outbound-read",
@@ -729,7 +727,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "kubernetes",
     riskTier: "passive",
     capabilities: ["semantic-family", "kubernetes", "posture-audit", "passive"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "outbound-read",
@@ -751,7 +749,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "reversing",
     riskTier: "passive",
     capabilities: ["semantic-family", "reversing", "triage", "offline-analysis"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "none",
@@ -775,7 +773,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "reversing",
     riskTier: "passive",
     capabilities: ["semantic-family", "reversing", "interactive-analysis", "offline-analysis"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "none",
@@ -799,7 +797,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "forensics",
     riskTier: "passive",
     capabilities: ["semantic-family", "forensics", "metadata", "offline-analysis"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "none",
@@ -821,7 +819,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "forensics",
     riskTier: "passive",
     capabilities: ["semantic-family", "forensics", "carving", "offline-analysis"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "none",
@@ -845,7 +843,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "forensics",
     riskTier: "passive",
     capabilities: ["semantic-family", "forensics", "memory", "offline-analysis"],
-    timeoutMs: 180000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "none",
@@ -865,7 +863,7 @@ export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
     category: "forensics",
     riskTier: "passive",
     capabilities: ["semantic-family", "forensics", "steganography", "offline-analysis"],
-    timeoutMs: 30000,
+    timeoutMs: 10000,
     constraintProfile: createConstraintProfile({
       mutationClass: "none",
       networkBehavior: "none",

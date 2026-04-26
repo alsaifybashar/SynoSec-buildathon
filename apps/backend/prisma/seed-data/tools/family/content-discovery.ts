@@ -13,7 +13,7 @@ export const familyContentDiscoveryTool = createSeededFamilyTool({
   notes: "Semantic family wrapper over seeded content discovery with Dirsearch as the ordered fallback path.",
   sandboxProfile: "active-recon",
   privilegeProfile: "active-network",
-  timeoutMs: 30000,
+  timeoutMs: 10000,
   inputSchema: {
     type: "object",
     properties: {

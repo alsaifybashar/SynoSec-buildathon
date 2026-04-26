@@ -13,7 +13,7 @@ export const familyWebCrawlTool = createSeededFamilyTool({
   notes: "Semantic family wrapper over the seeded web crawl with Katana as the ordered fallback path.",
   sandboxProfile: "network-recon",
   privilegeProfile: "read-only-network",
-  timeoutMs: 180000,
+  timeoutMs: 10000,
   inputSchema: {
     type: "object",
     properties: {

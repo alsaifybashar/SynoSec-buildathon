@@ -13,7 +13,7 @@ export const familySubdomainDiscoveryTool = createSeededFamilyTool({
   notes: "Semantic family wrapper over Subfinder with theHarvester as the ordered fallback path.",
   sandboxProfile: "network-recon",
   privilegeProfile: "read-only-network",
-  timeoutMs: 180000,
+  timeoutMs: 10000,
   inputSchema: {
     type: "object",
     properties: {
