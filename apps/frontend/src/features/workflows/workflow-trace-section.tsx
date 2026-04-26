@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
-import type { AiAgent, AiTool, Observation, Target as WorkflowTarget, Workflow, WorkflowRun } from "@synosec/contracts";
+import { getWorkflowRunContextTokenEstimate, getWorkflowRunModelStepCount, type AiAgent, type AiTool, type AttackPathSummary, type Observation, type Target as WorkflowTarget, type Workflow, type WorkflowRun } from "@synosec/contracts";
 import { AlertTriangle, ChevronRight, LoaderCircle, Radio, Target } from "lucide-react";
+import { AttackPathsSection } from "@/features/attack-paths/attack-paths-section";
 import { DetailHintTrigger } from "@/shared/components/detail-page";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/shared/lib/utils";
@@ -201,7 +202,9 @@ const WORKFLOW_METADATA_HINTS = {
   target: "Target context for the currently selected per-target run.",
   agent: "AI agent definition that provides the standing prompt, provider, and default tool grants.",
   currentRun: "Latest persisted run state and the number of workflow events currently attached to it.",
+  modelSteps: "Number of persisted model step requests in this run. Each step is a new request where the model resumes with the current accumulated context.",
   tokens: "Model token usage for the currently selected per-target workflow run.",
+  contextLoad: "Estimated tokens represented by the final persisted step request body sent to the model, reflecting the last effective context window.",
   updated: "Last time the workflow definition record changed."
 } as const;
 
@@ -253,6 +256,14 @@ function formatThousandsTokenCount(value: number) {
 
 function formatTokenUsage(run: WorkflowRun) {
   return `${formatThousandsTokenCount(run.tokenUsage.inputTokens)} in · ${formatThousandsTokenCount(run.tokenUsage.outputTokens)} out · ${formatThousandsTokenCount(run.tokenUsage.totalTokens)} total`;
+}
+
+function formatContextLoad(run: WorkflowRun) {
+  return `${formatThousandsTokenCount(getWorkflowRunContextTokenEstimate(run))} total`;
+}
+
+function formatModelSteps(run: WorkflowRun) {
+  return String(getWorkflowRunModelStepCount(run));
 }
 
 function getVerificationToneLabel(status: string | undefined, title: string) {
@@ -1054,11 +1065,12 @@ function FindingsRail({
         <DetailMetadataPanel
           title="Metadata"
           hint="Workflow identity, linked resources, and current run state for this Duplex session."
+          compact
           className="rounded-xl border-border/80 bg-card px-4 py-4"
         >
-          <div className="mt-0 space-y-4">
+          <div className="mt-0 grid gap-x-4 gap-y-2 sm:grid-cols-2">
             {metadata.map((item) => (
-              <DetailSidebarItem key={item.label} label={item.label} {...(item.hint ? { hint: item.hint } : {})}>
+              <DetailSidebarItem key={item.label} label={item.label} compact {...(item.hint ? { hint: item.hint } : {})}>
                 {item.value}
               </DetailSidebarItem>
             ))}
@@ -1117,31 +1129,6 @@ function FindingsRail({
   );
 }
 
-function EmptyRunState({
-  toolNames
-}: {
-  toolNames: string[];
-}) {
-  return (
-    <div className="rounded-2xl border border-dashed border-border/80 bg-card/50 px-5 py-5">
-      <MonoLabel className="text-foreground">No run yet</MonoLabel>
-      <h3 className="mt-2 text-lg font-medium text-foreground">Start the first Duplex session</h3>
-      <p className="mt-2 max-w-[56ch] text-sm leading-6 text-muted-foreground">
-        This workflow has configuration and execution context, but no persisted run yet. Launch a run from the toolbar to start streaming the agent transcript into this thread.
-      </p>
-      <div className="mt-4 flex flex-wrap gap-2">
-        {toolNames.length > 0 ? toolNames.map((toolName) => (
-          <span key={toolName} className="inline-flex items-center rounded-full border border-border/70 bg-background px-2.5 py-1 font-mono text-[0.62rem] uppercase tracking-[0.14em] text-foreground/85">
-            {toolName}
-          </span>
-        )) : (
-          <span className="text-sm text-muted-foreground">No tools granted yet.</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function WorkflowTraceSection({
   workflow,
   activeTarget,
@@ -1151,6 +1138,7 @@ export function WorkflowTraceSection({
   run,
   running,
   transcript,
+  attackPaths,
   summaryCard,
   showFullDetails = false,
   latestRunError,
@@ -1165,6 +1153,7 @@ export function WorkflowTraceSection({
   run: WorkflowRun | null;
   running: boolean;
   transcript?: TranscriptProjection | null;
+  attackPaths?: AttackPathSummary | null;
   summaryCard: SummaryCardData;
   showFullDetails?: boolean;
   latestRunError?: string | null;
@@ -1191,6 +1180,7 @@ export function WorkflowTraceSection({
     });
   }, [workflow, run, agents, toolLookup, running]);
   const effectiveTranscript = transcript ?? derivedTranscript;
+  const effectiveAttackPaths = attackPaths ?? { venues: [], vectors: [], paths: [] };
   const findingsById = useMemo(
     () => new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding])),
     [effectiveTranscript]
@@ -1200,11 +1190,6 @@ export function WorkflowTraceSection({
     [workflow, agents]
   );
   const applicationName = activeTarget?.name ?? "Unknown target";
-  const visibleToolNames = workflow
-    ? (summaryCard.toolNames.length > 0
-      ? summaryCard.toolNames
-      : getWorkflowAllowedToolIds(workflow).map((toolId) => toolLookup[toolId] ?? toolId))
-    : [];
   const metadataItems = useMemo<MetadataItem[]>(() => {
     if (!workflow) {
       return [];
@@ -1215,7 +1200,9 @@ export function WorkflowTraceSection({
       { label: "Target", value: applicationName, hint: WORKFLOW_METADATA_HINTS.target },
       { label: "Agent", value: agent?.name ?? "Unknown", hint: WORKFLOW_METADATA_HINTS.agent },
       { label: "Current Run", value: run ? `${run.status} · ${run.events.length} events` : "No active run", hint: WORKFLOW_METADATA_HINTS.currentRun },
+      ...(run ? [{ label: "Model Steps", value: formatModelSteps(run), hint: WORKFLOW_METADATA_HINTS.modelSteps }] : []),
       ...(run ? [{ label: "Tokens", value: formatTokenUsage(run), hint: WORKFLOW_METADATA_HINTS.tokens }] : []),
+      ...(run ? [{ label: "Context Window", value: formatContextLoad(run), hint: WORKFLOW_METADATA_HINTS.contextLoad }] : []),
       { label: "Updated", value: new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(workflow.updatedAt)), hint: WORKFLOW_METADATA_HINTS.updated }
     ];
   }, [workflow, applicationName, agent, run]);
@@ -1304,6 +1291,12 @@ export function WorkflowTraceSection({
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.75fr)]">
       <div className="min-w-0">
         <div className="space-y-4">
+          <AttackPathsSection
+            attackPaths={effectiveAttackPaths}
+            findingTitles={new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding.title]))}
+            summary="Ranked attack paths are the primary outcome of the run. The transcript below is the evidence trail that supports each path and finding."
+            emptyMessage="No linked attack paths were derived from this run yet. Standalone findings still appear in the support rail."
+          />
           <div ref={transcriptRef} className="relative min-h-[38rem]">
             <div className="mx-auto w-full max-w-[56rem] px-6 py-8">
               <div className="space-y-5">
@@ -1312,8 +1305,6 @@ export function WorkflowTraceSection({
                     <InlineTranscriptEntry atom={atom} showFullDetails={showFullDetails} />
                   </div>
                 ))}
-
-                {!run ? <EmptyRunState toolNames={visibleToolNames} /> : null}
 
                 {run?.status === "running" ? (
                   <div className="flex w-full justify-start pr-[8%]">

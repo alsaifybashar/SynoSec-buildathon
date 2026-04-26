@@ -26,6 +26,75 @@ const reportSummary: ExecutionReportSummary = {
 const report: ExecutionReportDetail = {
   ...reportSummary,
   executiveSummary: "The workflow confirmed one evidence-backed finding.",
+  attackPathExecutiveSummary: "1 attack path derived. Top path reaches https://target.local/admin/pivot with qualified status and high severity.",
+  attackPaths: {
+    venues: [
+      {
+        id: "venue-1",
+        label: "Admin surface",
+        venueType: "web_surface",
+        targetLabel: "https://target.local/admin",
+        summary: "The reachable admin surface exposes the initial foothold.",
+        findingIds: ["finding-1"]
+      },
+      {
+        id: "venue-2",
+        label: "Privileged pivot",
+        venueType: "web_surface",
+        targetLabel: "https://target.local/admin/pivot",
+        summary: "Credential reuse extends the foothold into a higher-privilege path.",
+        findingIds: ["finding-2"]
+      }
+    ],
+    vectors: [
+      {
+        id: "vector-1",
+        label: "Admin exposure enables credential reuse validation.",
+        sourceVenueId: "venue-1",
+        destinationVenueId: "venue-2",
+        summary: "The initial admin exposure provided the entrypoint that the follow-on credential test used.",
+        preconditions: [],
+        impact: "Credential reuse immediately expands the exposed surface into a privileged pivot.",
+        kind: "derived_from",
+        status: "qualified",
+        confidence: "medium",
+        findingIds: ["finding-1", "finding-2"],
+        supportingFindingIds: ["finding-1", "finding-2"],
+        suspectedFindingIds: [],
+        blockedFindingIds: []
+      }
+    ],
+    paths: [
+      {
+        id: "path-1",
+        title: "Admin surface to privileged pivot",
+        summary: "The exposed admin route and credential reuse combine into a practical escalation path.",
+        reachedAssetOrOutcome: "https://target.local/admin/pivot",
+        pathSeverity: "high",
+        pathConfidence: "medium",
+        status: "qualified",
+        venueIds: ["venue-1", "venue-2"],
+        vectorIds: ["vector-1"],
+        findingIds: ["finding-1", "finding-2"],
+        supportingFindingIds: ["finding-1", "finding-2"],
+        suspectedFindingIds: [],
+        blockedFindingIds: [],
+        pathLinks: [
+          {
+            id: "path-link-1",
+            sourceFindingId: "finding-1",
+            targetFindingId: "finding-2",
+            kind: "derived_from",
+            summary: "The initial admin exposure provided the entrypoint that the follow-on credential test used.",
+            status: "qualified",
+            supportingFindingIds: ["finding-1", "finding-2"],
+            suspectedFindingIds: [],
+            blockedFindingIds: []
+          }
+        ]
+      }
+    ]
+  },
   graph: {
     nodes: [
       {
@@ -259,7 +328,7 @@ describe("ExecutionReportsPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the split findings view with graph, inspector, and executive summary", () => {
+  it("renders the attack-path section ahead of the split findings view and executive summary", () => {
     render(
       <ExecutionReportsPage
         reportId="report-1"
@@ -269,9 +338,11 @@ describe("ExecutionReportsPage", () => {
     );
 
     expect(screen.getByRole("img", { name: "Finding traceability graph" })).toBeInTheDocument();
-    expect(screen.getByText("Findings · 2")).toBeInTheDocument();
+    expect(screen.getByText("Attack Paths")).toBeInTheDocument();
+    expect(screen.getAllByText("Admin surface to privileged pivot").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Findings").length).toBeGreaterThan(0);
     expect(screen.getByText("Executive Summary")).toBeInTheDocument();
-    expect(screen.getByText("Why this finding exists")).toBeInTheDocument();
+    expect(screen.getByText("Ordered findings")).toBeInTheDocument();
     expect(screen.getByText("Verification")).toBeInTheDocument();
   });
 
@@ -291,7 +362,7 @@ describe("ExecutionReportsPage", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent("Count of persisted structured findings attached to this report.");
   });
 
-  it("defaults the findings inspector to the top reported finding and exposes tool trace references", () => {
+  it("defaults the findings inspector to the top-ranked attack path and exposes tool trace references", () => {
     render(
       <ExecutionReportsPage
         reportId="report-1"
@@ -300,10 +371,10 @@ describe("ExecutionReportsPage", () => {
       />
     );
 
-    expect(screen.getAllByText("Privilege pivot confirmed").length).toBeGreaterThan(0);
-    expect(screen.getByText("The model reported a second finding because separate evidence showed the same credentials crossed into a higher-privilege admin path.")).toBeInTheDocument();
+    expect(screen.getAllByText("Admin surface exposed").length).toBeGreaterThan(0);
+    expect(screen.getByText("An authenticated admin route returned a direct 200 response from the target without a gateway challenge.")).toBeInTheDocument();
     expect(screen.getAllByText("tool:tool-run").length).toBeGreaterThan(0);
-    expect(screen.getByText(/hydra -l admin -p testpass/)).toBeInTheDocument();
+    expect(screen.getByText(/httpx https:\/\/target.local\/admin/)).toBeInTheDocument();
   });
 
   it("exports the list row by fetching canonical report detail", async () => {

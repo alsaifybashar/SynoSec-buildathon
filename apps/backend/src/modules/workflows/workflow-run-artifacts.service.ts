@@ -2,6 +2,7 @@ import {
   buildWorkflowRunReport,
   buildWorkflowTranscript,
   getToolLookup,
+  attackPathSummaryFromWorkflowFindings,
   getWorkflowReportedFindings,
   getWorkflowRunCoverage,
   type Workflow,
@@ -35,7 +36,8 @@ export class WorkflowRunArtifactsService {
         agents,
         toolLookup: getToolLookup(tools),
         running: run.status === "running"
-      })
+      }),
+      attackPaths: attackPathSummaryFromWorkflowFindings(getWorkflowReportedFindings(run), reportStageHandoff(run))
     };
   }
 
@@ -101,4 +103,17 @@ export class WorkflowRunArtifactsService {
     const tools = await Promise.all([...toolIds].map(async (toolId) => this.aiToolsRepository.getById(toolId)));
     return tools.filter((tool): tool is NonNullable<typeof tool> => Boolean(tool));
   }
+}
+
+function reportStageHandoff(run: Awaited<ReturnType<WorkflowsRepository["getRunById"]>>) {
+  const latest = run?.events
+    .filter((event) => event.type === "stage_result_submitted")
+    .slice()
+    .sort((left, right) => right.ord - left.ord)[0];
+  const stageResult = latest?.payload?.["stageResult"];
+  if (!stageResult || typeof stageResult !== "object" || Array.isArray(stageResult)) {
+    return null;
+  }
+  const handoff = (stageResult as Record<string, unknown>)["handoff"];
+  return handoff ?? null;
 }

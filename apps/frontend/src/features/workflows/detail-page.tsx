@@ -68,6 +68,7 @@ export function WorkflowDetailPage({
     currentRun,
     runPending,
     persistedTranscript,
+    persistedAttackPaths,
     latestRunError,
     transcriptError,
     streamError,
@@ -333,6 +334,7 @@ export function WorkflowDetailPage({
           run={currentRun}
           running={runPending || currentRun?.status === "running"}
           transcript={persistedTranscript}
+          attackPaths={persistedAttackPaths}
           summaryCard={{
             toolCount: approvedToolCount,
             toolNames: visibleToolNames

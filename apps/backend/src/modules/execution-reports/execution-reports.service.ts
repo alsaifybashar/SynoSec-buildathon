@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  attackPathSummarySchema,
   buildWorkflowRunReport,
   executionReportGraphEdgeSchema,
   executionReportGraphNodeSchema,
@@ -33,6 +34,11 @@ type ExecutionReportSnapshot = Omit<ExecutionReportDetail, "id" | "archivedAt"> 
 function parseGraph(value: Prisma.JsonValue) {
   const parsed = executionReportGraphSchema.safeParse(value);
   return parsed.success ? parsed.data : { nodes: [], edges: [] };
+}
+
+function parseAttackPaths(value: Prisma.JsonValue) {
+  const parsed = attackPathSummarySchema.safeParse(value);
+  return parsed.success ? parsed.data : { venues: [], vectors: [], paths: [] };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -448,7 +454,9 @@ export class ExecutionReportsService {
         sourceSummary: snapshot.sourceSummary as Prisma.InputJsonValue,
         raw: {
           ...snapshot.raw,
-          graph: snapshot.graph
+          graph: snapshot.graph,
+          attackPaths: snapshot.attackPaths,
+          attackPathExecutiveSummary: snapshot.attackPathExecutiveSummary
         } as Prisma.InputJsonValue,
         generatedAt: new Date(snapshot.generatedAt)
       }
@@ -479,6 +487,10 @@ export class ExecutionReportsService {
     return executionReportDetailSchema.parse({
       ...this.mapRowToSummary(row),
       executiveSummary: row.executiveSummary,
+      attackPathExecutiveSummary: isRecord(row.raw) && typeof row.raw["attackPathExecutiveSummary"] === "string"
+        ? row.raw["attackPathExecutiveSummary"]
+        : "No linked attack paths were derived from the persisted findings.",
+      attackPaths: parseAttackPaths(isRecord(row.raw) ? row.raw["attackPaths"] as Prisma.JsonValue : null),
       graph: parseGraph(isRecord(row.raw) ? row.raw["graph"] as Prisma.JsonValue : null),
       findings: parseFindings(row.findings),
       toolActivity: parseToolActivity(row.toolActivity),
@@ -525,10 +537,18 @@ export class ExecutionReportsService {
         phase: event.title,
         toolId: typeof event.payload["toolId"] === "string" ? event.payload["toolId"] : null,
         toolName: typeof event.payload["toolName"] === "string" ? event.payload["toolName"] : "Tool",
-        command: typeof event.payload["commandPreview"] === "string" ? event.payload["commandPreview"] : event.summary,
+        command: typeof event.payload["commandPreview"] === "string"
+          ? event.payload["commandPreview"]
+          : typeof event.payload["usedToolName"] === "string"
+            ? event.payload["usedToolName"]
+            : event.summary,
         status: event.status === "failed" ? "failed" : "completed",
-        outputPreview: event.detail,
-        exitCode: null,
+        outputPreview: typeof event.payload["outputPreview"] === "string"
+          ? event.payload["outputPreview"]
+          : typeof event.payload["fullOutput"] === "string"
+            ? event.payload["fullOutput"]
+            : event.detail,
+        exitCode: typeof event.payload["exitCode"] === "number" ? event.payload["exitCode"] : null,
         startedAt: event.createdAt,
         completedAt: event.createdAt
       }));
@@ -551,6 +571,8 @@ export class ExecutionReportsService {
       generatedAt: run.completedAt.toISOString(),
       updatedAt: run.completedAt.toISOString(),
       executiveSummary: report.executiveSummary,
+      attackPathExecutiveSummary: report.attackPathExecutiveSummary,
+      attackPaths: report.attackPaths,
       graph,
       findings,
       toolActivity,
@@ -565,7 +587,9 @@ export class ExecutionReportsService {
       },
       raw: {
         eventCount: workflowRun.events.length,
-        graph
+        graph,
+        attackPaths: report.attackPaths,
+        attackPathExecutiveSummary: report.attackPathExecutiveSummary
       }
     };
   }

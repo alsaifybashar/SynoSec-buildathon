@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { attackPathSummarySchema, attackPathSummaryFromWorkflowFindings, summarizeAttackPaths } from "./attack-paths.js";
 import { executionKindSchema } from "./shared.js";
 import {
   coverageStatusSchema,
@@ -165,7 +166,8 @@ export type WorkflowTranscriptProjection = z.infer<typeof workflowTranscriptProj
 
 export const workflowRunTranscriptResponseSchema = z.object({
   runId: z.string().uuid(),
-  transcript: workflowTranscriptProjectionSchema
+  transcript: workflowTranscriptProjectionSchema,
+  attackPaths: attackPathSummarySchema.default({ venues: [], vectors: [], paths: [] })
 });
 export type WorkflowRunTranscriptResponse = z.infer<typeof workflowRunTranscriptResponseSchema>;
 
@@ -190,6 +192,7 @@ export const workflowRunReportSchema = z.object({
   runId: z.string().uuid(),
   executionKind: executionKindSchema.default("workflow"),
   executiveSummary: z.string(),
+  attackPathExecutiveSummary: z.string(),
   stopReason: z.string().nullable(),
   totalFindings: z.number().int().min(0),
   findingsBySeverity: z.object({
@@ -201,6 +204,7 @@ export const workflowRunReportSchema = z.object({
   }),
   coverageOverview: z.record(coverageStatusSchema),
   topFindings: z.array(workflowReportedFindingSchema).max(10),
+  attackPaths: attackPathSummarySchema.default({ venues: [], vectors: [], paths: [] }),
   generatedAt: z.string().datetime()
 });
 export type WorkflowRunReport = z.infer<typeof workflowRunReportSchema>;
@@ -317,6 +321,46 @@ export function getWorkflowRunTokenUsage(run: WorkflowRun | null): WorkflowRunTo
       totalTokens: usage.totalTokens + stepUsage.totalTokens
     };
   }, emptyWorkflowRunTokenUsage());
+}
+
+function stringifyJsonForTokenEstimate(value: unknown) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
+}
+
+function estimateTokenCountFromJson(value: unknown) {
+  const serialized = stringifyJsonForTokenEstimate(value);
+  if (!serialized) {
+    return 0;
+  }
+
+  // Coarse fallback estimate for persisted request bodies when provider-side tokenization
+  // is unavailable. This intentionally reflects the full serialized request payload.
+  return Math.ceil(serialized.length / 4);
+}
+
+export function getWorkflowRunContextTokenEstimate(run: WorkflowRun | null) {
+  if (!run) {
+    return 0;
+  }
+
+  const latestStartStep = run.events
+    .filter((event) => getTraceKind(event) === "start-step")
+    .slice()
+    .sort((left, right) => right.ord - left.ord)[0];
+
+  return estimateTokenCountFromJson(latestStartStep?.payload?.["request"]);
+}
+
+export function getWorkflowRunModelStepCount(run: WorkflowRun | null) {
+  if (!run) {
+    return 0;
+  }
+
+  return run.events.filter((event) => getTraceKind(event) === "start-step").length;
 }
 
 function getPayloadAttemptList(payload: Record<string, unknown> | null | undefined, key: string) {
@@ -585,12 +629,31 @@ function emptySeveritySummary() {
   };
 }
 
+function getLatestWorkflowRunHandoff(run: WorkflowRun | null) {
+  if (!run) {
+    return null;
+  }
+
+  const stageResultEvent = run.events
+    .filter((event) => event.type === "stage_result_submitted")
+    .slice()
+    .sort((left, right) => right.ord - left.ord)[0];
+  const stageResult = isRecord(stageResultEvent?.payload?.["stageResult"])
+    ? stageResultEvent?.payload?.["stageResult"]
+    : null;
+  const handoff = stageResult && isRecord(stageResult["handoff"])
+    ? stageResult["handoff"]
+    : null;
+  return handoff;
+}
+
 export function buildWorkflowRunReport(run: WorkflowRun | null): WorkflowRunReport | null {
   if (!run) {
     return null;
   }
 
   const findings = getWorkflowReportedFindings(run);
+  const attackPaths = attackPathSummaryFromWorkflowFindings(findings, getLatestWorkflowRunHandoff(run));
   const findingsBySeverity = emptySeveritySummary();
   for (const finding of findings) {
     findingsBySeverity[finding.severity] += 1;
@@ -615,6 +678,7 @@ export function buildWorkflowRunReport(run: WorkflowRun | null): WorkflowRunRepo
     runId: run.id,
     executionKind: run.executionKind,
     executiveSummary,
+    attackPathExecutiveSummary: summarizeAttackPaths(attackPaths),
     stopReason: run.status === "failed"
       ? getPayloadString(closeoutPayload, "reason") ?? "Workflow run failed."
       : null,
@@ -628,6 +692,7 @@ export function buildWorkflowRunReport(run: WorkflowRun | null): WorkflowRunRepo
         return severityOrder[right.severity] - severityOrder[left.severity];
       })
       .slice(0, 10),
+    attackPaths,
     generatedAt: run.completedAt ?? closeoutEvent?.createdAt ?? new Date().toISOString()
   });
 }

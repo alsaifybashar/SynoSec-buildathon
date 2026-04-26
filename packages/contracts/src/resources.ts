@@ -548,7 +548,9 @@ export const defaultWorkflowStageSystemPrompt = [
   "",
   "Evidence expectations:",
   "Prefer concrete, evidence-backed findings over unsupported narrative.",
-  "Distinguish confirmed findings from weaker hypotheses when the evidence is incomplete."
+  "Distinguish confirmed findings from weaker hypotheses when the evidence is incomplete.",
+  "When findings combine into an attack path, report each linked finding with relationship fields, explanationSummary, and confidenceReason so the path can be derived deterministically.",
+  "Do not claim a chained path across multiple findings without explicit derivedFromFindingIds, relatedFindingIds, enablesFindingIds, or chain metadata."
 ].join("\n");
 
 export const defaultWorkflowTaskPromptTemplate = [
@@ -814,6 +816,12 @@ export const workflowRunSchema = z.object({
 });
 export type WorkflowRun = z.infer<typeof workflowRunSchema>;
 
+export const workflowRunStreamStateSchema = workflowRunSchema.omit({
+  trace: true,
+  events: true
+});
+export type WorkflowRunStreamState = z.infer<typeof workflowRunStreamStateSchema>;
+
 export const workflowLaunchStatusSchema = z.enum(["pending", "running", "completed", "failed", "partial"]);
 export type WorkflowLaunchStatus = z.infer<typeof workflowLaunchStatusSchema>;
 
@@ -861,7 +869,7 @@ export const workflowRunStreamMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("run_event"),
-    run: workflowRunSchema,
+    run: workflowRunStreamStateSchema,
     event: workflowTraceEventSchema,
     liveModelOutput: liveModelOutputSchema.nullable().optional()
   })

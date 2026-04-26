@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { Archive, ArrowLeft, Download, Trash2 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { MARKDOWN_COMPONENTS_COMPACT } from "@/features/designs/finding-shared";
 import {
   apiRoutes,
   type ExecutionReportDetail,
@@ -7,6 +10,7 @@ import {
   type ExecutionReportStatus
 } from "@synosec/contracts";
 import { toast } from "sonner";
+import { AttackPathsSection } from "@/features/attack-paths/attack-paths-section";
 import { useResourceDetail } from "@/shared/hooks/use-resource-detail";
 import { useResourceList } from "@/shared/hooks/use-resource-list";
 import { DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
@@ -306,13 +310,21 @@ export function ExecutionReportsPage({
     >
       <DetailFieldGroup title="Executive Summary" className="bg-card/70">
         <div className="col-span-full space-y-3">
-          <p className="whitespace-pre-line text-sm leading-6 text-foreground">{report.executiveSummary}</p>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS_COMPACT}>
+            {report.executiveSummary}
+          </ReactMarkdown>
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
             <span className="rounded-full border border-border/70 px-2 py-1">{report.sourceLabel}</span>
             <span className="rounded-full border border-border/70 px-2 py-1">{report.targetLabel}</span>
           </div>
         </div>
       </DetailFieldGroup>
+      <AttackPathsSection
+        attackPaths={report.attackPaths}
+        findingTitles={new Map(report.findings.map((finding) => [finding.id, finding.title]))}
+        summary={report.attackPathExecutiveSummary}
+        emptyMessage="No linked attack paths were derived for this report. Standalone findings remain available below."
+      />
       <DetailFieldGroup title="Findings" className="bg-card/70">
         <div className="col-span-full">
           <ExecutionReportFindingsView report={report} onJumpToToolActivity={scrollToToolActivity} />

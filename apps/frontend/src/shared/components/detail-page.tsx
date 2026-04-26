@@ -191,16 +191,18 @@ export function DetailMetadataPanel({
   title = "Metadata",
   hint,
   className,
+  compact = false,
   children
 }: {
   title?: string;
   hint?: string;
   className?: string;
+  compact?: boolean;
   children: ReactNode;
 }) {
   return (
     <aside className={["rounded-md border border-border/60 bg-card/40 p-5", className].filter(Boolean).join(" ")}>
-      <div className="mb-4 flex items-center gap-1.5 font-mono text-eyebrow font-medium uppercase tracking-[0.3em] text-muted-foreground">
+      <div className={[compact ? "mb-2.5" : "mb-4", "flex items-center gap-1.5 font-mono text-eyebrow font-medium uppercase tracking-[0.3em] text-muted-foreground"].join(" ")}>
         <span>{title}</span>
         {hint ? (
           <TooltipProvider delayDuration={150}>
@@ -213,7 +215,7 @@ export function DetailMetadataPanel({
           </TooltipProvider>
         ) : null}
       </div>
-      <div className="space-y-4">{children}</div>
+      <div className={compact ? "space-y-2.5" : "space-y-4"}>{children}</div>
     </aside>
   );
 }
@@ -221,15 +223,17 @@ export function DetailMetadataPanel({
 export function DetailSidebarItem({
   label,
   hint,
+  compact = false,
   children
 }: {
   label: string;
   hint?: string;
+  compact?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-1.5 font-mono text-eyebrow font-medium uppercase tracking-[0.3em] text-muted-foreground">
+    <div className={compact ? "space-y-0.5" : "space-y-1"}>
+      <div className={[compact ? "text-[0.62rem]" : "text-eyebrow", "flex items-center gap-1.5 font-mono font-medium uppercase tracking-[0.3em] text-muted-foreground"].join(" ")}>
         <span>{label}</span>
         {hint ? (
           <TooltipProvider delayDuration={150}>
@@ -242,7 +246,7 @@ export function DetailSidebarItem({
           </TooltipProvider>
         ) : null}
       </div>
-      <div className="text-xs text-foreground">{children}</div>
+      <div className={compact ? "text-[0.72rem] leading-5 text-foreground" : "text-xs text-foreground"}>{children}</div>
     </div>
   );
 }

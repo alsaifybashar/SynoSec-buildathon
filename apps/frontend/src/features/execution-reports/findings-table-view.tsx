@@ -33,6 +33,10 @@ function truncate(value: string, max: number) {
 }
 
 function preferredFindingId(report: ExecutionReportDetail) {
+  const topPathFindingId = report.attackPaths.paths[0]?.findingIds[0];
+  if (topPathFindingId && report.findings.some((finding) => finding.id === topPathFindingId)) {
+    return topPathFindingId;
+  }
   const topFindingId = report.sourceSummary.topFindingIds.find((findingId) => report.findings.some((finding) => finding.id === findingId));
   return topFindingId ?? report.findings[0]?.id ?? null;
 }
@@ -54,10 +58,10 @@ type GraphEdgeShape = {
 };
 
 const EDGE_STROKE: Record<EdgeVariant, string> = {
-  supports: "currentColor",
+  supports: "#0ea5e9",
   derived: "#a855f7",
-  related: "#64748b",
-  enables: "#ea580c"
+  related: "#14b8a6",
+  enables: "#f97316"
 };
 
 const EDGE_DASH: Partial<Record<EdgeVariant, string>> = {
@@ -150,13 +154,13 @@ function FindingNodeGraph({
 }) {
   const { columns, edges } = useMemo(() => buildGraphModel(finding, allFindings), [finding, allFindings]);
 
-  const colWidth = 168;
-  const colGap = 36;
-  const nodeHeight = 36;
-  const nodeGap = 8;
-  const padX = 14;
-  const padY = 18;
-  const nodeWidth = colWidth - 12;
+  const colWidth = 144;
+  const colGap = 24;
+  const nodeHeight = 34;
+  const nodeGap = 6;
+  const padX = 10;
+  const padY = 16;
+  const nodeWidth = colWidth - 8;
 
   const maxRows = Math.max(...columns.map((col) => col.length), 1);
   const innerWidth = columns.length * colWidth + (columns.length - 1) * colGap;
@@ -191,14 +195,32 @@ function FindingNodeGraph({
 
   return (
     <div className="space-y-2">
-      <div className="overflow-x-auto"><svg
+      <svg
         viewBox={`0 0 ${width} ${height}`}
-        width={width}
-        height={height}
+        width="100%"
+        preserveAspectRatio="xMidYMid meet"
         role="img"
         aria-label="Finding traceability graph"
-        className="text-border"
+        className="block h-auto w-full text-border"
+        style={{ maxHeight: height }}
       >
+        <defs>
+          {(["derived", "related", "enables"] as const).map((variant) => (
+            <marker
+              key={variant}
+              id={`arrow-${variant}`}
+              viewBox="0 0 10 10"
+              refX={9}
+              refY={5}
+              markerWidth={4}
+              markerHeight={4}
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 0 L 10 5 L 0 10 z" fill={EDGE_STROKE[variant]} />
+            </marker>
+          ))}
+        </defs>
+
         {colLabels.map((label, index) => (
           <text
             key={label}
@@ -222,15 +244,18 @@ function FindingNodeGraph({
           const y2 = to.cy;
           const dx = (x2 - x1) * 0.5;
           const path = `M ${x1} ${y1} C ${x1 + dx} ${y1} ${x2 - dx} ${y2} ${x2} ${y2}`;
+          const markerEnd = edge.variant === "supports" ? undefined : `url(#arrow-${edge.variant})`;
           return (
             <path
               key={`${edge.from}-${edge.to}-${index}`}
               d={path}
               fill="none"
               stroke={EDGE_STROKE[edge.variant]}
-              strokeWidth={1}
-              strokeOpacity={edge.variant === "supports" ? 0.45 : 0.85}
+              strokeWidth={edge.variant === "supports" ? 1.5 : 1.75}
+              strokeOpacity={0.95}
               strokeDasharray={EDGE_DASH[edge.variant]}
+              strokeLinecap="round"
+              markerEnd={markerEnd}
             />
           );
         })}
@@ -280,7 +305,7 @@ function FindingNodeGraph({
             </g>
           );
         })}
-      </svg></div>
+      </svg>
       {presentVariants.length > 0 ? (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 font-mono text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">
           {presentVariants.map((variant) => (
@@ -322,22 +347,22 @@ function FindingListItem({
       type="button"
       onClick={onClick}
       className={cn(
-        "group flex w-full items-start gap-3 border-l-2 px-3 py-2.5 text-left transition",
+        "group flex w-full items-center gap-2.5 border-l-2 px-3 py-1.5 text-left transition",
         selected
           ? "border-l-foreground bg-muted/40"
           : "border-l-transparent hover:border-l-border hover:bg-muted/20"
       )}
     >
-      <span aria-hidden className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", SEVERITY_DOT[finding.severity])} />
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex items-baseline gap-2 font-mono text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">
-          <span>{String(index + 1).padStart(2, "0")}</span>
-          <span className={SEVERITY_TEXT[finding.severity]}>{finding.severity}</span>
-          {finding.confidence !== null ? <span>· {finding.confidence.toFixed(2)}</span> : null}
-        </div>
-        <p className="truncate text-sm font-medium leading-tight text-foreground">{finding.title}</p>
-        <p className="truncate font-mono text-[0.65rem] text-muted-foreground">{finding.targetLabel}</p>
-      </div>
+      <span aria-hidden className={cn("h-2 w-2 shrink-0 rounded-full", SEVERITY_DOT[finding.severity])} />
+      <span className="w-5 shrink-0 font-mono text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">
+        {String(index + 1).padStart(2, "0")}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm leading-tight text-foreground">{finding.title}</span>
+      {finding.confidence !== null ? (
+        <span className="shrink-0 font-mono text-[0.6rem] tabular-nums text-muted-foreground">
+          {finding.confidence.toFixed(2)}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -406,32 +431,31 @@ function FindingInspector({
   return (
     <div className="space-y-5">
       <header className="space-y-2">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[0.62rem] uppercase tracking-[0.16em]">
-          <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden className={cn("h-2 w-2 rounded-full", SEVERITY_DOT[finding.severity])} />
-            <span className={SEVERITY_TEXT[finding.severity]}>{finding.severity}</span>
-          </span>
-          <span className="text-muted-foreground">{finding.type}</span>
+        <h2 className="text-lg font-semibold leading-tight text-foreground">{finding.title}</h2>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[0.62rem] uppercase tracking-[0.16em] text-muted-foreground">
+          <span>{finding.type}</span>
+          <span aria-hidden>·</span>
+          <span className="truncate">{finding.targetLabel}</span>
           {finding.validationStatus ? (
-            <span className="text-muted-foreground">{finding.validationStatus.replaceAll("_", " ")}</span>
-          ) : null}
-          {finding.confidence !== null ? (
-            <span className="text-muted-foreground">conf {finding.confidence.toFixed(2)}</span>
+            <>
+              <span aria-hidden>·</span>
+              <span>{finding.validationStatus.replaceAll("_", " ")}</span>
+            </>
           ) : null}
         </div>
-        <h2 className="text-lg font-semibold leading-tight text-foreground">{finding.title}</h2>
-        <p className="truncate font-mono text-[0.7rem] text-muted-foreground">{finding.targetLabel}</p>
+        <div className="rounded-md border border-border/60 bg-background/30 px-3 py-2">
+          <FindingNodeGraph finding={finding} allFindings={allFindings} onSelectRelated={onSelect} />
+        </div>
       </header>
 
-      <InspectorSection label="Summary">
-        <p>{finding.summary}</p>
-      </InspectorSection>
-
-      {finding.explanationSummary ? (
-        <InspectorSection label="Why this finding exists">
-          <p>{finding.explanationSummary}</p>
-        </InspectorSection>
-      ) : null}
+      <section className="space-y-3">
+        <p className="text-sm leading-6 text-foreground/90">{finding.summary}</p>
+        {finding.explanationSummary ? (
+          <p className="border-l-2 border-border/70 pl-3 text-sm leading-6 text-muted-foreground">
+            {finding.explanationSummary}
+          </p>
+        ) : null}
+      </section>
 
       {finding.evidence.length > 0 ? (
         <InspectorSection label={`Evidence · ${finding.evidence.length}`}>
@@ -523,9 +547,14 @@ function FindingInspector({
       ) : null}
 
       {finding.recommendation ? (
-        <InspectorSection label="Recommendation">
-          <p>{finding.recommendation}</p>
-        </InspectorSection>
+        <section className="border-t border-border/50 pt-5">
+          <div className="rounded-md border-l-2 border-l-primary bg-primary/5 px-4 py-3">
+            <p className="mb-1.5 font-mono text-[0.62rem] font-medium uppercase tracking-[0.22em] text-primary">
+              Recommendation
+            </p>
+            <p className="text-sm leading-6 text-foreground/90">{finding.recommendation}</p>
+          </div>
+        </section>
       ) : null}
     </div>
   );
@@ -567,18 +596,9 @@ export function ExecutionReportFindingsView({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-md border border-border/60 bg-background/40 px-3 py-3">
-        <FindingNodeGraph finding={selected} allFindings={report.findings} onSelectRelated={handleSelect} />
-      </div>
-
-      <div className="grid gap-0 overflow-hidden rounded-md border border-border/60 bg-background/40 lg:grid-cols-[300px_1fr]">
-        <div className="max-h-[640px] overflow-y-auto border-b border-border/60 lg:border-b-0 lg:border-r">
-          <div className="flex items-baseline justify-between border-b border-border/60 px-3 py-2">
-            <span className="font-mono text-[0.6rem] uppercase tracking-[0.22em] text-muted-foreground">
-              Findings · {report.findings.length}
-            </span>
-          </div>
-          <ul className="divide-y divide-border/30">
+      <div className="grid gap-0 lg:grid-cols-[280px_1fr]">
+        <div className="max-h-[640px] overflow-y-auto border-b border-border/40 lg:border-b-0 lg:border-r">
+          <ul className="divide-y divide-border/20">
             {report.findings.map((finding, index) => (
               <li key={finding.id}>
                 <FindingListItem

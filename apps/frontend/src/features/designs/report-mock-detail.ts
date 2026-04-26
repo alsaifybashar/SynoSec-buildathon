@@ -37,6 +37,12 @@ Combined, these turn a stale release artifact into a working session for **any t
 4. **Re-scope** the auth cookie to the \`auth.\` subdomain and introduce host-bound session tokens
 
 > The chain is the story here. Steps 1–2 close the live exposure window; steps 3–4 prevent the same shape of finding from re-appearing.`,
+  attackPathExecutiveSummary: "2 attack paths derived. Top path reaches auth.blackpine.internal with qualified status and critical severity.",
+  attackPaths: {
+    venues: [],
+    vectors: [],
+    paths: []
+  },
   graph: {
     nodes: [
       {

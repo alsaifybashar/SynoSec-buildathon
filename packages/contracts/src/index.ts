@@ -8,3 +8,4 @@ export * from "./workflow-presentation.js";
 export * from "./defensive-loop.js";
 export * from "./scan.js";
 export * from "./execution-reports.js";
+export * from "./attack-paths.js";

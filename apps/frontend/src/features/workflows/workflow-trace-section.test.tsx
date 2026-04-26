@@ -1088,7 +1088,7 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getAllByText("failed").length).toBeGreaterThan(0);
   });
 
-  it("renders the Duplex empty state when no run exists yet", () => {
+  it("keeps the transcript rail quiet when no run exists yet", () => {
     render(
       <WorkflowTraceSection
         workflow={workflow}
@@ -1105,8 +1105,9 @@ describe("WorkflowTraceSection", () => {
       />
     );
 
-    expect(screen.getByText("No run yet")).toBeInTheDocument();
-    expect(screen.getByText("Start the first Duplex session")).toBeInTheDocument();
+    expect(screen.queryByText("No run yet")).not.toBeInTheDocument();
+    expect(screen.queryByText("Start the first Duplex session")).not.toBeInTheDocument();
+    expect(screen.queryByText("Evidence Trail")).not.toBeInTheDocument();
   });
 
   it("auto-follows live transcript growth when the operator is already at the page bottom", () => {

@@ -6,7 +6,7 @@ import {
   type Workflow,
   type WorkflowRun
 } from "./resources.js";
-import { buildWorkflowTranscript, getWorkflowRunTokenUsage } from "./workflow-presentation.js";
+import { buildWorkflowTranscript, getWorkflowRunContextTokenEstimate, getWorkflowRunModelStepCount, getWorkflowRunTokenUsage } from "./workflow-presentation.js";
 
 const workflow: Workflow = {
   id: "10000000-0000-0000-0000-000000000001",
@@ -587,5 +587,71 @@ describe("buildWorkflowTranscript", () => {
       outputTokens: 3,
       totalTokens: 10
     });
+  });
+
+  it("estimates final-step context load from the last persisted start-step request body", () => {
+    const run: WorkflowRun = {
+      id: "50000000-0000-0000-0000-000000000007",
+      workflowId: workflow.id,
+      workflowLaunchId: "60000000-0000-0000-0000-000000000007",
+      targetId: "70000000-0000-0000-0000-000000000007",
+      status: "running",
+      currentStepIndex: 1,
+      startedAt: "2026-04-25T00:00:00.000Z",
+      completedAt: null,
+      tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      trace: [],
+      events: [
+        {
+          id: "start-step-request-1",
+          workflowRunId: "50000000-0000-0000-0000-000000000007",
+          workflowId: workflow.id,
+          workflowStageId: null,
+          stepIndex: 0,
+          ord: 0,
+          type: "system_message",
+          status: "completed",
+          title: "Model step started",
+          summary: "Started a new model step.",
+          detail: null,
+          payload: {
+            rawStreamPartType: "start-step",
+            request: {
+              system: "A".repeat(4000),
+              messages: [{ role: "user", content: "B".repeat(4000) }]
+            }
+          },
+          createdAt: "2026-04-25T00:00:00.100Z"
+        },
+        {
+          id: "start-step-request-2",
+          workflowRunId: "50000000-0000-0000-0000-000000000007",
+          workflowId: workflow.id,
+          workflowStageId: null,
+          stepIndex: 1,
+          ord: 1,
+          type: "system_message",
+          status: "completed",
+          title: "Model step started",
+          summary: "Started a new model step.",
+          detail: null,
+          payload: {
+            rawStreamPartType: "start-step",
+            request: {
+              system: "A".repeat(4000),
+              messages: [
+                { role: "user", content: "B".repeat(4000) },
+                { role: "assistant", content: "C".repeat(4000) }
+              ]
+            }
+          },
+          createdAt: "2026-04-25T00:00:00.200Z"
+        }
+      ]
+    };
+
+    expect(getWorkflowRunContextTokenEstimate(run)).toBeGreaterThan(2000);
+    expect(getWorkflowRunContextTokenEstimate(run)).toBeLessThan(5000);
+    expect(getWorkflowRunModelStepCount(run)).toBe(2);
   });
 });

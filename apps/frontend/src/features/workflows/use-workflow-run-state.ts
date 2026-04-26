@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  type AttackPathSummary,
   apiRoutes,
   type Target,
   type Workflow,
   type WorkflowLaunch,
   type WorkflowLiveModelOutput,
   type WorkflowRun,
+  type WorkflowRunStreamState,
   type WorkflowRunStreamMessage,
   type WorkflowRunTranscriptResponse
 } from "@synosec/contracts";
@@ -61,7 +63,40 @@ function normalizeWorkflowLaunch(
   };
 }
 
-function updateLaunchWithRun(current: WorkflowLaunch | null, run: WorkflowRun): WorkflowLaunch | null {
+type LaunchRunUpdate = Pick<WorkflowRun, "id" | "workflowLaunchId" | "status" | "completedAt"> & {
+  latestEventSummary?: string | null;
+};
+
+function toLaunchRunUpdate(run: WorkflowRun | WorkflowRunStreamState, latestEventSummary?: string | null): LaunchRunUpdate {
+  return {
+    id: run.id,
+    workflowLaunchId: run.workflowLaunchId,
+    status: run.status,
+    completedAt: run.completedAt,
+    ...(latestEventSummary === undefined ? {} : { latestEventSummary })
+  };
+}
+
+function appendRunEvent(current: WorkflowRun | null, run: WorkflowRunStreamState, event: WorkflowRun["events"][number]): WorkflowRun | null {
+  if (!current || current.id !== run.id) {
+    return current;
+  }
+
+  const events = current.events.some((existing) => existing.id === event.id)
+    ? current.events
+    : [...current.events, event];
+
+  return {
+    ...current,
+    status: run.status,
+    currentStepIndex: run.currentStepIndex,
+    completedAt: run.completedAt,
+    tokenUsage: run.tokenUsage,
+    events
+  };
+}
+
+function updateLaunchWithRun(current: WorkflowLaunch | null, run: LaunchRunUpdate): WorkflowLaunch | null {
   if (!current || current.id !== run.workflowLaunchId) {
     return current;
   }
@@ -73,7 +108,7 @@ function updateLaunchWithRun(current: WorkflowLaunch | null, run: WorkflowRun): 
           status: run.status,
           completedAt: run.completedAt,
           errorMessage: run.status === "failed"
-            ? (run.events.at(-1)?.summary ?? run.events.at(-1)?.detail ?? "Workflow run failed.")
+            ? (run.latestEventSummary ?? "Workflow run failed.")
             : null
         }
       : entry
@@ -113,6 +148,7 @@ export function useWorkflowRunState({
   const [runPending, setRunPending] = useState(false);
   const [, setRunStreamState] = useState<RunStreamState>("idle");
   const [persistedTranscript, setPersistedTranscript] = useState<TranscriptProjection | null>(null);
+  const [persistedAttackPaths, setPersistedAttackPaths] = useState<AttackPathSummary | null>(null);
   const [latestRunError, setLatestRunError] = useState<string | null>(null);
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -128,6 +164,7 @@ export function useWorkflowRunState({
       setCurrentLaunch(null);
       setCurrentRun(null);
       setLiveModelOutput(null);
+      setPersistedAttackPaths(null);
       setLatestRunError(null);
       return;
     }
@@ -183,6 +220,7 @@ export function useWorkflowRunState({
       setCurrentRun(null);
       setLiveModelOutput(null);
       setPersistedTranscript(null);
+      setPersistedAttackPaths(null);
       setTranscriptError(null);
       return;
     }
@@ -240,8 +278,20 @@ export function useWorkflowRunState({
       eventSource.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data) as WorkflowRunStreamMessage;
-          setCurrentLaunch((current) => updateLaunchWithRun(current, payload.run));
-          setCurrentRun((current) => current?.id === payload.run.id ? payload.run : current);
+          if (payload.type === "snapshot") {
+            const latestEvent = payload.run.events.at(-1);
+            setCurrentLaunch((current) => updateLaunchWithRun(
+              current,
+              toLaunchRunUpdate(payload.run, latestEvent?.summary ?? latestEvent?.detail ?? null)
+            ));
+            setCurrentRun((current) => current?.id === payload.run.id ? payload.run : current);
+          } else {
+            setCurrentLaunch((current) => updateLaunchWithRun(
+              current,
+              toLaunchRunUpdate(payload.run, payload.event.summary ?? payload.event.detail ?? null)
+            ));
+            setCurrentRun((current) => appendRunEvent(current, payload.run, payload.event));
+          }
           setLiveModelOutput((current) => (
             payload.liveModelOutput && !payload.liveModelOutput.final && selectedLaunchRun?.runId === payload.run.id
               ? payload.liveModelOutput
@@ -258,7 +308,11 @@ export function useWorkflowRunState({
         setRunStreamState("disconnected");
         void fetchWorkflowRun(runId)
           .then((run) => {
-            setCurrentLaunch((current) => updateLaunchWithRun(current, run));
+            const latestEvent = run.events.at(-1);
+            setCurrentLaunch((current) => updateLaunchWithRun(
+              current,
+              toLaunchRunUpdate(run, latestEvent?.summary ?? latestEvent?.detail ?? null)
+            ));
             setCurrentRun((current) => current?.id === run.id ? run : current);
             if (run.status === "running") {
               setStreamError("Live workflow stream disconnected. Reload the page or start a fresh run if updates stop.");
@@ -284,6 +338,7 @@ export function useWorkflowRunState({
     if (!currentRun) {
       setLiveModelOutput(null);
       setPersistedTranscript(null);
+      setPersistedAttackPaths(null);
       setTranscriptError(null);
       return;
     }
@@ -298,6 +353,7 @@ export function useWorkflowRunState({
   useEffect(() => {
     if (!currentRun || currentRun.status === "running") {
       setPersistedTranscript(null);
+      setPersistedAttackPaths(null);
       setTranscriptError(null);
       return;
     }
@@ -307,12 +363,14 @@ export function useWorkflowRunState({
       .then((payload) => {
         if (active) {
           setPersistedTranscript(payload.transcript);
+          setPersistedAttackPaths(payload.attackPaths);
           setTranscriptError(null);
         }
       })
       .catch((error) => {
         if (active) {
           setPersistedTranscript(null);
+          setPersistedAttackPaths(null);
           const message = error instanceof Error ? error.message : "Unable to load the finalized workflow transcript right now.";
           setTranscriptError(message);
           toast.error("Failed to load workflow transcript", {
@@ -366,6 +424,7 @@ export function useWorkflowRunState({
     liveModelOutput,
     runPending,
     persistedTranscript,
+    persistedAttackPaths,
     latestRunError,
     transcriptError,
     streamError,

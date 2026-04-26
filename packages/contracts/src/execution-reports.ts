@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { attackPathSummarySchema } from "./attack-paths.js";
 import {
   workflowFindingChainSchema,
   workflowFindingRelationshipExplanationsSchema,
@@ -173,6 +174,8 @@ export type ExecutionReportSourceSummary = z.infer<typeof executionReportSourceS
 
 export const executionReportDetailSchema = executionReportSummarySchema.extend({
   executiveSummary: z.string().min(1),
+  attackPathExecutiveSummary: z.string().min(1),
+  attackPaths: attackPathSummarySchema.default({ venues: [], vectors: [], paths: [] }),
   graph: executionReportGraphSchema.default({ nodes: [], edges: [] }),
   findings: z.array(executionReportFindingSchema),
   toolActivity: z.array(executionReportToolActivitySchema),
