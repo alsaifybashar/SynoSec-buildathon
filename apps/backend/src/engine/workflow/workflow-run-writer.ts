@@ -63,6 +63,40 @@ export class WorkflowRunWriter implements WorkflowRunWriterPort {
     await this.ports.executionReportsService.createForWorkflowRun(runId);
   }
 
+  async cancelRunWithUserRequest(runId: string): Promise<WorkflowRun> {
+    const run = await this.ports.workflowsRepository.getRunById(runId);
+    if (!run) {
+      throw new RequestError(404, "Workflow run not found.");
+    }
+
+    if (run.status !== "running" && run.status !== "pending") {
+      throw new RequestError(400, "Only a running workflow run can be canceled.");
+    }
+
+    return this.appendEvent(
+      run,
+      this.createEvent(
+        run,
+        run.workflowId,
+        null,
+        run.events.length,
+        "run_failed",
+        "failed",
+        {
+          reason: "Canceled by user",
+          canceledBy: "operator"
+        },
+        "Workflow run canceled",
+        "Workflow run canceled by user.",
+        "The operator canceled the active workflow run."
+      ),
+      {
+        status: "failed",
+        completedAt: new Date().toISOString()
+      }
+    );
+  }
+
   createEvent(
     run: WorkflowRun,
     workflowId: string,
@@ -233,6 +267,13 @@ export class WorkflowRunWriter implements WorkflowRunWriterPort {
       throw new RequestError(500, `Workflow event ordering is inconsistent for ${event.type}.`, {
         code: "WORKFLOW_EVENT_ORDER_INVALID",
         userFriendlyMessage: "The workflow produced an out-of-order event and could not continue."
+      });
+    }
+
+    if ((run.status === "completed" || run.status === "failed") && event.type !== "run_failed") {
+      throw new RequestError(409, "Workflow run is already finalized.", {
+        code: "WORKFLOW_RUN_FINALIZED",
+        userFriendlyMessage: "The workflow run has already finished."
       });
     }
 

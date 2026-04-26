@@ -26,6 +26,10 @@ export class WorkflowExecutionService implements WorkflowExecutionEngine {
     return launch;
   }
 
+  cancelRun(runId: string): Promise<void> {
+    return this.runtime.cancelRun(runId);
+  }
+
   stepRun(runId: string): Promise<void> {
     return this.runtime.stepRun(runId);
   }

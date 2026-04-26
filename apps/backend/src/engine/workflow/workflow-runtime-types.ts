@@ -142,6 +142,7 @@ export interface WorkflowRunWriterPort {
     rawStreamPartType?: string
   ): WorkflowTraceEvent;
   createExecutionReport(runId: string): Promise<void>;
+  cancelRunWithUserRequest(runId: string): Promise<WorkflowRun>;
   failRunWithStageError(run: WorkflowRun, workflowId: string, stage: WorkflowStage | null, error: unknown): Promise<WorkflowRun>;
   failWorkflowRunAfterUnhandledError(runId: string, workflowId: string, error: unknown): Promise<void>;
 }

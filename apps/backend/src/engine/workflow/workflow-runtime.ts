@@ -72,6 +72,10 @@ export class WorkflowRuntimeService {
     }
   }
 
+  async cancelRun(runId: string): Promise<void> {
+    await this.writer.cancelRunWithUserRequest(runId);
+  }
+
   async stepRun(_runId: string): Promise<void> {
     throw new RequestError(400, "Pipeline runs advance automatically after start.");
   }

@@ -7,6 +7,7 @@ export type RunStream<Message> = {
 
 export type WorkflowExecutionEngine = {
   startRun(workflowId: string, input?: StartWorkflowRunBody): Promise<WorkflowLaunch>;
+  cancelRun(runId: string): Promise<void>;
   stepRun(runId: string): Promise<void>;
 };
 

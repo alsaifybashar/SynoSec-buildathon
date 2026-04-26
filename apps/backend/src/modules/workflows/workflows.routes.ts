@@ -173,4 +173,19 @@ export function registerWorkflowsRoutes(
       next(error);
     }
   });
+
+  app.post(`${apiRoutes.workflowRuns}/:id/cancel`, async (request, response, next) => {
+    try {
+      await executionService.cancelRun(request.params.id);
+      const run = await repository.getRunById(request.params.id);
+      if (!run) {
+        response.status(404).json({ message: "Workflow run not found." });
+        return;
+      }
+
+      response.json(workflowRunSchema.parse(run));
+    } catch (error) {
+      next(error);
+    }
+  });
 }
