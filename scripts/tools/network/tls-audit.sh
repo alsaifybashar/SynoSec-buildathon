@@ -30,6 +30,29 @@ function runOpenSsl(args, input = "") {
   return spawnSync("openssl", args, { input, encoding: "utf8", timeout: 8000 });
 }
 
+function negotiatedCipher(result) {
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+  const match = output.match(/(?:^|\n)New,\s+[^,]+,\s+Cipher is\s+([^\s\r\n]+)/);
+  return match?.[1] || null;
+}
+
+function acceptedCipherFamily(result, family) {
+  if (result.status !== 0) {
+    return false;
+  }
+  const negotiated = negotiatedCipher(result);
+  if (!negotiated) {
+    return false;
+  }
+  if (family === "NULL") {
+    return /(?:^|[-_])NULL(?:$|[-_])/.test(negotiated);
+  }
+  if (family === "ADH") {
+    return /(?:^|[-_])(?:ADH|AECDH)(?:$|[-_])/.test(negotiated);
+  }
+  return negotiated.includes(family);
+}
+
 const protocols = [
   ["ssl2", "SSLv2"],
   ["ssl3", "SSLv3"],
@@ -63,8 +86,9 @@ for (const [flag, label] of protocols) {
 }
 
 for (const cipher of ["RC4", "3DES", "DES", "ADH", "NULL"]) {
-  const result = runOpenSsl(["s_client", "-connect", `${target}:${port}`, "-servername", target, "-cipher", cipher]);
-  if (result.status === 0) {
+  const cipherArg = cipher === "ADH" ? "aNULL:@SECLEVEL=0" : cipher === "NULL" ? "eNULL:@SECLEVEL=0" : `${cipher}:@SECLEVEL=0`;
+  const result = runOpenSsl(["s_client", "-connect", `${target}:${port}`, "-servername", target, "-tls1_2", "-cipher", cipherArg]);
+  if (acceptedCipherFamily(result, cipher)) {
     findings.push(`weak cipher accepted: ${cipher}`);
     observations.push({
       key: `tls:${target}:${port}:cipher:${cipher}`,
@@ -72,7 +96,7 @@ for (const cipher of ["RC4", "3DES", "DES", "ADH", "NULL"]) {
       summary: `${target}:${port} accepted a weak cipher family during handshake testing.`,
       severity: "medium",
       confidence: 0.82,
-      evidence: `openssl s_client -connect ${target}:${port} -cipher ${cipher} succeeded.`,
+      evidence: `openssl s_client -connect ${target}:${port} -tls1_2 -cipher '${cipherArg}' negotiated ${negotiatedCipher(result)}.`,
       technique: "TLS weak cipher audit",
       port
     });

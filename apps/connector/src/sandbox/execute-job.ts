@@ -18,6 +18,8 @@ interface SandboxExecutionOptions {
   commandTimeoutMs?: number;
 }
 
+const MAX_CONNECTOR_TOOL_TIMEOUT_MS = 10_000;
+
 function validateSandboxedJob(
   job: ConnectorExecutionJob,
   options: SandboxExecutionOptions
@@ -65,8 +67,16 @@ export async function executeSandboxedConnectorJob(
   return executeStructuredCommand(
     validated.bashSource,
     job,
-    options.commandTimeoutMs ?? 30000
+    resolveCommandTimeoutMs(job, options)
   );
+}
+
+function resolveCommandTimeoutMs(job: ConnectorExecutionJob, options: SandboxExecutionOptions) {
+  const requestedTimeoutMs = typeof job.request.parameters["timeoutMs"] === "number"
+    ? job.request.parameters["timeoutMs"]
+    : MAX_CONNECTOR_TOOL_TIMEOUT_MS;
+  const connectorLimitMs = options.commandTimeoutMs ?? MAX_CONNECTOR_TOOL_TIMEOUT_MS;
+  return Math.max(1_000, Math.min(requestedTimeoutMs, connectorLimitMs, MAX_CONNECTOR_TOOL_TIMEOUT_MS));
 }
 
 function toConnectorSupportSubject(job: ConnectorExecutionJob): ConnectorSupportSubject {

@@ -17,6 +17,8 @@ export interface CompileInput {
   toolInput?: Record<string, string | number | boolean | string[]>;
 }
 
+const MAX_TOOL_TIMEOUT_MS = 10_000;
+
 function interpolateArgument(template: string, input: CompileInput): string {
   const configuredBaseUrl = input.toolInput?.["baseUrl"];
   const baseUrl = typeof configuredBaseUrl === "string" && configuredBaseUrl.trim().length > 0
@@ -55,6 +57,7 @@ export function compileToolRequestFromDefinition(tool: CompilableTool, input: Co
     baseUrl: `http://${input.target}${input.port ? `:${input.port}` : ""}`,
     ...(input.toolInput ?? {})
   };
+  const timeoutMs = Math.max(1_000, Math.min(tool.timeoutMs, MAX_TOOL_TIMEOUT_MS));
 
   return {
     toolId: tool.id,
@@ -70,7 +73,7 @@ export function compileToolRequestFromDefinition(tool: CompilableTool, input: Co
     privilegeProfile: derivePrivilegeProfile(tool.riskTier),
     parameters: {
       bashSource: tool.bashSource,
-      timeoutMs: tool.timeoutMs,
+      timeoutMs,
       commandPreview: interpolateArgument(`${tool.name} target=${toolInput.target} baseUrl=${toolInput.baseUrl}`, {
         ...input,
         toolInput

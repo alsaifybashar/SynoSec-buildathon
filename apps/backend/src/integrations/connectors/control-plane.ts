@@ -5,6 +5,7 @@ import type {
   ConnectorExecutionResult,
   ConnectorRegistrationRequest,
   ConnectorRegistrationResponse,
+  ConnectorSupportSubject,
   ConnectorStatusResponse,
   ToolRequest,
   ToolRun
@@ -48,12 +49,23 @@ const defaultLeaseDurationMs = Number(process.env["CONNECTOR_LEASE_DURATION_MS"]
 const defaultDispatchTimeoutMs = Number(process.env["CONNECTOR_DISPATCH_TIMEOUT_MS"] ?? "30000");
 
 function connectorSupportsRequest(connector: ConnectorDescriptor, request: ToolRequest) {
-  return evaluateConnectorToolSupport(request, {
+  return evaluateConnectorToolSupport(toConnectorSupportSubject(request), {
     allowedCapabilities: connector.allowedCapabilities,
     allowedSandboxProfiles: connector.allowedSandboxProfiles,
     allowedPrivilegeProfiles: connector.allowedPrivilegeProfiles,
     installedBinaries: connector.installedBinaries
   }).supported;
+}
+
+function toConnectorSupportSubject(request: ToolRequest): ConnectorSupportSubject {
+  return {
+    ...(request.toolId ? { toolId: request.toolId } : {}),
+    tool: request.tool,
+    capabilities: request.capabilities,
+    sandboxProfile: request.sandboxProfile,
+    privilegeProfile: request.privilegeProfile,
+    parameters: request.parameters
+  };
 }
 
 function computeSupportedToolIds(connector: Omit<ConnectorDescriptor, "supportedToolIds">): string[] {
