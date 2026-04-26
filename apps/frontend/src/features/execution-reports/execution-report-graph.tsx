@@ -351,16 +351,17 @@ export function ExecutionReportGraphMap({ graph }: { graph: ExecutionReportGraph
   }, [viewport.x, viewport.y]);
 
   const onMouseMove = useCallback((event: React.MouseEvent<SVGSVGElement>) => {
-    if (!panningRef.current) {
+    const panStart = panningRef.current;
+    if (!panStart) {
       return;
     }
     movedRef.current = true;
     const current = screenCoords(event.clientX, event.clientY);
-    const start = screenCoords(panningRef.current.clientX, panningRef.current.clientY);
+    const start = screenCoords(panStart.clientX, panStart.clientY);
     setViewport((viewportState) => ({
       ...viewportState,
-      x: panningRef.current!.x + current.x - start.x,
-      y: panningRef.current!.y + current.y - start.y
+      x: panStart.x + current.x - start.x,
+      y: panStart.y + current.y - start.y
     }));
   }, [screenCoords]);
 
