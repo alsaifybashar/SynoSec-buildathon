@@ -30,6 +30,28 @@ function ensureGoogleIdentityScript() {
   });
 }
 
+function getActiveTheme(): string {
+  if (typeof document === "undefined") {
+    return "synosec";
+  }
+  return document.documentElement.dataset["theme"] ?? "synosec";
+}
+
+function useActiveTheme(): string {
+  const [theme, setTheme] = useState<string>(() => getActiveTheme());
+
+  useEffect(() => {
+    const target = document.documentElement;
+    const observer = new MutationObserver(() => {
+      setTheme(target.dataset["theme"] ?? "synosec");
+    });
+    observer.observe(target, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
+
+  return theme;
+}
+
 export function LoginPage({
   googleClientId
 }: {
@@ -38,6 +60,8 @@ export function LoginPage({
   const buttonRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "submitting" | "error">("loading");
   const [message, setMessage] = useState<string | null>(null);
+  const activeTheme = useActiveTheme();
+  const isDarkTheme = activeTheme === "dark";
 
   useEffect(() => {
     if (!googleClientId) {
@@ -64,10 +88,10 @@ export function LoginPage({
 
         buttonRef.current.replaceChildren();
         window.google.accounts.id.renderButton(buttonRef.current, {
-          theme: "outline",
+          theme: isDarkTheme ? "filled_black" : "outline",
           size: "large",
           shape: "rectangular",
-          text: "continue_with",
+          text: "signin_with",
           width: 320
         });
 
@@ -86,11 +110,12 @@ export function LoginPage({
       cancelled = true;
       buttonRef.current?.replaceChildren();
     };
-  }, [googleClientId]);
+  }, [googleClientId, isDarkTheme]);
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_top,#d5ecf1_0%,#faf8f3_45%,#f1ede2_100%)] px-6 py-10 text-foreground">
-      <div className="absolute inset-0 bg-[linear-gradient(135deg,transparent_0%,rgba(18,136,154,0.08)_35%,transparent_70%)]" />
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-6 py-10 text-foreground">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,hsl(var(--primary)/0.18)_0%,transparent_55%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,transparent_0%,hsl(var(--primary)/0.08)_45%,transparent_75%)]" />
       <Card className="relative w-full max-w-lg border-border/70 bg-card/95 shadow-2xl">
         <CardHeader className="space-y-3">
           <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/12 text-primary">
