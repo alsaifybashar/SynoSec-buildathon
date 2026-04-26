@@ -33,6 +33,7 @@ export type ListPageFilter = {
 };
 
 const CLEAR_FILTER_VALUE = "__all__";
+const TABLE_HEADER_TEXT_CLASSNAME = "font-mono text-eyebrow font-medium uppercase tracking-[0.24em]";
 
 function extractText(node: ReactNode): string {
   if (node === null || node === undefined || typeof node === "boolean") {
@@ -298,6 +299,34 @@ export function ListPage<T extends { id: string }>({
     );
   }
 
+  function renderColumnHeader(column: ListPageColumn<T>, loading = false) {
+    if (column.sortable === false) {
+      return column.header;
+    }
+
+    return (
+      <button
+        className={cn("group/sort inline-flex items-center gap-1.5", TABLE_HEADER_TEXT_CLASSNAME)}
+        type="button"
+        onClick={loading ? undefined : () => onSortChange(column.id)}
+        disabled={loading}
+      >
+        {column.header}
+        {loading ? (
+          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/0" aria-hidden="true" />
+        ) : query.sortBy === column.id ? (
+          query.sortDirection === "asc" ? (
+            <ArrowUp className="h-3.5 w-3.5 text-primary" />
+          ) : (
+            <ArrowDown className="h-3.5 w-3.5 text-primary" />
+          )
+        ) : (
+          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/50" />
+        )}
+      </button>
+    );
+  }
+
   const pageLabel = meta.total === 0
     ? "0 results"
     : `${(meta.page - 1) * meta.pageSize + 1}-${Math.min(meta.page * meta.pageSize, meta.total)} of ${meta.total}`;
@@ -421,12 +450,12 @@ export function ListPage<T extends { id: string }>({
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       {columns.map((column) => (
-                        <TableHead key={column.id} className={cn("border-b border-b-border border-t border-t-border bg-muted/40 font-mono text-eyebrow font-medium uppercase tracking-[0.24em] text-muted-foreground", column.className)}>
-                          {column.header}
+                        <TableHead key={column.id} className={cn("border-b border-b-border border-t border-t-border bg-muted/40 text-muted-foreground", TABLE_HEADER_TEXT_CLASSNAME, column.className)}>
+                          {renderColumnHeader(column, true)}
                         </TableHead>
                       ))}
                       {showRowActions ? (
-                        <TableHead className="border-b border-b-border border-t border-t-border bg-muted/40 text-right font-mono text-eyebrow font-medium uppercase tracking-[0.24em] text-muted-foreground">
+                        <TableHead className={cn("border-b border-b-border border-t border-t-border bg-muted/40 text-right text-muted-foreground", TABLE_HEADER_TEXT_CLASSNAME)}>
                           Actions
                         </TableHead>
                       ) : null}
@@ -497,27 +526,12 @@ export function ListPage<T extends { id: string }>({
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       {columns.map((column) => (
-                        <TableHead key={column.id} className={cn("border-b border-b-border border-t border-t-border bg-muted/40 font-mono text-eyebrow font-medium uppercase tracking-[0.24em] text-muted-foreground", column.className)}>
-                          {column.sortable === false ? (
-                            column.header
-                          ) : (
-                            <button className="group/sort inline-flex items-center gap-1.5 font-mono text-eyebrow font-medium uppercase tracking-[0.24em]" type="button" onClick={() => onSortChange(column.id)}>
-                              {column.header}
-                              {query.sortBy === column.id ? (
-                                query.sortDirection === "asc" ? (
-                                  <ArrowUp className="h-3.5 w-3.5 text-primary" />
-                                ) : (
-                                  <ArrowDown className="h-3.5 w-3.5 text-primary" />
-                                )
-                              ) : (
-                                <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/50" />
-                              )}
-                            </button>
-                          )}
+                        <TableHead key={column.id} className={cn("border-b border-b-border border-t border-t-border bg-muted/40 text-muted-foreground", TABLE_HEADER_TEXT_CLASSNAME, column.className)}>
+                          {renderColumnHeader(column)}
                         </TableHead>
                       ))}
                       {showRowActions ? (
-                        <TableHead className="border-b border-b-border border-t border-t-border bg-muted/40 text-right font-mono text-eyebrow font-medium uppercase tracking-[0.24em] text-muted-foreground">
+                        <TableHead className={cn("border-b border-b-border border-t border-t-border bg-muted/40 text-right text-muted-foreground", TABLE_HEADER_TEXT_CLASSNAME)}>
                           Actions
                         </TableHead>
                       ) : null}

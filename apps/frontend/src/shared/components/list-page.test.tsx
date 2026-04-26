@@ -184,6 +184,37 @@ describe("ListPage", () => {
     expect(handleImportJson).toHaveBeenCalledWith(file);
   });
 
+  it("uses the same sortable header button markup during the initial loading state", () => {
+    render(
+      <ListPage
+        title="Targets"
+        recordLabel="Target"
+        columns={columns}
+        query={{
+          page: 1,
+          pageSize: 25,
+          q: "",
+          sortBy: "name",
+          sortDirection: "asc"
+        }}
+        dataState={{ state: "loading", data: null }}
+        items={[]}
+        meta={{ ...meta, items: [], total: 0, totalPages: 0 }}
+        emptyMessage="No targets found."
+        onSearchChange={() => {}}
+        onFilterChange={() => {}}
+        onSortChange={() => {}}
+        onPageChange={() => {}}
+        onPageSizeChange={() => {}}
+        onRetry={() => {}}
+      />
+    );
+
+    const nameHeaderButton = screen.getByRole("button", { name: "Name" });
+    expect(nameHeaderButton).toBeDisabled();
+    expect(nameHeaderButton.querySelector("svg")).not.toBeNull();
+  });
+
   it("renders row actions and routes action clicks without triggering row navigation", async () => {
     const handleRowClick = vi.fn();
     const handleExportRowJson = vi.fn();

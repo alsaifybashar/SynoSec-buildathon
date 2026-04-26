@@ -18,6 +18,7 @@ function createRun(overrides: Partial<WorkflowRun> = {}): WorkflowRun {
     currentStepIndex: 0,
     startedAt: "2026-04-24T10:00:00.000Z",
     completedAt: null,
+    tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     trace: [],
     events: [],
     ...overrides
