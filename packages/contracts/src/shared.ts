@@ -29,9 +29,16 @@ export const apiRoutes = {
   connectorStatus: "/api/connectors/status"
 } as const;
 
-export const fixedAiProviderName = "Anthropic";
-export const fixedAiModel = "claude-sonnet-4-6";
-export const fixedAiRuntimeLabel = `${fixedAiProviderName} · ${fixedAiModel}`;
+export const runtimeProviderSchema = z.enum(["anthropic", "local"]);
+export type RuntimeProvider = z.infer<typeof runtimeProviderSchema>;
+
+export const healthRuntimeSchema = z.object({
+  provider: runtimeProviderSchema,
+  providerName: z.string().min(1),
+  model: z.string().min(1),
+  label: z.string().min(1)
+});
+export type HealthRuntime = z.infer<typeof healthRuntimeSchema>;
 
 export const localDemoTargetDefaults = {
   internalHost: "synosec-target",
@@ -42,10 +49,20 @@ export const localDemoTargetDefaults = {
   hostGatewayTarget: "host.docker.internal:8888"
 } as const;
 
+export const localAttackPathTargetDefaults = {
+  internalHost: "synosec-attack-path-target",
+  port: 8890,
+  internalTarget: "synosec-attack-path-target:8890",
+  internalUrl: "http://synosec-attack-path-target:8890",
+  hostUrl: "http://localhost:8890",
+  hostGatewayTarget: "host.docker.internal:8890"
+} as const;
+
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),
   service: z.literal("synosec-backend"),
-  timestamp: z.string().datetime()
+  timestamp: z.string().datetime(),
+  runtime: healthRuntimeSchema
 });
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
@@ -118,7 +135,7 @@ export function createPaginatedResponseSchema<ItemSchema extends z.ZodTypeAny>(
 export const jsonSchemaObjectSchema = z.record(z.unknown());
 export type JsonSchemaObject = z.infer<typeof jsonSchemaObjectSchema>;
 
-export const templateProviderSchema = z.enum(["local", "sonnet"]);
+export const templateProviderSchema = z.enum(["local", "haiku"]);
 export type TemplateProvider = z.infer<typeof templateProviderSchema>;
 
 export const templateVariableSchema = z.object({

@@ -32,7 +32,13 @@ describe("contracts", () => {
     const result = healthResponseSchema.safeParse({
       status: "ok",
       service: "synosec-backend",
-      timestamp: "2026-04-12T12:00:00.000Z"
+      timestamp: "2026-04-12T12:00:00.000Z",
+      runtime: {
+        provider: "anthropic",
+        providerName: "Anthropic",
+        model: "claude-haiku-4-5",
+        label: "Anthropic · claude-haiku-4-5"
+      }
     });
 
     expect(result.success).toBe(true);
@@ -340,6 +346,12 @@ describe("contracts", () => {
       updatedAt: "2026-04-25T12:05:00.000Z",
       archivedAt: null,
       executiveSummary: "One meaningful attack path was confirmed.",
+      attackPathExecutiveSummary: "No linked attack paths were derived from the persisted findings.",
+      attackPaths: {
+        venues: [],
+        vectors: [],
+        paths: []
+      },
       graph: {
         nodes: [
           {

@@ -21,6 +21,13 @@ services:
     environment:
       PORT: 8888
 
+  attack-path-target:
+    build:
+      context: ./demos/attack-path-target
+    restart: unless-stopped
+    environment:
+      PORT: 8890
+
   backend:
     build:
       context: .
@@ -36,8 +43,10 @@ services:
       DATABASE_URL: postgres://synosec:${POSTGRES_PASSWORD}@postgres:5432/synosec
       FRONTEND_URL: ${FRONTEND_URL}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-6}
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      LLM_ANTHROPIC_MODEL: ${LLM_ANTHROPIC_MODEL:-claude-haiku-4-5}
+      LLM_LOCAL_BASE_URL: ${LLM_LOCAL_BASE_URL:-http://ollama:11434/v1}
+      LLM_LOCAL_MODEL: ${LLM_LOCAL_MODEL:-qwen3:8b}
       SCAN_MAX_DEPTH: ${SCAN_MAX_DEPTH:-4}
       SCAN_MAX_DURATION_MINUTES: ${SCAN_MAX_DURATION_MINUTES:-20}
       SCAN_RATE_LIMIT_RPS: ${SCAN_RATE_LIMIT_RPS:-5}

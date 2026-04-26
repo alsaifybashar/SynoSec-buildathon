@@ -1,7 +1,8 @@
-import { localDemoTargetDefaults } from "@synosec/contracts";
+import { localAttackPathTargetDefaults, localDemoTargetDefaults } from "@synosec/contracts";
 import { Prisma, PrismaClient } from "@prisma/client";
 import {
   getSeededWorkflowDefinitions,
+  localAttackPathApplicationId,
   localApplicationId,
   osiSingleAgentWorkflowId,
   portfolioApplicationId,
@@ -24,6 +25,7 @@ const legacySingleAgentSeedIds = {
   vulnerabilityId: "64ec7b8e-b8dc-4b58-bf5a-5f3f0f7e8d4c"
 } as const;
 const deprecatedSeededAgentIds = [
+  "3d9992c0-a20b-4527-86d3-9479e86d6c3b",
   "751d2c0b-85f1-4f7a-8ac6-2c05d0ce0f56",
   "f1f99dd4-c2a7-47e8-946e-6a880f09001f",
   "897204f6-2e08-4775-aae8-f233d4ec8154",
@@ -55,7 +57,7 @@ async function main() {
 
   await prisma.application.deleteMany({
     where: {
-      id: { notIn: [localApplicationId, portfolioApplicationId, securePentApplicationId] },
+      id: { notIn: [localApplicationId, localAttackPathApplicationId, portfolioApplicationId, securePentApplicationId] },
       name: {
         in: [
           "Nils Wickman Portfolio",
@@ -82,6 +84,25 @@ async function main() {
       id: localApplicationId,
       name: "Local Vulnerable Target",
       baseUrl: localDemoTargetDefaults.hostUrl,
+      environment: "development",
+      status: "active",
+      lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
+    }
+  });
+
+  await prisma.application.upsert({
+    where: { id: localAttackPathApplicationId },
+    update: {
+      name: "Local Attack Path Target",
+      baseUrl: localAttackPathTargetDefaults.hostUrl,
+      environment: "development",
+      status: "active",
+      lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
+    },
+    create: {
+      id: localAttackPathApplicationId,
+      name: "Local Attack Path Target",
+      baseUrl: localAttackPathTargetDefaults.hostUrl,
       environment: "development",
       status: "active",
       lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
@@ -221,6 +242,20 @@ async function main() {
   await prisma.applicationConstraintBinding.upsert({
     where: {
       applicationId_constraintId: {
+        applicationId: localAttackPathApplicationId,
+        constraintId: localTargetBypassConstraintId
+      }
+    },
+    update: {},
+    create: {
+      applicationId: localAttackPathApplicationId,
+      constraintId: localTargetBypassConstraintId
+    }
+  });
+
+  await prisma.applicationConstraintBinding.upsert({
+    where: {
+      applicationId_constraintId: {
         applicationId: portfolioApplicationId,
         constraintId: cloudflareConstraintId
       }
@@ -345,18 +380,6 @@ async function main() {
     )
   });
 
-  await prisma.aiAgentTool.deleteMany({
-    where: {
-      agentId: { in: [...deprecatedSeededAgentIds] }
-    }
-  });
-
-  await prisma.aiAgent.deleteMany({
-    where: {
-      id: { in: [...deprecatedSeededAgentIds] }
-    }
-  });
-
   const workflowDefinitions = getSeededWorkflowDefinitions();
   const seededWorkflowIds = workflowDefinitions.map((workflow) => workflow.id);
 
@@ -425,6 +448,18 @@ async function main() {
       });
     })
   );
+
+  await prisma.aiAgentTool.deleteMany({
+    where: {
+      agentId: { in: [...deprecatedSeededAgentIds] }
+    }
+  });
+
+  await prisma.aiAgent.deleteMany({
+    where: {
+      id: { in: [...deprecatedSeededAgentIds] }
+    }
+  });
 
   await prisma.workflowTraceEntry.deleteMany({
     where: { workflowRunId: legacySingleAgentSeedIds.runId }

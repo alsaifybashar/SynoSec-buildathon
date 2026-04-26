@@ -87,6 +87,7 @@ import {
 } from "@synosec/contracts";
 
 export const localApplicationId = "5ecf4a8e-df5f-4945-a7e1-230ef43eac80";
+export const localAttackPathApplicationId = "71ddf550-989e-49c2-8567-8521ebea65b8";
 export const portfolioApplicationId = "1f92a3d7-4f70-4950-b750-9bf74c6f3591";
 export const securePentApplicationId = "4d8e9e0a-bfd4-4b24-8fb9-8656b511a2b8";
 export const osiSingleAgentWorkflowId = "8b57f0e7-1dd7-4d6a-8db5-c4ff7be80a21";
@@ -244,7 +245,7 @@ const webSemanticFamilyToolIds = [
   "builtin-dns-enumeration"
 ] as const;
 
-export type SeededRoleKey = "compact-evaluator" | "attack-vector-planner";
+export type SeededRoleKey = "generic-pentester";
 
 function withConstraintProfile<
   T extends {
@@ -421,49 +422,13 @@ export function validateSeededToolDefinitions() {
 
 export const seededRoleDefinitions = [
   {
-    key: "compact-evaluator" as const,
-    name: "Compact Evaluator",
-    description: "Evaluates the semantic-family tool surface as a compact alternative to the raw pentest catalog.",
+    key: "generic-pentester" as const,
+    name: "Generic Pentester",
+    description: "Generic seeded pentesting agent for semantic-family workflow execution and attack-path reasoning.",
     systemPrompt:
       [
         "Role and goal:",
-        "You are the compact evaluation agent for SynoSec. Evaluate a target through semantic tool families rather than raw tool brands and keep the evidence chain explicit.",
-        "",
-        "Scope and safety boundaries:",
-        "Use only the available semantic family tools and built-in workflow actions for this run.",
-        "Do not ask for raw tool access or brand-specific substitutions outside the exposed family surface.",
-        "",
-        "Evidence and reporting requirements:",
-        "Prefer structured evidence-backed findings over free-form narrative.",
-        "Distinguish confirmed findings, plausible hypotheses, and rejected leads in your reporting.",
-        "When findings connect, capture the relationship explicitly with derivedFromFindingIds, relatedFindingIds, or enablesFindingIds instead of implying the connection only in prose.",
-        "Each finding should describe the affected asset or URL, the preconditions that make the issue matter, the observed impact, and the most direct remediation.",
-        "Call log_progress for short operator-visible updates before tool calls and after meaningful results, but treat log_progress as secondary to high-quality report_finding calls.",
-        "Do not expose private chain-of-thought; provide concise action-oriented progress notes instead.",
-        "",
-        "Completion requirements:",
-        "Use report_finding for concrete supported findings and use complete_run to end the workflow.",
-        "",
-        "Blocked or failed behavior:",
-        "If evidence is incomplete or conflicting, keep unsupported claims out of findings, mark weaker leads as hypotheses, and close with the remaining uncertainty."
-      ].join("\n"),
-    toolIds: [
-      familyHttpSurfaceTool.id,
-      familyNetworkEnumerationTool.id,
-      familySubdomainDiscoveryTool.id,
-      familyWebCrawlTool.id,
-      familyContentDiscoveryTool.id,
-      familyVulnerabilityValidationTool.id
-    ] as const
-  },
-  {
-    key: "attack-vector-planner" as const,
-    name: "Attack Vector Planner",
-    description: "Maps plausible attack vectors across the semantic-family surface and links potential vulnerabilities into explicit finding chains.",
-    systemPrompt:
-      [
-        "Role and goal:",
-        "You are the attack vector planning agent for SynoSec. Use semantic tool families to map how weaknesses may connect, identify plausible attack paths, and keep every linked vulnerability grounded in evidence or explicitly qualified uncertainty.",
+        "You are the generic pentesting agent for SynoSec. Use semantic tool families to map how weaknesses may connect, identify plausible attack paths, and keep every linked vulnerability grounded in evidence or explicitly qualified uncertainty.",
         "",
         "Scope and safety boundaries:",
         "Use only the available semantic family tools and built-in workflow actions for this run.",
@@ -498,8 +463,7 @@ export const seededRoleDefinitions = [
 ] as const;
 
 export const seededAgentIds = {
-  "anthropic:compact-evaluator": "3d9992c0-a20b-4527-86d3-9479e86d6c3b",
-  "anthropic:attack-vector-planner": "4c526f02-d11c-4e01-aeb4-a84f271ec3bc"
+  "anthropic:generic-pentester": "4c526f02-d11c-4e01-aeb4-a84f271ec3bc"
 } as const;
 
 export function seededAgentId(roleKey: SeededRoleKey) {
@@ -517,12 +481,12 @@ export function getSeededWorkflowDefinitions() {
       name: "Compact Family Evaluation",
       status: "active" as const,
       executionKind: "workflow" as const,
-      description: "Seeded Anthropic workflow for evaluating a compact semantic-family tool surface against the same local target and evidence pipeline.",
+      description: "Seeded workflow for evaluating a compact semantic-family tool surface against the same local target and evidence pipeline.",
       stages: [
         {
           id: "d6be6af5-fc56-42fa-a802-702d002b4bf6",
           label: "Compact Evaluation",
-          agentId: seededAgentId("compact-evaluator"),
+          agentId: seededAgentId("generic-pentester"),
           objective:
             "Run one evidence-backed compact-family evaluation across the configured target. Use only the semantic family tools for collection and validation, think in terms of family capabilities rather than tool brands, register concrete findings through report_finding, and end only through complete_run.",
           ...defaultWorkflowStagePrompts,
@@ -560,12 +524,12 @@ export function getSeededWorkflowDefinitions() {
       name: "Attack Vector Planning",
       status: "active" as const,
       executionKind: "workflow" as const,
-      description: "Seeded Anthropic workflow for mapping attack vectors across the semantic-family tool surface and linking plausible vulnerabilities through the evidence graph.",
+      description: "Seeded workflow for mapping attack vectors across the semantic-family tool surface and linking plausible vulnerabilities through the evidence graph.",
       stages: [
         {
           id: "05a7fec4-548b-4857-a09f-7e4d81bb3f35",
           label: "Attack Vector Planning",
-          agentId: seededAgentId("attack-vector-planner"),
+          agentId: seededAgentId("generic-pentester"),
           objective:
             "Run one evidence-backed attack-vector planning pass across the configured target. Use only the semantic family tools for discovery and validation, link plausible vulnerabilities into explicit attack paths, register supported and clearly qualified suspected findings through report_finding, and end only through complete_run.",
           stageSystemPrompt: attackVectorPlanningStagePrompt,

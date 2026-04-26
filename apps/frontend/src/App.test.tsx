@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultWorkflowStageSystemPrompt,
   defaultWorkflowTaskPromptTemplate,
-  fixedAiRuntimeLabel,
   type AiAgent,
   type AiTool,
   type AuthSessionResponse,
@@ -12,6 +11,8 @@ import {
   type WorkflowRun
 } from "@synosec/contracts";
 import App from "@/app/App";
+
+const runtimeLabel = "Ollama · qwen3:8b";
 
 function createPaginatedPayload<T>(key: string, items: T[]) {
   return {
@@ -361,6 +362,19 @@ describe("App", () => {
         }
         return new Response(JSON.stringify(authSession));
       }
+      if (url === "/api/health" && method === "GET") {
+        return new Response(JSON.stringify({
+          status: "ok",
+          service: "synosec-backend",
+          timestamp: "2026-04-12T12:00:00.000Z",
+          runtime: {
+            provider: "local",
+            providerName: "Ollama",
+            model: "qwen3:8b",
+            label: runtimeLabel
+          }
+        }));
+      }
       if (url === "/api/auth/logout" && method === "POST") {
         authSession = {
           authEnabled: true,
@@ -460,7 +474,7 @@ describe("App", () => {
     await screen.findByRole("heading", { name: "Targets" });
     fireEvent.click(screen.getAllByRole("link", { name: "AI Agents" })[0]!);
     expect(await screen.findByRole("heading", { name: "AI Agents" })).toBeInTheDocument();
-    expect((await screen.findAllByText(fixedAiRuntimeLabel)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(runtimeLabel)).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getAllByRole("link", { name: "AI Tools" })[0]!);
     expect(await screen.findByRole("heading", { name: "AI Tools" })).toBeInTheDocument();

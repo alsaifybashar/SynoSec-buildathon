@@ -1,8 +1,10 @@
 import {
-  fixedAiRuntimeLabel,
+  apiRoutes,
+  healthResponseSchema,
   type AiAgent,
   type AiTool,
   type CreateAiAgentBody,
+  type HealthResponse,
   type ListAiToolsResponse
 } from "@synosec/contracts";
 import {
@@ -21,12 +23,16 @@ import { fetchJson } from "@/shared/lib/api";
 import type { AiAgentsQuery } from "@/shared/lib/resource-client";
 
 async function loadAiAgentContext(): Promise<AiAgentDefinitionContext> {
-  const toolsPayload = await fetchJson<ListAiToolsResponse>("/api/ai-tools?page=1&pageSize=100&sortBy=name&sortDirection=asc");
+  const [toolsPayload, healthPayload] = await Promise.all([
+    fetchJson<ListAiToolsResponse>("/api/ai-tools?page=1&pageSize=100&sortBy=name&sortDirection=asc"),
+    fetchJson<HealthResponse>(apiRoutes.health)
+  ]);
   const tools = Array.isArray(toolsPayload["tools"]) ? toolsPayload["tools"] as AiTool[] : [];
+  const health = healthResponseSchema.parse(healthPayload);
 
   return {
     tools,
-    runtimeLabel: fixedAiRuntimeLabel
+    runtimeLabel: health.runtime.label
   };
 }
 

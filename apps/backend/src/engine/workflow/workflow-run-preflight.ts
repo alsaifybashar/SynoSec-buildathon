@@ -152,10 +152,15 @@ export class WorkflowRunPreflight implements WorkflowPreflightReader {
   }
 
   private loadRuntimeForExecution(_executionKind: Workflow["executionKind"]) {
-    if (!this.ports.fixedAnthropicRuntime.apiKey) {
+    const runtime = this.ports.fixedAiRuntime;
+    if (runtime.provider === "anthropic" && !runtime.apiKey) {
       throw new RequestError(400, "Anthropic workflow execution requires an API key.");
     }
 
-    return this.ports.fixedAnthropicRuntime;
+    if (runtime.provider === "local" && !runtime.baseUrl) {
+      throw new RequestError(400, "Local workflow execution requires LLM_LOCAL_BASE_URL.");
+    }
+
+    return runtime;
   }
 }

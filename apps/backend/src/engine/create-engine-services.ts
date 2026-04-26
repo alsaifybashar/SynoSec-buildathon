@@ -4,7 +4,7 @@ import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
 import { createToolRuntime, type AiToolsRepository, type ToolRuntime } from "@/modules/ai-tools/index.js";
 import type { TargetsRepository } from "@/modules/targets/index.js";
 import { WorkflowRunArtifactsService, type WorkflowsRepository } from "@/modules/workflows/index.js";
-import { loadFixedAnthropicRuntime } from "@/shared/config/fixed-ai-runtime.js";
+import { loadFixedAiRuntime } from "@/shared/config/fixed-ai-runtime.js";
 
 export type EngineDependencies = {
   targetsRepository: TargetsRepository;
@@ -17,7 +17,7 @@ export type EngineDependencies = {
 
 export function createEngineServices(dependencies: EngineDependencies) {
   const toolRuntime = dependencies.toolRuntime ?? createToolRuntime(dependencies.aiToolsRepository);
-  const fixedAnthropicRuntime = loadFixedAnthropicRuntime();
+  const fixedAiRuntime = loadFixedAiRuntime();
   const workflowRunEventStream = new WorkflowRunStream();
   const workflowExecutionEngine = new WorkflowExecutionEngineService({
     workflowsRepository: dependencies.workflowsRepository,
@@ -27,7 +27,7 @@ export function createEngineServices(dependencies: EngineDependencies) {
     toolRuntime,
     workflowRunStream: workflowRunEventStream,
     executionReportsService: dependencies.executionReportsService,
-    fixedAnthropicRuntime
+    fixedAiRuntime
   });
   const workflowRunArtifactsService = new WorkflowRunArtifactsService(
     dependencies.workflowsRepository,

@@ -1,25 +1,54 @@
-"VulnCart" — A fake e-commerce checkout system
+# Local Cyber Range Targets
 
-Four services in one docker-compose:
-Gateway (nginx/Express) — public-facing reverse proxy that routes to internal services. Trusts X-Internal-User headers from downstream without validation, so if you can reach a backend directly you can impersonate any user.
+This repository ships two intentionally vulnerable local targets for safe validation in development environments only.
 
-Auth Service (Node/Python) — issues JWTs with a weak secret ("secret123"), doesn't validate token expiry properly, and has a user enumeration flaw on the login endpoint.
+## `demos/vulnerable-app`
 
-Order Service (Python/Go) — accepts orders, talks to the payment service internally. Has a classic BOLA — any authenticated user can view/modify any order by changing the ID. Also has an SSRF flaw where the "webhook callback URL" field can be pointed at internal services.
+Purpose:
+- broad evidence-backed web finding validation
+- multiple independent critical findings
+- useful for basic workflow, transcript, and reporting checks
 
-Payment Service (Node) — supposed to be internal-only, but the network policy is missing so it's reachable from any container. Runs as root, has a debug endpoint with command injection via a "log_level" parameter.
+Included weaknesses:
+- SQL injection simulation on `/login`
+- unauthenticated admin panel on `/admin`
+- sensitive user data exposure on `/api/users`
+- directory listing simulation on `/files`
+- reflected XSS on `/search`
+- verbose errors, missing headers, and exposed version banners
 
-The intended attack chain your agents should discover:
-Weak JWT → forge a token → enumerate users → access another user's order via BOLA → use the SSRF in the webhook field to hit the payment service's debug endpoint → command injection → root shell in the payment container → read the mounted secrets.
+This target is intentionally noisy. Several findings are independently severe, so it is best for validating direct finding detection rather than path-first prioritization.
 
-Each vulnerability alone is medium severity. Chained together across services, it's a full compromise. That's exactly the story you want to tell in the demo.
+## `demos/attack-path-target`
 
+Purpose:
+- validate attack-path-first workflow behavior
+- ensure critical impact only appears when linked findings are combined
+- provide two equal-strength paths to the same protected secret
 
-"VulnCart" — Vulnerabilities mapped to OSI layers
-Layer 7 — Application: The BOLA on the order service, weak JWT signing, user enumeration, and the SSRF webhook flaw. This is where Playwright and API-level agents operate naturally.
-Layer 6 — Presentation: The auth service accepts both JSON and XML input but the XML parser has XXE enabled. Malformed content-type headers bypass input validation on the gateway. JWT tokens are base64-encoded but not encrypted, leaking user roles in the payload.
-Layer 5 — Session: JWT tokens never expire. Session fixation is possible because the auth service doesn't rotate tokens after privilege changes. The gateway maintains sticky sessions that can be hijacked by replaying a cookie across services.
-Layer 4 — Transport: The payment service listens on an unencrypted HTTP port internally (no mTLS between services). The debug endpoint accepts connections on a non-standard port that isn't covered by health checks or monitoring.
-Layer 3 — Network: No network segmentation between containers — every service can reach every other service directly. The payment service responds to pings and exposes its internal IP, enabling network mapping from any compromised container.
-Layer 2 — Data Link: Containers share a default Docker bridge network with ARP visible between them, enabling ARP spoofing from a compromised container to intercept traffic between other services.
-Layer 1 — Physical (simulated): The payment container has the Docker socket mounted (simulating host access), and /proc is readable, leaking host-level environment variables and mounted volume paths.
+Path A:
+1. `/release-board` leaks the active build id and support case reference.
+2. `/api/support/cases/:caseRef?workspace=...` exposes approval notes through an IDOR-style case lookup.
+3. `/api/release/secrets?build=...&approval=...` returns release secrets when the leaked approval token is paired with the leaked build id.
+
+Path B:
+1. `/diagnostics/export` leaks the active build id, approver email, and nonce seed.
+2. `/api/auth/magic-link` issues a release-manager session when the leaked nonce is replayed with the leaked approver email.
+3. `/api/release/secrets?build=...&session=...` returns the same release secrets when the build id is paired with the forged manager session.
+
+Distractors:
+- reflected search on `/search`
+- verbose metadata on `/health`
+- exposed server and framework headers
+
+Design rules:
+- no standalone endpoint should be critically exploitable by itself
+- each intermediate issue should be evidence-rich but incomplete on its own
+- the final secret access should fail unless a real prerequisite from the path is supplied
+
+## Operational Notes
+
+- Both targets are started by `make dev`, `make dev-services`, and `make docker-up`.
+- `demos/vulnerable-app` listens on `http://localhost:8888`.
+- `demos/attack-path-target` listens on `http://localhost:8890`.
+- These applications are for local demo use only and must never be exposed to the internet.

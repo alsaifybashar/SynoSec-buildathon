@@ -23,7 +23,7 @@ import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
 import type { TargetsRepository } from "@/modules/targets/index.js";
 import type { WorkflowsRepository } from "@/modules/workflows/workflows.repository.js";
-import type { FixedAnthropicRuntime } from "@/shared/config/fixed-ai-runtime.js";
+import type { FixedAiRuntime } from "@/shared/config/fixed-ai-runtime.js";
 import type { EffectiveExecutionConstraintSet } from "./execution-constraints.js";
 import type { WorkflowRunStream } from "./workflow-run-stream.js";
 
@@ -42,7 +42,7 @@ export interface WorkflowRuntimePorts {
   toolRuntime: ToolRuntime;
   workflowRunStream: WorkflowRunStream;
   executionReportsService: ExecutionReportsService;
-  fixedAnthropicRuntime: FixedAnthropicRuntime;
+  fixedAiRuntime: FixedAiRuntime;
 }
 
 export type RuntimeStartContext = {
@@ -69,7 +69,7 @@ export type StageExecutionTarget = {
 
 export type StageDependencies = {
   agent: NonNullable<Awaited<ReturnType<AiAgentsRepository["getById"]>>>;
-  runtime: FixedAnthropicRuntime;
+  runtime: FixedAiRuntime;
   target: StageExecutionTarget;
   tools: AiTool[];
   excludedTools: Array<{
@@ -91,6 +91,8 @@ export type ExecutedToolResult = {
   observationSummaries: string[];
   outputPreview: string;
   fullOutput: string;
+  commandPreview: string;
+  exitCode?: number;
   usedToolId: string;
   usedToolName: string;
   fallbackUsed: boolean;

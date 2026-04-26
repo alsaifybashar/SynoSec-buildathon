@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { localDemoTargetDefaults, type Target } from "@synosec/contracts";
+import { localAttackPathTargetDefaults, localDemoTargetDefaults, type Target } from "@synosec/contracts";
 import { TargetsPage } from "@/features/targets/page";
 
 const target: Target = {
@@ -26,16 +26,27 @@ const seededTarget: Target = {
   updatedAt: "2026-04-21T00:00:00.000Z"
 };
 
+const attackPathTarget: Target = {
+  id: "target-3",
+  name: "Local Attack Path Target",
+  baseUrl: localAttackPathTargetDefaults.hostUrl,
+  environment: "development",
+  status: "active",
+  lastScannedAt: null,
+  createdAt: "2026-04-20T00:00:00.000Z",
+  updatedAt: "2026-04-21T00:00:00.000Z"
+};
+
 function createFetchMock() {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
 
     if (url.startsWith("/api/targets?")) {
       return new Response(JSON.stringify({
-        targets: [seededTarget, target],
+        targets: [seededTarget, attackPathTarget, target],
         page: 1,
         pageSize: 25,
-        total: 2,
+        total: 3,
         totalPages: 1
       }));
     }
@@ -46,6 +57,10 @@ function createFetchMock() {
 
     if (url === `/api/targets/${seededTarget.id}`) {
       return new Response(JSON.stringify(seededTarget));
+    }
+
+    if (url === `/api/targets/${attackPathTarget.id}`) {
+      return new Response(JSON.stringify(attackPathTarget));
     }
 
     throw new Error(`Unhandled request: ${url}`);
@@ -90,6 +105,24 @@ describe("TargetsPage", () => {
     fireEvent.focus((await screen.findAllByRole("button", { name: "Show seeded target vulnerabilities" }))[0]);
     expect(await screen.findByRole("tooltip")).toHaveTextContent("SQL injection simulation on /login");
     expect(screen.getByRole("tooltip")).toHaveTextContent("Sensitive data exposure on /api/users");
+  });
+
+  it("shows attack-path guidance for the chained local lab target", async () => {
+    vi.stubGlobal("fetch", createFetchMock());
+
+    render(
+      <MemoryRouter initialEntries={["/targets"]}>
+        <TargetsPage
+          onNavigateToList={() => {}}
+          onNavigateToCreate={() => {}}
+          onNavigateToDetail={() => {}}
+        />
+      </MemoryRouter>
+    );
+
+    fireEvent.focus((await screen.findAllByRole("button", { name: "Show seeded target vulnerabilities" }))[1]);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Support case detail IDOR leaks one-time release approval tokens");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Weak magic-link issuance creates release-manager sessions");
   });
 
   it("renders detail state through the controller port", async () => {

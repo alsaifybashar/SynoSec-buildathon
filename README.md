@@ -54,7 +54,8 @@ flowchart LR
 - `apps/connector`: Worker process for executing tool jobs from a different network position than the backend.
 - `packages/contracts`: Shared TypeScript contracts and Zod schemas for scans, vulnerabilities, OSI coverage, tool runs, observations, workflow events, reports, and escalation routes.
 - `scripts/tools`: Bash-backed tool implementations used by the broker and seeded AI-tool definitions.
-- `demos/vulnerable-app`: Controlled vulnerable target used as the cyber range for safe validation.
+- `demos/vulnerable-app`: Controlled vulnerable target used as the general cyber range for safe validation.
+- `demos/attack-path-target`: Controlled vulnerable target focused on chained attack-path validation.
 
 ## Vulnerability Discovery Method
 
@@ -196,18 +197,12 @@ Coverage is recorded as `covered`, `partially_covered`, or `not_covered`. A laye
 
 ## Cyber Range Evaluation
 
-The repository includes a safe target under `demos/vulnerable-app`. It is an intentionally vulnerable Express application that exposes realistic web weaknesses for controlled testing:
+The repository includes two safe local targets for controlled testing:
 
-- SQL injection simulation in `/login`.
-- Unauthenticated administrator panel at `/admin`.
-- Verbose debug output and internal service hints.
-- Missing security headers.
-- Exposed framework and server headers.
-- Sensitive user data from `/api/users`.
-- Directory listing simulation at `/files`.
-- Reflected XSS simulation at `/search`.
+- `demos/vulnerable-app`: an intentionally vulnerable Express application with standalone web flaws such as SQL injection, exposed admin access, sensitive API data, directory listing, and reflected XSS.
+- `demos/attack-path-target`: an intentionally vulnerable Express application where critical impact exists only when multiple lower-severity issues are chained into an attack path.
 
-The cyber range exists to evaluate whether the agents can move from reconnaissance to evidence-backed conclusions without touching a real third-party system.
+The cyber range exists to evaluate whether agents can move from reconnaissance to evidence-backed conclusions and derived attack paths without touching a real third-party system.
 
 ```mermaid
 flowchart TD
@@ -253,8 +248,8 @@ At runtime, a typical vulnerability discovery pass follows this path:
 - Docker and Docker Compose
 - Node.js 20 or newer
 - `pnpm`
-- Optional Anthropic API key for hosted high-reasoning agents
-- Optional local model runtime for local-provider execution
+- Anthropic API key when `LLM_PROVIDER=anthropic`
+- Optional local model runtime such as Ollama when `LLM_PROVIDER=local`
 
 ### Quick Start with Docker
 
@@ -272,9 +267,9 @@ pnpm install
 make dev
 ```
 
-Local development starts Postgres, the vulnerable target, and the host-mode backend and frontend. Attack-map and scan execution should be started from the UI rather than as an automatic background action during development startup.
+Local development starts Postgres, both local demo targets, and the host-mode backend and frontend. Attack-map and scan execution should be started from the UI rather than as an automatic background action during development startup.
 
-To use local inference, configure the local provider settings in `.env` and ensure the configured base URL is reachable by the backend. When `LOCAL_ENABLED=TRUE`, the Docker-backed development path can start Ollama and prepare the configured local model.
+Workflow execution now uses one backend-wide runtime selected by `LLM_PROVIDER`. Use `anthropic` with `ANTHROPIC_API_KEY` for hosted execution, or `local` with `LLM_LOCAL_BASE_URL` and `LLM_LOCAL_MODEL` for Ollama over its OpenAI-compatible `/v1` interface. When `LOCAL_ENABLED=TRUE`, the Docker-backed development path can start Ollama and prepare the configured local model.
 
 ### Endpoints
 
@@ -283,6 +278,7 @@ To use local inference, configure the local provider settings in `.env` and ensu
 | Frontend | `http://localhost:5173` |
 | Backend API | `http://localhost:3001` |
 | Vulnerable target | `http://localhost:8888` |
+| Attack-path target | `http://localhost:8890` |
 | Ollama, when enabled | `http://localhost:11434` |
 
 ### Common Commands
@@ -394,6 +390,7 @@ scripts/
   tools/         Bash tool implementations
 demos/
   vulnerable-app/ Controlled vulnerable target for evaluation
+  attack-path-target/ Controlled target for attack-path validation
 docs/
   *.md           Requirements, decisions, terminology, and feature notes
 ```
@@ -406,7 +403,7 @@ Additional project notes live under `docs/`:
 - `docs/requirements.md`: Security-stack and coverage requirements.
 - `docs/defensive-loop-contract.md`: Defensive-loop behavior and contracts.
 - `docs/strategy-flow-terminology.md`: Naming conventions for strategy maps, tactics, and escalation routes.
-- `docs/vulnerable-app-specification.md`: Cyber range concept and intended vulnerability coverage.
+- `docs/vulnerable-app-specification.md`: Local cyber range targets and intended vulnerability coverage.
 
 ## Security and Usage Boundaries
 

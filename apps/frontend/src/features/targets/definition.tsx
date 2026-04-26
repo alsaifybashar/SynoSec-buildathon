@@ -1,5 +1,6 @@
 import {
   apiRoutes,
+  localAttackPathTargetDefaults,
   localDemoTargetDefaults,
   type CreateTargetBody,
   type Target,
@@ -119,25 +120,45 @@ export function definedString(value: string | undefined) {
   return value ? { error: value } : {};
 }
 
-const seededTargetVulnerabilities = [
-  "SQL injection simulation on /login",
-  "Unauthenticated admin panel on /admin",
-  "Sensitive data exposure on /api/users",
-  "Directory listing simulation on /files",
-  "Reflected XSS on /search",
-  "Verbose errors and missing security headers"
+const seededTargetCatalog = [
+  {
+    hostUrl: localDemoTargetDefaults.hostUrl,
+    vulnerabilities: [
+      "SQL injection simulation on /login",
+      "Unauthenticated admin panel on /admin",
+      "Sensitive data exposure on /api/users",
+      "Directory listing simulation on /files",
+      "Reflected XSS on /search",
+      "Verbose errors and missing security headers"
+    ]
+  },
+  {
+    hostUrl: localAttackPathTargetDefaults.hostUrl,
+    vulnerabilities: [
+      "Public release board leaks build and support-case references",
+      "Support case detail IDOR leaks one-time release approval tokens",
+      "Diagnostics export leaks approver email and predictable nonce seed",
+      "Weak magic-link issuance creates release-manager sessions",
+      "Release secrets require chained build context plus approval or manager session",
+      "Distractors include reflected search and verbose health metadata"
+    ]
+  }
 ] as const;
 
-function isSeededLocalTarget(target: Pick<Target, "baseUrl" | "environment">) {
-  return target.baseUrl === localDemoTargetDefaults.hostUrl && target.environment === "development";
+function getSeededTargetDefinition(target: Pick<Target, "baseUrl" | "environment">) {
+  if (target.environment !== "development") {
+    return null;
+  }
+
+  return seededTargetCatalog.find((entry) => entry.hostUrl === target.baseUrl) ?? null;
 }
 
-function SeededTargetTooltipContent() {
+function SeededTargetTooltipContent({ vulnerabilities }: { vulnerabilities: readonly string[] }) {
   return (
     <div className="space-y-2">
       <p className="font-medium text-popover-foreground">Seeded lab target</p>
       <ul className="list-disc space-y-1 pl-4">
-        {seededTargetVulnerabilities.map((entry) => (
+        {vulnerabilities.map((entry) => (
           <li key={entry}>{entry}</li>
         ))}
       </ul>
@@ -145,7 +166,7 @@ function SeededTargetTooltipContent() {
   );
 }
 
-function SeededTargetHint() {
+function SeededTargetHint({ vulnerabilities }: { vulnerabilities: readonly string[] }) {
   return (
     <TooltipProvider delayDuration={150}>
       <Tooltip>
@@ -161,7 +182,7 @@ function SeededTargetHint() {
           </button>
         </TooltipTrigger>
         <TooltipContent className="max-w-80">
-          <SeededTargetTooltipContent />
+          <SeededTargetTooltipContent vulnerabilities={vulnerabilities} />
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -169,10 +190,11 @@ function SeededTargetHint() {
 }
 
 function TargetNameCell({ target }: { target: Target }) {
+  const seededDefinition = getSeededTargetDefinition(target);
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="font-medium text-foreground">{target.name}</span>
-      {isSeededLocalTarget(target) ? <SeededTargetHint /> : null}
+      {seededDefinition ? <SeededTargetHint vulnerabilities={seededDefinition.vulnerabilities} /> : null}
     </div>
   );
 }
@@ -236,8 +258,8 @@ export const targetsDefinition: CrudFeatureDefinition<
         <DetailSidebarItem label="Environment" hint="The deployment tier this target record represents.">
           <StatusBadge label={environmentLabels[item.environment]} className={environmentBadgeStyles[item.environment]} />
         </DetailSidebarItem>
-        {isSeededLocalTarget(item) ? (
-          <DetailSidebarItem label="Seeded vulnerabilities" hint={seededTargetVulnerabilities.join("\n")}>
+        {getSeededTargetDefinition(item) ? (
+          <DetailSidebarItem label="Seeded vulnerabilities" hint={getSeededTargetDefinition(item)!.vulnerabilities.join("\n")}>
             Known lab target
           </DetailSidebarItem>
         ) : null}

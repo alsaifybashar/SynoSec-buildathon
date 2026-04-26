@@ -83,7 +83,11 @@ const backendEnvSchema = z.object({
   backendPort: z.coerce.number().int().positive().default(3001),
   databaseUrl: z.string().min(1, "DATABASE_URL is required."),
   frontendUrl: z.string().url("FRONTEND_URL must be a valid URL."),
+  llmProvider: z.enum(["anthropic", "local"]).default("anthropic"),
   anthropicApiKey: z.string().optional(),
+  llmAnthropicModel: z.string().min(1).default("claude-haiku-4-5"),
+  llmLocalBaseUrl: z.string().url().optional(),
+  llmLocalModel: z.string().min(1).optional(),
   toolExecutionMode: z.enum(["local", "connector"]).default("local"),
   connectorSharedToken: z.string().min(1).optional(),
   authEnabled: z.boolean().default(false),
@@ -106,6 +110,32 @@ const backendEnvSchema = z.object({
   rateLimitApiWindowMs: z.coerce.number().int().min(1).default(60_000),
   rateLimitApiMax: z.coerce.number().int().min(1).default(60)
 }).superRefine((env, ctx) => {
+  if (env.llmProvider === "anthropic" && !env.anthropicApiKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["anthropicApiKey"],
+      message: "ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic."
+    });
+  }
+
+  if (env.llmProvider === "local") {
+    if (!env.llmLocalBaseUrl) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["llmLocalBaseUrl"],
+        message: "LLM_LOCAL_BASE_URL is required when LLM_PROVIDER=local."
+      });
+    }
+
+    if (!env.llmLocalModel) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["llmLocalModel"],
+        message: "LLM_LOCAL_MODEL is required when LLM_PROVIDER=local."
+      });
+    }
+  }
+
   if (env.toolExecutionMode === "connector" && !env.connectorSharedToken) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -183,7 +213,11 @@ export function loadBackendEnv(): BackendEnv {
     backendPort: process.env["BACKEND_PORT"] ?? "3001",
     databaseUrl: process.env["DATABASE_URL"],
     frontendUrl: process.env["FRONTEND_URL"],
+    llmProvider: process.env["LLM_PROVIDER"] ?? "anthropic",
     anthropicApiKey: process.env["ANTHROPIC_API_KEY"],
+    llmAnthropicModel: process.env["LLM_ANTHROPIC_MODEL"] ?? "claude-haiku-4-5",
+    llmLocalBaseUrl: process.env["LLM_LOCAL_BASE_URL"],
+    llmLocalModel: process.env["LLM_LOCAL_MODEL"],
     toolExecutionMode: process.env["TOOL_EXECUTION_MODE"] ?? "local",
     connectorSharedToken: process.env["CONNECTOR_SHARED_TOKEN"],
     authEnabled: parseBoolean(process.env["AUTH_ENABLED"], false),

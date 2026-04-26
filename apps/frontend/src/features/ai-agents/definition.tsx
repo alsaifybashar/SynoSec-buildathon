@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   apiRoutes,
-  fixedAiRuntimeLabel,
+  healthResponseSchema,
   type AiAgent,
   type AiAgentStatus,
   type AiTool,
-  type CreateAiAgentBody
+  type CreateAiAgentBody,
+  type HealthResponse
 } from "@synosec/contracts";
 import { aiAgentsResource } from "@/features/ai-agents/resource";
 import { aiAgentTransfer } from "@/features/ai-agents/transfer";
@@ -215,17 +216,28 @@ function ToolGrantCard({
 
 function useAiAgentDefinitionContext(): AiAgentDefinitionContext {
   const [tools, setTools] = useState<AiTool[]>([]);
+  const [runtimeLabel, setRuntimeLabel] = useState("Loading runtime...");
 
   useEffect(() => {
     let active = true;
 
-    void aiToolsResource.list({ ...aiToolsResource.defaultQuery, pageSize: 100 })
-      .then((toolResult) => {
+    void Promise.all([
+      aiToolsResource.list({ ...aiToolsResource.defaultQuery, pageSize: 100 }),
+      fetch(apiRoutes.health, { credentials: "include" }).then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Failed to load active runtime.");
+        }
+
+        return healthResponseSchema.parse(await response.json() as HealthResponse);
+      })
+    ])
+      .then(([toolResult, health]) => {
         if (!active) {
           return;
         }
 
         setTools(toolResult.items);
+        setRuntimeLabel(health.runtime.label);
       })
       .catch((error) => {
         toast.error("Failed to load agent dependencies", {
@@ -241,9 +253,9 @@ function useAiAgentDefinitionContext(): AiAgentDefinitionContext {
   return useMemo(
     () => ({
       tools,
-      runtimeLabel: fixedAiRuntimeLabel
+      runtimeLabel
     }),
-    [tools]
+    [runtimeLabel, tools]
   );
 }
 
@@ -292,7 +304,7 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
     renderSidebar: ({ item, context }) => (
       <>
         <DetailSidebarItem label="Status" hint="Lifecycle state of the agent definition in SynoSec.">{statusLabels[item.status]}</DetailSidebarItem>
-        <DetailSidebarItem label="Runtime" hint="All agent execution is hardcoded to the fixed Anthropic runtime.">{context.runtimeLabel}</DetailSidebarItem>
+        <DetailSidebarItem label="Runtime" hint="All workflow execution uses the backend's currently configured runtime.">{context.runtimeLabel}</DetailSidebarItem>
         <DetailSidebarItem label="Automatic tools" hint="Workflow-provided built-in tools that are available without being persisted on the agent.">
           {context.tools.filter((tool) => tool.executorType === "builtin").length}
         </DetailSidebarItem>
@@ -326,7 +338,7 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
             <DetailField label="Name" required hint="Operator-facing agent name shown when wiring workflows." {...definedString(errors["name"] as string | undefined)}>
               <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
             </DetailField>
-            <DetailField label="Runtime" hint="Workflow execution is fixed to Anthropic Sonnet 4.6 for every agent.">
+            <DetailField label="Runtime" hint="Workflow execution uses the backend's active provider and model for every agent.">
               <Input value={context.runtimeLabel} aria-label="Runtime" readOnly />
             </DetailField>
             <DetailField label="Description" hint="Optional summary of the agent's role or specialization." className="md:col-span-2">

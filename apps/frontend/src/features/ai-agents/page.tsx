@@ -1,4 +1,3 @@
-import { fixedAiRuntimeLabel } from "@synosec/contracts";
 import { aiAgentsController } from "@/features/ai-agents/ai-agents.controller";
 import { aiAgentsDefinition } from "@/features/ai-agents/definition";
 import { DetailLoadingState, DetailPage } from "@/shared/components/detail-page";
@@ -27,7 +26,7 @@ export function AiAgentsPage({
   const breadcrumbsLabel = aiAgentsDefinition.detail.breadcrumbsLabel ?? aiAgentsDefinition.list.title;
   const context = controller.contextState.context ?? {
     tools: [],
-    runtimeLabel: fixedAiRuntimeLabel
+    runtimeLabel: "Loading runtime..."
   };
 
   if (!agentId) {

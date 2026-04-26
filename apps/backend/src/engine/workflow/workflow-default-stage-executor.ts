@@ -1,10 +1,12 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { stepCountIs, streamText, tool as createSdkTool, type LanguageModel } from "ai";
 import type { Scan, Workflow, WorkflowLiveModelOutput, WorkflowReportedFinding, WorkflowRun, WorkflowStage, WorkflowStageResult, WorkflowTraceEvent } from "@synosec/contracts";
 import { getWorkflowReportedFindings, workflowFindingSubmissionSchema } from "@synosec/contracts";
 import { z } from "zod";
 import { createScan, getScan } from "@/engine/scans/index.js";
 import { RequestError } from "@/shared/http/request-error.js";
+import type { FixedAiRuntime } from "@/shared/config/fixed-ai-runtime.js";
 import { getSemanticFamilyDefinition } from "@/modules/ai-tools/index.js";
 import { ToolBroker } from "./broker/tool-broker.js";
 import { executeSemanticFamilyTool } from "./semantic-family-tool-executor.js";
@@ -426,7 +428,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     };
 
     const result = streamText({
-      model: this.createAnthropicLanguageModel(runtime.apiKey, runtime.model),
+      model: this.createLanguageModel(runtime),
       system: systemPrompt,
       prompt: "Proceed.",
       tools: {
@@ -675,12 +677,22 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       .join("\n\n");
   }
 
-  private createAnthropicLanguageModel(apiKey: string, model: string): LanguageModel {
-    const anthropic = createAnthropic({
-      apiKey
+  private createLanguageModel(runtime: FixedAiRuntime): LanguageModel {
+    if (runtime.provider === "anthropic") {
+      const anthropic = createAnthropic({
+        apiKey: runtime.apiKey
+      });
+
+      return anthropic(runtime.model);
+    }
+
+    const openai = createOpenAI({
+      baseURL: runtime.baseUrl,
+      apiKey: runtime.apiKey,
+      name: "ollama"
     });
 
-    return anthropic(model);
+    return openai(runtime.model);
   }
 
   private async ensureWorkflowScan(scan: Scan, targetId: string, agentId: string) {

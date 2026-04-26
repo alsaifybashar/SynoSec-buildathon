@@ -55,7 +55,7 @@ docker-up:
 	@printf "  Frontend: \033[36mhttp://localhost:%s\033[0m\n" "$${VITE_DEV_PORT:-5173}"
 	@printf "  Backend:  \033[36mhttp://localhost:%s\033[0m\n" "$${BACKEND_PORT:-3001}"
 	@printf "  Connector dispatch: \033[36m%s\033[0m\n" "$${TOOL_EXECUTION_MODE:-connector}"
-	@printf "  Target:   \033[36mhttp://localhost:8888\033[0m\n"
+	@printf "  Targets:  \033[36mhttp://localhost:8888\033[0m and \033[36mhttp://localhost:8890\033[0m\n"
 	@if [ "$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-FALSE}}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then \
 		printf "  Local LLM: \033[36mhttp://localhost:11434\033[0m\n"; \
 	fi
@@ -74,30 +74,56 @@ dev:
 
 free-dev-ports:
 	@set -e; \
+	repo_dir="$$(pwd)"; \
+	seen_pgids=""; \
 	for port in $(BACKEND_PORT) $(VITE_DEV_PORT); do \
 		pids=$$(lsof -tiTCP:$$port -sTCP:LISTEN 2>/dev/null || true); \
 		if [ -n "$$pids" ]; then \
 			printf "Freeing port %s (PID%s %s)\n" "$$port" "$$( [ $$(printf '%s\n' "$$pids" | wc -w) -gt 1 ] && printf s )" "$$pids"; \
-			kill $$pids; \
+			for pid in $$pids; do \
+				pgid=$$(ps -o pgid= -p "$$pid" 2>/dev/null | tr -d '[:space:]'); \
+				if [ -n "$$pgid" ] && ! printf '%s\n' "$$seen_pgids" | grep -Fx "$$pgid" >/dev/null 2>&1; then \
+					kill -TERM -- "-$$pgid" 2>/dev/null || kill "$$pid" 2>/dev/null || true; \
+					seen_pgids="$$seen_pgids\n$$pgid"; \
+				fi; \
+			done; \
 			sleep 1; \
 			stale_pids=$$(lsof -tiTCP:$$port -sTCP:LISTEN 2>/dev/null || true); \
 			if [ -n "$$stale_pids" ]; then \
 				printf "Force killing port %s listener%s %s\n" "$$port" "$$( [ $$(printf '%s\n' "$$stale_pids" | wc -w) -gt 1 ] && printf s )" "$$stale_pids"; \
-				kill -9 $$stale_pids; \
+				for pid in $$stale_pids; do \
+					pgid=$$(ps -o pgid= -p "$$pid" 2>/dev/null | tr -d '[:space:]'); \
+					if [ -n "$$pgid" ]; then \
+						kill -KILL -- "-$$pgid" 2>/dev/null || kill -9 "$$pid" 2>/dev/null || true; \
+					else \
+						kill -9 "$$pid" 2>/dev/null || true; \
+					fi; \
+				done; \
 			fi; \
 		fi; \
-	done
+	done; \
+	stale_repo_pids=$$(ps -eo pid=,args= | awk -v repo="$$repo_dir" 'index($$0, repo) && $$0 ~ /(concurrently|tsx|vite)/ { print $$1 }' || true); \
+	if [ -n "$$stale_repo_pids" ]; then \
+		printf "Cleaning up stale repo-local dev watchers: %s\n" "$$stale_repo_pids"; \
+		for pid in $$stale_repo_pids; do \
+			kill "$$pid" 2>/dev/null || true; \
+		done; \
+		sleep 1; \
+		for pid in $$stale_repo_pids; do \
+			kill -9 "$$pid" 2>/dev/null || true; \
+		done; \
+	fi
 
 dev-services:
 	@$(MAKE) check-docker-compose
 	@set -e; \
 	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-FALSE}}" | tr '[:upper:]' '[:lower:]'); \
 	if [ "$$local_enabled" = "false" ]; then \
-		$(DOCKER_COMPOSE) up -d postgres vulnerable-target; \
+		$(DOCKER_COMPOSE) up -d postgres vulnerable-target attack-path-target; \
 	else \
-		model_name=$${LLM_LOCAL_MODEL:-qwen3:1.7b}; \
+		model_name=$${LLM_LOCAL_MODEL:-qwen3:8b}; \
 		$(DOCKER_COMPOSE) rm -sf ollama ollama-init >/dev/null 2>&1 || true; \
-		$(DOCKER_COMPOSE) up -d postgres vulnerable-target ollama; \
+		$(DOCKER_COMPOSE) up -d postgres vulnerable-target attack-path-target ollama; \
 		until [ "$$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}starting{{end}}' synosec-buildathon-ollama-1 2>/dev/null)" = "healthy" ]; do \
 			sleep 1; \
 		done; \

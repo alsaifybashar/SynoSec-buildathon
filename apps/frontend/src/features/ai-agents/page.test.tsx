@@ -1,8 +1,10 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fixedAiRuntimeLabel, type AiAgent, type AiTool } from "@synosec/contracts";
+import { type AiAgent, type AiTool } from "@synosec/contracts";
 import { AiAgentsPage } from "@/features/ai-agents/page";
+
+const runtimeLabel = "Ollama · qwen3:8b";
 
 const familyTool: AiTool = {
   id: "tool-family-1",
@@ -69,6 +71,20 @@ function createFetchMock() {
       }));
     }
 
+    if (url === "/api/health") {
+      return new Response(JSON.stringify({
+        status: "ok",
+        service: "synosec-backend",
+        timestamp: "2026-04-21T00:00:00.000Z",
+        runtime: {
+          provider: "local",
+          providerName: "Ollama",
+          model: "qwen3:8b",
+          label: runtimeLabel
+        }
+      }));
+    }
+
     if (url.startsWith("/api/ai-agents?")) {
       return new Response(JSON.stringify({
         agents: [agent],
@@ -106,7 +122,7 @@ describe("AiAgentsPage", () => {
     );
 
     expect((await screen.findAllByText("Recon Agent")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(fixedAiRuntimeLabel).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(runtimeLabel).length).toBeGreaterThan(0);
   });
 
   it("renders grouped tools without exposing prompt editing", async () => {
