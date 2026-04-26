@@ -84,10 +84,10 @@ import {
 
 export const localApplicationId = "5ecf4a8e-df5f-4945-a7e1-230ef43eac80";
 export const localAttackPathApplicationId = "71ddf550-989e-49c2-8567-8521ebea65b8";
+export const localFullStackApplicationId = "b21f6edc-6524-4d67-9f3a-8b5dfef6f6f7";
 export const portfolioApplicationId = "1f92a3d7-4f70-4950-b750-9bf74c6f3591";
 export const securePentApplicationId = "4d8e9e0a-bfd4-4b24-8fb9-8656b511a2b8";
 export const osiSingleAgentWorkflowId = "8b57f0e7-1dd7-4d6a-8db5-c4ff7be80a21";
-export const osiCompactFamilyWorkflowId = "0e8e3912-c48f-4c34-9ac0-c54ec70df3f6";
 export const attackVectorPlanningWorkflowId = "9b59b237-c956-44db-aab0-a46b9f4bf8b3";
 export const bashSingleToolWorkflowId = "6b8d087e-43bc-48d8-8e66-a167f8d9f5cb";
 export const portfolioEvidenceGraphWorkflowId = "5edb1601-27cf-4a87-b7d4-a50873f5d985";
@@ -122,6 +122,83 @@ const attackVectorPlanningStagePrompt = [
   "Every handoff attack path must reference returned finding ids.",
   "Separate confirmed findings from unproven attack-path outcomes.",
   "Present recommended next steps as validation work unless compromise was directly observed."
+].join("\n");
+
+const bashAttackPathStagePrompt = [
+  "Evaluate the target’s cybersecurity with an attack-path-first approach.",
+  "",
+  "Your primary goal is to identify whether multiple lower-severity weaknesses can be chained to reach a protected asset,",
+  "privileged action, sensitive secret, account/session, internal service, or production-impacting capability.",
+  "",
+  "Start by mapping the application:",
+  "- Identify exposed pages, APIs, parameters, forms, and linked resources.",
+  "- Look for leaked identifiers, tokens, emails, build IDs, case IDs, workspace names, nonce values, session hints, feature",
+  "flags, internal hostnames, or operational metadata.",
+  "- Identify protected or high-impact endpoints and determine what prerequisites they require.",
+  "",
+  "Prioritize findings that act as attack-path steps:",
+  "- Public metadata that reveals required inputs for another endpoint.",
+  "- IDOR or weak object lookup where public identifiers unlock private records.",
+  "- Weak authentication or recovery flows where leaked values can create sessions.",
+  "- Authorization checks that depend only on guessable, leaked, or client-supplied values.",
+  "- Endpoints that return secrets, tokens, privileged state, deployment data, or administrative capabilities only after",
+  "chained prerequisites are supplied.",
+  "",
+  "Do not stop at standalone observations if they may be chain inputs.",
+  "For each promising finding, ask:",
+  "1. What value or capability did this expose?",
+  "2. What later endpoint could use it?",
+  "3. Can I validate the transition with a concrete request?",
+  "4. Can I reach a higher-impact outcome by combining findings?",
+  "",
+  "Validation requirements:",
+  "- Validate each reported finding with concrete request/response evidence.",
+  "- Validate attack vectors by proving that output from one step is accepted by the next step.",
+  "- Prefer a completed chain over isolated findings.",
+  "- Report standalone issues like reflected XSS, missing headers, verbose health checks, or exposed framework versions only if",
+  "they materially contribute to a chain or no stronger chain exists.",
+  "- Do not inflate severity for a standalone issue when the source evidence only proves a low- or medium-impact condition.",
+  "",
+  "Use targeted shell commands and available tools to gather evidence.",
+  "Log progress as you discover surfaces, hypotheses, validation attempts, and confirmed transitions.",
+  "Map progress with nodes/findings and attack graph tools.",
+  "",
+  "When reporting:",
+  "- Prefer at most four strong findings.",
+  "- Include the role of each finding in the attack path: prerequisite leak, transition weakness, session creation,",
+  "authorization bypass, or final impact.",
+  "- Include attack vectors between existing finding IDs when one finding enables exploitation of another.",
+  "- If a complete path is proven, include the final protected asset or action reached.",
+  "- If a suspected chain cannot be completed, report what was proven and what blocked completion without inventing missing",
+  "steps.",
+  "",
+  "Avoid treating scanner-friendly issues as the main result unless they lead somewhere.",
+  "Missing headers, reflected input, version disclosure, health metadata, and generic information disclosure are supporting",
+  "evidence, not primary findings, unless you prove concrete downstream impact.",
+  "",
+  "Suggested attack-path workflow:",
+  "1. Crawl root and linked pages.",
+  "2. Extract candidate artifacts: IDs, tokens, emails, nonces, build names, workspace names, case refs.",
+  "3. Probe likely API routes using discovered artifacts.",
+  "4. Identify protected endpoints and required parameters from errors, hints, forms, and route behavior.",
+  "5. Reuse leaked artifacts against those endpoints.",
+  "6. Confirm whether the chain reaches secrets, sessions, privileged actions, or sensitive records.",
+  "7. Report findings and vectors only after evidence proves each transition.",
+  "",
+  "Avoid treating scanner-friendly issues as the main result unless they lead somewhere.",
+  "Missing headers, reflected input, version disclosure, health metadata, and generic information disclosure are supporting evidence, not primary findings, unless you prove concrete downstream impact.",
+  "",
+  "Suggested attack-path workflow:",
+  "1. Crawl root and linked pages.",
+  "2. Extract candidate artifacts: IDs, tokens, emails, nonces, build names, workspace names, case refs.",
+  "3. Probe likely API routes using discovered artifacts.",
+  "4. Identify protected endpoints and required parameters from errors, hints, forms, and route behavior.",
+  "5. Reuse leaked artifacts against those endpoints.",
+  "6. Confirm whether the chain reaches secrets, sessions, privileged actions, or sensitive records.",
+  "7. Report findings and vectors only after evidence proves each transition.",
+  "",
+  "Available dependencies:",
+  "amass, arjun, autorecon, bash, binwalk, bulk_extractor, burp, checksec, cipher-identifier, crackmapexec, curl, dalfox, dirb, dirsearch, dnsenum, enum4linux, enum4linux-ng, evil-winrm, exiftool, feroxbuster, ffuf, fierce, foremost, gau, gdb, ghidra, gobuster, hakrawler, hash-identifier, hashcat, httpx, hydra, john, katana, kube-bench, kube-hunter, masscan, medusa, msfconsole, nc, ncat, nikto, nmap, node, nuclei, nxc, objdump, openssl, ophcrack, paramspider, patator, prowler, r2, responder, rustscan, scalpel, scout, sqlmap, steghide, strings, subfinder, sublist3r, theHarvester, trivy, volatility, waybackurls, whatweb, wpscan"
 ].join("\n");
 
 const attackPathSemanticFamilyToolIds = [
@@ -350,19 +427,80 @@ export const seededRoleDefinitions = [
     description: "Proof-of-concept agent with a single seeded bash execution tool.",
     systemPrompt:
       [
-        "Role and goal:",
-        "Execute bounded project tasks by calling the single bash tool with structured arguments.",
+        "Evaluate the target’s cybersecurity with an attack-path-first approach.",
         "",
-        "Scope and safety boundaries:",
-        "Only use the exposed bash tool for execution and keep commands focused on the current project objective.",
+        "Your primary goal is to identify whether multiple lower-severity weaknesses can be chained to reach a protected asset,",
+        "privileged action, sensitive secret, account/session, internal service, or production-impacting capability.",
         "",
-        "Evidence and reporting requirements:",
-        "Write bash source in the `command` argument.",
-        "Put execution controls in separate fields when needed: `cwd`, `timeout_ms`, `env`, `stdin`.",
-        "Use log_progress for concise status updates and report_finding for structured outputs when evidence should be persisted.",
+        "Start by mapping the application:",
+        "- Identify exposed pages, APIs, parameters, forms, and linked resources.",
+        "- Look for leaked identifiers, tokens, emails, build IDs, case IDs, workspace names, nonce values, session hints, feature",
+        "flags, internal hostnames, or operational metadata.",
+        "- Identify protected or high-impact endpoints and determine what prerequisites they require.",
         "",
-        "Blocked or failed behavior:",
-        "When command execution fails, preserve the failure context and avoid presenting partial success as completion."
+        "Prioritize findings that act as attack-path steps:",
+        "- Public metadata that reveals required inputs for another endpoint.",
+        "- IDOR or weak object lookup where public identifiers unlock private records.",
+        "- Weak authentication or recovery flows where leaked values can create sessions.",
+        "- Authorization checks that depend only on guessable, leaked, or client-supplied values.",
+        "- Endpoints that return secrets, tokens, privileged state, deployment data, or administrative capabilities only after",
+        "chained prerequisites are supplied.",
+        "",
+        "Do not stop at standalone observations if they may be chain inputs.",
+        "For each promising finding, ask:",
+        "1. What value or capability did this expose?",
+        "2. What later endpoint could use it?",
+        "3. Can I validate the transition with a concrete request?",
+        "4. Can I reach a higher-impact outcome by combining findings?",
+        "",
+        "Validation requirements:",
+        "- Validate each reported finding with concrete request/response evidence.",
+        "- Validate attack vectors by proving that output from one step is accepted by the next step.",
+        "- Prefer a completed chain over isolated findings.",
+        "- Report standalone issues like reflected XSS, missing headers, verbose health checks, or exposed framework versions only if",
+        "they materially contribute to a chain or no stronger chain exists.",
+        "- Do not inflate severity for a standalone issue when the source evidence only proves a low- or medium-impact condition.",
+        "",
+        "Use targeted shell commands and available tools to gather evidence.",
+        "Log progress as you discover surfaces, hypotheses, validation attempts, and confirmed transitions.",
+        "Map progress with nodes/findings and attack graph tools.",
+        "",
+        "When reporting:",
+        "- Prefer at most four strong findings.",
+        "- Include the role of each finding in the attack path: prerequisite leak, transition weakness, session creation,",
+        "authorization bypass, or final impact.",
+        "- Include attack vectors between existing finding IDs when one finding enables exploitation of another.",
+        "- If a complete path is proven, include the final protected asset or action reached.",
+        "- If a suspected chain cannot be completed, report what was proven and what blocked completion without inventing missing",
+        "steps.",
+        "",
+        "Avoid treating scanner-friendly issues as the main result unless they lead somewhere.",
+        "Missing headers, reflected input, version disclosure, health metadata, and generic information disclosure are supporting",
+        "evidence, not primary findings, unless you prove concrete downstream impact.",
+        "",
+        "Suggested attack-path workflow:",
+        "1. Crawl root and linked pages.",
+        "2. Extract candidate artifacts: IDs, tokens, emails, nonces, build names, workspace names, case refs.",
+        "3. Probe likely API routes using discovered artifacts.",
+        "4. Identify protected endpoints and required parameters from errors, hints, forms, and route behavior.",
+        "5. Reuse leaked artifacts against those endpoints.",
+        "6. Confirm whether the chain reaches secrets, sessions, privileged actions, or sensitive records.",
+        "7. Report findings and vectors only after evidence proves each transition.",
+        "",
+        "Avoid treating scanner-friendly issues as the main result unless they lead somewhere.",
+        "Missing headers, reflected input, version disclosure, health metadata, and generic information disclosure are supporting evidence, not primary findings, unless you prove concrete downstream impact.",
+        "",
+        "Suggested attack-path workflow:",
+        "1. Crawl root and linked pages.",
+        "2. Extract candidate artifacts: IDs, tokens, emails, nonces, build names, workspace names, case refs.",
+        "3. Probe likely API routes using discovered artifacts.",
+        "4. Identify protected endpoints and required parameters from errors, hints, forms, and route behavior.",
+        "5. Reuse leaked artifacts against those endpoints.",
+        "6. Confirm whether the chain reaches secrets, sessions, privileged actions, or sensitive records.",
+        "7. Report findings and vectors only after evidence proves each transition.",
+        "",
+        "Available dependencies:",
+        "amass, arjun, autorecon, bash, binwalk, bulk_extractor, burp, checksec, cipher-identifier, crackmapexec, curl, dalfox, dirb, dirsearch, dnsenum, enum4linux, enum4linux-ng, evil-winrm, exiftool, feroxbuster, ffuf, fierce, foremost, gau, gdb, ghidra, gobuster, hakrawler, hash-identifier, hashcat, httpx, hydra, john, katana, kube-bench, kube-hunter, masscan, medusa, msfconsole, nc, ncat, nikto, nmap, node, nuclei, nxc, objdump, openssl, ophcrack, paramspider, patator, prowler, r2, responder, rustscan, scalpel, scout, sqlmap, steghide, strings, subfinder, sublist3r, theHarvester, trivy, volatility, waybackurls, whatweb, wpscan"
       ].join("\n"),
     toolIds: [
       "seed-agent-bash-command"
@@ -385,54 +523,6 @@ export function getSeededRoleDefinition(roleKey: SeededRoleKey) {
 
 export function getSeededWorkflowDefinitions() {
   return [
-    {
-      id: osiCompactFamilyWorkflowId,
-      name: "Compact Capability Evaluation",
-      status: "active" as const,
-      executionKind: "workflow" as const,
-      description: "Default workflow for evaluating a compact capability-level tool surface against the same local target and evidence pipeline.",
-      stages: [
-        {
-          id: "d6be6af5-fc56-42fa-a802-702d002b4bf6",
-          label: "Compact Evaluation",
-          agentId: seededAgentId("generic-pentester"),
-          objective:
-            "Run one evidence-backed compact capability evaluation across the configured target. Think in terms of assessment intent rather than tool brands, identify concrete supported weaknesses, and produce a clear stage result.",
-          ...defaultWorkflowStagePrompts,
-          allowedToolIds: [
-            ...workflowBuiltinActionToolIds,
-            ...attackPathSemanticFamilyToolIds
-          ],
-          requiredEvidenceTypes: [],
-          findingPolicy: {
-            taxonomy: "typed-core-v1",
-            allowedTypes: [
-              "service_exposure",
-              "content_discovery",
-              "missing_security_header",
-              "tls_weakness",
-              "injection_signal",
-              "auth_weakness",
-              "sensitive_data_exposure",
-              "misconfiguration",
-              "other"
-            ]
-          },
-          completionRule: {
-            requireStageResult: true,
-            requireToolCall: true,
-            allowEmptyResult: false,
-            minFindings: 1,
-            requireReachableSurface: true,
-            requireEvidenceBackedWeakness: true,
-            requireOsiCoverageStatus: true,
-            requireChainedFindings: true
-          },
-          resultSchemaVersion: 1,
-          handoffSchema: null
-        }
-      ]
-    },
     {
       id: attackVectorPlanningWorkflowId,
       name: "Attack Vector Planning",
@@ -495,6 +585,7 @@ export function getSeededWorkflowDefinitions() {
           objective:
             "Complete the task by calling the bash tool with structured arguments. Put bash source in `command` and keep execution metadata in dedicated fields.",
           ...defaultWorkflowStagePrompts,
+          stageSystemPrompt: bashAttackPathStagePrompt,
           allowedToolIds: [
             ...workflowBuiltinActionToolIds,
             "seed-agent-bash-command"

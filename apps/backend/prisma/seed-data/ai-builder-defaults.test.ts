@@ -5,7 +5,6 @@ import {
   getSeededRoleDefinition,
   seededToolDefinitions,
   getSeededWorkflowDefinitions,
-  osiCompactFamilyWorkflowId,
   seededAgentId
 } from "./ai-builder-defaults.js";
 
@@ -17,26 +16,12 @@ const canonicalPromptSections = [
 ] as const;
 
 describe("getSeededWorkflowDefinitions", () => {
-  it("seeds the compact, attack-vector planning, and bash PoC workflows", () => {
+  it("seeds the attack-vector planning and bash PoC workflows", () => {
     const workflows = getSeededWorkflowDefinitions();
-    const compactWorkflow = workflows.find((candidate) => candidate.id === osiCompactFamilyWorkflowId);
     const planningWorkflow = workflows.find((candidate) => candidate.id === attackVectorPlanningWorkflowId);
     const bashWorkflow = workflows.find((candidate) => candidate.id === bashSingleToolWorkflowId);
 
-    expect(workflows).toHaveLength(3);
-    expect(compactWorkflow).toBeDefined();
-    expect(compactWorkflow?.executionKind).toBe("workflow");
-    expect(compactWorkflow?.stages.map((stage) => stage.label)).toEqual(["Compact Evaluation"]);
-    expect(compactWorkflow?.stages[0]?.agentId).toBe(seededAgentId("generic-pentester"));
-    expect(compactWorkflow?.stages[0]?.allowedToolIds).toEqual(expect.arrayContaining([
-      "builtin-http-surface-assessment",
-      "builtin-content-discovery",
-      "builtin-network-service-enumeration",
-      "builtin-web-vulnerability-audit"
-    ]));
-    expect(compactWorkflow?.stages[0]?.allowedToolIds).not.toContain("builtin-memory-forensics");
-    expect(compactWorkflow?.stages[0]?.objective).toContain("assessment intent rather than tool brands");
-    expect(compactWorkflow?.stages[0]?.objective).not.toContain("complete_run");
+    expect(workflows).toHaveLength(2);
 
     expect(planningWorkflow).toBeDefined();
     expect(planningWorkflow?.executionKind).toBe("workflow");
@@ -106,6 +91,12 @@ describe("getSeededWorkflowDefinitions", () => {
       "builtin-complete-run",
       "seed-agent-bash-command"
     ]);
+    expect(bashWorkflow?.stages[0]?.stageSystemPrompt).toContain(
+      "Evaluate the target’s cybersecurity with an attack-path-first approach."
+    );
+    expect(bashWorkflow?.stages[0]?.stageSystemPrompt).not.toContain(
+      "Complete the current workflow stage using the approved capability surface for this run."
+    );
     expect(bashWorkflow?.stages[0]?.completionRule).toMatchObject({
       requireToolCall: true,
       requireEvidenceBackedWeakness: false
@@ -114,8 +105,7 @@ describe("getSeededWorkflowDefinitions", () => {
 
   it("gives the seeded system prompts a canonical instruction shape", () => {
     const prompts = [
-      getSeededRoleDefinition("generic-pentester")?.systemPrompt,
-      getSeededRoleDefinition("bash-poc-agent")?.systemPrompt
+      getSeededRoleDefinition("generic-pentester")?.systemPrompt
     ];
 
     for (const prompt of prompts) {
@@ -149,8 +139,14 @@ describe("getSeededWorkflowDefinitions", () => {
 
     expect(bashAgent).toBeDefined();
     expect(bashAgent?.name).toBe("Bash PoC Agent");
-    expect(bashAgent?.systemPrompt).toContain("Write bash source in the `command` argument.");
-    expect(bashAgent?.systemPrompt).toContain("`cwd`, `timeout_ms`, `env`, `stdin`");
+    expect(bashAgent?.systemPrompt).toContain("Evaluate the target’s cybersecurity with an attack-path-first approach.");
+    expect(bashAgent?.systemPrompt).toContain("multiple lower-severity weaknesses can be chained");
+    expect(bashAgent?.systemPrompt).toContain("Validate attack vectors by proving that output from one step is accepted by the next step.");
+    expect(bashAgent?.systemPrompt).toContain("Avoid treating scanner-friendly issues as the main result unless they lead somewhere.");
+    expect(bashAgent?.systemPrompt).toContain("Suggested attack-path workflow:");
+    expect(bashAgent?.systemPrompt).toContain("Available dependencies:");
+    expect(bashAgent?.systemPrompt).toContain("sqlmap");
+    expect(bashAgent?.systemPrompt).toContain("wpscan");
     expect(bashAgent?.toolIds).toEqual(["seed-agent-bash-command"]);
   });
 
