@@ -71,6 +71,7 @@ export const KNOWN_SCRIPT_BINARIES = [
 ] as const;
 
 export const DEFAULT_CONNECTOR_ALLOWED_CAPABILITIES = [
+  "agent-bash-command",
   "active-recon",
   "analysis",
   "auth",

@@ -1,9 +1,10 @@
 import { toolCapabilityTagSchema, toolPrivilegeProfileSchema, toolSandboxProfileSchema } from "@synosec/contracts";
-import { SynoSecConnectorClient } from "./index.js";
+import { ConnectorClientError, SynoSecConnectorClient } from "./index.js";
 import { loadConnectorEnv } from "./env.js";
 import { detectInstalledBinaries } from "./installed-binaries.js";
 
-const MAX_REGISTER_RETRY_DELAY_MS = 10_000;
+const MAX_RECOVERY_DELAY_MS = 30_000;
+const ERROR_LOG_THROTTLE_WINDOW_MS = 30_000;
 
 function parseAllowedCapabilities(values: string[]): Array<ReturnType<typeof toolCapabilityTagSchema.parse>> {
   return values.map((value) => toolCapabilityTagSchema.parse(value));
@@ -25,19 +26,75 @@ async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function registerWithRetry(client: SynoSecConnectorClient) {
-  let attempt = 0;
+function computeBackoffDelayMs(attempt: number) {
+  const boundedAttempt = Math.max(1, attempt);
+  const exponential = Math.min(1_000 * (2 ** (boundedAttempt - 1)), MAX_RECOVERY_DELAY_MS);
+  const jitter = Math.floor(exponential * Math.random() * 0.2);
+  return Math.min(MAX_RECOVERY_DELAY_MS, exponential + jitter);
+}
 
-  while (true) {
-    try {
-      return await client.register();
-    } catch (error) {
-      attempt += 1;
-      const delayMs = Math.min(1_000 * attempt, MAX_REGISTER_RETRY_DELAY_MS);
-      console.error(`Connector registration failed; retrying in ${delayMs}ms. ${errorMessage(error)}`);
-      await sleep(delayMs);
-    }
+function shouldInvalidateRegistration(error: unknown) {
+  if (!(error instanceof ConnectorClientError)) {
+    return false;
   }
+
+  if (error.status === null) {
+    return true;
+  }
+
+  return error.status === 401 || error.status === 403 || error.status === 404;
+}
+
+function errorFingerprint(error: unknown) {
+  if (error instanceof ConnectorClientError) {
+    const summary = error.body ? error.body.slice(0, 160) : error.message;
+    return `${error.phase}:${error.status ?? "network"}:${summary}`;
+  }
+  return errorMessage(error);
+}
+
+function formatRecoveryMessage(error: unknown, attempt: number, delayMs: number, invalidated: boolean) {
+  if (error instanceof ConnectorClientError) {
+    const detail = error.status === null
+      ? `${error.message}: ${errorMessage(error.causeError)}`
+      : `${error.message}: ${error.body ?? "<empty>"}`;
+    const reRegisterNote = invalidated ? " Re-registering on next loop." : "";
+    return `Connector recovery attempt ${attempt}: ${detail}${reRegisterNote} Retrying in ${delayMs}ms.`;
+  }
+
+  return `Connector recovery attempt ${attempt}: ${errorMessage(error)}. Retrying in ${delayMs}ms.`;
+}
+
+type RecoveryLogState = {
+  key: string | null;
+  lastAtMs: number;
+  suppressed: number;
+};
+
+function logRecovery(state: RecoveryLogState, key: string, message: string) {
+  const now = Date.now();
+  if (state.key === key && now - state.lastAtMs < ERROR_LOG_THROTTLE_WINDOW_MS) {
+    state.suppressed += 1;
+    return;
+  }
+
+  if (state.suppressed > 0 && state.key) {
+    console.error(`Connector recovery repeated ${state.suppressed} additional time(s): ${state.key}`);
+    state.suppressed = 0;
+  }
+
+  console.error(message);
+  state.key = key;
+  state.lastAtMs = now;
+}
+
+function flushSuppressedRecoveryLogs(state: RecoveryLogState) {
+  if (state.suppressed <= 0 || !state.key) {
+    return;
+  }
+
+  console.error(`Connector recovery repeated ${state.suppressed} additional time(s): ${state.key}`);
+  state.suppressed = 0;
 }
 
 async function main() {
@@ -65,17 +122,37 @@ async function main() {
     }
   });
 
-  await registerWithRetry(client);
+  let recoveryAttempts = 0;
+  const recoveryLogState: RecoveryLogState = {
+    key: null,
+    lastAtMs: 0,
+    suppressed: 0
+  };
 
   while (true) {
     try {
       await client.runOnce();
+      if (recoveryAttempts > 0) {
+        flushSuppressedRecoveryLogs(recoveryLogState);
+        console.error(`Connector recovered after ${recoveryAttempts} attempt(s).`);
+      }
+      recoveryAttempts = 0;
+      recoveryLogState.key = null;
+      recoveryLogState.lastAtMs = 0;
     } catch (error) {
-      console.error(`Connector run loop error; re-registering. ${errorMessage(error)}`);
-      client.invalidateRegistration();
-      await registerWithRetry(client);
+      recoveryAttempts += 1;
+      const invalidated = shouldInvalidateRegistration(error);
+      if (invalidated) {
+        client.invalidateRegistration();
+      }
+      const delayMs = computeBackoffDelayMs(recoveryAttempts);
+      const fingerprint = errorFingerprint(error);
+      const recoveryMessage = formatRecoveryMessage(error, recoveryAttempts, delayMs, invalidated);
+      logRecovery(recoveryLogState, fingerprint, recoveryMessage);
+      await sleep(delayMs);
+      continue;
     }
-    await new Promise((resolve) => setTimeout(resolve, env.pollIntervalMs));
+    await sleep(env.pollIntervalMs);
   }
 }
 

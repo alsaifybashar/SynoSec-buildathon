@@ -20,7 +20,7 @@ interface SandboxExecutionOptions {
   commandTimeoutMs?: number;
 }
 
-const MAX_CONNECTOR_TOOL_TIMEOUT_MS = 10_000;
+const MAX_CONNECTOR_TOOL_TIMEOUT_MS = 300_000;
 
 interface BashObservation {
   port?: number;

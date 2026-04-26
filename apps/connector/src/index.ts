@@ -17,6 +17,30 @@ export interface ConnectorClientOptions {
   commandTimeoutMs?: number;
 }
 
+export type ConnectorRequestPhase = "register" | "poll" | "submit-result";
+
+export class ConnectorClientError extends Error {
+  readonly status: number | null;
+  readonly body: string | null;
+  readonly phase: ConnectorRequestPhase;
+  readonly causeError: unknown;
+
+  constructor(input: {
+    message: string;
+    phase: ConnectorRequestPhase;
+    status?: number;
+    body?: string;
+    cause?: unknown;
+  }) {
+    super(input.message);
+    this.name = "ConnectorClientError";
+    this.phase = input.phase;
+    this.status = input.status ?? null;
+    this.body = input.body ?? null;
+    this.causeError = input.cause ?? null;
+  }
+}
+
 export class SynoSecConnectorClient {
   private readonly fetchImpl: typeof fetch;
   private connectorId: string | null = null;
@@ -26,12 +50,11 @@ export class SynoSecConnectorClient {
   }
 
   async register(): Promise<string> {
-    const response = await this.fetchImpl(this.url("/api/connectors/register"), {
+    const response = await this.request("/api/connectors/register", {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify(this.options.registration)
-    });
-    await assertOk(response, "Connector registration failed");
+    }, "register");
     const payload = connectorRegistrationResponseSchema.parse(await response.json());
     this.connectorId = payload.connectorId;
     return payload.connectorId;
@@ -39,11 +62,10 @@ export class SynoSecConnectorClient {
 
   async runOnce(): Promise<ConnectorExecutionJob | null> {
     const connectorId = this.connectorId ?? await this.register();
-    const response = await this.fetchImpl(this.url(`/api/connectors/${connectorId}/poll`), {
+    const response = await this.request(`/api/connectors/${connectorId}/poll`, {
       method: "POST",
       headers: this.headers()
-    });
-    await assertOk(response, "Connector poll failed");
+    }, "poll");
     const payload = connectorPollResponseSchema.parse(await response.json());
     if (!payload.job) {
       return null;
@@ -57,12 +79,11 @@ export class SynoSecConnectorClient {
       installedBinaries: this.options.registration.installedBinaries,
       ...(this.options.commandTimeoutMs === undefined ? {} : { commandTimeoutMs: this.options.commandTimeoutMs })
     });
-    const resultResponse = await this.fetchImpl(this.url(`/api/connectors/${connectorId}/jobs/${job.id}/result`), {
+    const resultResponse = await this.request(`/api/connectors/${connectorId}/jobs/${job.id}/result`, {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify(result)
-    });
-    await assertOk(resultResponse, "Connector result submission failed");
+    }, "submit-result");
     return job;
   }
 
@@ -80,15 +101,36 @@ export class SynoSecConnectorClient {
   private url(path: string): string {
     return new URL(path, this.options.baseUrl).toString();
   }
+
+  private async request(path: string, init: RequestInit, phase: ConnectorRequestPhase) {
+    let response: Response;
+    try {
+      response = await this.fetchImpl(this.url(path), init);
+    } catch (error) {
+      throw new ConnectorClientError({
+        message: `Connector ${phase} request failed`,
+        phase,
+        cause: error
+      });
+    }
+
+    await assertOk(response, phase);
+    return response;
+  }
 }
 
-async function assertOk(response: Response, message: string) {
+async function assertOk(response: Response, phase: ConnectorRequestPhase) {
   if (response.ok) {
     return;
   }
 
   const body = await response.text();
-  throw new Error(`${message} (${response.status}): ${body}`);
+  throw new ConnectorClientError({
+    message: `Connector ${phase} request failed (${response.status})`,
+    phase,
+    status: response.status,
+    body
+  });
 }
 
 export async function executeConnectorJob(

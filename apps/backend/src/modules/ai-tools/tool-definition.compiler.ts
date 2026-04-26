@@ -17,7 +17,7 @@ export interface CompileInput {
   toolInput?: Record<string, unknown>;
 }
 
-const MAX_TOOL_TIMEOUT_MS = 10_000;
+const MAX_TOOL_TIMEOUT_MS = 300_000;
 
 function firstExplicitUrl(toolInput?: Record<string, unknown>) {
   for (const key of ["baseUrl", "startUrl", "url", "loginUrl"] as const) {
@@ -78,11 +78,25 @@ export function compileToolRequestFromDefinition(tool: CompilableTool, input: Co
   };
   const requestedTimeoutMs = (() => {
     const value = input.toolInput?.["timeout_ms"] ?? input.toolInput?.["timeoutMs"];
-    if (typeof value !== "number" || !Number.isFinite(value)) {
-      return null;
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
     }
 
-    return value;
+    if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = Number(value.trim());
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    if (value != null) {
+      throw new RequestError(400, "Invalid tool input timeout_ms: expected a finite number or numeric string.", {
+        code: "AI_TOOL_INPUT_INVALID",
+        userFriendlyMessage: "Tool timeout_ms must be a number."
+      });
+    }
+
+    return null;
   })();
   const timeoutMs = Math.max(1_000, Math.min(requestedTimeoutMs ?? tool.timeoutMs, MAX_TOOL_TIMEOUT_MS));
 

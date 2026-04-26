@@ -12,6 +12,7 @@ import type {
 } from "@synosec/contracts";
 import { evaluateConnectorToolSupport } from "@synosec/contracts";
 import { seededToolDefinitions } from "@/shared/seed-data/ai-builder-defaults.js";
+import { RequestError } from "@/shared/http/request-error.js";
 
 interface DispatchRequest {
   scanId: string;
@@ -47,6 +48,7 @@ interface ActiveDispatch extends PendingDispatch {
 const defaultPollIntervalMs = Number(process.env["CONNECTOR_POLL_INTERVAL_MS"] ?? "1000");
 const defaultLeaseDurationMs = Number(process.env["CONNECTOR_LEASE_DURATION_MS"] ?? "15000");
 const defaultDispatchTimeoutMs = Number(process.env["CONNECTOR_DISPATCH_TIMEOUT_MS"] ?? "30000");
+const dispatchCompletionBufferMs = 1_000;
 
 function connectorSupportsRequest(connector: ConnectorDescriptor, request: ToolRequest) {
   return evaluateConnectorToolSupport(toConnectorSupportSubject(request), {
@@ -89,6 +91,13 @@ function computeSupportedToolIds(connector: Omit<ConnectorDescriptor, "supported
     }).supported)
     .map((tool) => tool.id)
     .sort((left, right) => left.localeCompare(right));
+}
+
+function resolveDispatchTimeoutMs(request: ToolRequest) {
+  const toolTimeoutMs = typeof request.parameters["timeoutMs"] === "number"
+    ? request.parameters["timeoutMs"]
+    : 0;
+  return Math.max(defaultDispatchTimeoutMs, toolTimeoutMs + defaultPollIntervalMs + dispatchCompletionBufferMs);
 }
 
 class ConnectorControlPlane {
@@ -151,7 +160,7 @@ class ConnectorControlPlane {
           this.activeJobs.delete(jobId);
         }
         reject(new Error("Timed out waiting for a connector to complete the tool run."));
-      }, defaultDispatchTimeoutMs);
+      }, resolveDispatchTimeoutMs(input.request));
 
       this.pendingJobs.push({
         ...input,
@@ -167,7 +176,10 @@ class ConnectorControlPlane {
   pollNext(connectorId: string): ConnectorExecutionJob | null {
     const connector = this.connectors.get(connectorId);
     if (!connector) {
-      throw new Error(`Unknown connector ${connectorId}.`);
+      throw new RequestError(404, `Unknown connector ${connectorId}.`, {
+        code: "CONNECTOR_NOT_FOUND",
+        userFriendlyMessage: "Connector registration expired. Re-register and retry."
+      });
     }
 
     const now = new Date().toISOString();

@@ -164,6 +164,7 @@ describe("contracts", () => {
 
   it("allows default connector capability policy to run seeded auth-flow probes", () => {
     expect(DEFAULT_CONNECTOR_ALLOWED_CAPABILITIES).toEqual(expect.arrayContaining([
+      "agent-bash-command",
       "auth",
       "session",
       "login"

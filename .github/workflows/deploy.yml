@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: "22"
+  NODE_VERSION: "22.19"
   PNPM_VERSION: "10.23.0"
   VPS_TARGET_DIR: "/opt/synosec"
   BACKEND_PUBLIC_PORT: "3031"

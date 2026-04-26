@@ -74,7 +74,7 @@ describe("compileToolRequestFromDefinition", () => {
       }
     });
 
-    expect(request.parameters["timeoutMs"]).toBe(10000);
+    expect(request.parameters["timeoutMs"]).toBe(120000);
   });
 
   it("keeps default tool timeout when timeout override is absent", () => {
@@ -96,5 +96,47 @@ describe("compileToolRequestFromDefinition", () => {
     });
 
     expect(request.parameters["timeoutMs"]).toBe(8000);
+  });
+
+  it("accepts numeric string timeout_ms overrides", () => {
+    const request = compileToolRequestFromDefinition({
+      id: "seed-agent-bash-command",
+      name: "Agent Bash Command",
+      executorType: "bash",
+      bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
+      capabilities: ["agent-bash-command"],
+      riskTier: "active",
+      timeoutMs: 8000
+    }, {
+      target: "localhost",
+      layer: "L7",
+      justification: "test",
+      toolInput: {
+        command: "echo hello",
+        timeout_ms: "9000"
+      }
+    });
+
+    expect(request.parameters["timeoutMs"]).toBe(9000);
+  });
+
+  it("rejects malformed timeout_ms overrides with explicit validation feedback", () => {
+    expect(() => compileToolRequestFromDefinition({
+      id: "seed-agent-bash-command",
+      name: "Agent Bash Command",
+      executorType: "bash",
+      bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
+      capabilities: ["agent-bash-command"],
+      riskTier: "active",
+      timeoutMs: 8000
+    }, {
+      target: "localhost",
+      layer: "L7",
+      justification: "test",
+      toolInput: {
+        command: "echo hello",
+        timeout_ms: "not-a-number"
+      }
+    })).toThrow("Invalid tool input timeout_ms: expected a finite number or numeric string.");
   });
 });

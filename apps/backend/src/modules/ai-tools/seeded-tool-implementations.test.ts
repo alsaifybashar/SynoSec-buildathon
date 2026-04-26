@@ -1,5 +1,6 @@
 import http from "node:http";
 import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AiTool } from "@synosec/contracts";
 import { runAiTool } from "./ai-tool-runner.js";
@@ -342,6 +343,43 @@ describe("seeded bash tool implementations", () => {
         title: `Open TCP port ${vulnerablePort}`
       })
     ]));
+  });
+
+  it("nmap scan defaults to fast port-state scanning for explicit ports", async () => {
+    const commandResult = spawnSync("sh", ["-lc", "command -v nmap"], { encoding: "utf8" });
+    if (commandResult.status !== 0) {
+      return;
+    }
+
+    const tool = createSeededTool("seed-nmap-scan");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      target: "127.0.0.1",
+      port: vulnerablePort,
+      baseUrl: vulnerableBaseUrl
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.commandPreview).toBe(`nmap -Pn -p ${vulnerablePort} 127.0.0.1`);
+    expect(result.output).toContain(`${vulnerablePort}/tcp open`);
+  });
+
+  it("nmap scan only runs version detection when explicitly requested", async () => {
+    const commandResult = spawnSync("sh", ["-lc", "command -v nmap"], { encoding: "utf8" });
+    if (commandResult.status !== 0) {
+      return;
+    }
+
+    const tool = createSeededTool("seed-nmap-scan");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      target: "127.0.0.1",
+      port: 1,
+      serviceDetection: true
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.commandPreview).toBe("nmap -Pn -sV -p 1 127.0.0.1");
   });
 
   it("service scan respects candidate port ordering and bounds", async () => {
@@ -891,5 +929,18 @@ describe("seeded bash tool implementations", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.statusReason).toContain("toolInput.env must be an object");
+  });
+
+  it("agent bash command rejects malformed timeout_ms with explicit feedback", async () => {
+    const tool = createSeededTool("seed-agent-bash-command");
+
+    await expect(runAiTool(createRuntime(tool), tool.id, {
+      target: "127.0.0.1",
+      baseUrl: vulnerableBaseUrl,
+      command: "echo hi",
+      timeout_ms: "abc"
+    })).rejects.toMatchObject({
+      message: "Invalid tool input timeout_ms: expected a finite number or numeric string."
+    });
   });
 });
