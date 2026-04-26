@@ -9,6 +9,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import type { PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import { mapAiToolRow } from "@/modules/ai-tools/ai-tools.mapper.js";
 import { type AiToolsRepository } from "@/modules/ai-tools/ai-tools.repository.js";
+import { enrichAiTool } from "./ai-tool-surface.js";
 import { mergeAndPaginateAiTools, rejectBuiltinAiToolMutation, getBuiltinAiTool, isBuiltinAiToolId } from "./builtin-ai-tools.js";
 import { encodeCreateToolInput, encodeUpdateToolInput } from "./tool-execution-config.js";
 
@@ -17,6 +18,7 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
 
   async list(query: AiToolsListQuery): Promise<PaginatedResult<AiTool>> {
     const where = {
+      NOT: { id: { startsWith: "builtin-" } },
       ...(query.status ? { status: query.status } : {}),
       ...(query.category ? { category: query.category } : {}),
       ...(query.q
@@ -41,11 +43,11 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
   async getById(id: string): Promise<AiTool | null> {
     const builtin = getBuiltinAiTool(id);
     if (builtin) {
-      return builtin;
+      return enrichAiTool(builtin);
     }
 
     const tool = await this.prisma.aiTool.findUnique({ where: { id } });
-    return tool ? mapAiToolRow(tool) : null;
+    return tool ? enrichAiTool(mapAiToolRow(tool)) : null;
   }
 
   async create(input: CreateAiToolBody): Promise<AiTool> {

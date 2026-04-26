@@ -31,12 +31,20 @@ type WorkflowStageContractInput = {
 
 export const defaultStageSystemPromptTemplate = defaultWorkflowStageSystemPrompt;
 
+function isWorkflowCapabilityToolId(value: string) {
+  return value.startsWith("builtin-");
+}
+
 function normalizeStringArray(value: unknown) {
   if (!Array.isArray(value)) {
     return [];
   }
 
   return [...new Set(value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0))];
+}
+
+function normalizeCapabilityToolIds(value: unknown) {
+  return normalizeStringArray(value).filter(isWorkflowCapabilityToolId);
 }
 
 export function createDefaultWorkflowStageContract(
@@ -46,7 +54,7 @@ export function createDefaultWorkflowStageContract(
   return {
     objective: `Complete the ${stage.label} stage using allowed tools and structured reporting.`,
     stageSystemPrompt: defaultStageSystemPromptTemplate,
-    allowedToolIds: normalizeStringArray(fallbackToolIds),
+    allowedToolIds: normalizeCapabilityToolIds(fallbackToolIds),
     requiredEvidenceTypes: [],
     findingPolicy: workflowStageFindingPolicySchema.parse({
       taxonomy: "typed-core-v1"
@@ -55,7 +63,11 @@ export function createDefaultWorkflowStageContract(
       requireStageResult: true,
       requireToolCall: false,
       allowEmptyResult: true,
-      minFindings: 0
+      minFindings: 0,
+      requireReachableSurface: false,
+      requireEvidenceBackedWeakness: false,
+      requireOsiCoverageStatus: false,
+      requireChainedFindings: false
     }),
     resultSchemaVersion: 1,
     handoffSchema: null
@@ -75,7 +87,7 @@ export function normalizeWorkflowStageContract(
     stageSystemPrompt: typeof stage.stageSystemPrompt === "string" && stage.stageSystemPrompt.trim().length > 0
       ? stage.stageSystemPrompt
       : defaults.stageSystemPrompt,
-    allowedToolIds: normalizeStringArray(stage.allowedToolIds ?? defaults.allowedToolIds),
+    allowedToolIds: normalizeCapabilityToolIds(stage.allowedToolIds ?? defaults.allowedToolIds),
     requiredEvidenceTypes: normalizeStringArray(stage.requiredEvidenceTypes ?? defaults.requiredEvidenceTypes),
     findingPolicy: workflowStageFindingPolicySchema.parse(stage.findingPolicy ?? defaults.findingPolicy),
     completionRule: workflowStageCompletionRuleSchema.parse(stage.completionRule ?? defaults.completionRule),

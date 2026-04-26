@@ -6,6 +6,7 @@ import {
   type ToolBuiltinActionKey,
   type AiToolRunResult,
   type AiToolStatus,
+  type AiToolKind,
   type CreateAiToolBody,
   type ToolCategory,
   type ToolRiskTier
@@ -49,6 +50,11 @@ const statusLabels: Record<AiToolStatus, string> = {
 
 const categoryOptions: ToolCategory[] = ["topology", "auth", "web", "network", "content", "dns", "subdomain", "cloud", "utility", "password", "windows", "kubernetes", "forensics", "reversing", "exploitation"];
 const riskTierOptions: ToolRiskTier[] = ["passive", "active", "controlled-exploit"];
+const kindLabels: Record<AiToolKind, string> = {
+  "builtin-action": "Built-in Action",
+  "semantic-family": "Capability Tool",
+  "raw-adapter": "Raw Adapter"
+};
 
 function createDefaultInputSchemaText() {
   return JSON.stringify({ type: "object", properties: {} }, null, 2);
@@ -164,6 +170,18 @@ function describeBuiltinAction(tool: AiTool) {
   };
 
   return labels[actionKey] ?? null;
+}
+
+function describeToolSurface(tool: AiTool) {
+  if (tool.kind === "semantic-family") {
+    return "Workflow-facing capability tool";
+  }
+
+  if (tool.kind === "builtin-action") {
+    return "Workflow-facing control action";
+  }
+
+  return "Execution adapter and diagnostics object";
 }
 
 function definedString(value: string | undefined) {
@@ -352,7 +370,7 @@ export function AiToolsPage({
 
   const columns = useMemo<ListPageColumn<AiTool>[]>(() => [
     { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
-    { id: "source", header: "Source", cell: (row) => <span className="text-muted-foreground">{row.source}</span> },
+    { id: "kind", header: "Kind", cell: (row) => <span className="text-muted-foreground">{kindLabels[row.kind ?? "raw-adapter"]}</span> },
     { id: "category", header: "Category", cell: (row) => <span className="text-muted-foreground">{row.category}</span> },
     {
       id: "riskTier",
@@ -366,6 +384,17 @@ export function AiToolsPage({
   ], []);
 
   const filters = useMemo<ListPageFilter[]>(() => [
+    {
+      id: "surface",
+      label: "View surface",
+      placeholder: "View surface",
+      allLabel: "Primary capabilities",
+      options: [
+        { value: "primary", label: "Primary capabilities" },
+        { value: "advanced", label: "Advanced and raw" },
+        { value: "raw", label: "Raw adapters only" }
+      ]
+    },
     {
       id: "source",
       label: "Filter by source",
@@ -536,7 +565,7 @@ export function AiToolsPage({
           items={toolList.items}
           meta={toolList.meta}
           filters={filters}
-          emptyMessage="No AI tools have been configured yet."
+          emptyMessage="No capabilities matched the current surface."
           onSearchChange={toolList.setSearch}
           onFilterChange={toolList.setFilter}
           onSortChange={toolList.setSort}
@@ -622,12 +651,45 @@ export function AiToolsPage({
           <DetailField label="Description" required className="md:col-span-2" {...definedString(errors.description)}>
             <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" disabled={!isToolEditable} />
           </DetailField>
+          {tool ? (
+            <>
+              <DetailField label="Kind">
+                <Input value={kindLabels[tool.kind ?? "raw-adapter"]} aria-label="Kind" disabled />
+              </DetailField>
+              <DetailField label="Surface role">
+                <Input value={describeToolSurface(tool)} aria-label="Surface role" disabled />
+              </DetailField>
+            </>
+          ) : null}
           {!isBuiltinTool ? (
             <DetailField label="Timeout (ms)" hint="Integer duration. Values under 1000ms are rejected." {...definedString(errors.timeoutMsText)}>
               <Input value={formValues.timeoutMsText} onChange={(event) => handleFieldChange("timeoutMsText", event.target.value)} aria-label="Timeout milliseconds" disabled={!isToolEditable} />
             </DetailField>
           ) : null}
         </DetailFieldGroup>
+
+        {tool ? (
+          <DetailFieldGroup title="Capability Runtime" className="bg-card/70">
+            <DetailField label="Availability">
+              <Input
+                value={[
+                  tool.runtimeStateSummary?.cataloged ? "cataloged" : "not cataloged",
+                  tool.runtimeStateSummary?.installed ? "installed" : "not installed",
+                  tool.runtimeStateSummary?.executable ? "executable" : "not executable",
+                  tool.runtimeStateSummary?.granted ? "grantable" : "diagnostics only"
+                ].join(" · ")}
+                aria-label="Availability"
+                disabled
+              />
+            </DetailField>
+            <DetailField label="Candidate adapters">
+              <Input value={(tool.candidateToolIds ?? []).length > 0 ? (tool.candidateToolIds ?? []).join(", ") : "None"} aria-label="Candidate adapters" disabled />
+            </DetailField>
+            <DetailField label="Covered adapters" className="md:col-span-2">
+              <Textarea value={(tool.coveredToolIds ?? []).length > 0 ? (tool.coveredToolIds ?? []).join(", ") : "None"} aria-label="Covered adapters" rows={3} disabled />
+            </DetailField>
+          </DetailFieldGroup>
+        ) : null}
 
         {!isBuiltinTool ? (
           <>

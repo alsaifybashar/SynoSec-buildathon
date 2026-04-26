@@ -163,6 +163,12 @@ export type AiToolStatus = z.infer<typeof aiToolStatusSchema>;
 export const toolExecutorTypeSchema = z.enum(["bash", "builtin"]);
 export type ToolExecutorType = z.infer<typeof toolExecutorTypeSchema>;
 
+export const aiToolKindSchema = z.enum(["builtin-action", "semantic-family", "raw-adapter"]);
+export type AiToolKind = z.infer<typeof aiToolKindSchema>;
+
+export const aiToolSurfaceSchema = z.enum(["primary", "advanced", "raw"]);
+export type AiToolSurface = z.infer<typeof aiToolSurfaceSchema>;
+
 export const toolBuiltinActionKeySchema = z.enum([
   "log_progress",
   "report_finding",
@@ -237,9 +243,18 @@ export const toolConstraintProfileSchema = z.object({
 });
 export type ToolConstraintProfile = z.infer<typeof toolConstraintProfileSchema>;
 
+export const aiToolRuntimeStateSummarySchema = z.object({
+  cataloged: z.boolean().default(false),
+  installed: z.boolean().default(false),
+  executable: z.boolean().default(false),
+  granted: z.boolean().default(false)
+});
+export type AiToolRuntimeStateSummary = z.infer<typeof aiToolRuntimeStateSummarySchema>;
+
 export const aiToolSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
+  kind: aiToolKindSchema.default("raw-adapter"),
   status: aiToolStatusSchema,
   source: aiToolSourceSchema,
   description: z.string().nullable(),
@@ -251,6 +266,9 @@ export const aiToolSchema = z.object({
   riskTier: z.lazy(() => toolRiskTierSchema),
   timeoutMs: z.number().int().min(1000).max(300000),
   constraintProfile: toolConstraintProfileSchema.optional(),
+  coveredToolIds: z.array(z.string().min(1)).default([]),
+  candidateToolIds: z.array(z.string().min(1)).default([]),
+  runtimeStateSummary: aiToolRuntimeStateSummarySchema.optional(),
   inputSchema: z.lazy(() => jsonSchemaObjectSchema),
   outputSchema: z.lazy(() => jsonSchemaObjectSchema),
   createdAt: z.string().datetime(),
@@ -281,8 +299,9 @@ export type AiTool = z.infer<typeof aiToolSchema>;
 export const aiToolsListQuerySchema = resourceListQuerySchema.extend({
   status: aiToolStatusSchema.optional(),
   source: aiToolSourceSchema.optional(),
+  surface: aiToolSurfaceSchema.optional(),
   category: z.lazy(() => toolCategorySchema).optional(),
-  sortBy: z.enum(["name", "source", "status", "category", "riskTier", "createdAt", "updatedAt"]).optional()
+  sortBy: z.enum(["name", "kind", "source", "status", "category", "riskTier", "createdAt", "updatedAt"]).optional()
 });
 export type AiToolsListQuery = z.infer<typeof aiToolsListQuerySchema>;
 
@@ -573,7 +592,11 @@ export const workflowStageCompletionRuleSchema = z.object({
   requireToolCall: z.boolean().default(false),
   allowEmptyResult: z.boolean().default(true),
   minFindings: z.number().int().min(0).default(0),
-  maxFindings: z.number().int().min(0).optional()
+  maxFindings: z.number().int().min(0).optional(),
+  requireReachableSurface: z.boolean().default(false),
+  requireEvidenceBackedWeakness: z.boolean().default(false),
+  requireOsiCoverageStatus: z.boolean().default(false),
+  requireChainedFindings: z.boolean().default(false)
 });
 export type WorkflowStageCompletionRule = z.infer<typeof workflowStageCompletionRuleSchema>;
 
@@ -613,7 +636,11 @@ export const workflowStageSchema = z.object({
     requireStageResult: true,
     requireToolCall: false,
     allowEmptyResult: true,
-    minFindings: 0
+    minFindings: 0,
+    requireReachableSurface: false,
+    requireEvidenceBackedWeakness: false,
+    requireOsiCoverageStatus: false,
+    requireChainedFindings: false
   }),
   resultSchemaVersion: z.number().int().min(1).default(1),
   handoffSchema: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
@@ -640,7 +667,11 @@ export const workflowSchema = z.object({
     requireStageResult: true,
     requireToolCall: false,
     allowEmptyResult: true,
-    minFindings: 0
+    minFindings: 0,
+    requireReachableSurface: false,
+    requireEvidenceBackedWeakness: false,
+    requireOsiCoverageStatus: false,
+    requireChainedFindings: false
   }),
   resultSchemaVersion: z.number().int().min(1).default(1),
   handoffSchema: z.union([jsonSchemaObjectSchema, z.null()]).default(null),
@@ -676,7 +707,11 @@ const workflowStageBodySchema = z.object({
     requireStageResult: true,
     requireToolCall: false,
     allowEmptyResult: true,
-    minFindings: 0
+    minFindings: 0,
+    requireReachableSurface: false,
+    requireEvidenceBackedWeakness: false,
+    requireOsiCoverageStatus: false,
+    requireChainedFindings: false
   }),
   resultSchemaVersion: z.number().int().min(1).default(1),
   handoffSchema: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
@@ -702,7 +737,11 @@ const workflowBodyBaseSchema = z.object({
     requireStageResult: true,
     requireToolCall: false,
     allowEmptyResult: true,
-    minFindings: 0
+    minFindings: 0,
+    requireReachableSurface: false,
+    requireEvidenceBackedWeakness: false,
+    requireOsiCoverageStatus: false,
+    requireChainedFindings: false
   }),
   resultSchemaVersion: z.number().int().min(1).default(1),
   handoffSchema: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
@@ -719,7 +758,9 @@ export type UpdateWorkflowBody = z.infer<typeof updateWorkflowBodySchema>;
 export const workflowRunStatusSchema = z.enum(["pending", "running", "completed", "failed"]);
 export type WorkflowRunStatus = z.infer<typeof workflowRunStatusSchema>;
 
-export const startWorkflowRunBodySchema = z.object({});
+export const startWorkflowRunBodySchema = z.object({
+  targetId: z.string().uuid().optional()
+});
 export type StartWorkflowRunBody = z.infer<typeof startWorkflowRunBodySchema>;
 
 export const workflowRunTokenUsageSchema = z.object({

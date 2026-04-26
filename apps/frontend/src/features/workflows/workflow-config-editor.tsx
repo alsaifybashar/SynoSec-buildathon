@@ -19,9 +19,9 @@ export const workflowExecutionKindLabels: Record<ExecutionKind, string> = {
 
 const workflowFieldHints = {
   executionKind: "Choose how this workflow executes within the standard workflow engine.",
-  agent: "The linked AI agent provides the model, provider, and default tool grants used by this workflow.",
+  agent: "The linked AI agent provides the model, provider, and default capability grants used by this workflow.",
   systemPrompt: "This workflow-owned instruction layer is sent on every run before the engine-appended target context and runtime contract.",
-  allowedTools: "Select a narrower tool set for this workflow. If nothing is selected, the workflow inherits every tool granted to the linked agent."
+  allowedTools: "Select a narrower capability set for this workflow. If nothing is selected, the workflow inherits every capability grant assigned to the linked agent."
 } as const;
 
 export function WorkflowConfigEditor({
@@ -106,20 +106,20 @@ export function WorkflowConfigEditor({
         <DetailField label="Allowed tools" hint={workflowFieldHints.allowedTools} className="md:col-span-2">
           <div className="space-y-3 rounded-xl border border-border bg-background/40 p-4">
             <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
-              <p className="text-xs font-medium text-foreground">Every agent receives these for this workflow</p>
+              <p className="text-xs font-medium text-foreground">Workflow capability grants</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                This workflow-level tool surface is counted separately from the linked agent&apos;s persisted grants.
+                This workflow-level capability surface is counted separately from the linked agent&apos;s persisted grants.
               </p>
               <p className="mt-2 text-sm text-foreground">
                 {workflowProvidedToolIds.length > 0
-                  ? `${workflowProvidedToolIds.length} workflow-provided tool${workflowProvidedToolIds.length === 1 ? "" : "s"}`
-                  : "No workflow-level tool surface selected. This workflow will inherit persisted agent grants instead."}
+                  ? `${workflowProvidedToolIds.length} workflow-provided capabilit${workflowProvidedToolIds.length === 1 ? "y" : "ies"}`
+                  : "No workflow-level capability surface selected. This workflow will inherit persisted agent grants instead."}
               </p>
             </div>
             <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
-              <p className="text-xs font-medium text-foreground">Linked agent persisted grants</p>
+              <p className="text-xs font-medium text-foreground">Linked agent persisted capability grants</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                These are the tool grants stored on the agent itself.
+                These are the capability grants stored on the agent itself.
               </p>
               <p className="mt-2 text-sm text-foreground">
                 {inheritedToolIds.length} persisted grant{inheritedToolIds.length === 1 ? "" : "s"}
@@ -128,16 +128,16 @@ export function WorkflowConfigEditor({
             <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
               <p className="text-xs font-medium text-foreground">
                 {formValues.allowedToolIds.length === 0
-                  ? "Mode: inherit all agent tools"
-                  : `Mode: restricted to ${formValues.allowedToolIds.length} selected tool${formValues.allowedToolIds.length === 1 ? "" : "s"}`}
+                  ? "Mode: inherit all agent capabilities"
+                  : `Mode: restricted to ${formValues.allowedToolIds.length} selected capabilit${formValues.allowedToolIds.length === 1 ? "y" : "ies"}`}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Click a tool to allow it for this workflow. If none are selected, the workflow uses every granted tool on the agent, including visible built-in reporting actions.
+                Click a capability to allow it for this workflow. If none are selected, the workflow uses every granted capability on the agent. Built-in workflow actions remain engine-provided.
               </p>
             </div>
             {workflowProvidedToolIds.length > 0 ? (
               <p className="text-sm text-foreground">
-                Workflow-provided tools: {workflowProvidedToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ")}
+                Workflow-provided capabilities: {workflowProvidedToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ")}
               </p>
             ) : null}
             <p className="text-sm text-foreground">
@@ -172,7 +172,7 @@ export function WorkflowConfigEditor({
               }) : <p className="text-sm text-muted-foreground">No tools are assigned to this agent.</p>}
             </div>
             <p className="text-sm text-foreground">
-              Effective tools for this workflow: {effectiveToolIds.length > 0 ? effectiveToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ") : "None"}
+              Effective capabilities for this workflow: {effectiveToolIds.length > 0 ? effectiveToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ") : "None"}
             </p>
             <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
               <p className="text-xs font-medium text-foreground">Built-in workflow actions</p>

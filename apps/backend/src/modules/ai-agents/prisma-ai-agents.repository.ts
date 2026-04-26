@@ -11,6 +11,10 @@ import type { PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import { mapAiAgentRow } from "@/modules/ai-agents/ai-agents.mapper.js";
 import { type AiAgentsRepository } from "@/modules/ai-agents/ai-agents.repository.js";
 
+function isBuiltinToolId(toolId: string) {
+  return toolId.startsWith("builtin-");
+}
+
 export class PrismaAiAgentsRepository implements AiAgentsRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -129,14 +133,19 @@ export class PrismaAiAgentsRepository implements AiAgentsRepository {
       return;
     }
 
+    const persistedIds = toolIds.filter((toolId) => !isBuiltinToolId(toolId));
+    if (persistedIds.length === 0) {
+      return;
+    }
+
     const tools = await this.prisma.aiTool.findMany({
-      where: { id: { in: toolIds } },
+      where: { id: { in: persistedIds } },
       select: { id: true }
     });
     const foundIds = new Set(tools.map((tool) => tool.id));
 
     for (const toolId of toolIds) {
-      if (!foundIds.has(toolId)) {
+      if (!foundIds.has(toolId) && !isBuiltinToolId(toolId)) {
         throw new RequestError(400, `AI tool not found: ${toolId}`);
       }
     }

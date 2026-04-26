@@ -9,20 +9,24 @@ describe("workflow stage contracts", () => {
   it("creates stable defaults for early-stage workflows", () => {
     const contract = createDefaultWorkflowStageContract(
       { label: "Recon" },
-      ["tool-a", "tool-a", "", "tool-b"]
+      ["builtin-http-surface-assessment", "builtin-http-surface-assessment", "", "seed-http-recon", "builtin-content-discovery"]
     );
 
     expect(contract).toEqual({
       objective: "Complete the Recon stage using allowed tools and structured reporting.",
       stageSystemPrompt: defaultStageSystemPromptTemplate,
-      allowedToolIds: ["tool-a", "tool-b"],
+      allowedToolIds: ["builtin-http-surface-assessment", "builtin-content-discovery"],
       requiredEvidenceTypes: [],
       findingPolicy: expect.objectContaining({ taxonomy: "typed-core-v1" }),
       completionRule: {
         requireStageResult: true,
         requireToolCall: false,
         allowEmptyResult: true,
-        minFindings: 0
+        minFindings: 0,
+        requireReachableSurface: false,
+        requireEvidenceBackedWeakness: false,
+        requireOsiCoverageStatus: false,
+        requireChainedFindings: false
       },
       resultSchemaVersion: 1,
       handoffSchema: null
@@ -33,7 +37,7 @@ describe("workflow stage contracts", () => {
     const contract = normalizeWorkflowStageContract({
       label: "Validate",
       objective: "   ",
-      allowedToolIds: ["tool-x", "tool-x", "", "tool-y"],
+      allowedToolIds: ["builtin-http-surface-assessment", "seed-http-recon", "", "builtin-content-discovery"],
       requiredEvidenceTypes: ["http", "http", "", "headers"],
       resultSchemaVersion: 0,
       handoffSchema: [] as unknown as null
@@ -41,7 +45,7 @@ describe("workflow stage contracts", () => {
 
     expect(contract.objective).toBe("Complete the Validate stage using allowed tools and structured reporting.");
     expect(contract.stageSystemPrompt).toBe(defaultStageSystemPromptTemplate);
-    expect(contract.allowedToolIds).toEqual(["tool-x", "tool-y"]);
+    expect(contract.allowedToolIds).toEqual(["builtin-http-surface-assessment", "builtin-content-discovery"]);
     expect(contract.requiredEvidenceTypes).toEqual(["http", "headers"]);
     expect(contract.resultSchemaVersion).toBe(1);
     expect(contract.handoffSchema).toBeNull();

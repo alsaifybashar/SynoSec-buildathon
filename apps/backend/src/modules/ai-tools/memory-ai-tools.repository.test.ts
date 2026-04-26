@@ -42,12 +42,24 @@ describe("MemoryAiToolsRepository", () => {
       page: 1,
       pageSize: 100,
       q: "",
+      surface: "advanced",
       sortBy: "name",
       sortDirection: "asc"
     });
 
     expect(allTools.items.some((tool) => tool.id === "tool-1" && tool.source === "custom")).toBe(true);
     expect(allTools.items.some((tool) => tool.id === "builtin-report-finding" && tool.source === "system")).toBe(true);
+
+    const primaryOnly = await repository.list({
+      page: 1,
+      pageSize: 100,
+      q: "",
+      sortBy: "name",
+      sortDirection: "asc"
+    });
+
+    expect(primaryOnly.items.some((tool) => tool.id === "tool-1")).toBe(false);
+    expect(primaryOnly.items.every((tool) => tool.kind !== "raw-adapter")).toBe(true);
 
     const builtinOnly = await repository.list({
       page: 1,

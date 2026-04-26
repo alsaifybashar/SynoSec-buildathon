@@ -60,6 +60,7 @@ export class ToolRuntime {
       page: 1,
       pageSize: 1000,
       q: "",
+      surface: "advanced",
       sortBy: "name",
       sortDirection: "asc"
     });

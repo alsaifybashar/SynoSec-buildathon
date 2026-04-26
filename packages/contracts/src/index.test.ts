@@ -18,6 +18,7 @@ import {
   scanLayerCoverageSchema,
   securityVulnerabilitySchema,
   aiToolSchema,
+  startWorkflowRunBodySchema,
   targetSchema,
   targetsListQuerySchema,
   toolRequestSchema,
@@ -129,6 +130,14 @@ describe("contracts", () => {
       description: "Handles reconnaissance",
       systemPrompt: "Investigate the target.",
       toolIds: ["httpx"]
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts workflow start bodies with an optional targetId", () => {
+    const result = startWorkflowRunBodySchema.safeParse({
+      targetId: "10000000-0000-0000-0000-000000000001"
     });
 
     expect(result.success).toBe(true);

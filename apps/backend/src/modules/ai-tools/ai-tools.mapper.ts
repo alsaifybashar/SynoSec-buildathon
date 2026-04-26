@@ -12,6 +12,7 @@ export function mapAiToolRow(row: PrismaAiTool): AiTool {
   return {
     id: row.id,
     name: row.name,
+    kind: "raw-adapter",
     status: row.status,
     source: "custom",
     description: row.description,
@@ -23,6 +24,8 @@ export function mapAiToolRow(row: PrismaAiTool): AiTool {
     capabilities: execution.capabilities,
     timeoutMs: execution.timeoutMs,
     ...(execution.constraintProfile ? { constraintProfile: execution.constraintProfile } : {}),
+    coveredToolIds: [],
+    candidateToolIds: [],
     inputSchema: stripExecutionConfig(row.inputSchema) as AiTool["inputSchema"],
     outputSchema: row.outputSchema as AiTool["outputSchema"],
     createdAt: row.createdAt.toISOString(),

@@ -15,6 +15,7 @@ export const aiToolsResource = createResourceClient<AiTool, AiToolsQuery, ListAi
     q: "",
     sortBy: "name",
     sortDirection: "asc",
+    surface: "primary",
     source: undefined,
     category: undefined,
     status: undefined,

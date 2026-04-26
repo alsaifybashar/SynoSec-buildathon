@@ -138,7 +138,7 @@ function groupFamilyTools(tools: AiTool[]): ToolGroup[] {
 function groupCategoryTools(tools: AiTool[]): ToolGroup[] {
   const grouped = new Map<AiTool["category"], AiTool[]>();
 
-  for (const tool of tools.filter((item) => !isSemanticFamilyTool(item))) {
+  for (const tool of tools.filter((item) => !isSemanticFamilyTool(item) && item.kind !== "builtin-action")) {
     const current = grouped.get(tool.category) ?? [];
     current.push(tool);
     grouped.set(tool.category, current);
@@ -386,24 +386,24 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
               <div className="rounded-xl border border-border bg-background/50 px-4 py-3">
                 <p className="text-sm font-medium text-foreground">{formValues.toolIds.length} tool{formValues.toolIds.length === 1 ? "" : "s"} selected</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Semantic family tools are grouped first. Everything else is grouped by tool category.
+                  Capability tools are grouped first. Everything else is grouped by tool category.
                 </p>
               </div>
             </DetailField>
           </DetailFieldGroup>
 
-          <DetailFieldGroup title="Tool Families" className="bg-card/70">
-            <DetailField label="Semantic family tools" hint="These compact wrappers expose family-level capabilities instead of raw tool brands." className="md:col-span-2">
+          <DetailFieldGroup title="Capability Tools" className="bg-card/70">
+            <DetailField label="Capability tools" hint="These compact tools expose assessment intent instead of raw tool brands." className="md:col-span-2">
               <div className="space-y-4">
                 {familyGroups.length > 0
                   ? renderToolGroupList(familyGroups, formValues.toolIds, toggleTool)
-                  : <p className="text-sm text-muted-foreground">No semantic family tools are available.</p>}
+                  : <p className="text-sm text-muted-foreground">No capability tools are available.</p>}
               </div>
             </DetailField>
           </DetailFieldGroup>
 
           <DetailFieldGroup title="Category Grants" className="bg-card/70">
-            <DetailField label="Remaining tool catalog" hint="Non-family tools are grouped by their current category metadata." className="md:col-span-2">
+            <DetailField label="Remaining tool catalog" hint="Raw and specialized tools are grouped by their current category metadata." className="md:col-span-2">
               <div className="space-y-4">
                 {categoryGroups.length > 0
                   ? renderToolGroupList(categoryGroups, formValues.toolIds, toggleTool)

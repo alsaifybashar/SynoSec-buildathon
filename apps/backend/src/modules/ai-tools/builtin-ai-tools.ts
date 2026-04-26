@@ -1,6 +1,7 @@
 import type { AiTool, AiToolsListQuery, ToolBuiltinActionKey } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
 import { paginateItems, type PaginatedResult } from "@/shared/pagination/paginated-result.js";
+import { sortAndFilterAiTools } from "./ai-tool-surface.js";
 import { getSemanticFamilyBuiltinAiTools } from "./semantic-family-tools.js";
 
 const builtinTimestamp = "2026-04-25T00:00:00.000Z";
@@ -9,9 +10,10 @@ const lifecycleBuiltinAiTools: AiTool[] = [
   {
     id: "builtin-log-progress",
     name: "Log Progress",
+    kind: "builtin-action",
     status: "active",
     source: "system",
-    description: "Workflow engine action for persisting one short operator-visible progress update in the workflow transcript.",
+    description: "Persist a short operator-visible progress update in the workflow transcript. Use this before or after meaningful tool calls to explain the current action or decision in one concise sentence. Provide `message`. Returns acceptance only; it does not create evidence, findings, or attack-path links.",
     executorType: "builtin",
     builtinActionKey: "log_progress" as ToolBuiltinActionKey,
     bashSource: null,
@@ -19,6 +21,8 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     category: "utility",
     riskTier: "passive",
     timeoutMs: 1000,
+    coveredToolIds: [],
+    candidateToolIds: [],
     inputSchema: {
       type: "object",
       properties: {
@@ -39,9 +43,10 @@ const lifecycleBuiltinAiTools: AiTool[] = [
   {
     id: "builtin-report-finding",
     name: "Report Finding",
+    kind: "builtin-action",
     status: "active",
     source: "system",
-    description: "Workflow engine action for persisting one evidence-backed workflow finding.",
+    description: "Persist one evidence-backed security finding. Run evidence tools first. Provide supported weakness details and persisted evidence quotes. Returns the finding id; use that id in related findings and handoff attack paths.",
     executorType: "builtin",
     builtinActionKey: "report_finding",
     bashSource: null,
@@ -49,6 +54,8 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     category: "utility",
     riskTier: "passive",
     timeoutMs: 1000,
+    coveredToolIds: [],
+    candidateToolIds: [],
     inputSchema: {
       type: "object",
       properties: {
@@ -90,9 +97,10 @@ const lifecycleBuiltinAiTools: AiTool[] = [
   {
     id: "builtin-complete-run",
     name: "Complete Run",
+    kind: "builtin-action",
     status: "active",
     source: "system",
-    description: "Workflow engine action for successfully finishing a workflow run with a final summary, recommended next step, and residual risk.",
+    description: "Finish the workflow run last, after required evidence, report_finding calls, finding ids, and any handoff attack paths have been submitted. Use this only as the final action. Provide `summary`, `recommendedNextStep`, `residualRisk`, and optional `handoff`. It does not create findings and cannot satisfy missing evidence, finding, or chain requirements.",
     executorType: "builtin",
     builtinActionKey: "complete_run",
     bashSource: null,
@@ -100,6 +108,8 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     category: "utility",
     riskTier: "passive",
     timeoutMs: 1000,
+    coveredToolIds: [],
+    candidateToolIds: [],
     inputSchema: {
       type: "object",
       properties: {
@@ -154,31 +164,12 @@ export function rejectBuiltinAiToolMutation(id: string): never {
 }
 
 export function mergeAndPaginateAiTools(items: AiTool[], query: AiToolsListQuery): PaginatedResult<AiTool> {
-  const normalizedQuery = query.q?.trim().toLowerCase();
-  const merged = [...items, ...getBuiltinAiTools()]
-    .filter((tool) => !query.status || tool.status === query.status)
-    .filter((tool) => !query.source || tool.source === query.source)
-    .filter((tool) => !query.category || tool.category === query.category)
-    .filter((tool) => {
-      if (!normalizedQuery) {
-        return true;
-      }
+  const mergedById = new Map<string, AiTool>();
+  for (const tool of [...items, ...getBuiltinAiTools()]) {
+    mergedById.set(tool.id, tool);
+  }
 
-      return [tool.name, tool.description ?? ""]
-        .some((value) => value.toLowerCase().includes(normalizedQuery));
-    })
-    .sort((left, right) => {
-      const sortBy = query.sortBy ?? "name";
-      const direction = query.sortDirection === "desc" ? -1 : 1;
-      const leftValue = left[sortBy];
-      const rightValue = right[sortBy];
-
-      if (leftValue === rightValue) {
-        return left.name.localeCompare(right.name) * direction;
-      }
-
-      return (leftValue > rightValue ? 1 : -1) * direction;
-    });
+  const merged = sortAndFilterAiTools([...mergedById.values()], query);
 
   return paginateItems(merged, query.page, query.pageSize);
 }

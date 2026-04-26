@@ -7,6 +7,7 @@ import type {
 } from "@synosec/contracts";
 import type { PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import { type AiToolsRepository } from "@/modules/ai-tools/ai-tools.repository.js";
+import { enrichAiTool } from "./ai-tool-surface.js";
 import { getBuiltinAiTool, isBuiltinAiToolId, mergeAndPaginateAiTools, rejectBuiltinAiToolMutation } from "./builtin-ai-tools.js";
 import { encodeCreateToolInput, encodeUpdateToolInput, mapToolExecutionFields, stripExecutionConfig } from "./tool-execution-config.js";
 
@@ -51,11 +52,11 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
   async getById(id: string): Promise<AiTool | null> {
     const builtin = getBuiltinAiTool(id);
     if (builtin) {
-      return builtin;
+      return enrichAiTool(builtin);
     }
 
     const tool = this.records.get(id);
-    return tool ? { ...tool, source: "custom" } : null;
+    return tool ? enrichAiTool({ ...tool, source: "custom" }) : null;
   }
 
   async create(input: CreateAiToolBody): Promise<AiTool> {
@@ -65,6 +66,7 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
     const record: AiTool = {
       id: randomUUID(),
       name: encoded.name,
+      kind: "raw-adapter",
       status: encoded.status,
       source: "custom",
       description: encoded.description,
@@ -76,6 +78,8 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
       capabilities: execution.capabilities,
       timeoutMs: execution.timeoutMs,
       ...(execution.constraintProfile ? { constraintProfile: execution.constraintProfile } : {}),
+      coveredToolIds: [],
+      candidateToolIds: [],
       inputSchema: stripExecutionConfig(encoded.inputSchema),
       outputSchema: encoded.outputSchema,
       createdAt: timestamp,

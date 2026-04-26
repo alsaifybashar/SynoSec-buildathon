@@ -14,6 +14,7 @@ import {
 } from "./seed-data/ai-builder-defaults.js";
 import "@/shared/config/load-env.js";
 import { attachExecutionConfig } from "@/modules/ai-tools/tool-execution-config.js";
+import { getBuiltinAiTools } from "@/modules/ai-tools/builtin-ai-tools.js";
 
 const prisma = new PrismaClient();
 const cloudflareConstraintId = "seed-constraint-cloudflare-v1";
@@ -193,7 +194,7 @@ async function main() {
       kind: "workflow_gate",
       provider: null,
       version: 1,
-      description: "Allows local and private development targets to bypass provider-governed execution constraints for seeded lab workflows.",
+      description: "Allows local and private development targets to bypass provider-governed execution constraints for approved lab workflows.",
       bypassForLocalTargets: true,
       denyProviderOwnedTargets: false,
       requireVerifiedOwnership: false,
@@ -211,7 +212,7 @@ async function main() {
       kind: "workflow_gate",
       provider: null,
       version: 1,
-      description: "Allows local and private development targets to bypass provider-governed execution constraints for seeded lab workflows.",
+      description: "Allows local and private development targets to bypass provider-governed execution constraints for approved lab workflows.",
       bypassForLocalTargets: true,
       denyProviderOwnedTargets: false,
       requireVerifiedOwnership: false,
@@ -326,6 +327,41 @@ async function main() {
             capabilities: [...tool.capabilities],
             ...(tool.constraintProfile ? { constraintProfile: tool.constraintProfile } : {})
           }) as Prisma.InputJsonValue,
+          outputSchema: tool.outputSchema as Prisma.InputJsonValue
+        }
+      })
+    )
+  );
+
+  await Promise.all(
+    getBuiltinAiTools().map((tool) =>
+      prisma.aiTool.upsert({
+        where: { id: tool.id },
+        update: {
+          name: tool.name,
+          status: "active",
+          source: "system",
+          description: tool.description,
+          adapter: "builtin-capability",
+          binary: null,
+          category: tool.category,
+          riskTier: tool.riskTier,
+          notes: "Virtual builtin capability record used for grant references and default relationships.",
+          inputSchema: tool.inputSchema as Prisma.InputJsonValue,
+          outputSchema: tool.outputSchema as Prisma.InputJsonValue
+        },
+        create: {
+          id: tool.id,
+          name: tool.name,
+          status: "active",
+          source: "system",
+          description: tool.description,
+          adapter: "builtin-capability",
+          binary: null,
+          category: tool.category,
+          riskTier: tool.riskTier,
+          notes: "Virtual builtin capability record used for grant references and default relationships.",
+          inputSchema: tool.inputSchema as Prisma.InputJsonValue,
           outputSchema: tool.outputSchema as Prisma.InputJsonValue
         }
       })

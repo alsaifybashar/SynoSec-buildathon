@@ -7,18 +7,18 @@ import { AiAgentsPage } from "@/features/ai-agents/page";
 const runtimeLabel = "Ollama · qwen3:8b";
 
 const familyTool: AiTool = {
-  id: "tool-family-1",
-  name: "HTTP Surface",
+  id: "tool-capability-1",
+  name: "HTTP Surface Assessment",
   status: "active",
   source: "system",
-  description: "Family wrapper for safe HTTP reconnaissance",
+  description: "Assess a known HTTP or HTTPS target without crawling or guessing paths. Use this as the first web action when reachability, status, headers, cookies, and technology hints are needed. Provide `baseUrl`. Returns observations for evidence quotes.",
   binary: "httpx",
   executorType: "bash",
   bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
   capabilities: ["semantic-family", "http-surface", "passive"],
   category: "web",
   riskTier: "passive",
-  notes: "Semantic family wrapper",
+  notes: "Capability-level HTTP assessment tool.",
   timeoutMs: 30000,
   inputSchema: { type: "object", properties: {} },
   outputSchema: { type: "object", properties: {} },
@@ -140,9 +140,9 @@ describe("AiAgentsPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Tool Families")).toBeInTheDocument();
+    expect(screen.getByText("Capability Tools")).toBeInTheDocument();
     });
-    expect(screen.getAllByText("HTTP Surface").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("HTTP Surface Assessment").length).toBeGreaterThan(0);
     expect(screen.getByText("Web Tools")).toBeInTheDocument();
     expect(screen.getByText("HTTP Recon")).toBeInTheDocument();
     expect(screen.queryByLabelText("System prompt")).not.toBeInTheDocument();

@@ -3,6 +3,22 @@ import { seededToolDefinitions } from "@/shared/seed-data/ai-builder-defaults.js
 import { getSemanticFamilyDefinitions } from "./semantic-family-tools.js";
 
 describe("semantic family tools", () => {
+  it("gives every semantic family an agent-facing description", () => {
+    for (const definition of getSemanticFamilyDefinitions()) {
+      const description = definition.tool.description ?? "";
+      const guidanceSignals = [
+        /\bUse\b/i,
+        /\bProvide\b/i,
+        /\bReturns\b/i,
+        /\bDo not\b/i,
+        /\bdoes not\b/i
+      ].filter((pattern) => pattern.test(description));
+
+      expect(description.length, `${definition.tool.id} description should be specific enough for agent selection`).toBeGreaterThanOrEqual(140);
+      expect(guidanceSignals.length, `${definition.tool.id} description should explain use, inputs, outputs, or boundaries`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
   it("covers every script-backed seeded tool with at least one semantic family", () => {
     const definitions = getSemanticFamilyDefinitions();
     const coveredToolIds = new Set(definitions.flatMap((definition) => definition.coveredToolIds));

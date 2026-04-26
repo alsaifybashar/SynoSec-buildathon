@@ -14,12 +14,12 @@ export interface CompileInput {
   layer: OsiLayer;
   justification: string;
   port?: number;
-  toolInput?: Record<string, string | number | boolean | string[]>;
+  toolInput?: Record<string, unknown>;
 }
 
 const MAX_TOOL_TIMEOUT_MS = 10_000;
 
-function firstExplicitUrl(toolInput?: Record<string, string | number | boolean | string[]>) {
+function firstExplicitUrl(toolInput?: Record<string, unknown>) {
   for (const key of ["baseUrl", "startUrl", "url", "loginUrl"] as const) {
     const value = toolInput?.[key];
     if (typeof value === "string" && value.trim().length > 0) {
@@ -46,10 +46,12 @@ function interpolateArgument(template: string, input: CompileInput): string {
     .replaceAll("{port}", input.port == null ? "" : String(input.port));
 
   for (const [key, value] of Object.entries(input.toolInput ?? {})) {
-    if (Array.isArray(value)) {
+    if (Array.isArray(value) || (value && typeof value === "object")) {
       continue;
     }
-    result = result.replaceAll(`{${key}}`, String(value));
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      result = result.replaceAll(`{${key}}`, String(value));
+    }
   }
 
   return result;

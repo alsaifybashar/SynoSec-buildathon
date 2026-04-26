@@ -57,8 +57,9 @@ export type AiToolsQuery = {
   page: number;
   pageSize: number;
   q: string;
-  sortBy: "name" | "source" | "category" | "status" | "riskTier" | "createdAt" | "updatedAt";
+  sortBy: "name" | "kind" | "source" | "category" | "status" | "riskTier" | "createdAt" | "updatedAt";
   sortDirection: SortDirection;
+  surface: OptionalString;
   source: OptionalString;
   category: OptionalString;
   status: OptionalString;

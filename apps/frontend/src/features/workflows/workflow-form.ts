@@ -69,7 +69,11 @@ export function toWorkflowRequestBody(values: WorkflowFormValues): CreateWorkflo
       requireStageResult: true,
       requireToolCall: false,
       allowEmptyResult: true,
-      minFindings: 0
+      minFindings: 0,
+      requireReachableSurface: false,
+      requireEvidenceBackedWeakness: false,
+      requireOsiCoverageStatus: false,
+      requireChainedFindings: false
     },
     resultSchemaVersion: 1,
     handoffSchema: null

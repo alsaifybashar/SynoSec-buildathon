@@ -18,7 +18,7 @@ describe("resolveToolExecutionFields", () => {
 
   it("hydrates a missing constraint profile from the seeded definition", () => {
     const result = resolveToolExecutionFields({
-      id: "seed-family-http-surface",
+      id: "seed-http-recon",
       name: "HTTP Surface",
       category: "web",
       riskTier: "passive"
@@ -34,7 +34,7 @@ describe("resolveToolExecutionFields", () => {
         sandboxProfile: "network-recon",
         privilegeProfile: "read-only-network",
         timeoutMs: 120000,
-        capabilities: ["semantic-family", "http-surface", "passive"]
+        capabilities: ["web", "http-surface", "passive"]
       }
     });
 

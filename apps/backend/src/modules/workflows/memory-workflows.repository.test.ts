@@ -24,7 +24,7 @@ describe("MemoryWorkflowsRepository", () => {
       status: "active",
       description: null,
       systemPrompt: "Work the target.",
-      toolIds: ["tool:http-recon"],
+      toolIds: ["builtin-http-surface-assessment"],
       createdAt: "2026-04-24T10:00:00.000Z",
       updatedAt: "2026-04-24T10:00:00.000Z"
       })
@@ -42,7 +42,7 @@ describe("MemoryWorkflowsRepository", () => {
       objective: "Collect evidence and stop through system tools.",
       stageSystemPrompt: defaultWorkflowStageSystemPrompt,
       taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
-      allowedToolIds: ["tool:http-recon"],
+      allowedToolIds: ["builtin-http-surface-assessment"],
       requiredEvidenceTypes: [],
       findingPolicy: {
         taxonomy: "typed-core-v1",
@@ -52,7 +52,11 @@ describe("MemoryWorkflowsRepository", () => {
         requireStageResult: true,
         requireToolCall: false,
         allowEmptyResult: true,
-        minFindings: 0
+        minFindings: 0,
+        requireReachableSurface: false,
+        requireEvidenceBackedWeakness: false,
+        requireOsiCoverageStatus: false,
+        requireChainedFindings: false
       },
       resultSchemaVersion: 1,
       handoffSchema: null
@@ -60,7 +64,7 @@ describe("MemoryWorkflowsRepository", () => {
 
     expect(created.agentId).toBe("20000000-0000-0000-0000-000000000001");
     expect(created.objective).toContain("Collect evidence");
-    expect(created.allowedToolIds).toEqual(["tool:http-recon"]);
+    expect(created.allowedToolIds).toEqual(["builtin-http-surface-assessment"]);
     expect(created.stages).toHaveLength(1);
     expect(created.stages[0]?.label).toBe("Pipeline");
   });
@@ -113,7 +117,11 @@ describe("MemoryWorkflowsRepository", () => {
           requireStageResult: true,
           requireToolCall: false,
           allowEmptyResult: true,
-          minFindings: 0
+          minFindings: 0,
+          requireReachableSurface: false,
+          requireEvidenceBackedWeakness: false,
+          requireOsiCoverageStatus: false,
+          requireChainedFindings: false
         },
         resultSchemaVersion: 1,
         handoffSchema: null,
@@ -199,7 +207,16 @@ describe("MemoryWorkflowsRepository", () => {
         allowedToolIds: [],
         requiredEvidenceTypes: [],
         findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
-        completionRule: { requireStageResult: true, requireToolCall: false, allowEmptyResult: true, minFindings: 0 },
+        completionRule: {
+          requireStageResult: true,
+          requireToolCall: false,
+          allowEmptyResult: true,
+          minFindings: 0,
+          requireReachableSurface: false,
+          requireEvidenceBackedWeakness: false,
+          requireOsiCoverageStatus: false,
+          requireChainedFindings: false
+        },
         resultSchemaVersion: 1,
         handoffSchema: null,
         stages: [],
