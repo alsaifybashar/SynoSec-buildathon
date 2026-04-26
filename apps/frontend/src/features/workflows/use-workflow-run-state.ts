@@ -146,6 +146,7 @@ export function useWorkflowRunState({
   const [currentRun, setCurrentRun] = useState<WorkflowRun | null>(null);
   const [liveModelOutput, setLiveModelOutput] = useState<WorkflowLiveModelOutput | null>(null);
   const [runPending, setRunPending] = useState(false);
+  const [cancelPending, setCancelPending] = useState(false);
   const [, setRunStreamState] = useState<RunStreamState>("idle");
   const [persistedTranscript, setPersistedTranscript] = useState<TranscriptProjection | null>(null);
   const [persistedAttackPaths, setPersistedAttackPaths] = useState<AttackPathSummary | null>(null);
@@ -436,16 +437,48 @@ export function useWorkflowRunState({
     }
   }
 
+  async function cancelRun() {
+    if (!currentRun || currentRun.status !== "running") {
+      return;
+    }
+
+    setCancelPending(true);
+    setLatestRunError(null);
+    try {
+      const run = await fetchJson<WorkflowRun>(`${apiRoutes.workflowRuns}/${currentRun.id}/cancel`, {
+        method: "POST"
+      });
+      const latestEvent = run.events.at(-1);
+      setCurrentRun(run);
+      setCurrentLaunch((current) => updateLaunchWithRun(
+        current,
+        toLaunchRunUpdate(run, latestEvent?.summary ?? latestEvent?.detail ?? null)
+      ));
+      setLiveModelOutput(null);
+      toast.success("Workflow run canceled");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to cancel the workflow run.";
+      setLatestRunError(message);
+      toast.error("Failed to cancel workflow run", {
+        description: message
+      });
+    } finally {
+      setCancelPending(false);
+    }
+  }
+
   return {
     currentLaunch,
     currentRun,
     liveModelOutput,
     runPending,
+    cancelPending,
     persistedTranscript,
     persistedAttackPaths,
     latestRunError,
     transcriptError,
     streamError,
-    startRun
+    startRun,
+    cancelRun
   };
 }

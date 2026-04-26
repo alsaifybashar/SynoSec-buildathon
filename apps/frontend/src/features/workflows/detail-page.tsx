@@ -72,7 +72,9 @@ export function WorkflowDetailPage({
     latestRunError,
     transcriptError,
     streamError,
-    startRun
+    startRun,
+    cancelRun,
+    cancelPending
   } = useWorkflowRunState({
     workflow,
     targets: context.targets,
@@ -343,6 +345,8 @@ export function WorkflowDetailPage({
           latestRunError={latestRunError}
           transcriptError={transcriptError}
           streamError={streamError}
+          cancelPending={cancelPending}
+          onCancelRun={() => void cancelRun()}
         />
       </DetailPage>
       <PromptEditModal

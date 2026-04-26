@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { getWorkflowRunContextTokenEstimate, getWorkflowRunModelStepCount, type AiAgent, type AiTool, type AttackPathSummary, type Observation, type Target as WorkflowTarget, type Workflow, type WorkflowRun } from "@synosec/contracts";
-import { AlertTriangle, ChevronRight, LoaderCircle, Radio, Target } from "lucide-react";
+import { AlertTriangle, ChevronRight, LoaderCircle, Radio, Square, Target } from "lucide-react";
 import { AttackPathsSection } from "@/features/attack-paths/attack-paths-section";
 import { DetailHintTrigger } from "@/shared/components/detail-page";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
@@ -1143,7 +1143,9 @@ export function WorkflowTraceSection({
   showFullDetails = false,
   latestRunError,
   transcriptError,
-  streamError
+  streamError,
+  cancelPending = false,
+  onCancelRun
 }: {
   workflow: Workflow | null;
   activeTarget: WorkflowTarget | null;
@@ -1159,6 +1161,8 @@ export function WorkflowTraceSection({
   latestRunError?: string | null;
   transcriptError?: string | null;
   streamError?: string | null;
+  cancelPending?: boolean;
+  onCancelRun?: () => void;
 }) {
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const shouldFollowRef = useRef(false);
@@ -1330,6 +1334,19 @@ export function WorkflowTraceSection({
                         <span>•</span>
                         <span>•</span>
                       </span>
+                      {onCancelRun ? (
+                        <button
+                          type="button"
+                          onClick={onCancelRun}
+                          disabled={cancelPending}
+                          className="ml-1 inline-flex h-6 items-center gap-1 rounded border border-destructive/30 px-2 text-[0.62rem] text-destructive transition hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
+                          aria-label="Cancel workflow run"
+                          title="Cancel workflow run"
+                        >
+                          <Square className="h-3 w-3 fill-current" />
+                          {cancelPending ? "Canceling" : "Cancel"}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}

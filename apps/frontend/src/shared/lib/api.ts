@@ -45,6 +45,9 @@ function inferRequestContext(url: string, init?: RequestInit): RequestContext {
   if (pathname.match(/\/api\/workflow-runs\/[^/]+\/step$/) && method === "POST") {
     return { method, action: "advance workflow run", singularLabel: "workflow run", pluralLabel: "workflow runs" };
   }
+  if (pathname.match(/\/api\/workflow-runs\/[^/]+\/cancel$/) && method === "POST") {
+    return { method, action: "cancel workflow run", singularLabel: "workflow run", pluralLabel: "workflow runs" };
+  }
   if (pathname.match(/\/api\/execution-reports\/[^/]+\/archive$/) && method === "POST") {
     return { method, action: "archive execution report", singularLabel: "execution report", pluralLabel: "execution reports" };
   }
