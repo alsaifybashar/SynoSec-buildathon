@@ -269,7 +269,7 @@ make dev
 
 Local development starts Postgres, both local demo targets, and the host-mode backend and frontend. Attack-map and scan execution should be started from the UI rather than as an automatic background action during development startup.
 
-Workflow execution now uses one backend-wide runtime selected by `LLM_PROVIDER`. Use `anthropic` with `ANTHROPIC_API_KEY` for hosted execution, or `local` with `LLM_LOCAL_BASE_URL` and `LLM_LOCAL_MODEL` for Ollama over its OpenAI-compatible `/v1` interface. When `LOCAL_ENABLED=TRUE`, the Docker-backed development path can start Ollama and prepare the configured local model.
+Workflow execution now uses one backend-wide runtime selected by `LLM_PROVIDER`. Use `anthropic` with `ANTHROPIC_API_KEY` for hosted execution, or `local` with `LLM_LOCAL_BASE_URL` and `LLM_LOCAL_MODEL` for Ollama over its OpenAI-compatible `/v1` interface. `LLM_LOCAL_OPENAI_API_MODE` controls which OpenAI-style API path is used for local inference; keep it on `chat` for Ollama workflow/tool compatibility unless you are intentionally testing the `responses` path. When `LOCAL_ENABLED=TRUE`, the Docker-backed development path can start Ollama and prepare the configured local model.
 
 ### Endpoints
 

@@ -70,7 +70,10 @@ dev:
 	$(MAKE) free-dev-ports
 	$(MAKE) dev-services
 	$(MAKE) database
-	pnpm dev
+	pnpm build
+	pnpm --filter @synosec/contracts build && pnpm exec concurrently -n backend,frontend -c green,magenta \
+		"pnpm --filter @synosec/backend start" \
+		"pnpm --filter @synosec/frontend preview"
 
 free-dev-ports:
 	@set -e; \

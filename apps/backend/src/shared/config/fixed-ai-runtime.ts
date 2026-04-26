@@ -12,7 +12,8 @@ const configuredRuntimeEnvSchema = z.object({
   anthropicApiKey: z.string().trim().min(1).optional(),
   anthropicModel: z.string().trim().min(1).default(DEFAULT_ANTHROPIC_MODEL),
   localBaseUrl: z.string().trim().url().default(DEFAULT_LOCAL_BASE_URL),
-  localModel: z.string().trim().min(1).default(DEFAULT_LOCAL_MODEL)
+  localModel: z.string().trim().min(1).default(DEFAULT_LOCAL_MODEL),
+  localOpenAiApiMode: z.enum(["chat", "responses"]).default("chat")
 });
 
 type ConfiguredRuntimeEnv = z.infer<typeof configuredRuntimeEnvSchema>;
@@ -32,6 +33,7 @@ export type FixedAiRuntime =
       label: string;
       baseUrl: string;
       apiKey: string;
+      apiMode: "chat" | "responses";
     };
 
 export function formatRuntimeLabel(providerName: string, model: string) {
@@ -44,7 +46,8 @@ export function loadFixedAiRuntime(): FixedAiRuntime {
     anthropicApiKey: process.env["ANTHROPIC_API_KEY"],
     anthropicModel: process.env["LLM_ANTHROPIC_MODEL"] ?? DEFAULT_ANTHROPIC_MODEL,
     localBaseUrl: normalizeLocalBaseUrl(process.env["LLM_LOCAL_BASE_URL"] ?? DEFAULT_LOCAL_BASE_URL),
-    localModel: process.env["LLM_LOCAL_MODEL"] ?? DEFAULT_LOCAL_MODEL
+    localModel: process.env["LLM_LOCAL_MODEL"] ?? DEFAULT_LOCAL_MODEL,
+    localOpenAiApiMode: process.env["LLM_LOCAL_OPENAI_API_MODE"] ?? "chat"
   });
 
   return env.provider === "anthropic"
@@ -81,7 +84,8 @@ function loadLocalRuntime(env: ConfiguredRuntimeEnv): FixedAiRuntime {
     model: env.localModel,
     label: formatRuntimeLabel("Ollama", env.localModel),
     baseUrl: env.localBaseUrl,
-    apiKey: "ollama"
+    apiKey: "ollama",
+    apiMode: env.localOpenAiApiMode
   };
 }
 

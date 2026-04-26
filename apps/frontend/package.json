@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "preview": "vite preview",
     "build": "pnpm --filter @synosec/contracts build && tsc -p tsconfig.app.json && vite build",
     "typecheck": "pnpm --filter @synosec/contracts build && tsc -p tsconfig.app.json --noEmit",
     "test": "pnpm --filter @synosec/contracts build && vitest run"

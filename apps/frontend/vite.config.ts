@@ -30,6 +30,19 @@ export default defineConfig(({ mode }) => {
         }
       }
     },
+    preview: {
+      host: "0.0.0.0",
+      port: frontendPort,
+      strictPort: true,
+      proxy: {
+        "/api": proxyTarget,
+        "/ws": {
+          target: proxyTarget.replace("http://", "ws://").replace("https://", "wss://"),
+          ws: true,
+          rewriteWsOrigin: true
+        }
+      }
+    },
     test: {
       environment: "jsdom",
       globals: true,

@@ -9,6 +9,9 @@ ARG SUBFINDER_VERSION=2.8.0
 ARG DALFOX_VERSION=2.12.0
 ARG FEROXBUSTER_VERSION=2.13.1
 ARG RUSTSCAN_VERSION=2.4.1
+ARG GOBUSTER_VERSION=3.6.0
+ARG KUBE_BENCH_VERSION=0.7.0
+ARG BURP_VERSION=2026.2.3
 
 ENV PATH="/root/.local/bin:/root/go/bin:${PATH}"
 
@@ -34,6 +37,7 @@ RUN sed -i 's/Components: main/Components: main contrib non-free non-free-firmwa
     masscan \
     medusa \
     netcat-openbsd \
+    ncat \
     nikto \
     nmap \
     openjdk-17-jre-headless \
@@ -52,6 +56,7 @@ RUN sed -i 's/Components: main/Components: main contrib non-free non-free-firmwa
   && rm -rf /var/lib/apt/lists/* \
   && corepack enable \
   && pipx install arjun \
+  && pipx install git+https://github.com/Tib3rius/AutoRecon.git \
   && pipx install dirsearch \
   && pipx install enum4linux.py \
   && pipx install git+https://github.com/cddmp/enum4linux-ng.git \
@@ -66,6 +71,14 @@ RUN sed -i 's/Components: main/Components: main contrib non-free non-free-firmwa
   && pipx install git+https://github.com/laramies/theHarvester.git@4.7.1 \
   && pipx install volatility3 \
   && gem install evil-winrm wpscan \
+  && go install "github.com/OJ/gobuster/v3@v${GOBUSTER_VERSION}" \
+  && go install "github.com/aquasecurity/kube-bench@v${KUBE_BENCH_VERSION}" \
+  && curl -fsSL https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb -o /tmp/msfinstall \
+  && chmod 0755 /tmp/msfinstall \
+  && /tmp/msfinstall \
+  && curl -fsSL "https://portswigger.net/burp/releases/download?product=community&version=${BURP_VERSION}&type=Jar" -o /opt/burpsuite-community.jar \
+  && printf '%s\n' '#!/usr/bin/env sh' 'exec java -jar /opt/burpsuite-community.jar "$@"' > /usr/local/bin/burp \
+  && chmod 0755 /usr/local/bin/burp \
   && curl -fsSL "https://github.com/projectdiscovery/httpx/releases/download/v${HTTPX_VERSION}/httpx_${HTTPX_VERSION}_linux_amd64.zip" -o /tmp/httpx.zip \
   && unzip -q /tmp/httpx.zip -d /tmp/httpx \
   && install -m 0755 /tmp/httpx/httpx /usr/local/bin/httpx \
@@ -98,6 +111,6 @@ RUN sed -i 's/Components: main/Components: main contrib non-free non-free-firmwa
   && if command -v vol >/dev/null 2>&1 && ! command -v volatility >/dev/null 2>&1; then ln -s "$(command -v vol)" /usr/local/bin/volatility; fi \
   && if command -v ScoutSuite >/dev/null 2>&1 && ! command -v scout >/dev/null 2>&1; then ln -s "$(command -v ScoutSuite)" /usr/local/bin/scout; fi \
   && if command -v burpsuite >/dev/null 2>&1 && ! command -v burp >/dev/null 2>&1; then ln -s "$(command -v burpsuite)" /usr/local/bin/burp; fi \
-  && rm -rf /tmp/httpx /tmp/katana /tmp/nuclei /tmp/subfinder /tmp/feroxbuster /tmp/httpx.zip /tmp/katana.zip /tmp/nuclei.zip /tmp/subfinder.zip /tmp/dalfox.tar.gz /tmp/dalfox-linux-amd64 /tmp/feroxbuster.zip /tmp/rustscan.zip /tmp/x86_64-linux-rustscan.tar.gz /tmp/rustscan
+  && rm -rf /tmp/httpx /tmp/katana /tmp/nuclei /tmp/subfinder /tmp/feroxbuster /tmp/httpx.zip /tmp/katana.zip /tmp/nuclei.zip /tmp/subfinder.zip /tmp/dalfox.tar.gz /tmp/dalfox-linux-amd64 /tmp/feroxbuster.zip /tmp/rustscan.zip /tmp/x86_64-linux-rustscan.tar.gz /tmp/rustscan /tmp/msfinstall
 
 CMD ["sh", "-c", "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/connector dev"]
