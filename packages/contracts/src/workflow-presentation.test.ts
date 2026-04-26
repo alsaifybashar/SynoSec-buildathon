@@ -6,7 +6,7 @@ import {
   type Workflow,
   type WorkflowRun
 } from "./resources.js";
-import { buildWorkflowTranscript } from "./workflow-presentation.js";
+import { buildWorkflowTranscript, getWorkflowRunTokenUsage } from "./workflow-presentation.js";
 
 const workflow: Workflow = {
   id: "10000000-0000-0000-0000-000000000001",
@@ -58,6 +58,7 @@ describe("buildWorkflowTranscript", () => {
       currentStepIndex: 0,
       startedAt: "2026-04-25T00:00:00.000Z",
       completedAt: null,
+      tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
       trace: [],
       events: [
         {
@@ -192,6 +193,7 @@ describe("buildWorkflowTranscript", () => {
       currentStepIndex: 0,
       startedAt: "2026-04-25T00:00:00.000Z",
       completedAt: "2026-04-25T00:00:01.000Z",
+      tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
       trace: [],
       events: [
         {
@@ -271,6 +273,7 @@ describe("buildWorkflowTranscript", () => {
       currentStepIndex: 0,
       startedAt: "2026-04-25T00:00:00.000Z",
       completedAt: "2026-04-25T00:00:01.000Z",
+      tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
       trace: [],
       events: [
         {
@@ -326,6 +329,7 @@ describe("buildWorkflowTranscript", () => {
       currentStepIndex: 0,
       startedAt: "2026-04-25T00:00:00.000Z",
       completedAt: "2026-04-25T00:00:01.000Z",
+      tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
       trace: [],
       events: [
         {
@@ -413,6 +417,7 @@ describe("buildWorkflowTranscript", () => {
       currentStepIndex: 0,
       startedAt: "2026-04-25T00:00:00.000Z",
       completedAt: null,
+      tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
       trace: [],
       events: [
         {
