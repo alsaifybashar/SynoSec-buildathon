@@ -7,6 +7,7 @@ import { createRateLimitMiddleware } from "@/shared/http/rate-limit.js";
 import { RequestError } from "@/shared/http/request-error.js";
 import { attachAuthContext, loadAuthConfig } from "@/modules/auth/index.js";
 import { createErrorHandler } from "@/shared/http/error-handler.js";
+import { createRequestLogger, shouldEnableRequestLogging } from "@/shared/http/request-logger.js";
 import { registerRoutes } from "@/app/register-routes.js";
 import type { ExecutionConstraintsRepository } from "@/modules/execution-constraints/index.js";
 import type { AiProvidersRepository } from "@/modules/ai-providers/index.js";
@@ -45,6 +46,9 @@ export function createApp(options: AppDependencies): Express {
   app.disable("x-powered-by");
   app.set("trust proxy", true);
   app.use(applySecurityHeaders);
+  if (shouldEnableRequestLogging()) {
+    app.use(createRequestLogger());
+  }
   app.use((request, _response, next) => {
     const origin = request.headers.origin;
     if (!origin || isAllowedRequestOrigin(origin, authConfig.frontendUrl, request.path)) {
