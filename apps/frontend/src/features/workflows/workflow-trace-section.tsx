@@ -67,6 +67,28 @@ type DuplexAtom = {
 
 type StructuredToolSegment = NonNullable<DuplexAtom["structuredToolSegment"]>;
 
+type StructuredReconSummary = {
+  kind: "recon";
+  openPorts: Array<{ port: number; protocol: string; service: string; version?: string }>;
+  technologies: string[];
+  serverInfo: Record<string, string>;
+};
+
+type StructuredAttackPlanSummary = {
+  kind: "attack-plan";
+  overallRisk?: string;
+  summary?: string;
+  phases: Array<{
+    id?: string;
+    name?: string;
+    priority?: string;
+    rationale?: string;
+    targetService?: string;
+    tools?: string[];
+    status?: string;
+  }>;
+};
+
 function HelpHint({ label, hint }: { label: string; hint: string }) {
   return (
     <TooltipProvider delayDuration={150}>
@@ -372,7 +394,7 @@ function buildDuplexAtoms(input: {
 
       atoms.push({
         key: item.id,
-        side: "right",
+        side: item.title === "Recon completed" || item.title === "Attack plan created" ? "left" : "right",
         kind: item.title.toLowerCase().includes("prompt") ? "system-prompt" : "system",
         label: item.title,
         body: item.body ?? item.summary,
@@ -623,6 +645,159 @@ function ToolDetailBlock({
   );
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseStructuredSystemBody(atom: DuplexAtom): StructuredReconSummary | StructuredAttackPlanSummary | null {
+  if (!atom.body) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(atom.body) as unknown;
+    if (!isRecord(parsed)) {
+      return null;
+    }
+
+    if (atom.label === "Recon completed") {
+      const openPorts = Array.isArray(parsed["openPorts"]) ? parsed["openPorts"]
+        .filter(isRecord)
+        .map((entry) => ({
+          port: typeof entry["port"] === "number" ? entry["port"] : 0,
+          protocol: typeof entry["protocol"] === "string" ? entry["protocol"] : "",
+          service: typeof entry["service"] === "string" ? entry["service"] : "",
+          ...(typeof entry["version"] === "string" ? { version: entry["version"] } : {})
+        }))
+        .filter((entry) => entry.port > 0 && entry.protocol && entry.service)
+        : [];
+
+      const technologies = Array.isArray(parsed["technologies"])
+        ? parsed["technologies"].filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        : [];
+
+      const serverInfo = isRecord(parsed["serverInfo"])
+        ? Object.fromEntries(Object.entries(parsed["serverInfo"]).filter(([, value]) => typeof value === "string" && value.trim().length > 0)) as Record<string, string>
+        : {};
+
+      return { kind: "recon", openPorts, technologies, serverInfo };
+    }
+
+    if (atom.label === "Attack plan created") {
+      const phases = Array.isArray(parsed["phases"]) ? parsed["phases"]
+        .filter(isRecord)
+        .map((phase) => ({
+          ...(typeof phase["id"] === "string" ? { id: phase["id"] } : {}),
+          ...(typeof phase["name"] === "string" ? { name: phase["name"] } : {}),
+          ...(typeof phase["priority"] === "string" ? { priority: phase["priority"] } : {}),
+          ...(typeof phase["rationale"] === "string" ? { rationale: phase["rationale"] } : {}),
+          ...(typeof phase["targetService"] === "string" ? { targetService: phase["targetService"] } : {}),
+          ...(typeof phase["status"] === "string" ? { status: phase["status"] } : {}),
+          ...(Array.isArray(phase["tools"])
+            ? { tools: phase["tools"].filter((item): item is string => typeof item === "string" && item.trim().length > 0) }
+            : {})
+        }))
+        : [];
+
+      return {
+        kind: "attack-plan",
+        ...(typeof parsed["overallRisk"] === "string" ? { overallRisk: parsed["overallRisk"] } : {}),
+        ...(typeof parsed["summary"] === "string" ? { summary: parsed["summary"] } : {}),
+        phases
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function StructuredSystemCard({ atom }: { atom: DuplexAtom }) {
+  const structured = parseStructuredSystemBody(atom);
+  if (!structured) {
+    return null;
+  }
+
+  if (structured.kind === "recon") {
+    const portSummary = structured.openPorts
+      .map((port) => `${port.port}/${port.protocol} ${port.service}${port.version ? ` (${port.version})` : ""}`)
+      .join(" · ");
+    const serverInfoEntries = Object.entries(structured.serverInfo);
+
+    return (
+      <div className="space-y-2 py-1">
+        <div className="space-y-1">
+          <MonoLabel>Recon summary</MonoLabel>
+          {portSummary ? <p className="text-[0.82rem] leading-[1.65] text-foreground/84">{portSummary}</p> : null}
+        </div>
+        {structured.technologies.length > 0 ? (
+          <div className="space-y-1">
+            <MonoLabel>Technologies</MonoLabel>
+            <p className="text-[0.8rem] leading-[1.65] text-foreground/82">
+              {structured.technologies.join(" · ")}
+            </p>
+          </div>
+        ) : null}
+        {serverInfoEntries.length > 0 ? (
+          <div className="space-y-1">
+            <MonoLabel>Server profile</MonoLabel>
+            <div className="space-y-1 text-[0.8rem] leading-[1.6] text-foreground/82">
+              {serverInfoEntries.map(([key, value]) => (
+                <p key={key}>
+                  <span className="font-mono text-[0.7rem] uppercase tracking-[0.12em] text-muted-foreground">{key}</span>
+                  <span className="text-muted-foreground"> · </span>
+                  <span>{value}</span>
+                </p>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 py-1">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <MonoLabel>Attack plan</MonoLabel>
+          {structured.summary ? <p className="text-[0.84rem] leading-[1.6] text-foreground/82">{structured.summary}</p> : null}
+        </div>
+        {structured.overallRisk ? (
+          <span className="rounded-sm border border-border/70 bg-card/60 px-2 py-1 font-mono text-[0.65rem] uppercase tracking-[0.16em] text-foreground/80">
+            Risk · {structured.overallRisk}
+          </span>
+        ) : null}
+      </div>
+      <ol className="mt-1 space-y-2">
+        {structured.phases.map((phase, index) => (
+          <li key={phase.id ?? `${phase.name ?? "phase"}:${index}`} className="ml-5 list-decimal text-foreground/84 marker:font-mono marker:text-foreground/65">
+            <div className="min-w-0 pl-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-[0.86rem] text-foreground">{phase.name ?? `Phase ${index + 1}`}</div>
+                <div className="flex items-center gap-2 font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">
+                  {phase.priority ? <span>{phase.priority}</span> : null}
+                  {phase.status ? <span>{phase.status}</span> : null}
+                </div>
+              </div>
+              {phase.targetService ? <div className="mt-1 text-[0.74rem] text-muted-foreground">{phase.targetService}</div> : null}
+              {phase.rationale ? <div className="mt-1 text-[0.8rem] leading-[1.55] text-foreground/82">{phase.rationale}</div> : null}
+              {phase.tools && phase.tools.length > 0 ? (
+                <div className="mt-1.5 text-[0.76rem] leading-[1.6] text-foreground/78">
+                  <span className="font-mono text-[0.68rem] uppercase tracking-[0.12em] text-muted-foreground">Tools</span>
+                  <span className="text-muted-foreground"> · </span>
+                  <span>{phase.tools.join(", ")}</span>
+                </div>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; showFullDetails: boolean }) {
   const isLeft = atom.side === "left";
   const accent = KIND_ACCENT[atom.kind];
@@ -636,6 +811,8 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
   const showLeadLine = Boolean(labelText) || Boolean(compactToolInput && !showFullDetails) || Boolean(showTitle);
   const isStructuredToolContext = atom.kind === "tool-context" && atom.structuredToolSegment;
   const structuredToolSegment = isStructuredToolContext ? atom.structuredToolSegment : null;
+  const structuredSystemCard = atom.kind === "system" ? <StructuredSystemCard atom={atom} /> : null;
+  const hideTranscriptBadge = Boolean(structuredSystemCard);
   const hasObservations = Boolean(atom.observations && atom.observations.length > 0);
   const showObservationPreview = isTool && hasObservations && !showFullDetails && !isStructuredToolContext;
   const showCompactToolOutput = Boolean(compactToolOutput) && !showObservationPreview && !showFullDetails && !isStructuredToolContext;
@@ -643,29 +820,31 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
   return (
     <div className={cn("flex w-full", isLeft ? "justify-start pr-[6%]" : "justify-end pl-[6%]")}>
       <article className={cn("w-full max-w-[52rem] space-y-1.5", isTool ? "max-w-[48rem]" : "")}>
-        <div
-          className={cn(
-            "flex items-center gap-2 px-0.5 font-mono text-[0.6rem] uppercase tracking-wider text-muted-foreground",
-            isLeft ? "" : "flex-row-reverse"
-          )}
-        >
-          <span className={cn("inline-flex items-center gap-1.5 font-semibold", accent.label)}>
-            <span className={cn("h-1 w-1 rounded-full", accent.dot)} />
-            {KIND_LABEL[atom.kind]}
-          </span>
-          {atom.severity ? (
-            <>
-              <span className="text-border">·</span>
-              <span className="font-semibold text-destructive">{atom.severity}</span>
-            </>
-          ) : null}
-          {atom.meta ? (
-            <>
-              <span className="text-border">·</span>
-              <span>{atom.meta}</span>
-            </>
-          ) : null}
-        </div>
+        {!hideTranscriptBadge ? (
+          <div
+            className={cn(
+              "flex items-center gap-2 px-0.5 font-mono text-[0.6rem] uppercase tracking-wider text-muted-foreground",
+              isLeft ? "" : "flex-row-reverse"
+            )}
+          >
+            <span className={cn("inline-flex items-center gap-1.5 font-semibold", accent.label)}>
+              <span className={cn("h-1 w-1 rounded-full", accent.dot)} />
+              {KIND_LABEL[atom.kind]}
+            </span>
+            {atom.severity ? (
+              <>
+                <span className="text-border">·</span>
+                <span className="font-semibold text-destructive">{atom.severity}</span>
+              </>
+            ) : null}
+            {atom.meta ? (
+              <>
+                <span className="text-border">·</span>
+                <span>{atom.meta}</span>
+              </>
+            ) : null}
+          </div>
+        ) : null}
         <div className={cn("space-y-1", isTool ? "pl-4" : "")}>
           {structuredToolSegment ? (
             <details className="rounded-lg border border-border/70 bg-background/35">
@@ -700,7 +879,9 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
             </details>
           ) : null}
 
-          {!isStructuredToolContext && showLeadLine ? (
+          {structuredSystemCard}
+
+          {!isStructuredToolContext && !structuredSystemCard && showLeadLine ? (
           <p
             className={cn(
               "whitespace-pre-wrap leading-[1.65] text-foreground/90",
@@ -718,7 +899,7 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
           </p>
           ) : null}
 
-          {showCompactToolOutput ? (
+          {showCompactToolOutput && !structuredSystemCard ? (
             <p className="whitespace-pre-wrap font-mono text-[0.74rem] leading-[1.55] text-muted-foreground/90">
               {compactToolOutput}
             </p>
@@ -739,7 +920,7 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
             </ToolDetailBlock>
           ) : null}
 
-          {atom.body && (!isTool || showFullDetails) && !isStructuredToolContext ? (
+          {atom.body && (!isTool || showFullDetails) && !isStructuredToolContext && !structuredSystemCard ? (
             isTool && showFullDetails ? (
               <ToolDetailBlock
                 label="Output"
@@ -974,6 +1155,10 @@ export function WorkflowTraceSection({
       errors: errorMessages
     }).filter((atom) => atom.kind !== "finding");
   }, [workflow, run, effectiveTranscript, agent, findingsById, errorMessages]);
+  const pendingToolAtom = useMemo(
+    () => atoms.slice().reverse().find((atom) => atom.kind === "tool-call" && !atom.status) ?? null,
+    [atoms]
+  );
 
   if (!workflow) {
     return null;
@@ -998,7 +1183,7 @@ export function WorkflowTraceSection({
                   <div className="flex w-full justify-start pr-[8%]">
                     <div className="flex items-center gap-2 rounded-md border bg-card px-3 py-1.5 font-mono text-[0.64rem] text-muted-foreground">
                       <Radio className="h-3 w-3 text-primary" />
-                      <span>Agent typing</span>
+                      <span>{pendingToolAtom ? `Tool running · ${pendingToolAtom.label}` : "Agent typing"}</span>
                       <span className="duplex-typing inline-flex items-center gap-0.5">
                         <span>•</span>
                         <span>•</span>

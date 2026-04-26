@@ -6,7 +6,6 @@ import { workflowsResource } from "@/features/workflows/resource";
 import { workflowTransfer } from "@/features/workflows/transfer";
 import { useWorkflowDefinitionContext } from "@/features/workflows/context";
 import { PromptEditModal, type PromptEditDraft } from "@/features/workflows/prompt-edit-modal";
-import { WorkflowConstraintConfirmation } from "@/features/workflows/workflow-constraint-confirmation";
 import { useWorkflowRunState } from "@/features/workflows/use-workflow-run-state";
 import { WorkflowTraceSection } from "@/features/workflows/workflow-trace-section";
 import { DetailLoadingState, DetailPage } from "@/shared/components/detail-page";
@@ -29,7 +28,6 @@ export function WorkflowDetailPage({
   onNavigateToAgent?: (id: string) => void;
 }) {
   const [showFullDetails, setShowFullDetails] = useState(false);
-  const [showConstraintConfirmation, setShowConstraintConfirmation] = useState(false);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [promptDraft, setPromptDraft] = useState<PromptEditDraft>({ objective: "", systemPrompt: "" });
   const [promptSavePending, setPromptSavePending] = useState(false);
@@ -81,8 +79,6 @@ export function WorkflowDetailPage({
   const workflowTarget = workflow
     ? context.targets.find((item) => item.id === workflow.targetId) ?? null
     : null;
-  const workflowConstraints = (workflowTarget?.constraintBindings ?? [])
-    .filter((binding): binding is typeof binding & { constraint: NonNullable<typeof binding.constraint> } => Boolean(binding.constraint));
   const approvedToolCount = workflow
     ? (workflow.allowedToolIds.length > 0 ? workflow.allowedToolIds.length : workflowAgent?.toolIds.length ?? 0)
     : 0;
@@ -220,17 +216,7 @@ export function WorkflowDetailPage({
   const loadedWorkflow = workflow ?? workflowDetail.item;
 
   async function handleStartRun() {
-    if (workflowConstraints.length > 0) {
-      setShowConstraintConfirmation(true);
-      return;
-    }
-
     await startRun();
-  }
-
-  async function handleConfirmedStartRun() {
-    await startRun();
-    setShowConstraintConfirmation(false);
   }
 
   return (
@@ -292,13 +278,6 @@ export function WorkflowDetailPage({
           streamError={streamError}
         />
       </DetailPage>
-      <WorkflowConstraintConfirmation
-        open={showConstraintConfirmation}
-        constraints={workflowConstraints}
-        pending={runPending}
-        onCancel={() => setShowConstraintConfirmation(false)}
-        onConfirm={() => void handleConfirmedStartRun()}
-      />
       <PromptEditModal
         open={showPromptEditor}
         workflow={workflow}

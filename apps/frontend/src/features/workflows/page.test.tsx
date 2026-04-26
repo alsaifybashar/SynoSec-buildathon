@@ -379,26 +379,19 @@ describe("WorkflowDetailPage", () => {
     expect(onNavigateToEdit).toHaveBeenCalledWith(workflow.id, workflow.name);
   });
 
-  it("starts a workflow run from the detail page", async () => {
+  it("starts a workflow run from the detail page without constraint confirmation", async () => {
     const fetchMock = createFetchMock();
     vi.stubGlobal("fetch", fetchMock);
 
     renderWorkflowDetailPage();
     fireEvent.click(await screen.findByRole("button", { name: "Start Run" }));
 
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "https://developers.cloudflare.com/fundamentals/reference/scans-penetration/" })).toBeInTheDocument();
-
-    let postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST");
-    expect(postCall).toBeUndefined();
-
-    fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "Continue to Run" }));
-
     await waitFor(() => {
-      postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST");
+      const postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST");
       expect(postCall).toBeDefined();
     });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST");
     expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({});
   });
 

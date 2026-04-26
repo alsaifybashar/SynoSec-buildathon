@@ -11,6 +11,7 @@ export class WorkflowRunEventPublisher {
   async appendEvent(run: WorkflowRun, event: WorkflowTraceEvent, patch?: {
     status?: WorkflowRun["status"];
     completedAt?: string | null;
+    currentStepIndex?: number;
   }, liveModelOutput?: WorkflowLiveModelOutput | null) {
     const updatedRun = await this.workflowsRepository.appendRunEvent(run.id, event, patch);
     this.workflowRunStream.publish(updatedRun.id, {

@@ -1,0 +1,175 @@
+import type {
+  AiTool,
+  Scan,
+  StartWorkflowRunBody,
+  ToolRequest,
+  ToolRun,
+  Workflow,
+  WorkflowLiveModelOutput,
+  WorkflowRun,
+  WorkflowRunCoverageResponse,
+  WorkflowRunFindingsResponse,
+  WorkflowRunReport,
+  WorkflowRunTranscriptResponse,
+  WorkflowStage,
+  WorkflowStageResult,
+  WorkflowTraceEvent
+} from "@synosec/contracts";
+import type { OrchestratorExecutionEngineService } from "@/engine/orchestrator/index.js";
+import type { ToolRuntime } from "@/modules/ai-tools/index.js";
+import type { ExecutionReportsService } from "@/modules/execution-reports/index.js";
+import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
+import type { AiProvidersRepository, StoredAiProvider } from "@/modules/ai-providers/index.js";
+import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
+import type { TargetsRepository } from "@/modules/targets/index.js";
+import type { WorkflowsRepository } from "@/modules/workflows/workflows.repository.js";
+import type { EffectiveExecutionConstraintSet } from "./execution-constraints.js";
+import type { WorkflowRunStream } from "./workflow-run-stream.js";
+
+export interface WorkflowArtifactReader {
+  getTranscript(runId: string): Promise<WorkflowRunTranscriptResponse>;
+  getFindings(runId: string): Promise<WorkflowRunFindingsResponse>;
+  getCoverage(runId: string): Promise<WorkflowRunCoverageResponse>;
+  getReport(runId: string): Promise<WorkflowRunReport>;
+}
+
+export interface WorkflowRuntimePorts {
+  workflowsRepository: WorkflowsRepository;
+  targetsRepository: TargetsRepository;
+  aiAgentsRepository: AiAgentsRepository;
+  aiProvidersRepository: AiProvidersRepository;
+  aiToolsRepository: AiToolsRepository;
+  toolRuntime: ToolRuntime;
+  workflowRunStream: WorkflowRunStream;
+  orchestratorExecutionEngine: OrchestratorExecutionEngineService;
+  executionReportsService: ExecutionReportsService;
+}
+
+export type RuntimeStartContext = {
+  workflow: Workflow;
+  run: WorkflowRun;
+  targetRecord: NonNullable<Awaited<ReturnType<TargetsRepository["getById"]>>>;
+  constraintSet: EffectiveExecutionConstraintSet;
+};
+
+export type WorkflowStageExecutionContext = RuntimeStartContext & {
+  stage: WorkflowStage;
+};
+
+export type WorkflowStageExecutionOutcome = {
+  run: WorkflowRun;
+  result: WorkflowStageResult;
+};
+
+export type StageExecutionTarget = {
+  baseUrl: string;
+  host: string;
+  port?: number;
+};
+
+export type StageDependencies = {
+  agent: NonNullable<Awaited<ReturnType<AiAgentsRepository["getById"]>>>;
+  provider: StoredAiProvider;
+  target: StageExecutionTarget;
+  tools: AiTool[];
+};
+
+export type ExecutedToolResult = {
+  toolId: string;
+  toolName: string;
+  toolInput: Record<string, string | number | boolean | string[]>;
+  toolRequest: ToolRequest;
+  toolRun: ToolRun;
+  status: ToolRun["status"];
+  observations: string[];
+  observationKeys: string[];
+  outputPreview: string;
+  fullOutput: string;
+};
+
+export type PipelineTerminalState =
+  | {
+      status: "completed";
+      summary: string;
+      recommendedNextStep: string;
+      residualRisk: string;
+      handoff: Record<string, unknown> | null;
+    }
+  | {
+      status: "failed";
+      reason: string;
+      summary: string;
+    };
+
+export interface WorkflowRunWriterPort {
+  appendEvent(
+    run: WorkflowRun,
+    event: WorkflowTraceEvent,
+    patch?: {
+      status?: WorkflowRun["status"];
+      completedAt?: string | null;
+      currentStepIndex?: number;
+    },
+    liveModelOutput?: WorkflowLiveModelOutput | null
+  ): Promise<WorkflowRun>;
+  publishSnapshot(run: WorkflowRun, liveModelOutput?: WorkflowLiveModelOutput | null): void;
+  createEvent(
+    run: WorkflowRun,
+    workflowId: string,
+    workflowStageId: string | null,
+    ord: number,
+    type: WorkflowTraceEvent["type"],
+    status: WorkflowTraceEvent["status"],
+    payload: Record<string, unknown>,
+    title: string,
+    summary: string,
+    detail?: string | null,
+    rawStreamPartType?: string
+  ): WorkflowTraceEvent;
+  createExecutionReport(runId: string): Promise<void>;
+  failRunWithStageError(run: WorkflowRun, workflowId: string, stage: WorkflowStage | null, error: unknown): Promise<WorkflowRun>;
+  failWorkflowRunAfterUnhandledError(runId: string, workflowId: string, error: unknown): Promise<void>;
+}
+
+export interface WorkflowStageRunner {
+  run(context: WorkflowStageExecutionContext): Promise<WorkflowStageExecutionOutcome>;
+}
+
+export interface WorkflowExecutionStrategy {
+  supports(kind: Workflow["executionKind"] | undefined): boolean;
+  execute(context: RuntimeStartContext): Promise<void>;
+}
+
+export interface WorkflowPreflightReader {
+  loadRunContext(runId: string): Promise<{ run: WorkflowRun; workflow: Workflow }>;
+}
+
+export function createWorkflowScan(run: WorkflowRun, constraints: EffectiveExecutionConstraintSet): Scan {
+  return {
+    id: run.id,
+    scope: {
+      targets: [constraints.normalizedTarget.host],
+      exclusions: constraints.excludedPaths,
+      trustZones: [],
+      connectivity: [],
+      layers: ["L4", "L7"],
+      maxDepth: 3,
+      maxDurationMinutes: 15,
+      rateLimitRps: constraints.rateLimitRps,
+      allowActiveExploits: constraints.allowActiveExploit,
+      graceEnabled: true,
+      graceRoundInterval: 3,
+      cyberRangeMode: "live"
+    },
+    status: "running",
+    currentRound: 0,
+    tacticsTotal: 1,
+    tacticsComplete: 0,
+    createdAt: run.startedAt
+  };
+}
+
+export type WorkflowRunLaunchInput = {
+  workflowId: string;
+  input?: StartWorkflowRunBody;
+};

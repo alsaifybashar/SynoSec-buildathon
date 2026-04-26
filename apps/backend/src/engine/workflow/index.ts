@@ -5,11 +5,13 @@ export { WorkflowRunLauncher } from "./workflow-run-launcher.js";
 export {
   WorkflowRuntimeService,
   type WorkflowArtifactReader,
-  type WorkflowKindHandler,
-  type WorkflowRuntime,
-  type WorkflowRuntimePorts,
-  type WorkflowStageRunner
+  type WorkflowRuntimePorts
 } from "./workflow-runtime.js";
+export { WorkflowRunPreflight } from "./workflow-run-preflight.js";
+export { WorkflowRunWriter } from "./workflow-run-writer.js";
+export { WorkflowRunExecutor } from "./workflow-run-executor.js";
+export { DefaultWorkflowStageExecutor } from "./workflow-default-stage-executor.js";
+export { AttackMapWorkflowRunExecutor } from "./workflow-attack-map-run-executor.js";
 export {
   createToolSelectionSummary,
   inferLayer,
