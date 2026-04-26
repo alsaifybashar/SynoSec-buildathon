@@ -201,6 +201,7 @@ const WORKFLOW_METADATA_HINTS = {
   target: "Target context for the currently selected per-target run.",
   agent: "AI agent definition that provides the standing prompt, provider, and default tool grants.",
   currentRun: "Latest persisted run state and the number of workflow events currently attached to it.",
+  tokens: "Model token usage for the currently selected per-target workflow run.",
   updated: "Last time the workflow definition record changed."
 } as const;
 
@@ -243,6 +244,10 @@ function formatDuration(run: WorkflowRun | null) {
   const minutes = Math.floor(seconds / 60);
   const remaining = seconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;
+}
+
+function formatTokenUsage(run: WorkflowRun) {
+  return `${run.tokenUsage.inputTokens} in · ${run.tokenUsage.outputTokens} out · ${run.tokenUsage.totalTokens} total`;
 }
 
 function getVerificationToneLabel(status: string | undefined, title: string) {
@@ -1205,6 +1210,7 @@ export function WorkflowTraceSection({
       { label: "Target", value: applicationName, hint: WORKFLOW_METADATA_HINTS.target },
       { label: "Agent", value: agent?.name ?? "Unknown", hint: WORKFLOW_METADATA_HINTS.agent },
       { label: "Current Run", value: run ? `${run.status} · ${run.events.length} events` : "No active run", hint: WORKFLOW_METADATA_HINTS.currentRun },
+      ...(run ? [{ label: "Tokens", value: formatTokenUsage(run), hint: WORKFLOW_METADATA_HINTS.tokens }] : []),
       { label: "Updated", value: new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(workflow.updatedAt)), hint: WORKFLOW_METADATA_HINTS.updated }
     ];
   }, [workflow, applicationName, agent, run]);

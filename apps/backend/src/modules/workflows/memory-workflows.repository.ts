@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type {
+import {
+  getWorkflowRunTokenUsage,
   CreateWorkflowBody,
   UpdateWorkflowBody,
   WorkflowLaunch,
@@ -34,7 +35,10 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       this.workflows.set(workflow.id, workflow);
     });
     seedRuns.forEach((run) => {
-      this.runs.set(run.id, run);
+      this.runs.set(run.id, {
+        ...run,
+        tokenUsage: getWorkflowRunTokenUsage(run)
+      });
     });
   }
 
@@ -238,6 +242,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       currentStepIndex: 0,
       startedAt: new Date().toISOString(),
       completedAt: null,
+      tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
       trace: [],
       events: []
     };
@@ -268,6 +273,12 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     const updated: WorkflowRun = {
       ...current,
       ...patch,
+      tokenUsage: getWorkflowRunTokenUsage({
+        ...current,
+        ...patch,
+        trace: current.trace.slice(),
+        events: [...current.events, event]
+      }),
       trace: current.trace.slice(),
       events: [...current.events, event]
     };
@@ -285,6 +296,12 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     const updated: WorkflowRun = {
       ...current,
       ...patch,
+      tokenUsage: getWorkflowRunTokenUsage({
+        ...current,
+        ...patch,
+        trace: current.trace.slice(),
+        events: current.events.slice()
+      }),
       trace: current.trace.slice(),
       events: current.events.slice()
     };
@@ -294,9 +311,13 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
   }
 
   async updateRun(run: WorkflowRun): Promise<WorkflowRun> {
-    this.runs.set(run.id, run);
-    this.updateLaunchStateForRun(run.workflowLaunchId, run);
-    return run;
+    const normalizedRun: WorkflowRun = {
+      ...run,
+      tokenUsage: getWorkflowRunTokenUsage(run)
+    };
+    this.runs.set(run.id, normalizedRun);
+    this.updateLaunchStateForRun(normalizedRun.workflowLaunchId, normalizedRun);
+    return normalizedRun;
   }
 
   private async assertAgentReferences(agentIds: string[]) {
