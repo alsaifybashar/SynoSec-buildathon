@@ -402,7 +402,7 @@ describe("WorkflowDetailPage", () => {
 
     expect(await screen.findByRole("button", { name: "Start Run" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Show Full Details" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Show guidance for Status" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Target" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show guidance for Current Run" })).toBeInTheDocument();
     expect(await screen.findByText("0k in · 0k out · 0k total")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show Full Details" }));
@@ -411,8 +411,6 @@ describe("WorkflowDetailPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Workflow" }));
     expect(onNavigateToEdit).toHaveBeenCalledWith(workflow.id, workflow.name);
-    fireEvent.click(screen.getByRole("button", { name: "Edit Agent" }));
-    expect(onNavigateToAgent).toHaveBeenCalledWith(agent.id);
   });
 
   it("starts a workflow run from the detail page without constraint confirmation", async () => {

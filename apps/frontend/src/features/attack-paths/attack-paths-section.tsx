@@ -402,7 +402,7 @@ export function AttackPathsSection({
                     findingTitles={findingLookup}
                     findingSeverities={severityLookup}
                     venueLookup={venueLookup}
-                    onSelectFinding={onSelectFinding}
+                    {...(onSelectFinding ? { onSelectFinding } : {})}
                   />
                 </div>
               ) : null}
