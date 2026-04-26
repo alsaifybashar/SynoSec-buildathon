@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { AiTool, WorkflowRun, WorkflowStageResult, WorkflowTraceEvent } from "@synosec/contracts";
+import type { WorkflowRun, WorkflowStageResult, WorkflowTraceEvent } from "@synosec/contracts";
 import { getWorkflowReportedFindings } from "@synosec/contracts";
 import type { AttackMapNode, AttackPlan, AttackPlanPhase } from "@/engine/orchestrator/index.js";
+import type { ResolvedAiTool } from "@/modules/ai-tools/index.js";
 import { RequestError } from "@/shared/http/request-error.js";
 import { createAttackMapFindingSubmission, createWorkflowReportedFinding } from "./workflow-finding-factory.js";
 import type {
@@ -30,8 +31,8 @@ export class AttackMapWorkflowRunExecutor {
       ...(constraintSet.normalizedTarget.port === undefined ? {} : { port: constraintSet.normalizedTarget.port })
     };
     const plannerTools = (
-      await Promise.all(stage.allowedToolIds.map((toolId) => this.ports.aiToolsRepository.getById(toolId)))
-    ).filter((candidate): candidate is AiTool => Boolean(candidate));
+      await Promise.all(stage.allowedToolIds.map((toolId) => this.ports.toolRuntime.get(toolId)))
+    ).filter((candidate): candidate is ResolvedAiTool => Boolean(candidate));
 
     let currentRun = await this.writer.appendEvent(
       run,
@@ -142,8 +143,8 @@ export class AttackMapWorkflowRunExecutor {
     const plannerToolContext = this.formatToolContextSections([{
       title: "Planner-visible tools",
       tools: plannerTools.map((tool) => ({
-        name: tool.name,
-        description: tool.description
+        name: tool.tool.name,
+        description: tool.tool.description
       }))
     }]);
 
@@ -201,9 +202,8 @@ export class AttackMapWorkflowRunExecutor {
     );
 
     const findingNodes: AttackMapNode[] = [];
-    let executedPhaseCount = 0;
     let phaseIndex = 0;
-    while (phaseIndex < plan.phases.length && executedPhaseCount < 3) {
+    while (phaseIndex < plan.phases.length) {
       const phase = plan.phases[phaseIndex] as AttackPlanPhase | undefined;
       phaseIndex += 1;
       if (!phase || phase.status === "completed" || phase.status === "skipped") {
@@ -272,7 +272,6 @@ export class AttackMapWorkflowRunExecutor {
         });
       }
 
-      executedPhaseCount += 1;
       plan = {
         ...plan,
         phases: plan.phases.map((candidate: AttackPlanPhase) => candidate.id === phase.id
@@ -368,10 +367,12 @@ export class AttackMapWorkflowRunExecutor {
           void emitReasoning(phase, title, summary);
         })
       : [];
+    const executedPhaseCount = plan.phases.filter((phase: AttackPlanPhase) => phase.status === "completed").length;
+    const skippedPhaseCount = plan.phases.filter((phase: AttackPlanPhase) => phase.status === "skipped").length;
 
     const stageResult: WorkflowStageResult = {
       status: "completed",
-      summary: `Attack-map workflow completed. ${executedPhaseCount} phases executed, ${getWorkflowReportedFindings(currentRun).length} findings reported, ${chains.length} attack chains identified.`,
+      summary: `Attack-map workflow completed. ${executedPhaseCount} phases executed, ${skippedPhaseCount} phases skipped, ${getWorkflowReportedFindings(currentRun).length} findings reported, ${chains.length} attack chains identified.`,
       findingIds: getWorkflowReportedFindings(currentRun).map((finding) => finding.id),
       recommendedNextStep: "Investigate the highest-severity workflow findings and validate the reported attack paths.",
       residualRisk: `Overall attack-map risk remains ${plan.overallRisk}.`,

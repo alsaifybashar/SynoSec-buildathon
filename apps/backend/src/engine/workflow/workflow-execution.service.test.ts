@@ -427,7 +427,32 @@ describe("WorkflowExecutionService", () => {
   it("updates attack-map workflow plans after each completed phase and executes adaptive additions", async () => {
     const workflow = makeWorkflow({
       executionKind: "attack-map",
-      name: "Adaptive Attack Map Workflow"
+      name: "Adaptive Attack Map Workflow",
+      stages: [{
+        ...makeWorkflow().stages[0]!,
+        allowedToolIds: ["tool-nuclei"]
+      }]
+    });
+    const createPlan = vi.fn(async (
+      _targetUrl: string,
+      _recon: unknown,
+      plannerTools: Array<{ tool: { id: string; name: string; description: string | null } }>
+    ) => {
+      expect(plannerTools).toHaveLength(1);
+      expect(plannerTools[0]?.tool.name).toBe("Nuclei");
+      return {
+        phases: [{
+          id: "phase-1",
+          name: "Initial Web Probe",
+          priority: "high" as const,
+          rationale: "HTTPS service discovered.",
+          targetService: "https",
+          tools: ["Nuclei"],
+          status: "pending" as const
+        }],
+        overallRisk: "medium" as const,
+        summary: "Initial plan."
+      };
     });
     const adaptAttackPlan = vi
       .fn()
@@ -446,6 +471,15 @@ describe("WorkflowExecutionService", () => {
             targetService: "https",
             tools: ["Nuclei"],
             status: "pending"
+          },
+          {
+            id: "phase-3",
+            name: "Session Hardening Check",
+            priority: "medium",
+            rationale: "Confirm whether the exposure can be chained further.",
+            targetService: "https",
+            tools: ["Nuclei"],
+            status: "pending"
           }
         ],
         overallRisk: "high",
@@ -456,9 +490,71 @@ describe("WorkflowExecutionService", () => {
         plan: { phases: Array<Record<string, unknown>>; overallRisk: string; summary: string }
       ) => ({
         ...plan,
-        phases: plan.phases.map((phase) => phase.id === "phase-2" ? { ...phase, status: "completed" } : phase),
+        phases: [
+          ...plan.phases.map((phase) => phase.id === "phase-2" ? { ...phase, status: "completed" } : phase),
+          {
+            id: "phase-4",
+            name: "Post-Exposure Verification",
+            priority: "medium",
+            rationale: "Validate the final attack path after follow-up checks.",
+            targetService: "https",
+            tools: ["Nuclei"],
+            status: "pending"
+          }
+        ],
         overallRisk: "medium",
         summary: "Plan stabilized after targeted validation."
+      }))
+      .mockImplementation(async (
+        _targetUrl: string,
+        plan: { phases: Array<Record<string, unknown>>; overallRisk: string; summary: string }
+      ) => plan);
+    const executePhase = vi
+      .fn()
+      .mockImplementationOnce(async () => ({
+        findings: [{
+          title: "Exposed admin surface",
+          severity: "high",
+          description: "Admin route is reachable without gating.",
+          vector: "/admin"
+        }],
+        probeCommand: "nuclei -u https://localhost:3000",
+        probeOutput: "admin surface discovered",
+        toolAttempts: [{
+          toolRunId: "tool-run-1",
+          toolName: "Nuclei",
+          output: "admin surface discovered"
+        }]
+      }))
+      .mockImplementationOnce(async () => ({
+        findings: [],
+        probeCommand: "nuclei -u https://localhost:3000 -tags auth",
+        probeOutput: "targeted validation complete",
+        toolAttempts: [{
+          toolRunId: "tool-run-2",
+          toolName: "Nuclei",
+          output: "targeted validation complete"
+        }]
+      }))
+      .mockImplementationOnce(async () => ({
+        findings: [],
+        probeCommand: "nuclei -u https://localhost:3000 -tags session",
+        probeOutput: "session checks complete",
+        toolAttempts: [{
+          toolRunId: "tool-run-3",
+          toolName: "Nuclei",
+          output: "session checks complete"
+        }]
+      }))
+      .mockImplementationOnce(async () => ({
+        findings: [],
+        probeCommand: "nuclei -u https://localhost:3000 -tags post-exposure",
+        probeOutput: "post exposure verification complete",
+        toolAttempts: [{
+          toolRunId: "tool-run-4",
+          toolName: "Nuclei",
+          output: "post exposure verification complete"
+        }]
       }));
 
     const { service, createdRuns } = createService({
@@ -487,49 +583,52 @@ describe("WorkflowExecutionService", () => {
           rawNmap: "443/tcp open https nginx",
           rawCurl: "HTTP/1.1 200 OK"
         }),
-        createPlan: async () => ({
-          phases: [{
-            id: "phase-1",
-            name: "Initial Web Probe",
-            priority: "high" as const,
-            rationale: "HTTPS service discovered.",
-            targetService: "https",
-            tools: ["Nuclei"],
-            status: "pending" as const
-          }],
-          overallRisk: "medium" as const,
-          summary: "Initial plan."
-        }),
+        createPlan,
         adaptAttackPlan,
-        executePhase: vi
-          .fn()
-          .mockImplementationOnce(async () => ({
-            findings: [{
-              title: "Exposed admin surface",
-              severity: "high",
-              description: "Admin route is reachable without gating.",
-              vector: "/admin"
-            }],
-            probeCommand: "nuclei -u https://localhost:3000",
-            probeOutput: "admin surface discovered",
-            toolAttempts: [{
-              toolRunId: "tool-run-1",
-              toolName: "Nuclei",
-              output: "admin surface discovered"
-            }]
-          }))
-          .mockImplementationOnce(async () => ({
-            findings: [],
-            probeCommand: "nuclei -u https://localhost:3000 -tags auth",
-            probeOutput: "targeted validation complete",
-            toolAttempts: [{
-              toolRunId: "tool-run-2",
-              toolName: "Nuclei",
-              output: "targeted validation complete"
-            }]
-          })),
+        executePhase,
         deepDiveFinding: async () => [],
         correlateAttackChains: async () => []
+      },
+      aiToolById: {
+        "tool-nuclei": {
+          id: "tool-nuclei",
+          name: "Nuclei",
+          status: "active",
+          source: "system",
+          description: "Template-driven web validation.",
+          builtinActionKey: null,
+          executorType: "bash",
+          bashSource: "nuclei -u {{baseUrl}}",
+          category: "web",
+          riskTier: "passive",
+          capabilities: ["semantic-family", "http-surface", "passive"],
+          timeoutMs: 60_000,
+          constraintProfile: {
+            enforced: true,
+            targetKinds: ["host", "domain", "url"],
+            networkBehavior: "outbound-read",
+            mutationClass: "none",
+            supportsHostAllowlist: true,
+            supportsPathExclusions: true,
+            supportsRateLimit: true
+          },
+          inputSchema: {
+            type: "object",
+            properties: {
+              baseUrl: { type: "string" }
+            },
+            required: ["baseUrl"]
+          },
+          outputSchema: {
+            type: "object",
+            properties: {
+              output: { type: "string" }
+            },
+            required: ["output"]
+          },
+          createdAt: "2026-04-24T10:00:00.000Z",
+          updatedAt: "2026-04-24T10:00:00.000Z"
+        }
       }
     });
 
@@ -539,14 +638,16 @@ describe("WorkflowExecutionService", () => {
     });
 
     await vi.waitFor(() => {
-      expect(createdRuns[0]?.events.filter((event) => event.title === "Attack plan updated")).toHaveLength(2);
+      expect(createdRuns[0]?.status).toBe("completed");
     });
 
     const events = createdRuns[0]!.events;
-    expect(events.filter((event) => event.title === "Attack plan updated")).toHaveLength(2);
-    expect(adaptAttackPlan).toHaveBeenCalledTimes(2);
+    expect(createPlan).toHaveBeenCalledTimes(1);
+    expect(executePhase).toHaveBeenCalledTimes(4);
+    expect(events.filter((event) => event.title === "Attack plan updated")).toHaveLength(4);
+    expect(adaptAttackPlan).toHaveBeenCalledTimes(4);
     expect(events.some((event) => event.type === "finding_reported" && event.payload?.["phase"] === "Initial Web Probe")).toBe(true);
-    expect(events.find((event) => event.type === "run_completed")?.summary).toContain("2 phases executed");
+    expect(events.find((event) => event.type === "run_completed")?.summary).toContain("4 phases executed, 0 phases skipped");
   });
 
   it("executes workflow stages in order and stops when a later stage fails", async () => {
