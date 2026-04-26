@@ -77,8 +77,8 @@ const scan: Scan = {
 };
 
 const contentDiscoveryTool: AiTool = {
-  id: "seed-family-content-discovery",
-  name: "Content Discovery Family",
+  id: "seed-content-discovery",
+  name: "Content Discovery",
   status: "active",
   source: "system",
   description: "Controlled content discovery",

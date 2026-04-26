@@ -12,7 +12,7 @@ import { RequestError } from "@/shared/http/request-error.js";
 export type ExecutedToolResult = {
   toolId: string;
   toolName: string;
-  toolInput: Record<string, string | number | boolean | string[]>;
+  toolInput: Record<string, unknown>;
   toolRequest: ToolRequest;
   toolRun: ToolRun;
   status: ToolRun["status"];
@@ -102,20 +102,28 @@ export function inferLayer(category: string): OsiLayer {
   return "L7";
 }
 
-export function normalizeToolInput(input: unknown): Record<string, string | number | boolean | string[]> {
+function isStructuredToolInputValue(value: unknown): boolean {
+  if (value == null) {
+    return false;
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every((entry) => isStructuredToolInputValue(entry) || (entry && typeof entry === "object"));
+  }
+  return typeof value === "object";
+}
+
+export function normalizeToolInput(input: unknown): Record<string, unknown> {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return {};
   }
 
-  const normalized: Record<string, string | number | boolean | string[]> = {};
+  const normalized: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(input)) {
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      normalized[key] = value;
-      continue;
-    }
-
-    if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+    if (isStructuredToolInputValue(value)) {
       normalized[key] = value;
     }
   }
@@ -124,7 +132,7 @@ export function normalizeToolInput(input: unknown): Record<string, string | numb
 }
 
 export function parseExecutionTarget(
-  toolInput: Record<string, string | number | boolean | string[]>,
+  toolInput: Record<string, unknown>,
   fallbackTarget: { baseUrl: string; host: string; port?: number }
 ) {
   const candidateUrl = ["baseUrl", "startUrl", "url", "loginUrl"]

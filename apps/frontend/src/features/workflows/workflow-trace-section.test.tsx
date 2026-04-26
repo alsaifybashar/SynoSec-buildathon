@@ -897,7 +897,7 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getByText("Headers were returned immediately.")).toBeInTheDocument();
     expect(screen.queryByText("HTTP/1.1 200 OK")).not.toBeInTheDocument();
     expect(screen.getByText("Evidence checkpoint after Web Probe")).toBeInTheDocument();
-    expect(screen.getAllByText("Findings").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Standalone findings").length).toBeGreaterThan(0);
     expect(screen.getByText("Run sealed")).toBeInTheDocument();
     expect(screen.queryByText("{\"url\":\"http://localhost:8888\"}")).not.toBeInTheDocument();
     expect(container.querySelector(".duplex-entry")).toBeTruthy();
@@ -1000,7 +1000,7 @@ describe("WorkflowTraceSection", () => {
     expect(screen.queryByText("Thread · Workflow Transcript · Duplex Flow")).not.toBeInTheDocument();
     expect(screen.getByText("Prompt context")).toBeInTheDocument();
     expect(screen.getAllByText("Agent typing").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Findings").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Standalone findings").length).toBeGreaterThan(0);
   });
 
   it("renders streamed narration separately from tool activity for active runs", () => {

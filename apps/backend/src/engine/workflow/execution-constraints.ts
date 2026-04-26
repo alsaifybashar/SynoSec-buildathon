@@ -302,7 +302,7 @@ export function applyConstraintInputs(
   }
 
   const toolInput = isRecord(request.parameters["toolInput"])
-    ? request.parameters["toolInput"] as Record<string, string | number | boolean | string[]>
+    ? request.parameters["toolInput"] as Record<string, unknown>
     : {};
 
   return {

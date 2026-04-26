@@ -25,19 +25,27 @@ function inferLayer(category: string): OsiLayer {
   return "L7";
 }
 
-function normalizeToolInput(input: unknown): Record<string, string | number | boolean | string[]> {
+function isStructuredToolInputValue(value: unknown): boolean {
+  if (value == null) {
+    return false;
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every((entry) => isStructuredToolInputValue(entry) || (entry && typeof entry === "object"));
+  }
+  return typeof value === "object";
+}
+
+function normalizeToolInput(input: unknown): Record<string, unknown> {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return {};
   }
 
-  const normalized: Record<string, string | number | boolean | string[]> = {};
+  const normalized: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      normalized[key] = value;
-      continue;
-    }
-
-    if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+    if (isStructuredToolInputValue(value)) {
       normalized[key] = value;
     }
   }
@@ -45,7 +53,7 @@ function normalizeToolInput(input: unknown): Record<string, string | number | bo
   return normalized;
 }
 
-function parseExecutionTarget(toolInput: Record<string, string | number | boolean | string[]>) {
+function parseExecutionTarget(toolInput: Record<string, unknown>) {
   const candidateUrl = ["baseUrl", "startUrl", "url", "loginUrl"]
     .map((key) => toolInput[key])
     .find((value): value is string => typeof value === "string" && value.length > 0);
@@ -127,7 +135,7 @@ function parseExecutionTarget(toolInput: Record<string, string | number | boolea
 
 function validateRequiredFields(
   inputSchema: Record<string, unknown>,
-  toolInput: Record<string, string | number | boolean | string[]>
+  toolInput: Record<string, unknown>
 ) {
   const requiredFields = Array.isArray(inputSchema["required"])
     ? inputSchema["required"].filter((value): value is string => typeof value === "string")

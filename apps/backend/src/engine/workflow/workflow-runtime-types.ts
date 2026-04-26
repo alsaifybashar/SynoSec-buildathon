@@ -82,7 +82,7 @@ export type StageDependencies = {
 export type ExecutedToolResult = {
   toolId: string;
   toolName: string;
-  toolInput: Record<string, string | number | boolean | string[]>;
+  toolInput: Record<string, unknown>;
   toolRequest: ToolRequest;
   toolRun: ToolRun;
   status: ToolRun["status"];

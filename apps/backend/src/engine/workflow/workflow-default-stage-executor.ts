@@ -1,7 +1,5 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createOpenAI } from "@ai-sdk/openai";
 import { stepCountIs, streamText, tool as createSdkTool, type LanguageModel } from "ai";
-import type { Scan, Workflow, WorkflowLiveModelOutput, WorkflowReportedFinding, WorkflowRun, WorkflowStage, WorkflowStageResult, WorkflowTraceEvent } from "@synosec/contracts";
+import type { OsiLayer, Scan, Workflow, WorkflowLiveModelOutput, WorkflowReportedFinding, WorkflowRun, WorkflowStage, WorkflowStageCompletionRule, WorkflowStageResult, WorkflowTraceEvent } from "@synosec/contracts";
 import { getWorkflowReportedFindings, workflowFindingSubmissionSchema } from "@synosec/contracts";
 import { z } from "zod";
 import { createScan, getScan } from "@/engine/scans/index.js";
@@ -32,6 +30,7 @@ import type {
 } from "./workflow-runtime-types.js";
 import { createWorkflowScan } from "./workflow-runtime-types.js";
 import { WorkflowRunPreflight } from "./workflow-run-preflight.js";
+import { createLanguageModelFromRuntime } from "./language-model-factory.js";
 
 export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
   private readonly broker: ToolBroker;
@@ -43,9 +42,13 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
   private static readonly SYSTEM_PROTOCOL_SUFFIX = [
     "Workflow execution contract:",
     "Use only the approved tools and built-in workflow actions exposed for this run.",
-    "Report concrete evidence-backed findings with report_finding.",
+    "Required action order: run evidence tools first, then call report_finding for supported weaknesses, then reference returned finding ids in relationships or handoff attack paths, then call complete_run last.",
+    "Report concrete evidence-backed findings with report_finding. report_finding returns the finding id.",
     "Do not report a finding unless the quote is traceable to a persisted tool result and contains concrete proof details.",
     "Prefer at most four strong findings. Stop once the main compromise path is proven.",
+    "complete_run does not create findings and cannot satisfy missing evidence, missing finding, or missing chain requirements.",
+    "If complete_run is rejected, call the missing required actions or evidence tools before trying completion again.",
+    "When requireChainedFindings is enabled, satisfy it through finding relationship fields, chain metadata, or a handoff attack path referencing finding ids.",
     "End every run explicitly with complete_run."
   ].join("\n");
 
@@ -209,7 +212,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
 
       const familyDefinition = getSemanticFamilyDefinition(tool.builtinActionKey);
       if (!familyDefinition) {
-        throw new RequestError(500, `Workflow builtin tool ${tool.name} is missing its semantic family definition.`);
+        throw new RequestError(500, `Workflow capability tool ${tool.name} is missing its execution definition.`);
       }
 
       return [{
@@ -251,9 +254,9 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       {
         title: "Built-in actions",
         tools: [
-          { name: "log_progress", description: "Persist one short operator-visible progress update for the workflow transcript." },
-          { name: "report_finding", description: "Persist one evidence-backed workflow finding." },
-          { name: "complete_run", description: "Submit the current workflow stage result." }
+          { name: "log_progress", description: "Persist a short operator-visible progress update in the workflow transcript. Use this before or after meaningful tool calls to explain the current action or decision in one concise sentence. Provide `message`. Returns acceptance only; it does not create evidence, findings, or attack-path links." },
+          { name: "report_finding", description: "Persist one evidence-backed security finding. Run evidence tools first. Provide supported weakness details and persisted evidence quotes. Returns the finding id; use that id in related findings and handoff attack paths." },
+          { name: "complete_run", description: "Finish the workflow run last, after required evidence, report_finding calls, finding ids, and any handoff attack paths have been submitted. Use this only as the final action. Provide `summary`, `recommendedNextStep`, `residualRisk`, and optional `handoff`. It does not create findings and cannot satisfy missing evidence, finding, or chain requirements." }
         ]
       }
     ]);
@@ -385,7 +388,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
 
     const systemTools = {
       log_progress: createSdkTool({
-        description: "Persist one short operator-visible progress update for the workflow transcript.",
+        description: "Persist a short operator-visible progress update in the workflow transcript. Use this before or after meaningful tool calls to explain the current action or decision in one concise sentence. Provide `message`. Returns acceptance only; it does not create evidence, findings, or attack-path links.",
         inputSchema: z.object({
           message: z.string().min(1).max(400)
         }),
@@ -402,7 +405,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         }
       }),
       report_finding: createSdkTool({
-        description: "Persist one evidence-backed workflow finding.",
+        description: "Persist one evidence-backed security finding. Run evidence tools first. Provide supported weakness details and persisted evidence quotes. Returns the finding id; use that id in related findings and handoff attack paths.",
         inputSchema: workflowFindingSubmissionSchema,
         execute: async (rawInput) => {
           const findingInput = attachEvidenceReferences(
@@ -478,7 +481,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         }
       }),
       complete_run: createSdkTool({
-        description: "Submit the current workflow stage result.",
+        description: "Finish the workflow run last, after required evidence, report_finding calls, finding ids, and any handoff attack paths have been submitted. Use this only as the final action. Provide `summary`, `recommendedNextStep`, `residualRisk`, and optional `handoff`. It does not create findings and cannot satisfy missing evidence, finding, or chain requirements.",
         inputSchema: z.object({
           summary: z.string().min(1),
           recommendedNextStep: z.string().min(1),
@@ -492,6 +495,25 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             residualRisk: z.string().min(1),
             handoff: z.record(z.string(), z.unknown()).nullable().optional()
           }).parse(rawInput);
+          const completionAssertions = evaluateCompletionAssertions({
+            completionRule: stage.completionRule,
+            executedResults,
+            findings: [...reportedFindings.values()],
+            handoff: completion.handoff ?? null
+          });
+          if (completionAssertions.enabled) {
+            await appendEvent("verification", completionAssertions.failures.length > 0 ? "failed" : "completed", {
+              messageKind: completionAssertions.failures.length > 0 ? "challenge" : "accept",
+              action: "readme_coverage_assertions",
+              assertions: completionAssertions.assertions,
+              failures: completionAssertions.failures
+            }, "README coverage assertions", completionAssertions.failures.length > 0
+              ? `Missing coverage assertion: ${completionAssertions.failures[0]}`
+              : "The run satisfied the configured README coverage assertions.", JSON.stringify(completionAssertions.assertions, null, 2));
+          }
+          if (completionAssertions.failures.length > 0) {
+            throw new RequestError(400, `Workflow completion assertions failed: ${completionAssertions.failures.join("; ")}`);
+          }
           const completionDetail = [
             `Agent summary: ${completion.summary}`,
             `Recommended next step: ${completion.recommendedNextStep}`,
@@ -819,21 +841,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
   }
 
   private createLanguageModel(runtime: FixedAiRuntime): LanguageModel {
-    if (runtime.provider === "anthropic") {
-      const anthropic = createAnthropic({
-        apiKey: runtime.apiKey
-      });
-
-      return anthropic(runtime.model);
-    }
-
-    const openai = createOpenAI({
-      baseURL: runtime.baseUrl,
-      apiKey: runtime.apiKey,
-      name: "ollama"
-    });
-
-    return openai(runtime.model);
+    return createLanguageModelFromRuntime(runtime);
   }
 
   private async ensureWorkflowScan(scan: Scan, targetId: string, agentId: string) {
@@ -881,4 +889,121 @@ function validateRelatedFindingSubmission(findingInput: z.infer<typeof workflowF
       throw new RequestError(400, "Path-linked findings must explain at least one reported relationship.");
     }
   }
+}
+
+function evaluateCompletionAssertions(input: {
+  completionRule: WorkflowStageCompletionRule;
+  executedResults: ExecutedToolResult[];
+  findings: WorkflowReportedFinding[];
+  handoff: Record<string, unknown> | null;
+}) {
+  const successfulToolResults = input.executedResults.filter((result) =>
+    result.status === "completed"
+    && (result.observations.length > 0 || result.fullOutput.trim().length > 0 || result.outputPreview.trim().length > 0)
+  );
+  const evidenceBackedFindings = input.findings.filter((finding) =>
+    finding.evidence.length > 0
+    && ["single_source", "cross_validated", "reproduced"].includes(finding.validationStatus)
+  );
+  const coveredLayers = getCoveredWorkflowLayers(successfulToolResults, input.findings);
+  const hasChainedFindings = input.findings.some((finding) =>
+    finding.derivedFromFindingIds.length > 0
+    || finding.relatedFindingIds.length > 0
+    || finding.enablesFindingIds.length > 0
+    || Boolean(finding.chain)
+  ) || handoffHasAttackPath(input.handoff);
+
+  const assertions = {
+    reachableSurface: {
+      required: input.completionRule.requireReachableSurface || input.completionRule.requireToolCall,
+      passed: successfulToolResults.length > 0,
+      evidenceCount: successfulToolResults.length
+    },
+    evidenceBackedWeaknesses: {
+      required: input.completionRule.requireEvidenceBackedWeakness || input.completionRule.minFindings > 0 || !input.completionRule.allowEmptyResult,
+      passed: evidenceBackedFindings.length >= Math.max(1, input.completionRule.minFindings),
+      findingCount: evidenceBackedFindings.length,
+      requiredFindingCount: Math.max(1, input.completionRule.minFindings)
+    },
+    osiCoverageStatus: {
+      required: input.completionRule.requireOsiCoverageStatus,
+      passed: coveredLayers.length > 0,
+      coveredLayers
+    },
+    chainedFindings: {
+      required: input.completionRule.requireChainedFindings,
+      passed: hasChainedFindings,
+      linkedFindingCount: input.findings.filter((finding) =>
+        finding.derivedFromFindingIds.length > 0
+        || finding.relatedFindingIds.length > 0
+        || finding.enablesFindingIds.length > 0
+        || Boolean(finding.chain)
+      ).length
+    }
+  };
+
+  const failures = [
+    assertions.reachableSurface.required && !assertions.reachableSurface.passed
+      ? "reachable surface was not demonstrated by a successful evidence tool result"
+      : null,
+    assertions.evidenceBackedWeaknesses.required && !assertions.evidenceBackedWeaknesses.passed
+      ? `evidence-backed weaknesses did not meet the required finding count (${assertions.evidenceBackedWeaknesses.findingCount}/${assertions.evidenceBackedWeaknesses.requiredFindingCount})`
+      : null,
+    assertions.osiCoverageStatus.required && !assertions.osiCoverageStatus.passed
+      ? "OSI coverage status was not demonstrated by any successful tool result or reported finding"
+      : null,
+    assertions.chainedFindings.required && !assertions.chainedFindings.passed
+      ? "chained findings were not demonstrated through relationship fields, chain metadata, or attack-path handoff"
+      : null
+  ].filter((failure): failure is string => Boolean(failure));
+
+  const enabled = Object.values(assertions).some((assertion) => assertion.required);
+
+  return { enabled, assertions, failures };
+}
+
+function getCoveredWorkflowLayers(
+  successfulToolResults: ExecutedToolResult[],
+  findings: WorkflowReportedFinding[]
+): OsiLayer[] {
+  const layers = new Set<OsiLayer>();
+  for (const result of successfulToolResults) {
+    layers.add(result.toolRequest.layer);
+  }
+  for (const finding of findings) {
+    layers.add(inferLayerForWorkflowFinding(finding));
+  }
+  return [...layers].sort();
+}
+
+function inferLayerForWorkflowFinding(finding: WorkflowReportedFinding): OsiLayer {
+  switch (finding.type) {
+    case "service_exposure":
+      return "L4";
+    case "auth_weakness":
+      return "L5";
+    case "tls_weakness":
+      return "L6";
+    default:
+      return "L7";
+  }
+}
+
+function handoffHasAttackPath(handoff: Record<string, unknown> | null) {
+  if (!handoff) {
+    return false;
+  }
+
+  const attackPaths = handoff["attackPaths"];
+  if (!Array.isArray(attackPaths)) {
+    return false;
+  }
+
+  return attackPaths.some((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return false;
+    }
+    const findingIds = (entry as Record<string, unknown>)["findingIds"];
+    return Array.isArray(findingIds) && findingIds.length > 1;
+  });
 }

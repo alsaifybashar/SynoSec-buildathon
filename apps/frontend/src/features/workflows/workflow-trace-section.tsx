@@ -969,7 +969,7 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
             <div className="space-y-2">
               {(atom.usedToolName || atom.fallbackUsed) ? (
                 <p className="font-mono text-[0.64rem] uppercase tracking-[0.14em] text-muted-foreground">
-                  {atom.fallbackUsed ? `Fallback selected · ${atom.usedToolName ?? atom.label}` : `Selected tool · ${atom.usedToolName ?? atom.label}`}
+                  {atom.fallbackUsed ? `Alternate tool selected · ${atom.usedToolName ?? atom.label}` : `Selected tool · ${atom.usedToolName ?? atom.label}`}
                 </p>
               ) : null}
               <ToolObservations observations={atom.observations ?? []} observationSummaries={atom.observationSummaries} showHeading={false} />
@@ -1025,7 +1025,7 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
           {showFullDetails && atom.attempts && atom.attempts.length > 0 ? (
             <ToolDetailBlock
               label="Attempts"
-              hint="Candidate tool executions attempted for this tool call, including fallback provenance and failure context."
+              hint="Candidate tool executions recorded for this tool call, including selected-tool provenance and failure context."
             >
               <div className="space-y-2">
                 {atom.attempts.map((attempt) => (
@@ -1081,10 +1081,10 @@ function FindingsRail({
         <div className="px-4 py-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <MonoLabel>Findings</MonoLabel>
+              <MonoLabel>Standalone findings</MonoLabel>
               <HelpHint
-                label="Findings"
-                hint="This rail tracks issues the workflow explicitly reported while it was running."
+                label="Standalone findings"
+                hint="Findings reported by the workflow that are not yet cited by any attack path. Findings rolled up into a path appear there instead."
               />
             </div>
             <span className="font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">
@@ -1092,7 +1092,7 @@ function FindingsRail({
             </span>
           </div>
           {findings.length === 0 ? (
-            <p className="mt-2 text-xs text-muted-foreground">No findings reported yet.</p>
+            <p className="mt-2 text-xs text-muted-foreground">All reported findings are rolled up into an attack path.</p>
           ) : null}
         </div>
         {findings.length > 0 ? (
@@ -1184,6 +1184,20 @@ export function WorkflowTraceSection({
   const findingsById = useMemo(
     () => new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding])),
     [effectiveTranscript]
+  );
+  const citedFindingIds = useMemo(() => {
+    const cited = new Set<string>();
+    for (const path of effectiveAttackPaths.paths) {
+      for (const id of path.findingIds) cited.add(id);
+      for (const id of path.supportingFindingIds) cited.add(id);
+      for (const id of path.suspectedFindingIds) cited.add(id);
+      for (const id of path.blockedFindingIds) cited.add(id);
+    }
+    return cited;
+  }, [effectiveAttackPaths]);
+  const standaloneFindings = useMemo(
+    () => effectiveTranscript.findings.filter((finding) => !citedFindingIds.has(finding.id)),
+    [effectiveTranscript, citedFindingIds]
   );
   const agent = useMemo(
     () => workflow ? agents.find((item) => item.id === workflow.agentId) ?? null : null,
@@ -1334,7 +1348,7 @@ export function WorkflowTraceSection({
         </div>
       </div>
 
-      <FindingsRail findings={effectiveTranscript.findings} runStatus={run?.status ?? null} metadata={metadataItems} />
+      <FindingsRail findings={standaloneFindings} runStatus={run?.status ?? null} metadata={metadataItems} />
 
       <style>{`
         @keyframes duplex-in {

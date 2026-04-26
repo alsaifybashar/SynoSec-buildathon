@@ -92,7 +92,7 @@ const incompatibleTool: AiTool = {
 
 const passiveSingleTargetProbe: AiTool = {
   ...compatibleTool,
-  id: "seed-family-http-surface",
+  id: "builtin-http-surface-assessment",
   name: "HTTP Surface",
   capabilities: ["semantic-family", "http-surface", "passive"],
   constraintProfile: {
@@ -133,7 +133,7 @@ const localTargetBypassConstraint: ExecutionConstraint = {
   kind: "workflow_gate",
   provider: null,
   version: 1,
-  description: "Allows local and private development targets to bypass provider-governed execution constraints for seeded lab workflows.",
+  description: "Allows local and private development targets to bypass provider-governed execution constraints for approved lab workflows.",
   bypassForLocalTargets: true,
   denyProviderOwnedTargets: false,
   requireVerifiedOwnership: false,

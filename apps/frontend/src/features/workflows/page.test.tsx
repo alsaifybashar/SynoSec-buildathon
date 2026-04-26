@@ -428,7 +428,7 @@ describe("WorkflowDetailPage", () => {
     });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     const postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST");
-    expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({});
+    expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({ targetId: target.id });
   });
 
   it("keeps the existing SSE workflow channel active for running runs", async () => {

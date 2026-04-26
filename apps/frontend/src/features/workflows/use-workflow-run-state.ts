@@ -153,6 +153,18 @@ export function useWorkflowRunState({
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
   const launchRuns = Array.isArray(currentLaunch?.runs) ? currentLaunch.runs : [];
+  const runningRunIdsKey = useMemo(
+    () => launchRuns
+      .filter((entry) => entry.status === "running")
+      .map((entry) => entry.runId)
+      .sort()
+      .join(","),
+    [launchRuns]
+  );
+  const runningRunIds = useMemo(
+    () => (runningRunIdsKey ? runningRunIdsKey.split(",") : []),
+    [runningRunIdsKey]
+  );
 
   const selectedLaunchRun = useMemo(
     () => launchRuns.find((entry) => entry.targetId === selectedTargetId) ?? null,
@@ -252,10 +264,6 @@ export function useWorkflowRunState({
   }, [selectedLaunchRun?.runId]);
 
   useEffect(() => {
-    const runningRunIds = launchRuns
-      .filter((entry) => entry.status === "running")
-      .map((entry) => entry.runId);
-
     if (runningRunIds.length === 0) {
       setRunStreamState("idle");
       setStreamError(null);
@@ -332,7 +340,7 @@ export function useWorkflowRunState({
         eventSource.close();
       }
     };
-  }, [launchRuns, selectedLaunchRun?.runId]);
+  }, [runningRunIdsKey, selectedLaunchRun?.runId]);
 
   useEffect(() => {
     if (!currentRun) {
@@ -397,6 +405,16 @@ export function useWorkflowRunState({
       return;
     }
 
+    const targetId = selectedTargetId
+      ?? runnableTargets[0]?.id
+      ?? null;
+    if (!targetId) {
+      toast.error("No runnable target selected", {
+        description: "Select a target before starting this workflow."
+      });
+      return;
+    }
+
     setRunPending(true);
     setLatestRunError(null);
     setTranscriptError(null);
@@ -405,7 +423,7 @@ export function useWorkflowRunState({
       const launchPayload = await fetchJson<WorkflowLaunch | WorkflowRun>(`${apiRoutes.workflows}/${workflow.id}/runs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({})
+        body: JSON.stringify({ targetId })
       });
       setCurrentLaunch(normalizeWorkflowLaunch(launchPayload, selectedTargetId, targets));
       toast.success("Workflow launch started");

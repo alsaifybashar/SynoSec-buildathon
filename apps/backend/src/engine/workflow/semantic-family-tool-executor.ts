@@ -19,7 +19,7 @@ export type SemanticFamilyExecutionContext = {
   constraintSet?: EffectiveExecutionConstraintSet;
 };
 
-function missingRequiredFields(requiredInputFields: readonly string[], toolInput: Record<string, string | number | boolean | string[]>) {
+function missingRequiredFields(requiredInputFields: readonly string[], toolInput: Record<string, unknown>) {
   return requiredInputFields.filter((field) => {
     if (field === "hash") {
       const singleHash = toolInput[field];
@@ -121,117 +121,110 @@ export async function executeSemanticFamilyTool(
   const toolInput = normalizeToolInput(rawInput);
   const missingFields = missingRequiredFields(context.familyDefinition.requiredInputFields, toolInput);
   if (missingFields.length > 0) {
-    throw new RequestError(400, `Missing required semantic family input: ${missingFields.join(", ")}.`, {
+    throw new RequestError(400, `Missing required capability tool input: ${missingFields.join(", ")}.`, {
       code: "SEMANTIC_FAMILY_INPUT_MISSING",
-      userFriendlyMessage: "Required semantic family input is missing."
+      userFriendlyMessage: "Required capability tool input is missing."
     });
   }
 
   const executionTarget = parseExecutionTarget(toolInput, context.target);
-  const failures: string[] = [];
-  const attempts: ExecutedToolResult["attempts"] = [];
-
-  for (const candidateToolId of context.familyDefinition.candidateToolIds) {
-    const resolvedCandidate = await context.toolRuntime.get(candidateToolId);
-    assertCandidateRunnable(resolvedCandidate, context.familyTool.name, candidateToolId);
-
-    const request = await context.toolRuntime.compile(resolvedCandidate.tool.id, {
-      target: executionTarget.target,
-      ...(executionTarget.port === undefined ? {} : { port: executionTarget.port }),
-      layer: inferLayer(resolvedCandidate.tool.category),
-      justification: `${context.familyTool.name} delegated execution to ${resolvedCandidate.tool.name}.`,
-      toolInput
+  const primaryToolId = context.familyDefinition.candidateToolIds[0];
+  if (!primaryToolId) {
+    throw new RequestError(500, `${context.familyTool.name} has no primary seeded tool configured.`, {
+      code: "SEMANTIC_FAMILY_TOOL_MISSING",
+      userFriendlyMessage: `${context.familyTool.name} is missing an internal seeded tool dependency.`
     });
-
-    const brokerResult = await context.broker.executeRequests({
-      scan: context.scan,
-      tacticId: context.tacticId,
-      agentId: context.agentId,
-      requests: [request],
-      toolLookup: {
-        [resolvedCandidate.tool.id]: resolvedCandidate.tool
-      },
-      ...(context.constraintSet ? { constraintSet: context.constraintSet } : {})
-    });
-
-    const toolRun = brokerResult.toolRuns[0];
-    if (!toolRun) {
-      throw new RequestError(500, `${context.familyTool.name} did not receive a tool run from ${resolvedCandidate.tool.name}.`, {
-        code: "SEMANTIC_FAMILY_TOOL_RUN_MISSING",
-        userFriendlyMessage: `${context.familyTool.name} did not receive a valid internal tool run.`
-      });
-    }
-
-    if (!isUsableResult(toolRun, brokerResult.observations.length)) {
-      attempts.push(createAttempt({
-        toolId: resolvedCandidate.tool.id,
-        toolName: resolvedCandidate.tool.name,
-        toolRun,
-        output: toolRun.output ?? toolRun.statusReason ?? "",
-        selected: false
-      }));
-      failures.push([
-        `${resolvedCandidate.tool.name} returned no usable evidence.`,
-        `status=${toolRun.status}`,
-        ...(toolRun.exitCode === undefined ? [] : [`exitCode=${toolRun.exitCode}`]),
-        ...(toolRun.statusReason ? [`reason=${toolRun.statusReason}`] : []),
-        `output=${truncate(toolRun.output ?? "", 400)}`
-      ].join(" "));
-      continue;
-    }
-
-    const result: ExecutedToolResult = {
-      toolId: context.familyTool.id,
-      toolName: context.familyDefinition.tool.builtinActionKey ?? context.familyTool.id,
-      toolInput,
-      toolRequest: request,
-      toolRun,
-      status: toolRun.status,
-      observations: brokerResult.observations,
-      observationKeys: brokerResult.observations.map((observation) => observation.key),
-      observationSummaries: brokerResult.observations.map((observation) => observation.summary),
-      outputPreview: truncate(
-        brokerResult.observations[0]?.summary
-          ?? toolRun.statusReason
-          ?? toolRun.output
-          ?? `${context.familyTool.name} completed.`
-      ),
-      fullOutput: toolRun.output ?? toolRun.statusReason ?? "",
-      commandPreview: toolRun.commandPreview,
-      ...(toolRun.exitCode === undefined ? {} : { exitCode: toolRun.exitCode }),
-      usedToolId: resolvedCandidate.tool.id,
-      usedToolName: resolvedCandidate.tool.name,
-      fallbackUsed: attempts.length > 0,
-      attempts: attempts.concat(createAttempt({
-        toolId: resolvedCandidate.tool.id,
-        toolName: resolvedCandidate.tool.name,
-        toolRun,
-        output: toolRun.output ?? toolRun.statusReason ?? "",
-        selected: true
-      }))
-    };
-
-    return {
-      result,
-      response: {
-        toolRunId: toolRun.id,
-        toolId: context.familyTool.id,
-        toolName: result.toolName,
-        status: toolRun.status,
-        outputPreview: result.outputPreview,
-        rawOutput: result.fullOutput,
-        observations: result.observations,
-        observationSummaries: result.observationSummaries,
-        usedToolId: result.usedToolId,
-        usedToolName: result.usedToolName,
-        fallbackUsed: result.fallbackUsed,
-        attempts: result.attempts
-      }
-    };
   }
 
-  throw new RequestError(502, `${context.familyTool.name} failed across all seeded candidates. ${failures.join(" ")}`.trim(), {
-    code: "SEMANTIC_FAMILY_TOOL_FAILED",
-    userFriendlyMessage: `${context.familyTool.name} failed across all seeded candidates.`
+  const resolvedCandidate = await context.toolRuntime.get(primaryToolId);
+  assertCandidateRunnable(resolvedCandidate, context.familyTool.name, primaryToolId);
+
+  const request = await context.toolRuntime.compile(resolvedCandidate.tool.id, {
+    target: executionTarget.target,
+    ...(executionTarget.port === undefined ? {} : { port: executionTarget.port }),
+    layer: inferLayer(resolvedCandidate.tool.category),
+    justification: `${context.familyTool.name} delegated execution to ${resolvedCandidate.tool.name}.`,
+    toolInput
   });
+
+  const brokerResult = await context.broker.executeRequests({
+    scan: context.scan,
+    tacticId: context.tacticId,
+    agentId: context.agentId,
+    requests: [request],
+    toolLookup: {
+      [resolvedCandidate.tool.id]: resolvedCandidate.tool
+    },
+    ...(context.constraintSet ? { constraintSet: context.constraintSet } : {})
+  });
+
+  const toolRun = brokerResult.toolRuns[0];
+  if (!toolRun) {
+    throw new RequestError(500, `${context.familyTool.name} did not receive a tool run from ${resolvedCandidate.tool.name}.`, {
+      code: "SEMANTIC_FAMILY_TOOL_RUN_MISSING",
+      userFriendlyMessage: `${context.familyTool.name} did not receive a valid internal tool run.`
+    });
+  }
+
+  if (!isUsableResult(toolRun, brokerResult.observations.length)) {
+    throw new RequestError(502, [
+      `${context.familyTool.name} failed while running ${resolvedCandidate.tool.name}.`,
+      `status=${toolRun.status}`,
+      ...(toolRun.exitCode === undefined ? [] : [`exitCode=${toolRun.exitCode}`]),
+      ...(toolRun.statusReason ? [`reason=${toolRun.statusReason}`] : []),
+      `output=${truncate(toolRun.output ?? "", 400)}`
+    ].join(" "), {
+      code: "SEMANTIC_FAMILY_TOOL_FAILED",
+      userFriendlyMessage: `${context.familyTool.name} failed while running ${resolvedCandidate.tool.name}.`
+    });
+  }
+
+  const result: ExecutedToolResult = {
+    toolId: context.familyTool.id,
+    toolName: context.familyDefinition.tool.builtinActionKey ?? context.familyTool.id,
+    toolInput,
+    toolRequest: request,
+    toolRun,
+    status: toolRun.status,
+    observations: brokerResult.observations,
+    observationKeys: brokerResult.observations.map((observation) => observation.key),
+    observationSummaries: brokerResult.observations.map((observation) => observation.summary),
+    outputPreview: truncate(
+      brokerResult.observations[0]?.summary
+        ?? toolRun.statusReason
+        ?? toolRun.output
+        ?? `${context.familyTool.name} completed.`
+    ),
+    fullOutput: toolRun.output ?? toolRun.statusReason ?? "",
+    commandPreview: toolRun.commandPreview,
+    ...(toolRun.exitCode === undefined ? {} : { exitCode: toolRun.exitCode }),
+    usedToolId: resolvedCandidate.tool.id,
+    usedToolName: resolvedCandidate.tool.name,
+    fallbackUsed: false,
+    attempts: [createAttempt({
+      toolId: resolvedCandidate.tool.id,
+      toolName: resolvedCandidate.tool.name,
+      toolRun,
+      output: toolRun.output ?? toolRun.statusReason ?? "",
+      selected: true
+    })]
+  };
+
+  return {
+    result,
+    response: {
+      toolRunId: toolRun.id,
+      toolId: context.familyTool.id,
+      toolName: result.toolName,
+      status: toolRun.status,
+      outputPreview: result.outputPreview,
+      rawOutput: result.fullOutput,
+      observations: result.observations,
+      observationSummaries: result.observationSummaries,
+      usedToolId: result.usedToolId,
+      usedToolName: result.usedToolName,
+      fallbackUsed: result.fallbackUsed,
+      attempts: result.attempts
+    }
+  };
 }

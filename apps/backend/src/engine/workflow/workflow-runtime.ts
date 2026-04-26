@@ -22,8 +22,6 @@ export class WorkflowRuntimeService {
   }
 
   async launchWorkflowRun(workflowId: string, input: StartWorkflowRunBody = {}): Promise<WorkflowLaunchResult> {
-    void input;
-
     await this.preflight.prepareWorkflowStart(workflowId);
 
     const launch = await this.ports.workflowsRepository.createLaunch(workflowId);
@@ -39,17 +37,18 @@ export class WorkflowRuntimeService {
       sortDirection: "asc"
     });
 
+    const runnableTargets = targets.items.filter((target) => Boolean(target.baseUrl?.trim()));
+    const selectedTargets = resolveLaunchTargets(runnableTargets, input.targetId);
+
     const targetRuns = await Promise.all(
-      targets.items
-        .filter((target) => Boolean(target.baseUrl?.trim()))
-        .map(async (target) => {
-          const run = await this.ports.workflowsRepository.createRun(workflowId, launch.id, target.id);
-          if (!run) {
-            throw new RequestError(500, `Failed to create workflow run for target ${target.id}.`);
-          }
-          this.writer.publishSnapshot(run);
-          return run.id;
-        })
+      selectedTargets.map(async (target) => {
+        const run = await this.ports.workflowsRepository.createRun(workflowId, launch.id, target.id);
+        if (!run) {
+          throw new RequestError(500, `Failed to create workflow run for target ${target.id}.`);
+        }
+        this.writer.publishSnapshot(run);
+        return run.id;
+      })
     );
 
     const hydratedLaunch = await this.ports.workflowsRepository.getLaunchById(launch.id);
@@ -76,4 +75,30 @@ export class WorkflowRuntimeService {
   async stepRun(_runId: string): Promise<void> {
     throw new RequestError(400, "Pipeline runs advance automatically after start.");
   }
+}
+
+function resolveLaunchTargets<
+  T extends {
+    id: string;
+    baseUrl?: string | null;
+  }
+>(
+  runnableTargets: T[],
+  requestedTargetId: string | undefined
+) {
+  if (requestedTargetId) {
+    const selectedTarget = runnableTargets.find((target) => target.id === requestedTargetId);
+    if (!selectedTarget) {
+      throw new RequestError(400, "Selected workflow target is not runnable.");
+    }
+
+    return [selectedTarget];
+  }
+
+  const firstRunnableTarget = runnableTargets[0];
+  if (!firstRunnableTarget) {
+    throw new RequestError(400, "Workflow launch requires at least one runnable target.");
+  }
+
+  return [firstRunnableTarget];
 }

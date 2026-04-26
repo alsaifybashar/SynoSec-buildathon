@@ -47,7 +47,11 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
       requireStageResult: true,
       requireToolCall: false,
       allowEmptyResult: true,
-      minFindings: 0
+      minFindings: 0,
+      requireReachableSurface: false,
+      requireEvidenceBackedWeakness: false,
+      requireOsiCoverageStatus: false,
+      requireChainedFindings: false
     },
     resultSchemaVersion: 1,
     handoffSchema: null
@@ -99,6 +103,7 @@ function makeTarget(overrides: Partial<Target> = {}): Target {
 function createService(overrides: {
   workflow?: Workflow | null;
   target?: Target;
+  targets?: Target[];
   agentsById?: Record<string, Record<string, unknown>>;
   fixedRuntime?: Record<string, unknown>;
   workflowRunStream?: WorkflowRunStream;
@@ -106,6 +111,7 @@ function createService(overrides: {
 } = {}) {
   const workflow = overrides.workflow ?? makeWorkflow();
   const target = overrides.target ?? makeTarget();
+  const targets = overrides.targets ?? [target];
   const agentsById = overrides.agentsById ?? {
     "30000000-0000-0000-0000-000000000001": {
       id: "30000000-0000-0000-0000-000000000001",
@@ -235,8 +241,8 @@ function createService(overrides: {
       updateRun: async (run: WorkflowRun) => run
     },
     targetsRepository: {
-      getById: async () => target,
-      list: async () => ({ items: [target], page: 1, pageSize: 25, total: 1, totalPages: 1 }),
+      getById: async (id: string) => targets.find((candidate) => candidate.id === id) ?? null,
+      list: async () => ({ items: targets, page: 1, pageSize: 25, total: targets.length, totalPages: targets.length === 0 ? 0 : 1 }),
       create: async () => { throw new Error("not implemented"); },
       update: async () => { throw new Error("not implemented"); },
       remove: async () => false
@@ -336,17 +342,21 @@ describe("WorkflowExecutionService", () => {
           label: "Portfolio Assessment",
           agentId: "30000000-0000-0000-0000-000000000001",
           ord: 0,
-          objective: "Assess the target with family tools.",
+          objective: "Assess the target with capability tools.",
           stageSystemPrompt: defaultWorkflowStageSystemPrompt,
           taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
-          allowedToolIds: ["seed-family-http-surface", "seed-family-sql-injection-validation"],
+          allowedToolIds: ["builtin-http-surface-assessment", "builtin-sql-injection-validation"],
           requiredEvidenceTypes: [],
           findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
           completionRule: {
             requireStageResult: true,
             requireToolCall: false,
             allowEmptyResult: true,
-            minFindings: 0
+            minFindings: 0,
+            requireReachableSurface: false,
+            requireEvidenceBackedWeakness: false,
+            requireOsiCoverageStatus: false,
+            requireChainedFindings: false
           },
           resultSchemaVersion: 1,
           handoffSchema: null
@@ -357,17 +367,17 @@ describe("WorkflowExecutionService", () => {
       workflow,
       target: constrainedTarget,
       aiToolById: {
-        "seed-family-http-surface": {
-          id: "seed-family-http-surface",
+        "builtin-http-surface-assessment": {
+          id: "builtin-http-surface-assessment",
           name: "HTTP Surface",
           status: "active",
           source: "system",
           description: "Passive HTTP probe",
-          builtinActionKey: null,
+          builtinActionKey: "http_surface_assessment",
           category: "web",
           riskTier: "passive",
-          executorType: "bash",
-          bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
+          executorType: "builtin",
+          bashSource: null,
           capabilities: ["semantic-family", "http-surface", "passive"],
           timeoutMs: 120000,
           constraintProfile: {
@@ -397,8 +407,8 @@ describe("WorkflowExecutionService", () => {
           createdAt: "2026-04-25T00:00:00.000Z",
           updatedAt: "2026-04-25T00:00:00.000Z"
         },
-        "seed-family-sql-injection-validation": {
-          id: "seed-family-sql-injection-validation",
+        "builtin-sql-injection-validation": {
+          id: "builtin-sql-injection-validation",
           name: "SQL Injection Validation",
           status: "active",
           source: "system",
@@ -450,7 +460,7 @@ describe("WorkflowExecutionService", () => {
     });
 
     const streamTools = Object.keys(streamTextMock.mock.calls.at(-1)?.[0]?.tools ?? {});
-    expect(streamTools).toContain("seed-family-http-surface");
+    expect(streamTools).toContain("http_surface_assessment");
     expect(streamTools).not.toContain("sql_injection_validation");
     expect(createdRuns[0]!.events.some((event) => event.title === "Policy-filtered tools")).toBe(true);
   });
@@ -501,14 +511,18 @@ describe("WorkflowExecutionService", () => {
           objective: "Validate the target with exploit-grade tooling.",
           stageSystemPrompt: defaultWorkflowStageSystemPrompt,
           taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
-          allowedToolIds: ["seed-family-sql-injection-validation"],
+          allowedToolIds: ["builtin-sql-injection-validation"],
           requiredEvidenceTypes: [],
           findingPolicy: { taxonomy: "typed-core-v1", allowedTypes: ["other"] },
           completionRule: {
             requireStageResult: true,
             requireToolCall: false,
             allowEmptyResult: true,
-            minFindings: 0
+            minFindings: 0,
+            requireReachableSurface: false,
+            requireEvidenceBackedWeakness: false,
+            requireOsiCoverageStatus: false,
+            requireChainedFindings: false
           },
           resultSchemaVersion: 1,
           handoffSchema: null
@@ -519,8 +533,8 @@ describe("WorkflowExecutionService", () => {
       workflow,
       target: constrainedTarget,
       aiToolById: {
-        "seed-family-sql-injection-validation": {
-          id: "seed-family-sql-injection-validation",
+        "builtin-sql-injection-validation": {
+          id: "builtin-sql-injection-validation",
           name: "SQL Injection Validation",
           status: "active",
           source: "system",
@@ -569,6 +583,78 @@ describe("WorkflowExecutionService", () => {
     });
 
     expect(createdRuns[0]!.events.at(-1)?.summary ?? "").toContain("no allowed tools are compatible");
+  });
+
+  it("launches only the selected target when local runtime is active", async () => {
+    streamTextMock.mockImplementation(() => ({
+      fullStream: (async function* () {
+        yield { type: "start" };
+      })()
+    }));
+
+    const service = createService({
+      targets: [
+        makeTarget(),
+        makeTarget({
+          id: "20000000-0000-0000-0000-000000000002",
+          name: "Second Target",
+          baseUrl: "http://localhost:8890",
+          hostname: "localhost"
+        })
+      ],
+      fixedRuntime: {
+        provider: "local",
+        providerName: "Ollama",
+        model: "qwen3:1.7b",
+        label: "Ollama · qwen3:1.7b",
+        baseUrl: "http://localhost:11434/v1",
+        apiKey: "ollama",
+        apiMode: "chat"
+      }
+    });
+
+    const launch = await service.service.startRun("10000000-0000-0000-0000-000000000001", {
+      targetId: "20000000-0000-0000-0000-000000000002"
+    });
+
+    expect(launch.runs).toHaveLength(1);
+    expect(launch.runs[0]).toMatchObject({
+      targetId: "20000000-0000-0000-0000-000000000002"
+    });
+  });
+
+  it("defaults to a single runnable target when the caller omits targetId", async () => {
+    streamTextMock.mockImplementation(() => ({
+      fullStream: (async function* () {
+        yield { type: "start" };
+      })()
+    }));
+
+    const service = createService({
+      targets: [
+        makeTarget(),
+        makeTarget({
+          id: "20000000-0000-0000-0000-000000000002",
+          name: "Second Target",
+          baseUrl: "http://localhost:8890",
+          hostname: "localhost"
+        })
+      ],
+      fixedRuntime: {
+        provider: "anthropic",
+        providerName: "Anthropic",
+        model: "claude-sonnet-4-5",
+        label: "Anthropic · claude-sonnet-4-5",
+        apiKey: "test-key"
+      }
+    });
+
+    const launch = await service.service.startRun("10000000-0000-0000-0000-000000000001");
+
+    expect(launch.runs).toHaveLength(1);
+    expect(launch.runs[0]).toMatchObject({
+      targetId: "20000000-0000-0000-0000-000000000001"
+    });
   });
 
   it("fails the workflow when a later stage never submits complete_run", async () => {
@@ -622,9 +708,7 @@ describe("WorkflowExecutionService", () => {
     const stageStartedLabels = createdRuns[0]!.events
       .filter((event) => event.type === "stage_started")
       .map((event) => String(event.payload["stageLabel"]));
-    expect(stageStartedLabels).toEqual(["Pipeline", "Validation"]);
-    expect(createdRuns[0]!.events.some((event) => event.type === "stage_completed" && event.workflowStageId === workflow.stages[0]!.id)).toBe(true);
-    expect(createdRuns[0]!.events.some((event) => event.type === "stage_failed" && event.workflowStageId === workflow.stages[1]!.id)).toBe(true);
+    expect(stageStartedLabels).toEqual(["Pipeline"]);
     expect(createdRuns[0]!.events.some((event) => event.type === "run_failed")).toBe(true);
     expect(createdRuns[0]!.events.some((event) => event.summary.includes("without calling complete_run"))).toBe(true);
     expect(executionReportsService.createForWorkflowRun).toHaveBeenCalledWith(createdRuns[0]!.id);
@@ -695,7 +779,8 @@ describe("WorkflowExecutionService", () => {
       ? toolContextEvent.payload["body"]
       : toolContextEvent?.detail;
     expect(toolContextBody).toContain("Built-in actions");
-    expect(toolContextBody).toContain("complete_run: Submit the current workflow stage result.");
+    expect(toolContextBody).toContain("complete_run: Finish the workflow run last");
+    expect(toolContextBody).toContain("optional `handoff`");
     expect(toolContextBody).not.toContain("deep_analysis");
 
     const systemPromptEvent = createdRuns[0]!.events.find((event) => event.title === "Rendered system prompt");
@@ -704,6 +789,10 @@ describe("WorkflowExecutionService", () => {
     expect(systemPromptEvent?.detail).toContain("Target: Demo Target");
     expect(systemPromptEvent?.detail).toContain("Target URL: http://localhost:3000/");
     expect(systemPromptEvent?.detail).toContain("Workflow execution contract:");
+    expect(systemPromptEvent?.detail).toContain("Required action order: run evidence tools first, then call report_finding");
+    expect(systemPromptEvent?.detail).toContain("complete_run does not create findings");
+    expect(systemPromptEvent?.detail).toContain("If complete_run is rejected, call the missing required actions");
+    expect(systemPromptEvent?.detail).toContain("When requireChainedFindings is enabled");
     expect(systemPromptEvent?.payload["promptSourceLabel"]).toBe("Workflow-owned editable system prompt plus engine-generated target context and runtime contract.");
     expect(createdRuns[0]!.events.find((event) => event.title === "Rendered task prompt")).toBeUndefined();
 
@@ -725,6 +814,203 @@ describe("WorkflowExecutionService", () => {
       system: expect.any(String),
       prompt: "Proceed."
     }));
+  });
+
+  it("fails strict completion when complete_run has no handoff and no findings", async () => {
+    const baseWorkflow = makeWorkflow();
+    const workflow = makeWorkflow({
+      stages: [{
+        ...baseWorkflow.stages[0]!,
+        completionRule: {
+          requireStageResult: true,
+          requireToolCall: true,
+          allowEmptyResult: false,
+          minFindings: 1,
+          requireReachableSurface: true,
+          requireEvidenceBackedWeakness: true,
+          requireOsiCoverageStatus: true,
+          requireChainedFindings: true
+        }
+      }]
+    });
+
+    streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
+      fullStream: (async function* () {
+        await options.tools.complete_run.execute({
+          summary: "Nothing to report.",
+          recommendedNextStep: "Stop.",
+          residualRisk: "Unknown."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({ workflow });
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("failed");
+    });
+
+    const assertionEvent = createdRuns[0]!.events.find((event) => event.title === "README coverage assertions");
+    expect(assertionEvent).toMatchObject({
+      status: "failed"
+    });
+    expect(assertionEvent?.summary).toContain("reachable surface");
+    expect(assertionEvent?.payload["assertions"]).toMatchObject({
+      evidenceBackedWeaknesses: {
+        required: true,
+        passed: false,
+        findingCount: 0,
+        requiredFindingCount: 1
+      },
+      chainedFindings: {
+        required: true,
+        passed: false,
+        linkedFindingCount: 0
+      }
+    });
+    expect(createdRuns[0]!.events.at(-1)?.summary ?? "").toContain("Workflow completion assertions failed");
+  });
+
+  it("completes when README coverage assertions are demonstrated by evidence, coverage, and chained findings", async () => {
+    const baseWorkflow = makeWorkflow();
+    const workflow = makeWorkflow({
+      stages: [{
+        ...baseWorkflow.stages[0]!,
+        allowedToolIds: ["custom-http-proof"],
+        completionRule: {
+          requireStageResult: true,
+          requireToolCall: true,
+          allowEmptyResult: false,
+          minFindings: 1,
+          requireReachableSurface: true,
+          requireEvidenceBackedWeakness: true,
+          requireOsiCoverageStatus: true,
+          requireChainedFindings: true
+        }
+      }]
+    });
+
+    streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<any> }> }) => ({
+      fullStream: (async function* () {
+        const toolOutput = await options.tools["custom-http-proof"].execute({
+          baseUrl: "http://localhost:3000/admin"
+        });
+        const firstFinding = await options.tools.report_finding.execute({
+          type: "service_exposure",
+          title: "Admin Panel Reachable",
+          severity: "medium",
+          confidence: 0.95,
+          target: { host: "demo.local", url: "http://localhost:3000/admin" },
+          evidence: [{
+            sourceTool: "custom-http-proof",
+            quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
+            toolRunRef: toolOutput.toolRunId
+          }],
+          impact: "The admin panel is reachable from the assessed surface.",
+          recommendation: "Restrict access to trusted operators."
+        });
+        await options.tools.report_finding.execute({
+          type: "auth_weakness",
+          title: "Admin Exposure Enables Authentication Attack",
+          severity: "high",
+          confidence: 0.92,
+          target: { host: "demo.local", url: "http://localhost:3000/admin" },
+          evidence: [{
+            sourceTool: "custom-http-proof",
+            quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
+            toolRunRef: toolOutput.toolRunId
+          }],
+          impact: "The exposed admin panel can be chained with weak authentication checks.",
+          recommendation: "Add authentication and network restrictions.",
+          relatedFindingIds: [firstFinding.findingId],
+          explanationSummary: "The reachable admin surface provides the entry point for the authentication weakness.",
+          confidenceReason: "Both findings are grounded in the same persisted admin-panel response.",
+          relationshipExplanations: {
+            relatedTo: "The authentication issue depends on the reachable admin venue."
+          }
+        });
+        await options.tools.complete_run.execute({
+          summary: "All README coverage assertions are demonstrated.",
+          recommendedNextStep: "Review the chained admin-path findings.",
+          residualRisk: "Admin exposure remains until access is restricted."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({
+      workflow,
+      aiToolById: {
+        "custom-http-proof": {
+          id: "custom-http-proof",
+          name: "Custom HTTP Proof",
+          status: "active",
+          source: "system",
+          description: "Return a deterministic proof snippet.",
+          executorType: "bash",
+          builtinActionKey: null,
+          bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"URL: http://localhost:3000/admin\\nStatus: 200\\nSnippet: Administrator Control Panel\",\"observations\":[{\"key\":\"http-proof:admin\",\"title\":\"Admin proof\",\"summary\":\"Admin panel responded with 200.\",\"severity\":\"high\",\"confidence\":0.96,\"evidence\":\"URL: http://localhost:3000/admin\\nStatus: 200\\nSnippet: Administrator Control Panel\",\"technique\":\"deterministic http proof\"}],\"commandPreview\":\"custom-http-proof http://localhost:3000/admin\"}'",
+          capabilities: ["http", "proof"],
+          category: "web",
+          riskTier: "passive",
+          timeoutMs: 30000,
+          constraintProfile: {
+            enforced: true,
+            targetKinds: ["host", "domain", "url"],
+            networkBehavior: "outbound-read",
+            mutationClass: "none",
+            supportsHostAllowlist: true,
+            supportsPathExclusions: true,
+            supportsRateLimit: false
+          },
+          inputSchema: {
+            type: "object",
+            properties: {
+              baseUrl: { type: "string" }
+            },
+            required: ["baseUrl"]
+          },
+          outputSchema: {
+            type: "object",
+            properties: {
+              output: { type: "string" }
+            },
+            required: ["output"]
+          },
+          createdAt: "2026-04-25T00:00:00.000Z",
+          updatedAt: "2026-04-25T00:00:00.000Z"
+        }
+      }
+    });
+
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    const assertionEvent = createdRuns[0]!.events.find((event) => event.title === "README coverage assertions");
+    expect(assertionEvent).toMatchObject({
+      status: "completed"
+    });
+    expect(assertionEvent?.payload["assertions"]).toMatchObject({
+      reachableSurface: { passed: true },
+      evidenceBackedWeaknesses: { passed: true },
+      osiCoverageStatus: { passed: true },
+      chainedFindings: { passed: true }
+    });
   });
 
   it("emits a dedicated report_finding tool result summary", async () => {
@@ -881,7 +1167,7 @@ describe("WorkflowExecutionService", () => {
                       type: "tool_result",
                       tool_use_id: "call-parameter-discovery",
                       is_error: true,
-                      content: "Parameter Discovery failed across all seeded candidates. Arjun returned no usable evidence."
+                      content: "Parameter Discovery failed while running Arjun. status=failed reason=Arjun returned no usable evidence."
                     }
                   ]
                 }
@@ -971,7 +1257,7 @@ describe("WorkflowExecutionService", () => {
       status: "failed",
       title: "parameter_discovery returned"
     });
-    expect(failedResult?.summary).toContain("Parameter Discovery failed across all seeded candidates.");
+    expect(failedResult?.summary).toContain("Parameter Discovery failed while running Arjun.");
     expect(failedResult?.payload["toolId"]).toBe("builtin-parameter-discovery");
   });
 

@@ -42,7 +42,7 @@ async function executeDirectSeededTool(input: {
   broker: ToolBroker;
   runtime: ReturnType<typeof createToolRuntime>;
   tool: AiTool;
-  rawInput: Record<string, string | number | boolean | string[]>;
+  rawInput: Record<string, unknown>;
   scanOverride?: Scan;
 }) {
   const configuredBaseUrl = (
@@ -301,8 +301,9 @@ describe("executeSemanticFamilyTool", () => {
     expect(family.result.observationKeys).toEqual(direct.observations.map((observation) => observation.key));
     expect(family.result.observationSummaries).toEqual(direct.observations.map((observation) => observation.summary));
     expect(family.response.outputPreview).toBe(direct.observations[0]?.summary ?? family.result.outputPreview);
-    expect(family.response.fallbackUsed).toBe(family.response.attempts.length > 1);
-    expect(family.response.attempts.at(-1)?.selected).toBe(true);
+    expect(family.response.fallbackUsed).toBe(false);
+    expect(family.response.attempts).toHaveLength(1);
+    expect(family.response.attempts[0]?.selected).toBe(true);
   });
 
   it("preserves explicit path targets for SQL injection validation", async () => {
