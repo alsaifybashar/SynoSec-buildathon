@@ -13,7 +13,7 @@ import type { TargetsQuery } from "@/shared/lib/resource-client";
 import { Input } from "@/shared/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
 
-type TargetFormValues = {
+export type TargetFormValues = {
   name: string;
   baseUrl: string;
   environment: TargetEnvironment;
@@ -21,31 +21,31 @@ type TargetFormValues = {
   lastScannedAt: string;
 };
 
-const environmentLabels: Record<TargetEnvironment, string> = {
+export const environmentLabels: Record<TargetEnvironment, string> = {
   production: "Production",
   staging: "Staging",
   development: "Development"
 };
 
-const statusLabels: Record<TargetStatus, string> = {
+export const statusLabels: Record<TargetStatus, string> = {
   active: "Active",
   investigating: "Investigating",
   archived: "Archived"
 };
 
-const environmentBadgeStyles: Record<TargetEnvironment, string> = {
+export const environmentBadgeStyles: Record<TargetEnvironment, string> = {
   production: "bg-primary/10 text-primary",
   staging: "bg-secondary text-secondary-foreground",
   development: "bg-muted text-muted-foreground"
 };
 
-const statusBadgeStyles: Record<TargetStatus, string> = {
+export const statusBadgeStyles: Record<TargetStatus, string> = {
   active: "bg-primary/10 text-primary",
   investigating: "bg-secondary text-secondary-foreground",
   archived: "bg-muted text-muted-foreground"
 };
 
-function StatusBadge({ label, className }: { label: string; className: string }) {
+export function StatusBadge({ label, className }: { label: string; className: string }) {
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider ${className}`}>
       {label}
@@ -53,7 +53,7 @@ function StatusBadge({ label, className }: { label: string; className: string })
   );
 }
 
-function createEmptyFormValues(): TargetFormValues {
+export function createEmptyFormValues(): TargetFormValues {
   return {
     name: "",
     baseUrl: "",
@@ -63,7 +63,7 @@ function createEmptyFormValues(): TargetFormValues {
   };
 }
 
-function toFormValues(target: Target): TargetFormValues {
+export function toFormValues(target: Target): TargetFormValues {
   return {
     name: target.name,
     baseUrl: target.baseUrl ?? "",
@@ -73,7 +73,7 @@ function toFormValues(target: Target): TargetFormValues {
   };
 }
 
-function toRequestBody(values: TargetFormValues): CreateTargetBody {
+export function toRequestBody(values: TargetFormValues): CreateTargetBody {
   return {
     name: values.name.trim(),
     baseUrl: values.baseUrl.trim(),
@@ -83,7 +83,7 @@ function toRequestBody(values: TargetFormValues): CreateTargetBody {
   };
 }
 
-function validateForm(values: TargetFormValues) {
+export function validateForm(values: TargetFormValues) {
   const errors: Partial<Record<keyof TargetFormValues, string>> = {};
 
   if (!values.name.trim()) {
@@ -101,7 +101,7 @@ function validateForm(values: TargetFormValues) {
   return errors;
 }
 
-function formatTimestamp(value: string | null) {
+export function formatTimestamp(value: string | null) {
   if (!value) {
     return "Never";
   }
@@ -112,7 +112,7 @@ function formatTimestamp(value: string | null) {
   }).format(new Date(value));
 }
 
-function definedString(value: string | undefined) {
+export function definedString(value: string | undefined) {
   return value ? { error: value } : {};
 }
 

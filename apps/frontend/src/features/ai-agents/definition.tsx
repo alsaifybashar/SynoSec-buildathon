@@ -19,7 +19,7 @@ import { Input } from "@/shared/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
 import { Textarea } from "@/shared/ui/textarea";
 
-type AgentFormValues = {
+export type AgentFormValues = {
   name: string;
   status: AiAgentStatus;
   description: string;
@@ -29,20 +29,20 @@ type AgentFormValues = {
   toolIds: string[];
 };
 
-type AiAgentDefinitionContext = {
+export type AiAgentDefinitionContext = {
   providers: AiProvider[];
   tools: AiTool[];
   providerLookup: Record<string, string>;
   defaultProviderId: string;
 };
 
-const statusLabels: Record<AiAgentStatus, string> = {
+export const statusLabels: Record<AiAgentStatus, string> = {
   draft: "Draft",
   active: "Active",
   archived: "Archived"
 };
 
-function createEmptyFormValues(defaultProviderId = ""): AgentFormValues {
+export function createEmptyFormValues(defaultProviderId = ""): AgentFormValues {
   return {
     name: "",
     status: "draft",
@@ -54,7 +54,7 @@ function createEmptyFormValues(defaultProviderId = ""): AgentFormValues {
   };
 }
 
-function toFormValues(agent: AiAgent): AgentFormValues {
+export function toFormValues(agent: AiAgent): AgentFormValues {
   return {
     name: agent.name,
     status: agent.status,
@@ -66,7 +66,7 @@ function toFormValues(agent: AiAgent): AgentFormValues {
   };
 }
 
-function toRequestBody(values: AgentFormValues): CreateAiAgentBody {
+export function toRequestBody(values: AgentFormValues): CreateAiAgentBody {
   return {
     name: values.name.trim(),
     status: values.status,
@@ -78,7 +78,7 @@ function toRequestBody(values: AgentFormValues): CreateAiAgentBody {
   };
 }
 
-function validateForm(values: AgentFormValues) {
+export function validateForm(values: AgentFormValues) {
   const errors: Partial<Record<keyof AgentFormValues, string>> = {};
 
   if (!values.name.trim()) {
@@ -94,11 +94,11 @@ function validateForm(values: AgentFormValues) {
   return errors;
 }
 
-function formatTimestamp(value: string) {
+export function formatTimestamp(value: string) {
   return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-function definedString(value: string | undefined) {
+export function definedString(value: string | undefined) {
   return value ? { error: value } : {};
 }
 
