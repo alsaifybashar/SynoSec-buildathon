@@ -28,7 +28,7 @@ The current system already has:
 - a seeded tool catalog
 - brokered tool execution
 - workflow traces and execution reports
-- semantic-family tools that can fall back across multiple concrete tools
+- capability tools that route agent intent to one primary concrete tool
 - custom evidence-producing probes for some web checks
 
 The current system does not yet prove:
@@ -198,7 +198,7 @@ Keep and strengthen the parts that support the flagship workflow:
 - bounded vulnerability validation
 - auth-flow probing
 - transport and service enumeration where it supports the path story
-- semantic-family tools
+- capability tools
 - workflow traces
 - execution reports
 - attack-path handoff and reporting

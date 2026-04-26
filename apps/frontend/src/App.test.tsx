@@ -124,7 +124,7 @@ describe("App", () => {
         name: "Local Vulnerable App Walkthrough",
         status: "active",
         executionKind: "workflow",
-        description: "Seeded workflow for the local target",
+        description: "Default workflow for the local target",
         agentId: agents[0]?.id ?? "",
         objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
         stageSystemPrompt: defaultWorkflowStageSystemPrompt,

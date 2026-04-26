@@ -156,7 +156,7 @@ function getSeededTargetDefinition(target: Pick<Target, "baseUrl" | "environment
 function SeededTargetTooltipContent({ vulnerabilities }: { vulnerabilities: readonly string[] }) {
   return (
     <div className="space-y-2">
-      <p className="font-medium text-popover-foreground">Seeded lab target</p>
+      <p className="font-medium text-popover-foreground">Lab target</p>
       <ul className="list-disc space-y-1 pl-4">
         {vulnerabilities.map((entry) => (
           <li key={entry}>{entry}</li>
@@ -174,7 +174,7 @@ function SeededTargetHint({ vulnerabilities }: { vulnerabilities: readonly strin
           <button
             type="button"
             className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-primary transition hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
-            aria-label="Show seeded target vulnerabilities"
+            aria-label="Show lab target vulnerabilities"
             onClick={(event) => event.stopPropagation()}
           >
             <Info className="h-3 w-3" />
@@ -259,7 +259,7 @@ export const targetsDefinition: CrudFeatureDefinition<
           <StatusBadge label={environmentLabels[item.environment]} className={environmentBadgeStyles[item.environment]} />
         </DetailSidebarItem>
         {getSeededTargetDefinition(item) ? (
-          <DetailSidebarItem label="Seeded vulnerabilities" hint={getSeededTargetDefinition(item)!.vulnerabilities.join("\n")}>
+          <DetailSidebarItem label="Lab target vulnerabilities" hint={getSeededTargetDefinition(item)!.vulnerabilities.join("\n")}>
             Known lab target
           </DetailSidebarItem>
         ) : null}

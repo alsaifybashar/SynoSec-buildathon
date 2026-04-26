@@ -102,7 +102,7 @@ describe("TargetsPage", () => {
       </MemoryRouter>
     );
 
-    fireEvent.focus((await screen.findAllByRole("button", { name: "Show seeded target vulnerabilities" }))[0]);
+    fireEvent.focus((await screen.findAllByRole("button", { name: "Show lab target vulnerabilities" }))[0]);
     expect(await screen.findByRole("tooltip")).toHaveTextContent("SQL injection simulation on /login");
     expect(screen.getByRole("tooltip")).toHaveTextContent("Sensitive data exposure on /api/users");
   });
@@ -120,7 +120,7 @@ describe("TargetsPage", () => {
       </MemoryRouter>
     );
 
-    fireEvent.focus((await screen.findAllByRole("button", { name: "Show seeded target vulnerabilities" }))[1]);
+    fireEvent.focus((await screen.findAllByRole("button", { name: "Show lab target vulnerabilities" }))[1]);
     expect(await screen.findByRole("tooltip")).toHaveTextContent("Support case detail IDOR leaks one-time release approval tokens");
     expect(screen.getByRole("tooltip")).toHaveTextContent("Weak magic-link issuance creates release-manager sessions");
   });
