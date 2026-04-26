@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const networkSegmentMapTool = {
   id: "seed-network-segment-map",
   name: "Network Segment Map",
-  description: "Discovers adjacent hosts, inferred subnets, and gateway-facing ports for trust-boundary mapping.",
+  description: "Discover adjacent hosts, inferred subnets, gateway-facing ports, and trust-boundary clues around an approved target. Use when attack-path reasoning needs topology context. Provide target or scoped network context. Returns topology observations; do not use for vulnerability validation.",
   category: "topology" as const,
   riskTier: "passive" as const,
   executorType: "bash" as const,

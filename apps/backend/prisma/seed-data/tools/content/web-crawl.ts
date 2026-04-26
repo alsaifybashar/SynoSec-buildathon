@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededWebSteeringInputSchema } from "../shared/seeded-web-input-schema.js";
 
 export const webCrawlTool = {
   id: "seed-web-crawl",
   name: "Web Crawl",
-  description: "Crawl discovered web targets to expand reachable content and endpoints.",
+  description: "Crawl a confirmed web target to expand reachable pages, links, forms, and candidate endpoints. Use after HTTP surface assessment when route structure is needed. Provide `target` and `baseUrl`; optionally bound with candidate endpoints or page limits. Returns URL observations; do not use for brute-force path guessing or exploit validation.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/content/web-crawl.sh");
@@ -16,14 +17,7 @@ export const webCrawlTool = {
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,
-  inputSchema: {
-    type: "object",
-    properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    },
-    required: ["target", "baseUrl"]
-  },
+  inputSchema: seededWebSteeringInputSchema,
   outputSchema: {
     type: "object",
     properties: {

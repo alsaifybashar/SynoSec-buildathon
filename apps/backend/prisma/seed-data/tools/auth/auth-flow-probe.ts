@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededWebSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const authFlowProbeTool = {
   id: "seed-auth-flow-probe",
   name: "Auth Flow Probe",
-  description: "Tests login flows for missing rate limiting, response differences, timing oracles, and weak-password acceptance signals.",
+  description: "Test known authentication flows for weak controls such as missing rate limits, response differences, timing oracles, artifact acceptance, and weak-password acceptance signals. Use only against approved login or session endpoints. Provide `baseUrl`, `loginUrl`, or validation targets plus notes. Returns auth behavior observations; do not use for unbounded credential attacks.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/auth/auth-flow-probe.sh");
@@ -19,6 +20,7 @@ export const authFlowProbeTool = {
   inputSchema: {
     type: "object",
     properties: {
+      ...seededWebSteeringProperties,
       loginUrl: { type: "string" },
       baseUrl: { type: "string" },
       target: { type: "string" },

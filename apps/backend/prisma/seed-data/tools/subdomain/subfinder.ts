@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededSubdomainSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const subfinderTool = {
   id: "seed-subfinder",
   name: "Subfinder",
-  description: "Fast passive subdomain enumeration tool.",
+  description: "Run passive subdomain enumeration for an in-scope domain. Use before host or HTTP assessment to discover candidate hostnames. Provide `target` or domain context. Returns discovered subdomain observations; validate reachability separately.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/subdomain/subfinder.sh");
@@ -12,16 +13,13 @@ export const subfinderTool = {
   binary: "subfinder",
   category: "subdomain" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Subfinder for seeded execution.",
+  notes: "Raw adapter for Subfinder.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,
   inputSchema: {
     type: "object",
-    properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    }
+    properties: seededSubdomainSteeringProperties
   },
   outputSchema: {
     type: "object",

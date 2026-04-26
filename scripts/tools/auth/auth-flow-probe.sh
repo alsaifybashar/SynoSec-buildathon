@@ -24,24 +24,31 @@ const usernameField = String(toolInput.usernameField || "username");
 const passwordField = String(toolInput.passwordField || "password");
 const knownUser = String(toolInput.knownUser || "admin");
 const unknownUser = String(toolInput.unknownUser || "synosec-nonexistent-user");
+const validationTargets = Array.isArray(toolInput.validationTargets) ? toolInput.validationTargets : [];
 
 function formBody(values) {
   return new URLSearchParams(values).toString();
 }
 
-function submit(values) {
+function submitRequest(requestUrl, requestMethod, values = {}, headers = {}) {
   return new Promise((resolve) => {
-    const url = new URL(loginUrl);
+    const url = new URL(requestUrl);
     const transport = url.protocol === "https:" ? https : http;
     const body = formBody(values);
+    if (requestMethod === "GET") {
+      for (const [key, value] of Object.entries(values)) {
+        url.searchParams.set(key, String(value));
+      }
+    }
     const started = process.hrtime.bigint();
     const req = transport.request(url, {
-      method: "POST",
+      method: requestMethod,
       timeout: 2500,
-      headers: {
+      headers: requestMethod === "POST" ? {
+        ...headers,
         "content-type": "application/x-www-form-urlencoded",
         "content-length": Buffer.byteLength(body)
-      }
+      } : headers
     }, (res) => {
       let responseBody = "";
       res.setEncoding("utf8");
@@ -65,9 +72,15 @@ function submit(values) {
       const durationMs = Number(process.hrtime.bigint() - started) / 1_000_000;
       resolve({ statusCode: 0, durationMs, body: error.message, headers: {}, error: error.message });
     });
-    req.write(body);
+    if (requestMethod === "POST") {
+      req.write(body);
+    }
     req.end();
   });
+}
+
+function submit(values) {
+  return submitRequest(loginUrl, "POST", values);
 }
 
 function average(values) {
@@ -79,8 +92,97 @@ function summarizeAttempt(attempt, index) {
   return `attempt ${index + 1}: status=${attempt.statusCode} durationMs=${attempt.durationMs.toFixed(1)} bodyMarker=${JSON.stringify(marker)}`;
 }
 
+function targetUrl(target) {
+  const raw = target?.url || target?.endpoint || target?.path;
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    return null;
+  }
+  const url = new URL(raw, baseUrl);
+  for (const [key, value] of Object.entries(target.query || {})) {
+    url.searchParams.set(key, String(value));
+  }
+  return url.toString();
+}
+
+function baselineValues(target, method) {
+  const values = method === "POST"
+    ? { ...(target.body || {}) }
+    : { ...(target.query || {}) };
+  for (const key of Object.keys(values)) {
+    values[key] = `synosec-baseline-${key}`;
+  }
+  return values;
+}
+
+function expectedFieldsPresent(body, fields) {
+  return fields.filter((field) => body.includes(String(field)));
+}
+
 (async () => {
   const observations = [];
+  if (validationTargets.length > 0) {
+    for (const target of validationTargets) {
+      const url = targetUrl(target);
+      if (!url) {
+        continue;
+      }
+      const method = String(target.method || "GET").toUpperCase();
+      const artifactValues = method === "POST" ? { ...(target.body || {}) } : { ...(target.query || {}) };
+      const baseline = await submitRequest(url, method, baselineValues(target, method), target.headers || {});
+      const artifact = await submitRequest(url, method, artifactValues, target.headers || {});
+      if (baseline.statusCode === 0 || artifact.statusCode === 0) {
+        console.log(JSON.stringify({
+          output: `Auth flow probe could not reach ${url}: ${baseline.body || artifact.body || "request failed"}`,
+          statusReason: "Auth validation target was unreachable during auth flow probe",
+          commandPreview: `auth-flow-probe ${url}`
+        }));
+        process.exit(64);
+      }
+
+      const expectedStrings = Array.isArray(target.expectedEvidenceStrings) ? target.expectedEvidenceStrings : [];
+      const expectedFields = Array.isArray(target.expectedEvidenceFields) ? target.expectedEvidenceFields : [];
+      const matchedStrings = expectedStrings.filter((value) => artifact.body.includes(String(value)));
+      const matchedFields = expectedFieldsPresent(artifact.body, expectedFields);
+      const authChanged = baseline.statusCode !== artifact.statusCode
+        || (baseline.statusCode >= 400 && artifact.statusCode >= 200 && artifact.statusCode < 300)
+        || matchedStrings.length > 0
+        || matchedFields.length > 0;
+
+      if (authChanged) {
+        const path = new URL(url).pathname;
+        observations.push({
+          key: `auth-flow:${path}`,
+          title: `Auth artifact changed behavior at ${path}`,
+          summary: `${method} ${path} accepted supplied auth-flow artifacts and produced changed behavior or expected evidence.`,
+          severity: artifact.statusCode >= 200 && artifact.statusCode < 300 ? "high" : "medium",
+          confidence: 0.86,
+          evidence: [
+            `Request target: ${url}`,
+            `Method: ${method}`,
+            `Baseline status: ${baseline.statusCode}`,
+            `Artifact status: ${artifact.statusCode}`,
+            `Artifact body: ${JSON.stringify(artifactValues)}`,
+            `Expected behavior: ${target.expectedAuthBehavior || "not specified"}`,
+            `Matched strings: ${matchedStrings.join(", ") || "none"}`,
+            `Matched fields: ${matchedFields.join(", ") || "none"}`,
+            `Proof: ${String(artifact.body).replace(/\s+/g, " ").slice(0, 360)}`
+          ].join("\n"),
+          technique: "authentication artifact acceptance probe"
+        });
+      }
+    }
+
+    const output = observations.length > 0
+      ? observations.map((observation) => `${observation.severity.toUpperCase()} ${observation.title}`).join("\n")
+      : `No auth-flow validation signal was confirmed across ${validationTargets.length} target(s).`;
+    console.log(JSON.stringify({
+      output,
+      observations,
+      commandPreview: `auth-flow-probe validationTargets=${validationTargets.length}`
+    }));
+    return;
+  }
+
   const invalidAttempts = [];
   for (let i = 0; i < 6; i++) {
     invalidAttempts.push(await submit({ [usernameField]: knownUser, [passwordField]: `wrong-password-${i}` }));

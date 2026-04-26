@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededPortSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const tlsAuditTool = {
   id: "seed-tls-audit",
   name: "TLS Audit",
-  description: "Checks TLS protocols, weak cipher support, and certificate trust signals for a target host and port.",
+  description: "Check TLS protocol support, weak ciphers, certificate trust, expiry, hostname fit, and plaintext transport signals for a target host and port. Use when TLS posture evidence is needed. Provide `target` and optional `port`. Returns TLS observations; do not use for non-TLS service enumeration.",
   category: "topology" as const,
   riskTier: "passive" as const,
   executorType: "bash" as const,
@@ -18,11 +19,7 @@ export const tlsAuditTool = {
   timeoutMs: 90000,
   inputSchema: {
     type: "object",
-    properties: {
-      target: { type: "string" },
-      port: { type: "number", default: 443 },
-      baseUrl: { type: "string" }
-    },
+    properties: seededPortSteeringProperties,
     required: ["target"]
   },
   outputSchema: {

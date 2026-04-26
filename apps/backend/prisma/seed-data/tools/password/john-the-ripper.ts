@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const johntheRipperTool = {
   id: "seed-john-the-ripper",
   name: "John the Ripper",
-  description: "Fast password cracker.",
+  description: "Run an offline John the Ripper cracking attempt against supplied hash material. Use for lab-scoped password recovery after hash capture and format identification. Provide `hash`, `hashes`, or file context. Returns cracking output and observations; do not use for online login attempts.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/password/john-the-ripper.sh");
@@ -12,7 +12,7 @@ export const johntheRipperTool = {
   binary: "john",
   category: "password" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around John the Ripper for seeded execution.",
+  notes: "Raw adapter for John the Ripper.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,

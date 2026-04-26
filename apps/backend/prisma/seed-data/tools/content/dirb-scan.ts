@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededWebSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const dirbScanTool = {
   id: "seed-dirb-scan",
   name: "Dirb Scan",
-  description: "Run Dirb against a target URL with a compact built-in wordlist.",
+  description: "Run Dirb-style directory guessing against a confirmed target URL with a compact built-in wordlist. Use for bounded content discovery when hidden paths are in scope. Provide `baseUrl` or `target`. Returns discovered path/status evidence; do not use for passive crawling or vulnerability validation.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/content/dirb-scan.sh");
@@ -12,16 +13,13 @@ export const dirbScanTool = {
   binary: "dirb",
   category: "content" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Dirb for seeded directory brute forcing.",
+  notes: "Raw adapter for Dirb directory brute forcing.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 120000,
   inputSchema: {
     type: "object",
-    properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    },
+    properties: seededWebSteeringProperties,
     required: ["baseUrl"]
   },
   outputSchema: {

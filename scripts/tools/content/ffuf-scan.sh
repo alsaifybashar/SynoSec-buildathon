@@ -12,16 +12,20 @@ base_url="$(printf '%s' "$payload" | node -e 'let input="";process.stdin.on("dat
 wordlist="$(mktemp)"
 outfile="$(mktemp)"
 trap 'rm -f "$wordlist" "$outfile"' EXIT
-cat >"$wordlist" <<'EOF'
-admin
-login
-api
-files
-robots.txt
-sitemap.xml
-.git
-.env
-EOF
+SEED_PAYLOAD="$payload" node <<'NODE' >"$wordlist"
+const parsed = JSON.parse(process.env.SEED_PAYLOAD || "{}");
+const toolInput = parsed?.request?.parameters?.toolInput ?? {};
+const defaults = ["admin", "login", "api", "files", "robots.txt", "sitemap.xml", ".git", ".env"];
+const candidates = [
+  ...(Array.isArray(toolInput.candidatePaths) ? toolInput.candidatePaths : []),
+  ...(Array.isArray(toolInput.candidateEndpoints) ? toolInput.candidateEndpoints : [])
+];
+const words = candidates.length > 0 ? candidates : defaults;
+const maxPaths = Number.isFinite(Number(toolInput.maxPaths)) ? Math.max(1, Number(toolInput.maxPaths)) : 32;
+for (const word of [...new Set(words.map(String).map((value) => value.trim().replace(/^https?:\/\/[^/]+/i, "").replace(/^\/+/, "")).filter(Boolean))].slice(0, maxPaths)) {
+  console.log(word);
+}
+NODE
 
 if ! output="$(ffuf -u "${base_url%/}/FUZZ" -w "$wordlist" -of json -o "$outfile" -s 2>&1)"; then
   escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$output")"
@@ -34,7 +38,7 @@ combined_output="$output"
 if [ -n "$results" ]; then
   combined_output="$combined_output"$'\n'"$results"
 fi
-summary="FFuf completed content fuzzing against $base_url."
+summary="FFuf completed content fuzzing against $base_url using supplied or compact path candidates."
 escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$combined_output")"
 escaped_summary="$(node -p "JSON.stringify(process.argv[1])" "$summary")"
 escaped_evidence="$(node -p "JSON.stringify(process.argv[1])" "$combined_output")"

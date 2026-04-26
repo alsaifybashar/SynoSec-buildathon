@@ -8,7 +8,7 @@ if ! command -v sqlmap >/dev/null 2>&1; then
   exit 127
 fi
 
-base_url="$(printf '%s' "$payload" | node -e 'let input="";process.stdin.on("data",(chunk)=>input+=chunk);process.stdin.on("end",()=>{const parsed=JSON.parse(input||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};process.stdout.write(String(toolInput.baseUrl||`http://${toolInput.target||parsed?.request?.target||"localhost"}`));});')"
+base_url="$(printf '%s' "$payload" | node -e 'let input="";process.stdin.on("data",(chunk)=>input+=chunk);process.stdin.on("end",()=>{const parsed=JSON.parse(input||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};const base=String(toolInput.baseUrl||toolInput.url||toolInput.startUrl||`http://${toolInput.target||parsed?.request?.target||"localhost"}`);const vt=Array.isArray(toolInput.validationTargets)&&toolInput.validationTargets[0];const candidate=vt?(vt.url||vt.endpoint||vt.path):Array.isArray(toolInput.candidateEndpoints)&&toolInput.candidateEndpoints[0];const url=new URL(String(candidate||base),base);const query=(vt&&vt.query&&typeof vt.query==="object")?vt.query:{};for(const [key,value] of Object.entries(query)){url.searchParams.set(key,String(value));}process.stdout.write(url.toString());});')"
 
 if ! output="$(sqlmap -u "$base_url" --batch --level=1 --risk=1 --threads=1 2>&1)"; then
   escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$output")"

@@ -8,7 +8,7 @@ if ! command -v gau >/dev/null 2>&1; then
   exit 127
 fi
 
-target="$(printf '%s' "$payload" | node -e 'let input="";process.stdin.on("data",(chunk)=>input+=chunk);process.stdin.on("end",()=>{const parsed=JSON.parse(input||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};process.stdout.write(String(toolInput.baseUrl || toolInput.target || parsed?.request?.target || "localhost"));});')"
+target="$(SEED_PAYLOAD="$payload" node -e 'const parsed=JSON.parse(process.env.SEED_PAYLOAD||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};const base=String(toolInput.baseUrl||toolInput.url||toolInput.startUrl||`http://${toolInput.target||parsed?.request?.target||"localhost"}`);const candidate=Array.isArray(toolInput.candidateEndpoints)&&toolInput.candidateEndpoints[0];try{process.stdout.write(new URL(String(candidate||base),base).hostname);}catch{process.stdout.write(String(toolInput.target||parsed?.request?.target||"localhost"));}')"
 
 if ! output="$(gau  "$target" 2>&1)"; then
   escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$output")"

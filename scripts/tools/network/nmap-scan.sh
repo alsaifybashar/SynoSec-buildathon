@@ -8,12 +8,39 @@ if ! command -v nmap >/dev/null 2>&1; then
   exit 127
 fi
 
-target="$(printf '%s' "$payload" | node -e 'let input="";process.stdin.on("data",(chunk)=>input+=chunk);process.stdin.on("end",()=>{const parsed=JSON.parse(input||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};process.stdout.write(String(toolInput.target||parsed?.request?.target||"localhost"));});')"
-port="$(printf '%s' "$payload" | node -e 'let input="";process.stdin.on("data",(chunk)=>input+=chunk);process.stdin.on("end",()=>{const parsed=JSON.parse(input||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};const directPort=Number(toolInput.port||0);if (Number.isInteger(directPort) && directPort>0) { process.stdout.write(String(directPort)); return; } try { const parsedUrl=new URL(String(toolInput.baseUrl||`http://${toolInput.target||parsed?.request?.target||"localhost"}`)); if (parsedUrl.port) { process.stdout.write(parsedUrl.port); return; } if (parsedUrl.protocol === "https:") { process.stdout.write("443"); return; } if (parsedUrl.protocol === "http:") { process.stdout.write("80"); return; } } catch {} process.stdout.write("");});')"
+plan="$(SEED_PAYLOAD="$payload" node <<'NODE'
+const parsed = JSON.parse(process.env.SEED_PAYLOAD || "{}");
+const toolInput = parsed?.request?.parameters?.toolInput ?? {};
+let target = String(toolInput.target || parsed?.request?.target || "localhost");
+try {
+  const parsedUrl = new URL(String(toolInput.baseUrl || toolInput.url || ""));
+  target = String(toolInput.target || parsedUrl.hostname || target);
+} catch {}
+const maxPorts = Number.isFinite(Number(toolInput.maxPorts)) ? Math.max(1, Number(toolInput.maxPorts)) : 32;
+const directPort = Number(toolInput.port || parsed?.request?.port || 0);
+let ports = [];
+if (Array.isArray(toolInput.candidatePorts) && toolInput.candidatePorts.length > 0) {
+  ports = toolInput.candidatePorts;
+} else if (Number.isInteger(directPort) && directPort > 0) {
+  ports = [directPort];
+} else {
+  try {
+    const parsedUrl = new URL(String(toolInput.baseUrl || `http://${target}`));
+    if (parsedUrl.port) ports = [Number(parsedUrl.port)];
+    else if (parsedUrl.protocol === "https:") ports = [443];
+    else if (parsedUrl.protocol === "http:") ports = [80];
+  } catch {}
+}
+ports = [...new Set(ports.map(Number).filter((port) => Number.isInteger(port) && port > 0 && port <= 65535))].slice(0, maxPorts);
+process.stdout.write(JSON.stringify({ target, ports }));
+NODE
+)"
+target="$(node -p 'JSON.parse(process.argv[1]).target' "$plan")"
+ports="$(node -p 'JSON.parse(process.argv[1]).ports.join(",")' "$plan")"
 
 args=(-Pn)
-if [ -n "$port" ]; then
-  args+=(-sV -p "$port")
+if [ -n "$ports" ]; then
+  args+=(-sV -p "$ports")
 else
   args+=(-F)
 fi
@@ -25,8 +52,8 @@ if ! output="$(nmap "${args[@]}" 2>&1)"; then
   exit 64
 fi
 
-summary="Nmap completed a network/service scan against $target${port:+:$port}."
+summary="Nmap completed a network/service scan against $target${ports:+ ports=$ports}."
 escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$output")"
 escaped_summary="$(node -p "JSON.stringify(process.argv[1])" "$summary")"
 escaped_evidence="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-printf '{"output":%s,"observations":[{"key":"nmap:%s","title":"Nmap scan completed","summary":%s,"severity":"info","confidence":0.86,"evidence":%s,"technique":"nmap service scan"%s}],"commandPreview":"nmap %s"}\n' "$escaped_output" "$target" "$escaped_summary" "$escaped_evidence" "${port:+,\"port\":$port}" "${args[*]}"
+printf '{"output":%s,"observations":[{"key":"nmap:%s","title":"Nmap scan completed","summary":%s,"severity":"info","confidence":0.86,"evidence":%s,"technique":"nmap service scan"%s}],"commandPreview":"nmap %s"}\n' "$escaped_output" "$target" "$escaped_summary" "$escaped_evidence" "${ports:+,\"ports\":\"$ports\"}" "${args[*]}"

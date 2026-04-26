@@ -8,14 +8,25 @@ const https = require("node:https");
 
 const payload = JSON.parse(process.env.SEED_PAYLOAD || "{}");
 const toolInput = payload?.request?.parameters?.toolInput ?? {};
-const targetUrl = String(
+const baseUrl = String(
   [toolInput.url, toolInput.baseUrl, toolInput.startUrl, toolInput.loginUrl]
     .find((value) => typeof value === "string" && value.trim().length > 0)
     || `http://${toolInput.target || payload?.request?.target || "localhost"}`
 );
-const candidateParams = Array.isArray(toolInput.parameters) && toolInput.parameters.length > 0
-  ? toolInput.parameters.filter((value) => typeof value === "string" && value.trim().length > 0)
-  : ["q", "query", "search", "id"];
+const parameterSource = Array.isArray(toolInput.candidateParameters) && toolInput.candidateParameters.length > 0
+  ? toolInput.candidateParameters
+  : Array.isArray(toolInput.parameters) && toolInput.parameters.length > 0
+    ? toolInput.parameters
+    : ["id", "q", "query", "search", "page", "token", "code", "state", "workspace", "build", "approval", "session", "nonce", "email"];
+const candidateParams = [...new Set(parameterSource.filter((value) => typeof value === "string" && value.trim().length > 0).map((value) => value.trim()))];
+const endpointSource = Array.isArray(toolInput.candidateEndpoints) && toolInput.candidateEndpoints.length > 0
+  ? toolInput.candidateEndpoints
+  : [baseUrl];
+const maxEndpoints = Number.isFinite(Number(toolInput.maxEndpoints)) ? Math.max(1, Number(toolInput.maxEndpoints)) : 4;
+const maxRequests = Number.isFinite(Number(toolInput.maxRequests)) ? Math.max(1, Number(toolInput.maxRequests)) : 32;
+const endpoints = [...new Set(endpointSource
+  .filter((value) => typeof value === "string" && value.trim().length > 0)
+  .map((value) => new URL(value, baseUrl).toString()))].slice(0, maxEndpoints);
 
 function request(urlString) {
   return new Promise((resolve) => {
@@ -39,32 +50,40 @@ function request(urlString) {
 
 (async () => {
   const findings = [];
-  for (const parameter of candidateParams) {
-    const url = new URL(targetUrl);
+  let requests = 0;
+  for (const endpoint of endpoints) {
+    for (const parameter of candidateParams) {
+      if (requests >= maxRequests) {
+        break;
+      }
+      requests += 1;
+      const url = new URL(endpoint);
     const marker = `synosec-paramspider-${parameter}`;
     url.searchParams.set(parameter, marker);
     const result = await request(url.toString());
     if (result.statusCode > 0 && result.body.includes(marker)) {
+      const sinkPath = `${new URL(result.url).pathname}${new URL(result.url).search}`;
       findings.push({
-        key: `parameter:${parameter}`,
+        key: endpoints.length === 1 ? `parameter:${parameter}` : `parameter:${new URL(result.url).pathname}:${parameter}`,
         title: `Likely parameter discovered: ${parameter}`,
-        summary: `${parameter} was reflected by ${new URL(result.url).pathname}.`,
+        summary: `${parameter} was reflected by ${new URL(result.url).pathname}; reachable input reflection is a candidate for later validation, not proof of exploitability.`,
         severity: "info",
         confidence: 0.82,
-        evidence: `URL: ${result.url}\nStatus: ${result.statusCode}\nMarker: ${marker}`,
+        evidence: `Request target: ${result.url}\nMethod: GET\nStatus: ${result.statusCode}\nParameter: ${parameter}\nMarker: ${marker}\nProof: response body contained ${marker}\nSink: ${sinkPath}`,
         technique: "seeded parameter reflection probe"
       });
+    }
     }
   }
 
   const output = findings.length > 0
     ? findings.map((finding) => finding.key.replace("parameter:", "")).join("\n")
-    : `No likely parameters were confirmed at ${targetUrl}.`;
+    : `No likely parameters were confirmed at ${endpoints.join(", ")}.`;
 
   console.log(JSON.stringify({
     output,
     observations: findings,
-    commandPreview: `seed-paramspider url=${targetUrl}`
+    commandPreview: `seed-paramspider endpoints=${endpoints.join(",")} parameters=${candidateParams.join(",")}`
   }));
 })().catch((error) => {
   console.log(JSON.stringify({

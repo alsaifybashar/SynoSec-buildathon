@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const hashIdentifierTool = {
   id: "seed-hash-identifier",
   name: "Hash-Identifier",
-  description: "Identify the different types of hashes used to encrypt data.",
+  description: "Identify likely hash formats from supplied hash material before choosing a cracking or validation method. Provide `hash` or `hashes`. Returns format hypotheses and confidence signals; it does not crack or verify passwords.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/password/hash-identifier.sh");
@@ -12,7 +12,7 @@ export const hashIdentifierTool = {
   binary: "hash-identifier",
   category: "password" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Hash-Identifier for seeded execution.",
+  notes: "Raw adapter for Hash-Identifier.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,

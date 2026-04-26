@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const stringsTool = {
   id: "seed-strings",
   name: "Strings",
-  description: "Find printable strings in files.",
+  description: "Extract printable strings from a local file or binary artifact. Use during static triage to find URLs, secrets, symbols, paths, or suspicious markers. Provide `filePath`. Returns string observations; it does not validate whether discovered strings are exploitable.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/utility/strings.sh");
@@ -12,7 +12,7 @@ export const stringsTool = {
   binary: "strings",
   category: "utility" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Strings for seeded execution.",
+  notes: "Raw adapter for Strings.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,

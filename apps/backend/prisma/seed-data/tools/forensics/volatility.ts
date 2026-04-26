@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const volatilityTool = {
   id: "seed-volatility",
   name: "Volatility",
-  description: "Advanced memory forensics framework.",
+  description: "Analyze a memory image for processes, network connections, loaded modules, credentials, and volatile compromise evidence. Use for memory-forensics artifacts. Provide `filePath` and optional profile or notes. Returns memory observations; do not use for disk carving.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/forensics/volatility.sh");
@@ -12,7 +12,7 @@ export const volatilityTool = {
   binary: "volatility",
   category: "forensics" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Volatility for seeded execution.",
+  notes: "Raw adapter for Volatility.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,

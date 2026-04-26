@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededWebSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const paramSpiderTool = {
   id: "seed-paramspider",
   name: "ParamSpider",
-  description: "Mining parameters from dark corners of Web Archive.",
+  description: "Mine archived and known URLs for likely query parameters on an in-scope web target. Use before injection or XSS validation when candidate parameter names are needed. Provide `target`, domain, or `baseUrl`. Returns parameter observations; do not claim exploitability from parameter discovery alone.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/web/paramspider.sh");
@@ -12,16 +13,13 @@ export const paramSpiderTool = {
   binary: "paramspider",
   category: "web" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around ParamSpider for seeded execution.",
+  notes: "Raw adapter for ParamSpider.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,
   inputSchema: {
     type: "object",
-    properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    }
+    properties: seededWebSteeringProperties
   },
   outputSchema: {
     type: "object",

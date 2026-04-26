@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededWebSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const nucleiTool = {
   id: "seed-nuclei",
   name: "Nuclei",
-  description: "Fast and customizable vulnerability scanner based on simple YAML based templates.",
+  description: "Run template-based checks against a known in-scope target to validate common exposures and known signatures. Use after reconnaissance identifies a concrete HTTP surface. Provide `baseUrl`, `target`, or candidate endpoints. Returns matched-template evidence and observations; review severity and evidence before reporting.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/web/nuclei.sh");
@@ -12,16 +13,13 @@ export const nucleiTool = {
   binary: "nuclei",
   category: "web" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Nuclei for seeded execution.",
+  notes: "Raw adapter for Nuclei.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,
   inputSchema: {
     type: "object",
-    properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    }
+    properties: seededWebSteeringProperties
   },
   outputSchema: {
     type: "object",

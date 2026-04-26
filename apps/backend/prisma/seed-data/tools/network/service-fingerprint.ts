@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededPortSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const serviceFingerprintTool = {
   id: "seed-service-fingerprint",
   name: "Service Fingerprint",
-  description: "Runs deep nmap service/version detection and extracts CPE identifiers for CVE correlation.",
+  description: "Run deeper service and version fingerprinting on known open ports and extract CPE-like identifiers for correlation. Use after initial port discovery when version evidence matters. Provide `target` and port or candidate ports. Returns banner/version observations; do not treat CPE matches alone as confirmed vulnerabilities.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/network/service-fingerprint.sh");
@@ -19,10 +20,8 @@ export const serviceFingerprintTool = {
   inputSchema: {
     type: "object",
     properties: {
-      target: { type: "string" },
-      port: { type: "number" },
+      ...seededPortSteeringProperties,
       ports: { type: "string" },
-      baseUrl: { type: "string" }
     },
     required: ["target"]
   },

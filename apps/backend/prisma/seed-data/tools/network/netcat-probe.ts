@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededPortSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const netcatProbeTool = {
   id: "seed-netcat-probe",
   name: "Netcat Probe",
-  description: "Probe a TCP service with netcat and capture any banner or response bytes.",
+  description: "Probe a known TCP service with netcat and capture returned banners or response bytes. Use when a single port needs lightweight manual-style confirmation. Provide `target` and `port`. Returns banner evidence; do not use for broad scanning or exploit validation.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/network/netcat-probe.sh");
@@ -18,11 +19,7 @@ export const netcatProbeTool = {
   timeoutMs: 30000,
   inputSchema: {
     type: "object",
-    properties: {
-      target: { type: "string" },
-      port: { type: "number" },
-      baseUrl: { type: "string" }
-    },
+    properties: seededPortSteeringProperties,
     required: ["target"]
   },
   outputSchema: {

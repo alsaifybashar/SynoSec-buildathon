@@ -20,7 +20,7 @@ const explicitUrl = [toolInput.baseUrl, toolInput.url, toolInput.startUrl, toolI
 try {
   const parsedUrl = new URL(String(explicitUrl || ""));
   target = String(toolInput.target || parsedUrl.hostname || target);
-  if (parsedUrl.protocol === "http:") {
+  if (parsedUrl.protocol === "http:" && !(Array.isArray(toolInput.candidatePorts) && toolInput.candidatePorts.length > 0)) {
     console.log(JSON.stringify({
       output: `plaintext HTTP target detected at ${parsedUrl.toString()}.`,
       observations: [{
@@ -44,6 +44,13 @@ try {
 if (!port) {
   port = 443;
 }
+const portSource = Array.isArray(toolInput.candidatePorts) && toolInput.candidatePorts.length > 0
+  ? toolInput.candidatePorts
+  : [port];
+const maxPorts = Number.isFinite(Number(toolInput.maxPorts)) ? Math.max(1, Number(toolInput.maxPorts)) : 8;
+const ports = [...new Set(portSource
+  .map((value) => Number(value))
+  .filter((value) => Number.isInteger(value) && value > 0 && value <= 65535))].slice(0, maxPorts);
 
 function runOpenSsl(args, input = "") {
   return spawnSync("openssl", args, { input, encoding: "utf8", timeout: 8000 });
@@ -84,6 +91,7 @@ const weakProtocols = new Set(["ssl2", "ssl3", "tls1", "tls1_1"]);
 const findings = [];
 const observations = [];
 
+for (const port of ports) {
 for (const [flag, label] of protocols) {
   const result = runOpenSsl(["s_client", "-connect", `${target}:${port}`, "-servername", target, `-${flag}`]);
   if (result.status === 0) {
@@ -96,7 +104,7 @@ for (const [flag, label] of protocols) {
         summary: `${target}:${port} accepted a ${label} handshake.`,
         severity: flag === "ssl2" || flag === "ssl3" ? "high" : "medium",
         confidence: 0.88,
-        evidence: `openssl s_client -connect ${target}:${port} -${flag} succeeded.`,
+        evidence: `Request target: ${target}:${port}\nProtocol: ${label}\nProof: openssl s_client -connect ${target}:${port} -${flag} succeeded.`,
         technique: "TLS protocol downgrade audit",
         port
       });
@@ -115,7 +123,7 @@ for (const cipher of ["RC4", "3DES", "DES", "ADH", "NULL"]) {
       summary: `${target}:${port} accepted a weak cipher family during handshake testing.`,
       severity: "medium",
       confidence: 0.82,
-      evidence: `openssl s_client -connect ${target}:${port} -tls1_2 -cipher '${cipherArg}' negotiated ${negotiatedCipher(result)}.`,
+      evidence: `Request target: ${target}:${port}\nProtocol: TLS 1.2\nCipher family: ${cipher}\nProof: openssl s_client -connect ${target}:${port} -tls1_2 -cipher '${cipherArg}' negotiated ${negotiatedCipher(result)}.`,
       technique: "TLS weak cipher audit",
       port
     });
@@ -131,16 +139,12 @@ if (!certPem) {
     summary: `${target}:${port} did not present a TLS certificate or complete a TLS handshake.`,
     severity: "info",
     confidence: 0.9,
-    evidence: `openssl s_client -connect ${target}:${port} -servername ${target} did not return a certificate chain.`,
+    evidence: `Request target: ${target}:${port}\nProof: openssl s_client -connect ${target}:${port} -servername ${target} did not return a certificate chain.`,
     technique: "TLS handshake audit",
     port
   });
-  console.log(JSON.stringify({
-    output: [`TLS audit for ${target}:${port}`, ...findings, "certificate: unavailable"].join("\n"),
-    observations,
-    commandPreview: `openssl s_client -connect ${target}:${port} -servername ${target}`
-  }));
-  process.exit(0);
+  findings.push(`TLS audit for ${target}:${port}: certificate unavailable`);
+  continue;
 }
 
 const subject = runOpenSsl(["x509", "-noout", "-subject"], certPem).stdout.trim();
@@ -163,15 +167,16 @@ if (expired || expiresSoon || selfSigned) {
     summary: issues.join(", "),
     severity: expired ? "high" : "medium",
     confidence: 0.9,
-    evidence: [subject, issuer, dates, ...issues].join("\n"),
+    evidence: [`Request target: ${target}:${port}`, subject, issuer, dates, ...issues].join("\n"),
     technique: "TLS certificate trust audit",
     port
   });
 }
+}
 
 console.log(JSON.stringify({
-  output: [`TLS audit for ${target}:${port}`, ...findings].join("\n"),
+  output: [`TLS audit for ${target} ports=${ports.join(",")}`, ...findings].join("\n"),
   observations,
-  commandPreview: `openssl s_client -connect ${target}:${port} -servername ${target}`
+  commandPreview: `openssl s_client -connect ${target}:<port> -servername ${target} ports=${ports.join(",")}`
 }));
 NODE

@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededContextSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const trivyTool = {
   id: "seed-trivy",
   name: "Trivy",
-  description: "Comprehensive security scanner.",
+  description: "Scan container images, filesystems, IaC, or dependencies for known vulnerabilities, secrets, and misconfigurations. Use when artifact or repository context is in scope. Provide target artifact path or image context. Returns scanner observations; verify relevance before reporting runtime impact.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/utility/trivy.sh");
@@ -12,16 +13,13 @@ export const trivyTool = {
   binary: "trivy",
   category: "utility" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Trivy for seeded execution.",
+  notes: "Raw adapter for Trivy.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,
   inputSchema: {
     type: "object",
-    properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    }
+    properties: seededContextSteeringProperties
   },
   outputSchema: {
     type: "object",

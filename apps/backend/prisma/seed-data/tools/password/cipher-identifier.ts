@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const cipherIdentifierTool = {
   id: "seed-cipher-identifier",
   name: "Cipher-Identifier",
-  description: "Identify ciphers.",
+  description: "Identify likely cipher or encoding families from supplied text or artifact clues. Use before selecting a decoding or cryptanalysis path. Provide candidate text, notes, or artifact context. Returns cipher hypotheses; it does not decrypt content.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/password/cipher-identifier.sh");
@@ -12,7 +12,7 @@ export const cipherIdentifierTool = {
   binary: "cipher-identifier",
   category: "password" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Cipher-Identifier for seeded execution.",
+  notes: "Raw adapter for Cipher-Identifier.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,

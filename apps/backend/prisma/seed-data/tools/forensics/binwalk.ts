@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const binwalkTool = {
   id: "seed-binwalk",
   name: "Binwalk",
-  description: "Tool for searching a given binary image for embedded files and executable code.",
+  description: "Inspect a binary image or firmware-like artifact for embedded files, signatures, compressed data, and executable code. Use during artifact triage or firmware analysis. Provide `filePath`. Returns embedded-structure observations; it does not extract every artifact by itself.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/forensics/binwalk.sh");
@@ -12,7 +12,7 @@ export const binwalkTool = {
   binary: "binwalk",
   category: "forensics" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Binwalk for seeded execution.",
+  notes: "Raw adapter for Binwalk.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,

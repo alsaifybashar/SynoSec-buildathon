@@ -2,12 +2,10 @@
 set -euo pipefail
 
 payload="$(cat)"
-export SYNOSEC_FAMILY_PAYLOAD="$payload"
-export SYNOSEC_FAMILY_NAME="__FAMILY_NAME__"
+export SYNOSEC_AGENT_ACTION_PAYLOAD="$payload"
+export SYNOSEC_AGENT_ACTION_NAME="__AGENT_ACTION_NAME__"
 export SYNOSEC_PRIMARY_NAME="__PRIMARY_NAME__"
 export SYNOSEC_PRIMARY_SOURCE_B64="__PRIMARY_SOURCE_B64__"
-export SYNOSEC_FALLBACK_NAME="__FALLBACK_NAME__"
-export SYNOSEC_FALLBACK_SOURCE_B64="__FALLBACK_SOURCE_B64__"
 
 node <<'NODE'
 const fs = require("node:fs");
@@ -15,11 +13,10 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
-const payload = process.env.SYNOSEC_FAMILY_PAYLOAD || "";
-const familyName = process.env.SYNOSEC_FAMILY_NAME || "Family Tool";
+const payload = process.env.SYNOSEC_AGENT_ACTION_PAYLOAD || "";
+const actionName = process.env.SYNOSEC_AGENT_ACTION_NAME || "Agent Action";
 const primaryName = process.env.SYNOSEC_PRIMARY_NAME || "primary";
-const fallbackName = process.env.SYNOSEC_FALLBACK_NAME || "fallback";
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synosec-family-tool-"));
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "synosec-agent-action-"));
 
 function materializeScript(label, sourceB64) {
   const scriptPath = path.join(tempDir, `${label.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "tool"}.sh`);
@@ -88,49 +85,29 @@ function formatFailure(run, parseResult) {
   ].join("\n");
 }
 
-function finalizeSuccess(run, parseResult, usedFallback) {
+function finalizeSuccess(parseResult) {
   if (!parseResult.ok) {
     return null;
   }
 
-  const envelope = parseResult.parsed;
-  if (!usedFallback) {
-    return envelope;
-  }
-
-  return {
-    ...envelope,
-    output: `${familyName} used fallback ${run.label}.\n${envelope.output}`,
-    commandPreview: typeof envelope.commandPreview === "string" && envelope.commandPreview.trim().length > 0
-      ? `${familyName} -> ${envelope.commandPreview}`
-      : `${familyName} -> ${run.label}`
-  };
+  return parseResult.parsed;
 }
 
 try {
   const primaryRun = runTool(primaryName, process.env.SYNOSEC_PRIMARY_SOURCE_B64 || "");
   const primaryParsed = parseEnvelope(primaryRun);
   if (primaryRun.status === 0 && primaryParsed.ok) {
-    process.stdout.write(`${JSON.stringify(finalizeSuccess(primaryRun, primaryParsed, false))}\n`);
-    process.exit(0);
-  }
-
-  const fallbackRun = runTool(fallbackName, process.env.SYNOSEC_FALLBACK_SOURCE_B64 || "");
-  const fallbackParsed = parseEnvelope(fallbackRun);
-  if (fallbackRun.status === 0 && fallbackParsed.ok) {
-    process.stdout.write(`${JSON.stringify(finalizeSuccess(fallbackRun, fallbackParsed, true))}\n`);
+    process.stdout.write(`${JSON.stringify(finalizeSuccess(primaryParsed))}\n`);
     process.exit(0);
   }
 
   process.stdout.write(`${JSON.stringify({
     output: [
-      `${familyName} failed after trying ${primaryName} and ${fallbackName}.`,
+      `${actionName} failed while running ${primaryName}.`,
       "",
-      formatFailure(primaryRun, primaryParsed),
-      "",
-      formatFailure(fallbackRun, fallbackParsed)
+      formatFailure(primaryRun, primaryParsed)
     ].join("\n"),
-    statusReason: `${familyName} failed after primary and fallback tool attempts.`
+    statusReason: `${actionName} failed while running ${primaryName}.`
   })}\n`);
   process.exit(1);
 } finally {

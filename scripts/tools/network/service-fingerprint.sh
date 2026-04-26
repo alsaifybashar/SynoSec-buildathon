@@ -16,6 +16,16 @@ const toolInput = payload?.request?.parameters?.toolInput ?? {};
 const target = String(toolInput.target || payload?.request?.target || "localhost");
 
 function derivePorts() {
+  if (Array.isArray(toolInput.candidatePorts) && toolInput.candidatePorts.length > 0) {
+    const maxPorts = Number.isFinite(Number(toolInput.maxPorts)) ? Math.max(1, Number(toolInput.maxPorts)) : 32;
+    const ports = [...new Set(toolInput.candidatePorts
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0 && value <= 65535))]
+      .slice(0, maxPorts);
+    if (ports.length > 0) {
+      return ports.join(",");
+    }
+  }
   if (typeof toolInput.ports === "string" && toolInput.ports.trim()) {
     return toolInput.ports.trim();
   }
@@ -92,7 +102,10 @@ for (const portMatch of stdout.matchAll(/<port protocol="([^"]+)" portid="([^"]+
   const cpes = [...body.matchAll(/<cpe>([^<]+)<\/cpe>/g)].map((match) => decodeXml(match[1]));
   const fingerprint = [serviceName, product, version, extra].filter(Boolean).join(" ");
   const evidence = [
-    `${protocol}/${port} open ${fingerprint || serviceName}`,
+    `Request target: ${target}:${port}`,
+    `Protocol: ${protocol}`,
+    `Status: open`,
+    `Service: ${fingerprint || serviceName}`,
     cpes.length ? `CPE: ${cpes.join(", ")}` : "CPE: none reported by nmap"
   ].join("\n");
   lines.push(evidence);

@@ -48,9 +48,54 @@ const observations = [];
 const lines = [
   `JWT target: ${target}`,
   `alg: ${String(header.alg || "missing")}`,
-  `typ: ${String(header.typ || "missing")}`
+  `typ: ${String(header.typ || "missing")}`,
+  `kid: ${String(header.kid || "missing")}`
 ];
 const alg = String(header.alg || "").toUpperCase();
+const claimNames = Object.keys(claims).sort();
+
+function addArtifactObservation(keySuffix, title, summary, evidence, severity = "info", confidence = 0.9) {
+  observations.push({
+    key: `jwt:${target}:${keySuffix}`,
+    title,
+    summary,
+    severity,
+    confidence,
+    evidence,
+    technique: "offline JWT artifact analysis"
+  });
+}
+
+addArtifactObservation(
+  "header",
+  "JWT header artifacts decoded",
+  `Decoded JWT header alg=${String(header.alg || "missing")}${header.kid ? ` kid=${String(header.kid)}` : ""}.`,
+  `JWT header: ${JSON.stringify(header)}`
+);
+
+for (const claim of ["iss", "sub", "aud", "jti"]) {
+  if (claims[claim] != null) {
+    addArtifactObservation(
+      `claim:${claim}`,
+      `JWT claim decoded: ${claim}`,
+      `Token claim ${claim} is present and can steer downstream validation.`,
+      `${claim}=${JSON.stringify(claims[claim])}`
+    );
+    lines.push(`${claim}: ${JSON.stringify(claims[claim])}`);
+  }
+}
+
+const roleLikeClaims = claimNames.filter((claim) => /role|group|scope|permission|tenant|workspace|org/i.test(claim));
+for (const claim of roleLikeClaims) {
+  addArtifactObservation(
+    `claim:${claim}`,
+    `JWT authorization artifact decoded: ${claim}`,
+    `Role-like claim ${claim} may identify authorization scope for later offline reasoning or online validation by a separate tool.`,
+    `${claim}=${JSON.stringify(claims[claim])}`,
+    "info",
+    0.88
+  );
+}
 
 if (!alg || alg === "NONE") {
   observations.push({
@@ -97,6 +142,17 @@ if (missingClaims.length > 0) {
 
 if (typeof claims.exp === "number") {
   const secondsRemaining = claims.exp - now;
+  const issuedAt = typeof claims.iat === "number" ? claims.iat : null;
+  if (issuedAt) {
+    const lifetimeSeconds = claims.exp - issuedAt;
+    lines.push(`lifetimeSeconds: ${lifetimeSeconds}`);
+    addArtifactObservation(
+      "lifetime",
+      "JWT session lifetime decoded",
+      `Token lifetime is ${lifetimeSeconds} seconds from iat to exp.`,
+      `iat=${issuedAt}, exp=${claims.exp}, lifetimeSeconds=${lifetimeSeconds}`
+    );
+  }
   lines.push(`exp: ${claims.exp} (${secondsRemaining}s remaining)`);
   if (secondsRemaining < 0) {
     observations.push({
@@ -122,7 +178,7 @@ if (typeof claims.exp === "number") {
   }
 }
 
-lines.push(`claims: ${Object.keys(claims).sort().join(", ") || "none"}`);
+lines.push(`claims: ${claimNames.join(", ") || "none"}`);
 console.log(JSON.stringify({
   output: lines.join("\n"),
   observations,

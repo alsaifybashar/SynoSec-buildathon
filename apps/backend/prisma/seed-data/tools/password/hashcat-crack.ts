@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const hashcatCrackTool = {
   id: "seed-hashcat-crack",
   name: "Hashcat Crack",
-  description: "Run Hashcat against a supplied hash and a compact built-in wordlist.",
+  description: "Run an offline Hashcat attempt against supplied hash material with a compact built-in wordlist. Use only inside the authorized lab boundary after hash format is known or hypothesized. Provide `hash` or `hashes` and optional `hashType` or mode. Returns cracking attempt evidence; it does not contact target services.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/password/hashcat-crack.sh");
@@ -12,7 +12,7 @@ export const hashcatCrackTool = {
   binary: "hashcat",
   category: "password" as const,
   riskTier: "controlled-exploit" as const,
-  notes: "Wrapper around Hashcat for offline cracking checks.",
+  notes: "Raw adapter for Hashcat offline cracking checks.",
   sandboxProfile: "controlled-exploit-lab" as const,
   privilegeProfile: "controlled-exploit" as const,
   timeoutMs: 120000,

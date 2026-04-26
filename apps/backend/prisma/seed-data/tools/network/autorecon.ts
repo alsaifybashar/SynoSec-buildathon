@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededPortSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const autoreconTool = {
   id: "seed-autorecon",
   name: "Autorecon",
-  description: "Multi-threaded network reconnaissance tool which performs automated enumeration of services.",
+  description: "Run automated multi-service reconnaissance against an approved host to collect initial service evidence and suggested follow-up areas. Use when a broader host-level enumeration pass is in scope. Provide `target`. Returns reconnaissance observations; do not use as exploit proof.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/network/autorecon.sh");
@@ -12,16 +13,13 @@ export const autoreconTool = {
   binary: "autorecon",
   category: "network" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Autorecon for seeded execution.",
+  notes: "Raw adapter for Autorecon.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,
   inputSchema: {
     type: "object",
-    properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    }
+    properties: seededPortSteeringProperties
   },
   outputSchema: {
     type: "object",

@@ -8,7 +8,7 @@ if ! command -v sublist3r >/dev/null 2>&1; then
   exit 127
 fi
 
-domain="$(printf '%s' "$payload" | node -e 'let input="";process.stdin.on("data",(chunk)=>input+=chunk);process.stdin.on("end",()=>{const parsed=JSON.parse(input||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};const explicit=String(toolInput.domain||"").trim(); if (explicit) { process.stdout.write(explicit); return; } try { const baseUrl = String(toolInput.baseUrl||`http://${toolInput.target||parsed?.request?.target||""}`); process.stdout.write(new URL(baseUrl).hostname); } catch { process.stdout.write(String(toolInput.target||parsed?.request?.target||"")); }});')"
+domain="$(SEED_PAYLOAD="$payload" node -e 'const parsed=JSON.parse(process.env.SEED_PAYLOAD||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};const source=Array.isArray(toolInput.candidateDomains)&&toolInput.candidateDomains[0]||toolInput.domain||toolInput.target||parsed?.request?.target||toolInput.baseUrl||"";try{process.stdout.write(new URL(String(source)).hostname);}catch{process.stdout.write(String(source).replace(/^https?:\\/\\//,"").replace(/\\/.*$/,""));}')"
 outfile="$(mktemp)"
 trap 'rm -f "$outfile"' EXIT
 

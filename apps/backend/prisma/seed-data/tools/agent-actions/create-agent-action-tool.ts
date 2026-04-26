@@ -1,6 +1,6 @@
 import { loadSeedToolScript } from "../load-script.js";
 
-type SeededFamilyTool = {
+type SeededAgentActionTool = {
   id: string;
   name: string;
   description: string;
@@ -15,37 +15,32 @@ type SeededFamilyTool = {
   inputSchema: Record<string, unknown>;
   outputSchema: Record<string, unknown>;
   primary: { name: string; bashSource: string };
-  fallback: { name: string; bashSource: string };
 };
 
 function encodeBashSource(bashSource: string) {
   return Buffer.from(bashSource, "utf8").toString("base64");
 }
 
-export function createFamilyWrapperScript(input: {
-  familyName: string;
+export function createAgentActionWrapperScript(input: {
+  actionName: string;
   primary: { name: string; bashSource: string };
-  fallback: { name: string; bashSource: string };
 }) {
-  return loadSeedToolScript(import.meta.url, "scripts/tools/family/execute-family-tool.sh")
-    .replace("__FAMILY_NAME__", input.familyName)
+  return loadSeedToolScript(import.meta.url, "scripts/tools/agent-actions/execute-agent-action.sh")
+    .replace("__AGENT_ACTION_NAME__", input.actionName)
     .replace("__PRIMARY_NAME__", input.primary.name)
-    .replace("__PRIMARY_SOURCE_B64__", encodeBashSource(input.primary.bashSource))
-    .replace("__FALLBACK_NAME__", input.fallback.name)
-    .replace("__FALLBACK_SOURCE_B64__", encodeBashSource(input.fallback.bashSource));
+    .replace("__PRIMARY_SOURCE_B64__", encodeBashSource(input.primary.bashSource));
 }
 
-export function createSeededFamilyTool(input: SeededFamilyTool) {
+export function createSeededAgentActionTool(input: SeededAgentActionTool) {
   return {
     id: input.id,
     name: input.name,
     description: input.description,
     executorType: "bash" as const,
     get bashSource() {
-      return createFamilyWrapperScript({
-        familyName: input.name,
-        primary: input.primary,
-        fallback: input.fallback
+      return createAgentActionWrapperScript({
+        actionName: input.name,
+        primary: input.primary
       });
     },
     capabilities: input.capabilities,
@@ -60,4 +55,3 @@ export function createSeededFamilyTool(input: SeededFamilyTool) {
     outputSchema: input.outputSchema
   } as const;
 }
-

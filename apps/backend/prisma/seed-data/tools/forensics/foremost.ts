@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const foremostTool = {
   id: "seed-foremost",
   name: "Foremost",
-  description: "Console program to recover files based on their headers, footers, and internal data structures.",
+  description: "Recover files from forensic material based on headers, footers, and internal structures. Use when disk images or binary blobs may contain embedded or deleted files. Provide `filePath`. Returns carving observations and recovered-file summaries; do not use for memory analysis.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/forensics/foremost.sh");
@@ -12,7 +12,7 @@ export const foremostTool = {
   binary: "foremost",
   category: "forensics" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Foremost for seeded execution.",
+  notes: "Raw adapter for Foremost.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,

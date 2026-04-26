@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededContextSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const kubebenchTool = {
   id: "seed-kube-bench",
   name: "Kube-bench",
-  description: "Checks whether Kubernetes is deployed securely.",
+  description: "Check Kubernetes configuration against benchmark-style controls. Use when cluster context or configuration artifacts are in scope. Provide cluster or file context and notes. Returns Kubernetes hardening observations; do not use for workload exploitation.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/utility/kube-bench.sh");
@@ -12,16 +13,13 @@ export const kubebenchTool = {
   binary: "kube-bench",
   category: "utility" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Kube-bench for seeded execution.",
+  notes: "Raw adapter for Kube-bench.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,
   inputSchema: {
     type: "object",
-    properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    }
+    properties: seededContextSteeringProperties
   },
   outputSchema: {
     type: "object",

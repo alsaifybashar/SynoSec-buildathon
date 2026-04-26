@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededCredentialSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const crackMapExecTool = {
   id: "seed-crackmapexec",
   name: "CrackMapExec",
-  description: "Swiss army knife for pentesting networks.",
+  description: "Validate Windows network exposure and credentialed SMB/AD behavior on approved targets. Use when Windows lateral-movement or identity-path evidence is explicitly in scope. Provide target, service context, and credentials where required. Returns access/enumeration observations; do not use for unscoped exploitation.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/windows/crackmapexec.sh");
@@ -12,16 +13,13 @@ export const crackMapExecTool = {
   binary: "crackmapexec",
   category: "windows" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around CrackMapExec for seeded execution.",
+  notes: "Raw adapter for CrackMapExec.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,
   inputSchema: {
     type: "object",
-    properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    }
+    properties: seededCredentialSteeringProperties
   },
   outputSchema: {
     type: "object",

@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const objdumpTool = {
   id: "seed-objdump",
   name: "Objdump",
-  description: "Display information from object files.",
+  description: "Inspect object-file headers, sections, symbols, and disassembly-oriented metadata for a local binary. Use during static reverse-engineering triage. Provide `filePath`. Returns binary structure observations; it does not execute the artifact.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/utility/objdump.sh");
@@ -12,7 +12,7 @@ export const objdumpTool = {
   binary: "objdump",
   category: "utility" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Objdump for seeded execution.",
+  notes: "Raw adapter for Objdump.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,

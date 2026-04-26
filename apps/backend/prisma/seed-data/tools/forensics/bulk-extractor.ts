@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const bulkExtractorTool = {
   id: "seed-bulk-extractor",
   name: "Bulk Extractor",
-  description: "Extracts features such as email addresses, credit card numbers, URLs, and other types of information from digital evidence files.",
+  description: "Extract features such as emails, URLs, tokens, identifiers, and other high-signal strings from digital evidence files. Use for forensic triage of collected artifacts or disk images. Provide `filePath`. Returns extracted-feature observations; validate sensitivity and relevance before reporting.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/forensics/bulk-extractor.sh");
@@ -12,7 +12,7 @@ export const bulkExtractorTool = {
   binary: "bulk_extractor",
   category: "forensics" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Bulk Extractor for seeded execution.",
+  notes: "Raw adapter for Bulk Extractor.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,

@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededPortSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const masscanTool = {
   id: "seed-masscan",
   name: "Masscan",
-  description: "TCP port scanner, spews SYN packets asynchronously, scanning the entire Internet in under 5 minutes.",
+  description: "Run high-speed TCP port discovery against explicitly approved scope. Use only when broad port discovery is authorized and rate constraints allow it. Provide target or scoped network context plus limits. Returns open-port observations; do not use for service fingerprinting or exploitation.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/network/masscan.sh");
@@ -12,16 +13,13 @@ export const masscanTool = {
   binary: "masscan",
   category: "network" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Masscan for seeded execution.",
+  notes: "Raw adapter for Masscan.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,
   inputSchema: {
     type: "object",
-    properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    }
+    properties: seededPortSteeringProperties
   },
   outputSchema: {
     type: "object",

@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededWebSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const feroxbusterTool = {
   id: "seed-feroxbuster",
   name: "Feroxbuster",
-  description: "Fast, recursive content discovery tool.",
+  description: "Run fast recursive content discovery against a confirmed web target. Use when hidden paths, directories, or nested resources are in scope and bounded enumeration is acceptable. Provide `baseUrl` or `target`. Returns discovered path observations; do not use for vulnerability confirmation.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/web/feroxbuster.sh");
@@ -12,16 +13,13 @@ export const feroxbusterTool = {
   binary: "feroxbuster",
   category: "web" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Feroxbuster for seeded execution.",
+  notes: "Raw adapter for Feroxbuster.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,
   inputSchema: {
     type: "object",
-    properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    }
+    properties: seededWebSteeringProperties
   },
   outputSchema: {
     type: "object",

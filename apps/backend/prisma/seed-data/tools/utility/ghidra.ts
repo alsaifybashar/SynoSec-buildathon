@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const ghidraTool = {
   id: "seed-ghidra",
   name: "Ghidra",
-  description: "Software reverse engineering (SRE) framework.",
+  description: "Run or stage Ghidra-style reverse-engineering analysis for a local binary artifact. Use when decompilation or deeper program analysis is needed. Provide `filePath` and optional notes. Returns analysis setup or output observations; do not execute the artifact.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/utility/ghidra.sh");
@@ -12,7 +12,7 @@ export const ghidraTool = {
   binary: "ghidra",
   category: "utility" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Ghidra for seeded execution.",
+  notes: "Raw adapter for Ghidra.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,

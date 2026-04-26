@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededWebSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const sqlInjectionCheckTool = {
   id: "seed-sql-injection-check",
   name: "SQL Injection Check",
-  description: "Perform controlled database injection validation against approved targets.",
+  description: "Perform controlled SQL injection validation against approved candidate endpoints or parameters. Use only when a specific URL, parameter, or validation target is in scope. Provide `baseUrl`, `url`, candidate parameters, or validation targets. Returns payload/response evidence; do not use for broad crawling or unscoped exploitation.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/web/sql-injection-check.sh");
@@ -18,10 +19,7 @@ export const sqlInjectionCheckTool = {
   timeoutMs: 45000,
   inputSchema: {
     type: "object",
-    properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    },
+    properties: seededWebSteeringProperties,
     required: ["target", "baseUrl"]
   },
   outputSchema: {

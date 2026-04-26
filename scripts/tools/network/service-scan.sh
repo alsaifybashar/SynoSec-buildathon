@@ -13,13 +13,19 @@ try {
   parsedUrl = new URL(baseUrl);
 } catch {}
 const requestedPort = Number(toolInput.port || parsedUrl?.port || 0);
-const candidatePorts = requestedPort > 0
+const portSource = Array.isArray(toolInput.candidatePorts) && toolInput.candidatePorts.length > 0
+  ? toolInput.candidatePorts
+  : requestedPort > 0
   ? [requestedPort]
   : parsedUrl?.protocol === "https:"
     ? [443]
     : parsedUrl?.protocol === "http:"
       ? [80]
       : [];
+const maxPorts = Number.isFinite(Number(toolInput.maxPorts)) ? Math.max(1, Number(toolInput.maxPorts)) : 16;
+const candidatePorts = [...new Set(portSource
+  .map((value) => Number(value))
+  .filter((value) => Number.isInteger(value) && value > 0 && value <= 65535))].slice(0, maxPorts);
 if (candidatePorts.length === 0) {
   console.log(JSON.stringify({
     output: `Service scan requires an explicit port or a URL with an http/https scheme. Received target=${target} baseUrl=${baseUrl}`,
@@ -74,7 +80,9 @@ function probePort(host, port) {
     summary: `Confirmed TCP connectivity to ${target}:${item.port}.`,
     severity: "info",
     confidence: 0.84,
-    evidence: item.banner ? `Port ${item.port} responded with:\n${item.banner}` : `TCP connection to ${target}:${item.port} succeeded.`,
+    evidence: item.banner
+      ? `Request target: ${target}:${item.port}\nProtocol: TCP\nStatus: open\nProof: banner returned\n${item.banner}`
+      : `Request target: ${target}:${item.port}\nProtocol: TCP\nStatus: open\nProof: TCP connection succeeded.`,
     technique: "lightweight TCP service probe",
     port: item.port
   }));

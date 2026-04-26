@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const bashProbeTool = {
   id: "seed-bash-probe",
   name: "Bash Probe",
-  description: "Run a deterministic local bash probe that confirms input wiring and structured JSON output.",
+  description: "Run a deterministic local bash probe to confirm input wiring, sandbox behavior, command execution, and structured JSON output. Use for smoke tests and diagnostics only. Provide any test input accepted by the harness. Returns predictable observations; it does not assess the target.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/utility/bash-probe.sh");

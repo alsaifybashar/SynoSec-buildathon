@@ -6,12 +6,6 @@ import { ffufScanTool } from "./tools/content/ffuf-scan.js";
 import { gobusterScanTool } from "./tools/content/gobuster-scan.js";
 import { webCrawlTool } from "./tools/content/web-crawl.js";
 import { metasploitFrameworkTool } from "./tools/exploitation/metasploit-framework.js";
-import { familyContentDiscoveryTool } from "./tools/family/content-discovery.js";
-import { familyHttpSurfaceTool } from "./tools/family/http-surface.js";
-import { familyNetworkEnumerationTool } from "./tools/family/network-enumeration.js";
-import { familySubdomainDiscoveryTool } from "./tools/family/subdomain-discovery.js";
-import { familyVulnerabilityValidationTool } from "./tools/family/vulnerability-validation.js";
-import { familyWebCrawlTool } from "./tools/family/web-crawl.js";
 import { binwalkTool } from "./tools/forensics/binwalk.js";
 import { bulkExtractorTool } from "./tools/forensics/bulk-extractor.js";
 import { exifToolTool } from "./tools/forensics/exiftool.js";
@@ -112,6 +106,14 @@ const attackVectorPlanningStagePrompt = [
   "Distinguish confirmed findings from weaker hypotheses when the evidence is incomplete.",
   "Link related weaknesses explicitly and capture what each venue exposes, what each vector requires, and which findings support the path.",
   "",
+  "Completion checklist:",
+  "1. Run evidence tools first and inspect their persisted tool results before reporting weaknesses.",
+  "2. Call report_finding for 1-4 supported weaknesses. Use persisted evidence quotes from tool results; do not invent evidence.",
+  "3. When a finding supports a path, include relationship fields such as derivedFromFindingIds, relatedFindingIds, or enablesFindingIds, or include chain metadata with explanationSummary and confidenceReason.",
+  "4. Before complete_run, make sure report_finding has returned finding ids and use those finding ids in related findings and handoff attack paths.",
+  "5. Include handoff.attackVenues, handoff.attackVectors, and handoff.attackPaths in complete_run; attack paths must reference the returned finding ids.",
+  "6. Call complete_run only after the required finding ids and handoff path references exist.",
+  "",
   "Stage result expectations:",
   "Use the handoff to summarize attackVenues, attackVectors, and prioritized attackPaths that reference finding ids."
 ].join("\n");
@@ -192,57 +194,25 @@ const attackVectorPlanningHandoffSchema = {
   required: ["attackVenues", "attackVectors", "attackPaths"]
 } as const;
 
-const fullSemanticFamilyToolIds = [
+const attackPathSemanticFamilyToolIds = [
   "builtin-http-surface-assessment",
-  "builtin-web-crawl-mapping",
+  "builtin-network-service-enumeration",
+  "builtin-tls-posture-audit",
   "builtin-content-discovery",
+  "builtin-web-crawl-mapping",
   "builtin-parameter-discovery",
   "builtin-web-vulnerability-audit",
   "builtin-sql-injection-validation",
   "builtin-xss-validation",
-  "builtin-wordpress-assessment",
   "builtin-auth-flow-assessment",
-  "builtin-token-analysis",
-  "builtin-network-host-discovery",
-  "builtin-network-service-enumeration",
-  "builtin-tls-posture-audit",
-  "builtin-network-topology-mapping",
-  "builtin-subdomain-discovery",
-  "builtin-dns-enumeration",
-  "builtin-credential-format-identification",
-  "builtin-online-credential-attack",
-  "builtin-offline-password-cracking",
-  "builtin-windows-enumeration",
-  "builtin-windows-remote-access-validation",
-  "builtin-windows-poisoning-and-capture",
-  "builtin-controlled-exploitation",
-  "builtin-cloud-posture-audit",
-  "builtin-kubernetes-posture-audit",
-  "builtin-binary-triage",
-  "builtin-interactive-reverse-engineering",
-  "builtin-artifact-metadata-extraction",
-  "builtin-file-carving-and-bulk-extraction",
-  "builtin-memory-forensics",
-  "builtin-steganography-analysis",
-  "builtin-local-shell-probe"
-] as const;
-
-const webSemanticFamilyToolIds = [
-  "builtin-http-surface-assessment",
-  "builtin-web-crawl-mapping",
-  "builtin-content-discovery",
-  "builtin-parameter-discovery",
-  "builtin-web-vulnerability-audit",
-  "builtin-sql-injection-validation",
-  "builtin-xss-validation",
-  "builtin-wordpress-assessment",
-  "builtin-auth-flow-assessment",
-  "builtin-token-analysis",
-  "builtin-network-host-discovery",
-  "builtin-network-service-enumeration",
-  "builtin-tls-posture-audit",
   "builtin-subdomain-discovery",
   "builtin-dns-enumeration"
+] as const;
+
+const workflowBuiltinActionToolIds = [
+  "builtin-log-progress",
+  "builtin-report-finding",
+  "builtin-complete-run"
 ] as const;
 
 export type SeededRoleKey = "generic-pentester";
@@ -278,11 +248,7 @@ function withConstraintProfile<
     "seed-ffuf-scan",
     "seed-arjun",
     "seed-nuclei",
-    "seed-paramspider",
-    "seed-family-http-surface",
-    "seed-family-web-crawl",
-    "seed-family-content-discovery",
-    "seed-family-vulnerability-validation"
+    "seed-paramspider"
   ]);
   const contentEnumerationIds = new Set([
     "seed-web-crawl",
@@ -293,9 +259,7 @@ function withConstraintProfile<
     "seed-gobuster-scan",
     "seed-ffuf-scan",
     "seed-arjun",
-    "seed-paramspider",
-    "seed-family-web-crawl",
-    "seed-family-content-discovery"
+    "seed-paramspider"
   ]);
 
   const readOnlyWebCategories = new Set(["topology", "auth", "web", "content", "dns", "subdomain", "network", "cloud", "kubernetes", "utility"]);
@@ -330,12 +294,6 @@ const rawSeededToolDefinitions = [
   ffufScanTool,
   gobusterScanTool,
   webCrawlTool,
-  familyContentDiscoveryTool,
-  familyHttpSurfaceTool,
-  familyNetworkEnumerationTool,
-  familySubdomainDiscoveryTool,
-  familyVulnerabilityValidationTool,
-  familyWebCrawlTool,
   metasploitFrameworkTool,
   binwalkTool,
   bulkExtractorTool,
@@ -424,15 +382,15 @@ export const seededRoleDefinitions = [
   {
     key: "generic-pentester" as const,
     name: "Generic Pentester",
-    description: "Generic seeded pentesting agent for semantic-family workflow execution and attack-path reasoning.",
+    description: "Default pentesting agent for capability-level workflow execution and attack-path reasoning.",
     systemPrompt:
       [
         "Role and goal:",
-        "You are the generic pentesting agent for SynoSec. Use semantic tool families to map how weaknesses may connect, identify plausible attack paths, and keep every linked vulnerability grounded in evidence or explicitly qualified uncertainty.",
+        "You are the generic pentesting agent for SynoSec. Use the exposed capability-level tools to map how weaknesses may connect, identify plausible attack paths, and keep every linked vulnerability grounded in evidence or explicitly qualified uncertainty.",
         "",
         "Scope and safety boundaries:",
-        "Use only the available semantic family tools and built-in workflow actions for this run.",
-        "Do not ask for raw tool access, brand-specific substitutions, or alternate execution paths outside the exposed family surface.",
+        "Use only the available capability tools and built-in workflow actions for this run.",
+        "Do not ask for raw tool access, brand-specific substitutions, or alternate execution paths outside the exposed workflow surface.",
         "",
         "Evidence and reporting requirements:",
         "Prefer structured evidence-backed findings over free-form narrative.",
@@ -446,18 +404,19 @@ export const seededRoleDefinitions = [
         "Do not expose private chain-of-thought; provide concise action-oriented progress notes instead.",
         "",
         "Completion requirements:",
-        "Use report_finding for concrete supported findings and plausible linked vulnerabilities, and use complete_run to end the workflow.",
+        "When the workflow completion rule has minFindings greater than 0, report_finding is mandatory before complete_run; complete_run cannot create or replace missing findings.",
+        "Use report_finding for concrete supported findings and plausible linked vulnerabilities, then use the returned finding ids in relationships and attack-path handoff data before ending the workflow with complete_run.",
         "",
         "Blocked or failed behavior:",
         "If evidence does not support a vulnerability link or attack path, keep it out of findings, preserve the original uncertainty, and close with a qualified summary of the remaining hypotheses."
       ].join("\n"),
     toolIds: [
-      familyHttpSurfaceTool.id,
-      familyNetworkEnumerationTool.id,
-      familySubdomainDiscoveryTool.id,
-      familyWebCrawlTool.id,
-      familyContentDiscoveryTool.id,
-      familyVulnerabilityValidationTool.id
+      "builtin-http-surface-assessment",
+      "builtin-network-service-enumeration",
+      "builtin-content-discovery",
+      "builtin-web-crawl-mapping",
+      "builtin-web-vulnerability-audit",
+      "builtin-sql-injection-validation"
     ] as const
   }
 ] as const;
@@ -478,20 +437,21 @@ export function getSeededWorkflowDefinitions() {
   return [
     {
       id: osiCompactFamilyWorkflowId,
-      name: "Compact Family Evaluation",
+      name: "Compact Capability Evaluation",
       status: "active" as const,
       executionKind: "workflow" as const,
-      description: "Seeded workflow for evaluating a compact semantic-family tool surface against the same local target and evidence pipeline.",
+      description: "Default workflow for evaluating a compact capability-level tool surface against the same local target and evidence pipeline.",
       stages: [
         {
           id: "d6be6af5-fc56-42fa-a802-702d002b4bf6",
           label: "Compact Evaluation",
           agentId: seededAgentId("generic-pentester"),
           objective:
-            "Run one evidence-backed compact-family evaluation across the configured target. Use only the semantic family tools for collection and validation, think in terms of family capabilities rather than tool brands, register concrete findings through report_finding, and end only through complete_run.",
+            "Run one evidence-backed compact capability evaluation across the configured target. Use only the exposed workflow tools for collection and validation, think in terms of assessment intent rather than tool brands, register concrete findings through report_finding, and end only through complete_run.",
           ...defaultWorkflowStagePrompts,
           allowedToolIds: [
-            ...fullSemanticFamilyToolIds
+            ...workflowBuiltinActionToolIds,
+            ...attackPathSemanticFamilyToolIds
           ],
           requiredEvidenceTypes: [],
           findingPolicy: {
@@ -510,9 +470,13 @@ export function getSeededWorkflowDefinitions() {
           },
           completionRule: {
             requireStageResult: true,
-            requireToolCall: false,
-            allowEmptyResult: true,
-            minFindings: 0
+            requireToolCall: true,
+            allowEmptyResult: false,
+            minFindings: 1,
+            requireReachableSurface: true,
+            requireEvidenceBackedWeakness: true,
+            requireOsiCoverageStatus: true,
+            requireChainedFindings: true
           },
           resultSchemaVersion: 1,
           handoffSchema: null
@@ -524,17 +488,18 @@ export function getSeededWorkflowDefinitions() {
       name: "Attack Vector Planning",
       status: "active" as const,
       executionKind: "workflow" as const,
-      description: "Seeded workflow for mapping attack vectors across the semantic-family tool surface and linking plausible vulnerabilities through the evidence graph.",
+      description: "Default workflow for mapping attack vectors across the capability-level tool surface and linking plausible vulnerabilities through the evidence graph.",
       stages: [
         {
           id: "05a7fec4-548b-4857-a09f-7e4d81bb3f35",
           label: "Attack Vector Planning",
           agentId: seededAgentId("generic-pentester"),
           objective:
-            "Run one evidence-backed attack-vector planning pass across the configured target. Use only the semantic family tools for discovery and validation, link plausible vulnerabilities into explicit attack paths, register supported and clearly qualified suspected findings through report_finding, and end only through complete_run.",
+            "Run one evidence-backed attack-vector planning pass across the configured target. Use only the exposed workflow tools for discovery and validation, link plausible vulnerabilities into explicit attack paths, register supported and clearly qualified suspected findings through report_finding, and end only through complete_run.",
           stageSystemPrompt: attackVectorPlanningStagePrompt,
           allowedToolIds: [
-            ...fullSemanticFamilyToolIds
+            ...workflowBuiltinActionToolIds,
+            ...attackPathSemanticFamilyToolIds
           ],
           requiredEvidenceTypes: [],
           findingPolicy: {
@@ -553,9 +518,13 @@ export function getSeededWorkflowDefinitions() {
           },
           completionRule: {
             requireStageResult: true,
-            requireToolCall: false,
-            allowEmptyResult: true,
-            minFindings: 0
+            requireToolCall: true,
+            allowEmptyResult: false,
+            minFindings: 1,
+            requireReachableSurface: true,
+            requireEvidenceBackedWeakness: true,
+            requireOsiCoverageStatus: true,
+            requireChainedFindings: true
           },
           resultSchemaVersion: 1,
           handoffSchema: attackVectorPlanningHandoffSchema

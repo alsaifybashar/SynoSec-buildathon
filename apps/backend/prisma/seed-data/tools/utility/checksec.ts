@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const checksecTool = {
   id: "seed-checksec",
   name: "Checksec",
-  description: "Check executable properties.",
+  description: "Check a local executable for hardening properties such as NX, PIE, RELRO, stack canaries, and fortify signals. Use during binary triage. Provide `filePath`. Returns hardening observations; it does not execute or exploit the binary.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/utility/checksec.sh");
@@ -12,7 +12,7 @@ export const checksecTool = {
   binary: "checksec",
   category: "utility" as const,
   riskTier: "passive" as const,
-  notes: "Wrapper around Checksec for seeded execution.",
+  notes: "Raw adapter for Checksec.",
   sandboxProfile: "network-recon" as const,
   privilegeProfile: "read-only-network" as const,
   timeoutMs: 180000,

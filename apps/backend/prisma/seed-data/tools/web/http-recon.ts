@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededPassiveHttpSteeringProperties } from "../shared/seeded-web-input-schema.js";
 
 export const httpReconTool = {
   id: "seed-http-recon",
   name: "HTTP Recon",
-  description: "Probe targets, collect headers, status codes, titles, and initial fingerprints.",
+  description: "Probe a known HTTP or HTTPS target for reachability, redirects, status code, headers, title, cookies, and lightweight fingerprint signals. Use for initial web reconnaissance before crawling or validation. Provide `baseUrl`, `url`, or `target`. Returns response evidence and observations; do not use for hidden path discovery or exploit validation.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/web/http-recon.sh");
@@ -18,10 +19,7 @@ export const httpReconTool = {
   timeoutMs: 120000,
   inputSchema: {
     type: "object",
-    properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    },
+    properties: seededPassiveHttpSteeringProperties,
     required: ["baseUrl"]
   },
   outputSchema: {

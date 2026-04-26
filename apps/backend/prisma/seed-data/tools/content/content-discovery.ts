@@ -1,9 +1,10 @@
 import { loadSeedToolScript } from "../load-script.js";
+import { seededWebSteeringInputSchema } from "../shared/seeded-web-input-schema.js";
 
 export const contentDiscoveryTool = {
   id: "seed-content-discovery",
   name: "Content Discovery",
-  description: "Brute-force common content paths to expand the application attack surface.",
+  description: "Enumerate common content paths on a confirmed web target to expand the application attack surface. Use when bounded path guessing is authorized and hidden routes matter. Provide `target` and `baseUrl`; optionally steer with candidate paths or limits. Returns path/status observations; do not use for passive crawling or vulnerability confirmation.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/content/content-discovery.sh");
@@ -16,14 +17,7 @@ export const contentDiscoveryTool = {
   sandboxProfile: "active-recon" as const,
   privilegeProfile: "active-network" as const,
   timeoutMs: 30000,
-  inputSchema: {
-    type: "object",
-    properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    },
-    required: ["target", "baseUrl"]
-  },
+  inputSchema: seededWebSteeringInputSchema,
   outputSchema: {
     type: "object",
     properties: {
