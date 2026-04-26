@@ -35,12 +35,12 @@ function buildFindingSignals(
       key: `${finding.id}:evidence:${index}`,
       toolName: evidence.sourceTool,
       quote: evidence.quote,
-      toolRunRef: evidence.toolRunRef,
-      observationRef: evidence.observationRef,
-      artifactRef: evidence.artifactRef,
-      status: activity?.status,
-      command: activity?.command,
-      outputPreview: activity?.outputPreview
+      ...(evidence.toolRunRef ? { toolRunRef: evidence.toolRunRef } : {}),
+      ...(evidence.observationRef ? { observationRef: evidence.observationRef } : {}),
+      ...(evidence.artifactRef ? { artifactRef: evidence.artifactRef } : {}),
+      ...(activity?.status ? { status: activity.status } : {}),
+      ...(activity?.command ? { command: activity.command } : {}),
+      ...(activity && "outputPreview" in activity ? { outputPreview: activity.outputPreview } : {})
     };
   });
 
@@ -54,9 +54,9 @@ function buildFindingSignals(
       key: `${finding.id}:source-tool:${toolId}`,
       toolName: toolId,
       quote: "",
-      status: activity?.status,
-      command: activity?.command,
-      outputPreview: activity?.outputPreview
+      ...(activity?.status ? { status: activity.status } : {}),
+      ...(activity?.command ? { command: activity.command } : {}),
+      ...(activity && "outputPreview" in activity ? { outputPreview: activity.outputPreview } : {})
     });
   }
 

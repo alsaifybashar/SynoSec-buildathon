@@ -179,6 +179,7 @@ function createService(overrides: {
           currentStepIndex: 0,
           startedAt: "2026-04-24T10:00:00.000Z",
           completedAt: null,
+          tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
           trace: [],
           events: []
         };
@@ -199,6 +200,7 @@ function createService(overrides: {
         const updated: WorkflowRun = {
           ...current,
           ...patch,
+          tokenUsage: current.tokenUsage,
           trace: current.trace.slice(),
           events: [...current.events, event]
         };
@@ -215,6 +217,7 @@ function createService(overrides: {
         const updated: WorkflowRun = {
           ...current,
           ...patch,
+          tokenUsage: current.tokenUsage,
           trace: current.trace.slice(),
           events: current.events.slice()
         };

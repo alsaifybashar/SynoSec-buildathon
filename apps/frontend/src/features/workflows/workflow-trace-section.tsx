@@ -246,8 +246,13 @@ function formatDuration(run: WorkflowRun | null) {
   return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;
 }
 
+function formatThousandsTokenCount(value: number) {
+  const thousands = Math.floor(value / 1000);
+  return `${new Intl.NumberFormat("en-US").format(thousands).replaceAll(",", " ")}k`;
+}
+
 function formatTokenUsage(run: WorkflowRun) {
-  return `${run.tokenUsage.inputTokens} in · ${run.tokenUsage.outputTokens} out · ${run.tokenUsage.totalTokens} total`;
+  return `${formatThousandsTokenCount(run.tokenUsage.inputTokens)} in · ${formatThousandsTokenCount(run.tokenUsage.outputTokens)} out · ${formatThousandsTokenCount(run.tokenUsage.totalTokens)} total`;
 }
 
 function getVerificationToneLabel(status: string | undefined, title: string) {

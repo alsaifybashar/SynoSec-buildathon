@@ -166,6 +166,7 @@ const run: WorkflowRun = {
   currentStepIndex: 1,
   startedAt: "2026-04-21T00:00:00.000Z",
   completedAt: null,
+  tokenUsage: { inputTokens: 21, outputTokens: 9, totalTokens: 30 },
   trace: [
     {
       id: "trace-1",
@@ -403,6 +404,7 @@ describe("WorkflowDetailPage", () => {
     expect(screen.getByRole("button", { name: "Show Full Details" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Show guidance for Status" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show guidance for Current Run" })).toBeInTheDocument();
+    expect(await screen.findByText("0k in · 0k out · 0k total")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show Full Details" }));
     expect(await screen.findByRole("button", { name: "Hide Full Details" })).toBeInTheDocument();
     expect(screen.getByText(/Server: demo/)).toBeInTheDocument();

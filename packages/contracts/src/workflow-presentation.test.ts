@@ -470,4 +470,122 @@ describe("buildWorkflowTranscript", () => {
     const assistantTurn = transcript.items.find((item) => item.kind === "assistant_turn");
     expect(assistantTurn && assistantTurn.kind === "assistant_turn" ? assistantTurn.body : null).toBe("Hello");
   });
+
+  it("prefers final totalUsage over step usage when computing workflow run token usage", () => {
+    const run: WorkflowRun = {
+      id: "50000000-0000-0000-0000-000000000005",
+      workflowId: workflow.id,
+      workflowLaunchId: "60000000-0000-0000-0000-000000000005",
+      targetId: "70000000-0000-0000-0000-000000000005",
+      status: "completed",
+      currentStepIndex: 0,
+      startedAt: "2026-04-25T00:00:00.000Z",
+      completedAt: "2026-04-25T00:00:01.000Z",
+      tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      trace: [],
+      events: [
+        {
+          id: "finish-step-usage",
+          workflowRunId: "50000000-0000-0000-0000-000000000005",
+          workflowId: workflow.id,
+          workflowStageId: null,
+          stepIndex: 0,
+          ord: 0,
+          type: "system_message",
+          status: "completed",
+          title: "Model step finished",
+          summary: "Step finished with reason: stop.",
+          detail: null,
+          payload: {
+            rawStreamPartType: "finish-step",
+            usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }
+          },
+          createdAt: "2026-04-25T00:00:00.500Z"
+        },
+        {
+          id: "finish-total-usage",
+          workflowRunId: "50000000-0000-0000-0000-000000000005",
+          workflowId: workflow.id,
+          workflowStageId: null,
+          stepIndex: 0,
+          ord: 1,
+          type: "system_message",
+          status: "completed",
+          title: "Model stream finished",
+          summary: "Stream finished with reason: stop.",
+          detail: null,
+          payload: {
+            rawStreamPartType: "finish",
+            totalUsage: { inputTokens: 20, outputTokens: 8, totalTokens: 28 }
+          },
+          createdAt: "2026-04-25T00:00:01.000Z"
+        }
+      ]
+    };
+
+    expect(getWorkflowRunTokenUsage(run)).toEqual({
+      inputTokens: 20,
+      outputTokens: 8,
+      totalTokens: 28
+    });
+  });
+
+  it("falls back to summing finish-step usage when no final totalUsage exists", () => {
+    const run: WorkflowRun = {
+      id: "50000000-0000-0000-0000-000000000006",
+      workflowId: workflow.id,
+      workflowLaunchId: "60000000-0000-0000-0000-000000000006",
+      targetId: "70000000-0000-0000-0000-000000000006",
+      status: "running",
+      currentStepIndex: 1,
+      startedAt: "2026-04-25T00:00:00.000Z",
+      completedAt: null,
+      tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      trace: [],
+      events: [
+        {
+          id: "finish-step-usage-1",
+          workflowRunId: "50000000-0000-0000-0000-000000000006",
+          workflowId: workflow.id,
+          workflowStageId: null,
+          stepIndex: 0,
+          ord: 0,
+          type: "system_message",
+          status: "completed",
+          title: "Model step finished",
+          summary: "Step finished with reason: stop.",
+          detail: null,
+          payload: {
+            rawStreamPartType: "finish-step",
+            usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 }
+          },
+          createdAt: "2026-04-25T00:00:00.500Z"
+        },
+        {
+          id: "finish-step-usage-2",
+          workflowRunId: "50000000-0000-0000-0000-000000000006",
+          workflowId: workflow.id,
+          workflowStageId: null,
+          stepIndex: 1,
+          ord: 1,
+          type: "system_message",
+          status: "completed",
+          title: "Model step finished",
+          summary: "Step finished with reason: stop.",
+          detail: null,
+          payload: {
+            rawStreamPartType: "finish-step",
+            usage: { inputTokens: 4, outputTokens: 1, totalTokens: 5 }
+          },
+          createdAt: "2026-04-25T00:00:01.000Z"
+        }
+      ]
+    };
+
+    expect(getWorkflowRunTokenUsage(run)).toEqual({
+      inputTokens: 7,
+      outputTokens: 3,
+      totalTokens: 10
+    });
+  });
 });

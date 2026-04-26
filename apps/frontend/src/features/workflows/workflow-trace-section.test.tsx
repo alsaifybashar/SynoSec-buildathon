@@ -11,6 +11,8 @@ import {
 } from "@synosec/contracts";
 import { WorkflowTraceSection } from "@/features/workflows/workflow-trace-section";
 
+const emptyTokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+
 const workflow: Workflow = {
   id: "10000000-0000-0000-0000-000000000001",
   name: "OSI Single-Agent",
@@ -72,6 +74,7 @@ const run: WorkflowRun = {
   currentStepIndex: 1,
   startedAt: "2026-04-21T00:00:00.000Z",
   completedAt: "2026-04-21T00:01:00.000Z",
+  tokenUsage: { inputTokens: 144, outputTokens: 32, totalTokens: 176 },
   trace: [],
   events: [
     {
@@ -426,10 +429,13 @@ const activeRun: WorkflowRun = {
 const streamedNarrationRun: WorkflowRun = {
   id: "60000000-0000-0000-0000-000000000010",
   workflowId: workflow.id,
+  workflowLaunchId: "61000000-0000-0000-0000-000000000010",
+  targetId: "20000000-0000-0000-0000-000000000001",
   status: "running",
   currentStepIndex: 1,
   startedAt: "2026-04-21T00:00:00.000Z",
   completedAt: null,
+  tokenUsage: emptyTokenUsage,
   trace: [],
   events: [
     {
@@ -530,10 +536,13 @@ const streamedNarrationRun: WorkflowRun = {
 const streamedToolLifecycleRun: WorkflowRun = {
   id: "60000000-0000-0000-0000-000000000020",
   workflowId: workflow.id,
+  workflowLaunchId: "61000000-0000-0000-0000-000000000020",
+  targetId: "20000000-0000-0000-0000-000000000001",
   status: "running",
   currentStepIndex: 0,
   startedAt: "2026-04-21T00:00:00.000Z",
   completedAt: null,
+  tokenUsage: emptyTokenUsage,
   trace: [],
   events: [
     {
@@ -621,10 +630,13 @@ const streamedToolLifecycleRun: WorkflowRun = {
 const rejectedModelRun: WorkflowRun = {
   id: "60000000-0000-0000-0000-000000000099",
   workflowId: workflow.id,
+  workflowLaunchId: "61000000-0000-0000-0000-000000000099",
+  targetId: "20000000-0000-0000-0000-000000000001",
   status: "running",
   currentStepIndex: 1,
   startedAt: "2026-04-21T00:00:00.000Z",
   completedAt: null,
+  tokenUsage: emptyTokenUsage,
   trace: [],
   events: [
     {
@@ -696,10 +708,13 @@ const rejectedModelRun: WorkflowRun = {
 const failedToolRun: WorkflowRun = {
   id: "60000000-0000-0000-0000-000000000100",
   workflowId: workflow.id,
+  workflowLaunchId: "61000000-0000-0000-0000-000000000100",
+  targetId: "20000000-0000-0000-0000-000000000001",
   status: "running",
   currentStepIndex: 1,
   startedAt: "2026-04-21T00:00:00.000Z",
   completedAt: null,
+  tokenUsage: emptyTokenUsage,
   trace: [],
   events: [
     {
