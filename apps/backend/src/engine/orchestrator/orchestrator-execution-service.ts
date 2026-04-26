@@ -121,6 +121,47 @@ function normalizeToolName(value: string) {
   return value.trim().toLowerCase();
 }
 
+function normalizePlannedPhaseTools(
+  phases: unknown,
+  availableToolNames: Set<string>,
+  invalidToolErrorCode: string,
+  invalidToolErrorPrefix: string
+): AttackPlanPhase[] {
+  if (!Array.isArray(phases)) {
+    return [];
+  }
+
+  return phases.map((phase, index) => {
+    const candidate = typeof phase === "object" && phase !== null ? phase as Partial<AttackPlanPhase> : {};
+    const tools = Array.isArray(candidate.tools)
+      ? candidate.tools
+          .filter((tool): tool is string => typeof tool === "string" && tool.trim().length > 0)
+          .map((tool) => tool.trim())
+      : [];
+
+    for (const tool of tools) {
+      if (!availableToolNames.has(normalizeToolName(tool))) {
+        throw new RequestError(500, `${invalidToolErrorPrefix}: ${tool}.`, {
+          code: invalidToolErrorCode,
+          userFriendlyMessage: "The attack map selected an unknown AI tool."
+        });
+      }
+    }
+
+    return {
+      id: typeof candidate.id === "string" && candidate.id.trim().length > 0 ? candidate.id.trim() : `phase-${index + 1}`,
+      name: typeof candidate.name === "string" && candidate.name.trim().length > 0 ? candidate.name.trim() : `Phase ${index + 1}`,
+      priority: ["critical", "high", "medium", "low"].includes(String(candidate.priority))
+        ? candidate.priority as AttackPlanPhase["priority"]
+        : "medium",
+      rationale: typeof candidate.rationale === "string" ? candidate.rationale : "Attack plan phase generated from recon data.",
+      targetService: typeof candidate.targetService === "string" ? candidate.targetService : "unknown",
+      tools,
+      status: "pending" as const
+    };
+  });
+}
+
 function includesEvidence(haystack: string, needle: string) {
   const normalizedHaystack = haystack.trim();
   const normalizedNeedle = needle.trim();
@@ -1101,6 +1142,7 @@ export class OrchestratorExecutionEngineService {
       });
     }
 
+    const availableToolNames = new Set(plannerTools.map((tool) => normalizeToolName(tool.tool.name)));
     const availableTools = plannerTools.map((tool) => tool.tool.name).join(", ");
 
     const envelope = await this.callStructuredDecisionModel<Partial<AttackPlan>>(provider, model, [
@@ -1118,7 +1160,12 @@ export class OrchestratorExecutionEngineService {
     emitReasoning("planning", "Planning reasoning", envelope.reasoningSummary);
     const parsed = envelope.data;
     return {
-      phases: Array.isArray(parsed.phases) ? parsed.phases.map((phase) => ({ ...phase, status: "pending" as const })) : [],
+      phases: normalizePlannedPhaseTools(
+        parsed.phases,
+        availableToolNames,
+        "ORCHESTRATOR_PLAN_INVALID_TOOL",
+        "Attack map plan selected an unknown AI tool"
+      ),
       overallRisk: (parsed.overallRisk as AttackPlan["overallRisk"]) ?? "medium",
       summary: parsed.summary ?? "Attack plan generated from recon data."
     };
@@ -1216,7 +1263,12 @@ export class OrchestratorExecutionEngineService {
       }
     }
 
-    const newPhases = Array.isArray(data.newPhases) ? data.newPhases.slice(0, 4).map((phase, index) => {
+    const newPhases = normalizePlannedPhaseTools(
+      Array.isArray(data.newPhases) ? data.newPhases.slice(0, 4) : [],
+      availableToolNames,
+      "ORCHESTRATOR_ADAPTIVE_PLAN_INVALID_TOOL",
+      "Adaptive attack plan selected an unknown AI tool"
+    ).map((phase, index) => {
       const id = typeof phase.id === "string" && phase.id.trim() ? phase.id.trim() : `phase-adaptive-${index + 1}`;
       if (existingIds.has(id)) {
         throw new RequestError(500, `Adaptive attack plan returned a duplicate phase id: ${id}.`, {
@@ -1225,36 +1277,21 @@ export class OrchestratorExecutionEngineService {
       }
       existingIds.add(id);
 
-      const tools = Array.isArray(phase.tools)
-        ? phase.tools.filter((tool): tool is string => typeof tool === "string" && tool.trim().length > 0).map((tool) => tool.trim())
-        : [];
-      for (const tool of tools) {
-        if (!availableToolNames.has(normalizeToolName(tool))) {
-          throw new RequestError(500, `Adaptive attack plan selected an unknown AI tool: ${tool}.`, {
-            code: "ORCHESTRATOR_ADAPTIVE_PLAN_INVALID_TOOL",
-            userFriendlyMessage: "The adaptive attack plan selected an unknown AI tool."
-          });
-        }
-      }
-      if (tools.length === 0) {
+      if (phase.tools.length === 0) {
         throw new RequestError(500, `Adaptive attack plan phase "${id}" did not include any valid tools.`, {
           code: "ORCHESTRATOR_ADAPTIVE_PLAN_INVALID_TOOL"
         });
       }
-
-      const priority = ["critical", "high", "medium", "low"].includes(String(phase.priority))
-        ? phase.priority as AttackPlanPhase["priority"]
-        : "medium";
       return {
         id,
-        name: typeof phase.name === "string" && phase.name.trim() ? phase.name.trim() : `Adaptive phase ${index + 1}`,
-        priority,
-        rationale: typeof phase.rationale === "string" ? phase.rationale : "Added by adaptive attack planning.",
-        targetService: typeof phase.targetService === "string" ? phase.targetService : completedPhase.targetService,
-        tools,
+        name: phase.name || `Adaptive phase ${index + 1}`,
+        priority: phase.priority,
+        rationale: phase.rationale,
+        targetService: phase.targetService === "unknown" ? completedPhase.targetService : phase.targetService,
+        tools: phase.tools,
         status: "pending" as const
       };
-    }) : [];
+    });
 
     const skipSet = new Set(skipPhaseIds);
     const overallRisk = ["critical", "high", "medium", "low"].includes(String(data.overallRisk))

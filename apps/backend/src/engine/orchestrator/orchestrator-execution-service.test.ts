@@ -151,6 +151,47 @@ describe("OrchestratorExecutionEngineService", () => {
     expect(plannerTools.map((entry: { tool: { name: string } }) => entry.tool.name)).not.toContain("Deep Analysis");
   });
 
+  it("fails loudly when the initial attack plan selects an unknown tool", async () => {
+    const service = createService([createTool({ id: "tool-1", name: "Nuclei" })]);
+    const privateService = service as any;
+    vi.spyOn(privateService, "callStructuredDecisionModel").mockResolvedValue({
+      reasoningSummary: "Use a tool that is not in the planner-visible catalog.",
+      data: {
+        phases: [{
+          id: "phase-1",
+          name: "Invalid Tool Phase",
+          priority: "high",
+          rationale: "Bad model output",
+          targetService: "https",
+          tools: ["WhatWeb"],
+          status: "pending"
+        }],
+        overallRisk: "high",
+        summary: "Invalid."
+      }
+    });
+
+    await expect(privateService.createPlan(
+      "https://example.com/app",
+      {
+        openPorts: [],
+        technologies: ["nginx"],
+        httpHeaders: {},
+        serverInfo: {},
+        interestingPaths: [],
+        rawNmap: "",
+        rawCurl: ""
+      },
+      await privateService.listOrchestratorRunnableTools(),
+      provider,
+      "sonnet",
+      vi.fn()
+    )).rejects.toMatchObject({
+      status: 500,
+      code: "ORCHESTRATOR_PLAN_INVALID_TOOL"
+    });
+  });
+
   it("fails loudly when a planned tool name does not resolve uniquely", async () => {
     const service = createService([
       createTool({ id: "tool-1", name: "Nuclei" }),
