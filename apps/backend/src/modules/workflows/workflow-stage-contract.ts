@@ -31,10 +31,6 @@ type WorkflowStageContractInput = {
 
 export const defaultStageSystemPromptTemplate = defaultWorkflowStageSystemPrompt;
 
-function isWorkflowCapabilityToolId(value: string) {
-  return value.startsWith("builtin-");
-}
-
 function normalizeStringArray(value: unknown) {
   if (!Array.isArray(value)) {
     return [];
@@ -44,7 +40,7 @@ function normalizeStringArray(value: unknown) {
 }
 
 function normalizeCapabilityToolIds(value: unknown) {
-  return normalizeStringArray(value).filter(isWorkflowCapabilityToolId);
+  return normalizeStringArray(value);
 }
 
 export function createDefaultWorkflowStageContract(

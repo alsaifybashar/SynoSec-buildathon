@@ -33,7 +33,12 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     outputSchema: {
       type: "object",
       properties: {
-        accepted: { type: "boolean" }
+        accepted: { type: "boolean" },
+        error: { type: "string" },
+        failures: {
+          type: "array",
+          items: { type: "string" }
+        }
       },
       required: ["accepted"]
     },
@@ -46,7 +51,7 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     kind: "builtin-action",
     status: "active",
     source: "system",
-    description: "Persist one evidence-backed security finding. Run evidence tools first. Provide supported weakness details and persisted evidence quotes. Returns the finding id; use that id in related findings and handoff attack paths.",
+    description: "Persist findings and attack-vector links through a single mode-based action. Use `mode: \"finding\"` for evidence-backed weakness reporting (optionally with `attackVectors` between existing finding ids) and `mode: \"attack_vector\"` to submit one or more vectors between existing findings only. Provide persisted evidence references for findings and transition evidence for non-related vectors. Returns finding metadata plus created attack-vector ids and does not complete the run.",
     executorType: "builtin",
     builtinActionKey: "report_finding",
     bashSource: null,
@@ -57,39 +62,104 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     coveredToolIds: [],
     candidateToolIds: [],
     inputSchema: {
-      type: "object",
-      properties: {
-        type: { type: "string" },
-        title: { type: "string" },
-        severity: { type: "string" },
-        confidence: { type: "number" },
-        impact: { type: "string" },
-        recommendation: { type: "string" },
-        target: { type: "object" },
-        evidence: { type: "array" },
-        derivedFromFindingIds: { type: "array" },
-        relatedFindingIds: { type: "array" },
-        enablesFindingIds: { type: "array" },
-        chain: { type: "object" },
-        explanationSummary: { type: "string" },
-        confidenceReason: { type: "string" },
-        relationshipExplanations: { type: "object" },
-        validationStatus: { type: "string" },
-        reproduction: { type: "object" },
-        tags: { type: "array" }
-      },
-      required: ["type", "title", "severity", "confidence", "impact", "recommendation", "target", "evidence"],
-      description: "If the finding participates in a path, include relationship fields together with explanationSummary and confidenceReason."
+      oneOf: [
+        {
+          type: "object",
+          properties: {
+            mode: { type: "string", enum: ["finding"] },
+            type: { type: "string" },
+            title: { type: "string" },
+            severity: { type: "string" },
+            confidence: { type: "number" },
+            impact: { type: "string" },
+            recommendation: { type: "string" },
+            target: { type: "object" },
+            evidence: { type: "array" },
+            derivedFromFindingIds: { type: "array" },
+            relatedFindingIds: { type: "array" },
+            enablesFindingIds: { type: "array" },
+            chain: { type: "object" },
+            explanationSummary: { type: "string" },
+            confidenceReason: { type: "string" },
+            relationshipExplanations: { type: "object" },
+            validationStatus: { type: "string" },
+            reproduction: { type: "object" },
+            tags: { type: "array" },
+            attackVectors: { type: "array" }
+          },
+          required: ["mode", "type", "title", "severity", "confidence", "impact", "recommendation", "target", "evidence"],
+          description: "If the finding participates in a path, include relationship fields with explanationSummary and confidenceReason. attackVectors may only reference existing finding ids."
+        },
+        {
+          type: "object",
+          properties: {
+            mode: { type: "string", enum: ["attack_vector"] },
+            attackVectors: { type: "array" }
+          },
+          required: ["mode", "attackVectors"],
+          description: "Submit one or more attack vectors between existing finding ids only."
+        }
+      ]
     },
     outputSchema: {
       type: "object",
       properties: {
+        accepted: { type: "boolean" },
         findingId: { type: "string" },
         title: { type: "string" },
         severity: { type: "string" },
-        host: { type: "string" }
+        host: { type: "string" },
+        attackVectorIds: {
+          type: "array",
+          items: { type: "string" }
+        }
       },
-      required: ["findingId", "title", "severity", "host"]
+      required: ["attackVectorIds"]
+    },
+    createdAt: builtinTimestamp,
+    updatedAt: builtinTimestamp
+  },
+  {
+    id: "builtin-report-attack-vector",
+    name: "Report Attack Vector",
+    kind: "builtin-action",
+    status: "active",
+    source: "system",
+    description: "Deprecated compatibility action for older workflow runs. Use this only when an existing run still calls `report_attack_vector`; for new workflows, use report_finding with `mode: \"attack_vector\"`. Provide kind, source/destination finding ids, impact, confidence, and grounded transition evidence for non-related vectors. Returns the created attack vector id and does not complete the run.",
+    executorType: "builtin",
+    builtinActionKey: "report_attack_vector" as ToolBuiltinActionKey,
+    bashSource: null,
+    capabilities: ["workflow-reporting"],
+    category: "utility",
+    riskTier: "passive",
+    timeoutMs: 1000,
+    coveredToolIds: [],
+    candidateToolIds: [],
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["enables", "derived_from", "related", "lateral_movement"] },
+        sourceFindingId: { type: "string" },
+        destinationFindingId: { type: "string" },
+        summary: { type: "string" },
+        preconditions: { type: "array" },
+        impact: { type: "string" },
+        transitionEvidence: { type: "array" },
+        confidence: { type: "number" },
+        validationStatus: { type: "string" }
+      },
+      required: ["kind", "sourceFindingId", "destinationFindingId", "summary", "impact", "confidence"],
+      description: "For enables, derived_from, and lateral_movement vectors, include transitionEvidence grounded in persisted tool results."
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        attackVectorId: { type: "string" },
+        kind: { type: "string" },
+        sourceFindingId: { type: "string" },
+        destinationFindingId: { type: "string" }
+      },
+      required: ["attackVectorId", "kind", "sourceFindingId", "destinationFindingId"]
     },
     createdAt: builtinTimestamp,
     updatedAt: builtinTimestamp
@@ -115,7 +185,8 @@ const lifecycleBuiltinAiTools: AiTool[] = [
       properties: {
         summary: { type: "string" },
         recommendedNextStep: { type: "string" },
-        residualRisk: { type: "string" }
+        residualRisk: { type: "string" },
+        handoff: { type: "object" }
       },
       required: ["summary", "recommendedNextStep", "residualRisk"]
     },

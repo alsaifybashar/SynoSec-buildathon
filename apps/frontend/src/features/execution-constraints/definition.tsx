@@ -233,7 +233,7 @@ export const executionConstraintsDefinition: CrudFeatureDefinition<
     ),
     renderContent: ({ item, formValues, errors, handleFieldChange }) => (
       <>
-        <DetailFieldGroup title="Constraint">
+        <DetailFieldGroup title="Constraint" className="bg-card/70">
           <DetailField label="Name" required hint="Short policy label used in operator reviews and workflow gates." {...definedString(errors["name"] as string | undefined)}>
             <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
           </DetailField>
@@ -260,7 +260,7 @@ export const executionConstraintsDefinition: CrudFeatureDefinition<
           </DetailField>
         </DetailFieldGroup>
 
-        <DetailFieldGroup title="Documentation">
+        <DetailFieldGroup title="Documentation" className="bg-card/70">
           <DetailField
             label="Provider documentation URLs"
             hint="Paste provider pentesting, bug bounty, or white-hat policy URLs. Add as many sources as needed."
@@ -318,7 +318,7 @@ export const executionConstraintsDefinition: CrudFeatureDefinition<
           </DetailField>
         </DetailFieldGroup>
 
-        <DetailFieldGroup title="Policy Checklist">
+        <DetailFieldGroup title="Policy Checklist" className="bg-card/70">
           {renderToggleField(
             "Deny provider-owned targets",
             formValues.denyProviderOwnedTargets,

@@ -243,8 +243,6 @@ export function ExecutionReportsPage({
     <DetailPage
       title={report.title}
       breadcrumbs={["Start", "Reports", report.title]}
-      subtitle={report.executionId}
-      timestamp={new Date(report.updatedAt).toLocaleString()}
       isDirty={false}
       onBack={onNavigateToList}
       onSave={() => undefined}
@@ -254,7 +252,7 @@ export function ExecutionReportsPage({
       }}
       actions={(
         <div className="flex flex-wrap items-center gap-2 px-0 py-0">
-          <Button type="button" variant="outline" onClick={onNavigateToList} className="h-8 text-[0.72rem]">
+          <Button type="button" variant="outline" onClick={onNavigateToList} className="h-9 text-sm">
             <ArrowLeft className="h-4 w-4" />
             Back
           </Button>
@@ -265,7 +263,7 @@ export function ExecutionReportsPage({
               void (isArchived ? unarchiveReport(report.id) : archiveReport(report.id));
             }}
             disabled={mutating}
-            className="h-8 text-[0.72rem]"
+            className="h-9 text-sm"
           >
             <Archive className="h-4 w-4" />
             {isArchived ? "Unarchive" : "Archive"}
@@ -277,7 +275,7 @@ export function ExecutionReportsPage({
               void deleteReport(report.id);
             }}
             disabled={mutating}
-            className="h-8 text-[0.72rem]"
+            className="h-9 text-sm"
           >
             <Trash2 className="h-4 w-4" />
             Delete
@@ -289,7 +287,7 @@ export function ExecutionReportsPage({
               onClick={() => {
                 void handleDetailExport(report.id);
               }}
-              className="h-8 text-[0.72rem]"
+              className="h-9 text-sm"
             >
               <Download className="h-4 w-4" />
               Export JSON
@@ -322,6 +320,7 @@ export function ExecutionReportsPage({
       <AttackPathsSection
         attackPaths={report.attackPaths}
         findingTitles={new Map(report.findings.map((finding) => [finding.id, finding.title]))}
+        findingSeverities={new Map(report.findings.map((finding) => [finding.id, finding.severity]))}
         summary={report.attackPathExecutiveSummary}
         emptyMessage="No linked attack paths were derived for this report. Standalone findings remain available below."
       />

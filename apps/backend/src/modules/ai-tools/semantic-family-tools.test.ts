@@ -3,6 +3,10 @@ import { seededToolDefinitions } from "@/shared/seed-data/ai-builder-defaults.js
 import { getSemanticFamilyDefinitions } from "./semantic-family-tools.js";
 
 describe("semantic family tools", () => {
+  const semanticFamilyExemptSeededToolIds = new Set([
+    "seed-agent-bash-command"
+  ]);
+
   it("gives every semantic family an agent-facing description", () => {
     for (const definition of getSemanticFamilyDefinitions()) {
       const description = definition.tool.description ?? "";
@@ -25,6 +29,7 @@ describe("semantic family tools", () => {
     const missing = seededToolDefinitions
       .filter((tool) => tool.executorType === "bash")
       .map((tool) => tool.id)
+      .filter((toolId) => !semanticFamilyExemptSeededToolIds.has(toolId))
       .filter((toolId) => !coveredToolIds.has(toolId));
 
     expect(missing).toEqual([]);

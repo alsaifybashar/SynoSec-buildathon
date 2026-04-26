@@ -72,6 +72,7 @@ describe("resource transfer", () => {
       body: JSON.stringify({
         name: "Operator Portal",
         baseUrl: "https://portal.example.com",
+        executionBaseUrl: null,
         environment: "production",
         status: "active",
         lastScannedAt: "2026-04-20T08:00:00.000Z"

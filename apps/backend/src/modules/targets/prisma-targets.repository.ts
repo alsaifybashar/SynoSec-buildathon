@@ -16,7 +16,8 @@ export class PrismaTargetsRepository implements TargetsRepository {
         ? {
             OR: [
               { name: { contains: query.q, mode: "insensitive" as const } },
-              { baseUrl: { contains: query.q, mode: "insensitive" as const } }
+              { baseUrl: { contains: query.q, mode: "insensitive" as const } },
+              { executionBaseUrl: { contains: query.q, mode: "insensitive" as const } }
             ]
           }
         : {})
@@ -70,6 +71,7 @@ export class PrismaTargetsRepository implements TargetsRepository {
         id: randomUUID(),
         name: input.name,
         baseUrl: input.baseUrl,
+        executionBaseUrl: input.executionBaseUrl ?? null,
         environment: input.environment,
         status: input.status,
         lastScannedAt: input.lastScannedAt ? new Date(input.lastScannedAt) : null,
@@ -111,6 +113,7 @@ export class PrismaTargetsRepository implements TargetsRepository {
       data: {
         name: input.name ?? current.name,
         baseUrl: input.baseUrl === undefined ? current.baseUrl : input.baseUrl,
+        executionBaseUrl: input.executionBaseUrl === undefined ? current.executionBaseUrl : input.executionBaseUrl,
         environment: input.environment ?? current.environment,
         status: input.status ?? current.status,
         lastScannedAt:

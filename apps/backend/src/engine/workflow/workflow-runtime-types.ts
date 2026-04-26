@@ -65,6 +65,7 @@ export type StageExecutionTarget = {
   baseUrl: string;
   host: string;
   port?: number;
+  displayBaseUrl?: string;
 };
 
 export type StageDependencies = {
@@ -109,11 +110,17 @@ export type ExecutedToolResult = {
 
 export type PipelineTerminalState =
   {
-    status: "completed";
+    status: "completed" | "blocked";
     summary: string;
     recommendedNextStep: string;
     residualRisk: string;
     handoff: Record<string, unknown> | null;
+    blocked?: {
+      reason: string;
+      failedToolRunIds: string[];
+      recommendedFix: string;
+      operatorSummary: string;
+    };
   };
 
 export interface WorkflowRunWriterPort {
@@ -160,11 +167,23 @@ export interface WorkflowPreflightReader {
   loadRunContext(runId: string): Promise<{ run: WorkflowRun; workflow: Workflow }>;
 }
 
-export function createWorkflowScan(run: WorkflowRun, constraints: EffectiveExecutionConstraintSet): Scan {
+export function createWorkflowScan(
+  run: WorkflowRun,
+  constraints: EffectiveExecutionConstraintSet,
+  runtimeTarget?: { baseUrl: string; host: string; displayBaseUrl?: string }
+): Scan {
+  const scopedTargets = [
+    constraints.normalizedTarget.host,
+    constraints.normalizedTarget.baseUrl,
+    runtimeTarget?.host,
+    runtimeTarget?.baseUrl,
+    runtimeTarget?.displayBaseUrl
+  ].filter((value): value is string => Boolean(value?.trim()));
+
   return {
     id: run.id,
     scope: {
-      targets: [constraints.normalizedTarget.host],
+      targets: [...new Set(scopedTargets)],
       exclusions: constraints.excludedPaths,
       trustZones: [],
       connectivity: [],

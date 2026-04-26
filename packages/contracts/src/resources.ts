@@ -116,6 +116,7 @@ export const targetSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
   baseUrl: z.string().url().nullable(),
+  executionBaseUrl: z.string().url().nullable().optional(),
   environment: targetEnvironmentSchema,
   status: targetStatusSchema,
   lastScannedAt: z.string().datetime().nullable(),
@@ -140,6 +141,7 @@ export type ListTargetsResponse = z.infer<typeof listTargetsResponseSchema>;
 const targetBodyBaseSchema = z.object({
   name: z.string().trim().min(1),
   baseUrl: z.union([z.string().trim().url(), z.literal(""), z.null()]).transform((value) => value || null),
+  executionBaseUrl: z.union([z.string().trim().url(), z.literal(""), z.null()]).transform((value) => value || null).optional(),
   environment: targetEnvironmentSchema,
   status: targetStatusSchema,
   lastScannedAt: z.union([z.string().datetime(), z.null()]),
@@ -172,6 +174,7 @@ export type AiToolSurface = z.infer<typeof aiToolSurfaceSchema>;
 export const toolBuiltinActionKeySchema = z.enum([
   "log_progress",
   "report_finding",
+  "report_attack_vector",
   "complete_run",
   "http_surface_assessment",
   "web_crawl_mapping",
@@ -517,10 +520,10 @@ export const workflowFindingChainSchema = z.object({
 export type WorkflowFindingChain = z.infer<typeof workflowFindingChainSchema>;
 
 export const workflowFindingRelationshipExplanationsSchema = z.object({
-  derivedFrom: z.string().min(1).max(240).optional(),
-  relatedTo: z.string().min(1).max(240).optional(),
-  enables: z.string().min(1).max(240).optional(),
-  chainRole: z.string().min(1).max(80).optional()
+  derivedFrom: z.string().min(1).optional(),
+  relatedTo: z.string().min(1).optional(),
+  enables: z.string().min(1).optional(),
+  chainRole: z.string().min(1).optional()
 });
 export type WorkflowFindingRelationshipExplanations = z.infer<typeof workflowFindingRelationshipExplanationsSchema>;
 
@@ -542,8 +545,8 @@ export const workflowFindingSubmissionSchema = z.object({
   relatedFindingIds: z.array(z.string().uuid()).default([]),
   enablesFindingIds: z.array(z.string().uuid()).default([]),
   chain: workflowFindingChainSchema.optional(),
-  explanationSummary: z.string().min(1).max(400).optional(),
-  confidenceReason: z.string().min(1).max(240).optional(),
+  explanationSummary: z.string().min(1).optional(),
+  confidenceReason: z.string().min(1).optional(),
   relationshipExplanations: workflowFindingRelationshipExplanationsSchema.optional(),
   tags: z.array(z.string().min(1)).default([])
 });
@@ -557,19 +560,81 @@ export const workflowReportedFindingSchema = workflowFindingSubmissionSchema.ext
 });
 export type WorkflowReportedFinding = z.infer<typeof workflowReportedFindingSchema>;
 
+export const workflowAttackVectorKindSchema = z.enum(["enables", "derived_from", "related", "lateral_movement"]);
+export type WorkflowAttackVectorKind = z.infer<typeof workflowAttackVectorKindSchema>;
+
+const workflowAttackVectorSubmissionBaseSchema = z.object({
+  kind: workflowAttackVectorKindSchema,
+  sourceFindingId: z.string().uuid(),
+  destinationFindingId: z.string().uuid(),
+  summary: z.string().min(1),
+  preconditions: z.array(z.string().min(1)).default([]),
+  impact: z.string().min(1),
+  transitionEvidence: z.array(workflowFindingEvidenceSchema).default([]),
+  confidence: z.number().min(0).max(1),
+  validationStatus: workflowFindingValidationStatusSchema.default("unverified")
+});
+
+export const workflowAttackVectorSubmissionSchema = workflowAttackVectorSubmissionBaseSchema.superRefine((value, ctx) => {
+  if (value.kind !== "related" && value.transitionEvidence.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Non-related attack vectors require transitionEvidence.",
+      path: ["transitionEvidence"]
+    });
+  }
+});
+export type WorkflowAttackVectorSubmission = z.infer<typeof workflowAttackVectorSubmissionSchema>;
+
+export const workflowReportFindingFindingModeSubmissionSchema = workflowFindingSubmissionSchema.extend({
+  mode: z.literal("finding"),
+  attackVectors: z.array(workflowAttackVectorSubmissionSchema).default([])
+});
+export type WorkflowReportFindingFindingModeSubmission = z.infer<typeof workflowReportFindingFindingModeSubmissionSchema>;
+
+export const workflowReportFindingAttackVectorModeSubmissionSchema = z.object({
+  mode: z.literal("attack_vector"),
+  attackVectors: z.array(workflowAttackVectorSubmissionSchema).min(1)
+});
+export type WorkflowReportFindingAttackVectorModeSubmission = z.infer<typeof workflowReportFindingAttackVectorModeSubmissionSchema>;
+
+export const workflowReportFindingSubmissionSchema = z.discriminatedUnion("mode", [
+  workflowReportFindingFindingModeSubmissionSchema,
+  workflowReportFindingAttackVectorModeSubmissionSchema
+]);
+export type WorkflowReportFindingSubmission = z.infer<typeof workflowReportFindingSubmissionSchema>;
+
+export const workflowReportedAttackVectorSchema = workflowAttackVectorSubmissionBaseSchema.extend({
+  id: z.string().uuid(),
+  workflowRunId: z.string().uuid(),
+  workflowStageId: z.string().uuid().nullable().optional(),
+  createdAt: z.string().datetime()
+}).superRefine((value, ctx) => {
+  if (value.kind !== "related" && value.transitionEvidence.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Non-related attack vectors require transitionEvidence.",
+      path: ["transitionEvidence"]
+    });
+  }
+});
+export type WorkflowReportedAttackVector = z.infer<typeof workflowReportedAttackVectorSchema>;
+
 export const defaultWorkflowStageSystemPrompt = [
   "Role and goal:",
-  "Complete the current workflow stage for SynoSec using the approved tools exposed for this run.",
+  "Complete the current workflow stage using the approved capability surface for this run.",
   "",
   "Working style:",
   "Keep progress updates concise and action-oriented.",
-  "Do not expose private chain-of-thought.",
   "",
   "Evidence expectations:",
   "Prefer concrete, evidence-backed findings over unsupported narrative.",
+  "Use persisted tool-result quotes as evidence; do not invent evidence.",
   "Distinguish confirmed findings from weaker hypotheses when the evidence is incomplete.",
-  "When findings combine into an attack path, report each linked finding with relationship fields, explanationSummary, and confidenceReason so the path can be derived deterministically.",
-  "Do not claim a chained path across multiple findings without explicit derivedFromFindingIds, relatedFindingIds, enablesFindingIds, or chain metadata."
+  "Do not describe an attack path as confirmed compromise, takeover, credential theft, or privilege escalation unless the final outcome was directly observed or the transition was validated end-to-end.",
+  "If individual findings are confirmed but the full chain lacks replay, label the path as plausible or qualified and state the missing validation explicitly.",
+  "When findings combine into an attack path, keep findings focused on weaknesses and represent transitions explicitly.",
+  "Do not claim a chained path across multiple findings without explicit transition records, relationship fields, or chain metadata."
 ].join("\n");
 
 export const defaultWorkflowTaskPromptTemplate = [
@@ -603,13 +668,22 @@ export type WorkflowStageCompletionRule = z.infer<typeof workflowStageCompletion
 export const workflowStageResultStatusSchema = z.enum(["completed", "blocked", "insufficient_evidence"]);
 export type WorkflowStageResultStatus = z.infer<typeof workflowStageResultStatusSchema>;
 
+export const workflowBlockedCompletionSchema = z.object({
+  reason: z.string().min(1),
+  failedToolRunIds: z.array(z.string().min(1)).min(1),
+  recommendedFix: z.string().min(1),
+  operatorSummary: z.string().min(1)
+});
+export type WorkflowBlockedCompletion = z.infer<typeof workflowBlockedCompletionSchema>;
+
 export const workflowStageResultSubmissionSchema = z.object({
   status: workflowStageResultStatusSchema,
   summary: z.string().min(1),
   findingIds: z.array(z.string().uuid()).default([]),
   recommendedNextStep: z.string().min(1),
   residualRisk: z.string().min(1),
-  handoff: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
+  handoff: z.union([jsonSchemaObjectSchema, z.null()]).default(null),
+  blocked: workflowBlockedCompletionSchema.nullable().optional()
 });
 export type WorkflowStageResultSubmission = z.infer<typeof workflowStageResultSubmissionSchema>;
 
@@ -788,6 +862,7 @@ export const workflowTraceEventTypeSchema = z.enum([
   "tool_result",
   "verification",
   "finding_reported",
+  "attack_vector_reported",
   "stage_result_submitted",
   "stage_contract_validation_failed",
   "agent_summary",

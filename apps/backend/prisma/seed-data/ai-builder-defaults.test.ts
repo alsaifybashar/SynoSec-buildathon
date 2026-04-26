@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   attackVectorPlanningWorkflowId,
+  bashSingleToolWorkflowId,
   getSeededRoleDefinition,
   seededToolDefinitions,
   getSeededWorkflowDefinitions,
@@ -12,17 +13,17 @@ const canonicalPromptSections = [
   "Role and goal:",
   "Scope and safety boundaries:",
   "Evidence and reporting requirements:",
-  "Completion requirements:",
   "Blocked or failed behavior:"
 ] as const;
 
 describe("getSeededWorkflowDefinitions", () => {
-  it("seeds the compact and attack-vector planning workflows", () => {
+  it("seeds the compact, attack-vector planning, and bash PoC workflows", () => {
     const workflows = getSeededWorkflowDefinitions();
     const compactWorkflow = workflows.find((candidate) => candidate.id === osiCompactFamilyWorkflowId);
     const planningWorkflow = workflows.find((candidate) => candidate.id === attackVectorPlanningWorkflowId);
+    const bashWorkflow = workflows.find((candidate) => candidate.id === bashSingleToolWorkflowId);
 
-    expect(workflows).toHaveLength(2);
+    expect(workflows).toHaveLength(3);
     expect(compactWorkflow).toBeDefined();
     expect(compactWorkflow?.executionKind).toBe("workflow");
     expect(compactWorkflow?.stages.map((stage) => stage.label)).toEqual(["Compact Evaluation"]);
@@ -35,6 +36,7 @@ describe("getSeededWorkflowDefinitions", () => {
     ]));
     expect(compactWorkflow?.stages[0]?.allowedToolIds).not.toContain("builtin-memory-forensics");
     expect(compactWorkflow?.stages[0]?.objective).toContain("assessment intent rather than tool brands");
+    expect(compactWorkflow?.stages[0]?.objective).not.toContain("complete_run");
 
     expect(planningWorkflow).toBeDefined();
     expect(planningWorkflow?.executionKind).toBe("workflow");
@@ -47,34 +49,73 @@ describe("getSeededWorkflowDefinitions", () => {
       "builtin-web-vulnerability-audit"
     ]));
     expect(planningWorkflow?.stages[0]?.allowedToolIds).not.toContain("builtin-memory-forensics");
-    expect(planningWorkflow?.stages[0]?.objective).toContain("link plausible vulnerabilities into explicit attack paths");
-    expect(planningWorkflow?.stages[0]?.objective).toContain("report_finding");
-    expect(planningWorkflow?.stages[0]?.objective).toContain("complete_run");
-    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("attack vectors and attack venues");
-    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("Before complete_run");
-    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("report_finding");
+    expect(planningWorkflow?.stages[0]?.objective).toContain("Link plausible vulnerabilities into explicit attack paths");
+    expect(planningWorkflow?.stages[0]?.objective).not.toContain("report_finding");
+    expect(planningWorkflow?.stages[0]?.objective).not.toContain("complete_run");
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("attack venues, attack vectors, and prioritized attack paths");
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).not.toContain("Before complete_run");
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).not.toContain("Call complete_run");
     expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("finding ids");
-    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("handoff.attackVenues");
-    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("handoff.attackVectors");
-    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("handoff.attackPaths");
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("attackVenues");
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("attackVectors");
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("attackPaths");
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("Do not describe an attack path as confirmed compromise");
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("Separate confirmed findings from unproven attack-path outcomes");
     expect(planningWorkflow?.stages[0]?.completionRule).toMatchObject({
       minFindings: 1,
       requireEvidenceBackedWeakness: true,
       requireChainedFindings: true
     });
     expect(planningWorkflow?.stages[0]?.handoffSchema).toMatchObject({
+      additionalProperties: false,
       required: ["attackVenues", "attackVectors", "attackPaths"]
     });
     expect(planningWorkflow?.stages[0]?.handoffSchema?.["properties"]).toMatchObject({
-      attackVenues: expect.any(Object),
-      attackVectors: expect.any(Object),
-      attackPaths: expect.any(Object)
+      attackVenues: {
+        minItems: 1,
+        items: {
+          additionalProperties: false,
+          properties: {
+            findingIds: { items: { format: "uuid" } }
+          }
+        }
+      },
+      attackVectors: {
+        items: {
+          properties: {
+            confidence: { minimum: 0, maximum: 1 }
+          }
+        }
+      },
+      attackPaths: {
+        items: {
+          properties: {
+            severity: { enum: ["info", "low", "medium", "high", "critical"] }
+          }
+        }
+      }
+    });
+
+    expect(bashWorkflow).toBeDefined();
+    expect(bashWorkflow?.executionKind).toBe("workflow");
+    expect(bashWorkflow?.stages.map((stage) => stage.label)).toEqual(["Bash Execution"]);
+    expect(bashWorkflow?.stages[0]?.agentId).toBe(seededAgentId("bash-poc-agent"));
+    expect(bashWorkflow?.stages[0]?.allowedToolIds).toEqual([
+      "builtin-log-progress",
+      "builtin-report-finding",
+      "builtin-complete-run",
+      "seed-agent-bash-command"
+    ]);
+    expect(bashWorkflow?.stages[0]?.completionRule).toMatchObject({
+      requireToolCall: true,
+      requireEvidenceBackedWeakness: false
     });
   });
 
   it("gives the seeded system prompts a canonical instruction shape", () => {
     const prompts = [
-      getSeededRoleDefinition("generic-pentester")?.systemPrompt
+      getSeededRoleDefinition("generic-pentester")?.systemPrompt,
+      getSeededRoleDefinition("bash-poc-agent")?.systemPrompt
     ];
 
     for (const prompt of prompts) {
@@ -90,16 +131,27 @@ describe("getSeededWorkflowDefinitions", () => {
 
     expect(genericPentester).toBeDefined();
     expect(genericPentester?.name).toBe("Generic Pentester");
-    expect(genericPentester?.systemPrompt).toContain("map how weaknesses may connect");
+    expect(genericPentester?.systemPrompt).toContain("Map how weaknesses may connect");
     expect(genericPentester?.systemPrompt).toContain("Focus on linking potential vulnerabilities");
     expect(genericPentester?.systemPrompt).toContain("lower confidence and validationStatus such as suspected or unverified");
     expect(genericPentester?.systemPrompt).toContain("relationshipExplanations, chain, explanationSummary, and confidenceReason");
     expect(genericPentester?.systemPrompt).toContain("Do not ask for raw tool access");
-    expect(genericPentester?.systemPrompt).toContain("Use only the available capability tools");
-    expect(genericPentester?.systemPrompt).toContain("treat log_progress as secondary to high-quality report_finding calls");
-    expect(genericPentester?.systemPrompt).toContain("report_finding is mandatory before complete_run");
+    expect(genericPentester?.systemPrompt).toContain("Keep operator-visible progress updates short");
+    expect(genericPentester?.systemPrompt).not.toContain("SynoSec");
+    expect(genericPentester?.systemPrompt).not.toContain("Do not expose private chain-of-thought");
+    expect(genericPentester?.systemPrompt).not.toContain("report_finding is mandatory before complete_run");
     expect(genericPentester?.systemPrompt).not.toContain("raw pentest catalog");
     expect(genericPentester?.toolIds.every((toolId) => toolId.startsWith("builtin-"))).toBe(true);
+  });
+
+  it("seeds a bash PoC agent with only the single seeded bash command tool", () => {
+    const bashAgent = getSeededRoleDefinition("bash-poc-agent");
+
+    expect(bashAgent).toBeDefined();
+    expect(bashAgent?.name).toBe("Bash PoC Agent");
+    expect(bashAgent?.systemPrompt).toContain("Write bash source in the `command` argument.");
+    expect(bashAgent?.systemPrompt).toContain("`cwd`, `timeout_ms`, `env`, `stdin`");
+    expect(bashAgent?.toolIds).toEqual(["seed-agent-bash-command"]);
   });
 
   it("does not seed legacy bash family wrapper tools", () => {
@@ -128,5 +180,20 @@ describe("getSeededWorkflowDefinitions", () => {
         })
       });
     }
+  });
+
+  it("seeds the agent bash command tool with structured command input", () => {
+    const tool = seededToolDefinitions.find((candidate) => candidate.id === "seed-agent-bash-command");
+
+    expect(tool).toBeDefined();
+    expect(tool?.executorType).toBe("bash");
+    expect(tool?.inputSchema).toMatchObject({
+      required: ["command"],
+      properties: {
+        command: { type: "string" },
+        cwd: { type: "string" },
+        timeout_ms: { type: "number" }
+      }
+    });
   });
 });

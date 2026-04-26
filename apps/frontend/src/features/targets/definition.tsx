@@ -20,6 +20,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shar
 export type TargetFormValues = {
   name: string;
   baseUrl: string;
+  executionBaseUrl: string;
   environment: TargetEnvironment;
   status: TargetStatus;
   lastScannedAt: string;
@@ -61,6 +62,7 @@ export function createEmptyFormValues(): TargetFormValues {
   return {
     name: "",
     baseUrl: "",
+    executionBaseUrl: "",
     environment: "production",
     status: "active",
     lastScannedAt: ""
@@ -71,6 +73,7 @@ export function toFormValues(target: Target): TargetFormValues {
   return {
     name: target.name,
     baseUrl: target.baseUrl ?? "",
+    executionBaseUrl: target.executionBaseUrl ?? "",
     environment: target.environment,
     status: target.status,
     lastScannedAt: target.lastScannedAt ? target.lastScannedAt.slice(0, 16) : ""
@@ -81,6 +84,7 @@ export function toRequestBody(values: TargetFormValues): CreateTargetBody {
   return {
     name: values.name.trim(),
     baseUrl: values.baseUrl.trim(),
+    executionBaseUrl: values.executionBaseUrl.trim(),
     environment: values.environment,
     status: values.status,
     lastScannedAt: values.lastScannedAt ? new Date(values.lastScannedAt).toISOString() : null
@@ -99,6 +103,14 @@ export function validateForm(values: TargetFormValues) {
       new URL(values.baseUrl.trim());
     } catch {
       errors.baseUrl = "Base URL must be a valid absolute URL.";
+    }
+  }
+
+  if (values.executionBaseUrl.trim()) {
+    try {
+      new URL(values.executionBaseUrl.trim());
+    } catch {
+      errors.executionBaseUrl = "Execution URL must be a valid absolute URL.";
     }
   }
 
@@ -276,21 +288,33 @@ export const targetsDefinition: CrudFeatureDefinition<
     ),
     renderContent: ({ formValues, errors, handleFieldChange }) => (
       <>
-        <DetailFieldGroup title="General">
+        <DetailFieldGroup title="General" className="bg-card/70">
           <DetailField label="Name" required hint="Operator-facing target label used across workflows and reports." {...definedString(errors["name"] as string | undefined)}>
             <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
           </DetailField>
 
           <DetailField
             label="Base URL"
-            hint="The target's own base URL is the scan surface used by workflows."
+            hint="Operator-facing URL for opening this target from the browser."
             {...definedString(errors["baseUrl"] as string | undefined)}
           >
             <Input value={formValues.baseUrl} onChange={(event) => handleFieldChange("baseUrl", event.target.value)} aria-label="Base URL" />
           </DetailField>
+
+          <DetailField
+            label="Execution URL"
+            hint="Optional runtime URL used by connector-executed tools when it differs from the browser URL."
+            {...definedString(errors["executionBaseUrl"] as string | undefined)}
+          >
+            <Input
+              value={formValues.executionBaseUrl}
+              onChange={(event) => handleFieldChange("executionBaseUrl", event.target.value)}
+              aria-label="Execution URL"
+            />
+          </DetailField>
         </DetailFieldGroup>
 
-        <DetailFieldGroup title="Configuration">
+        <DetailFieldGroup title="Configuration" className="bg-card/70">
           <DetailField label="Environment" required hint="Use the environment that best matches the target surface operators are allowed to assess.">
             <Select value={formValues.environment} onValueChange={(value: TargetEnvironment) => handleFieldChange("environment", value)}>
               <SelectTrigger aria-label="Environment" className="w-fit min-w-[10rem] max-w-[12rem]">

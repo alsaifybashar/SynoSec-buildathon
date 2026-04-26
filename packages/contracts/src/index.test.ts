@@ -9,6 +9,7 @@ import {
   defensiveIterationRecordSchema,
   defensiveLoopContract,
   defensiveLoopStages,
+  DEFAULT_CONNECTOR_ALLOWED_CAPABILITIES,
   executeDefensiveIteration,
   executionReportDetailSchema,
   executionReportsListQuerySchema,
@@ -23,6 +24,7 @@ import {
   targetsListQuerySchema,
   toolRequestSchema,
   toolRunSchema,
+  workflowReportFindingSubmissionSchema,
   workflowFindingSubmissionSchema,
   updateTargetBodySchema
 } from "./index.js";
@@ -50,6 +52,7 @@ describe("contracts", () => {
       id: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
       name: "Operator Portal",
       baseUrl: "https://portal.synosec.local",
+      executionBaseUrl: "http://portal.internal:8080",
       environment: "production",
       status: "active",
       lastScannedAt: "2026-04-12T12:00:00.000Z",
@@ -85,6 +88,7 @@ describe("contracts", () => {
           id: "5ecf4a8e-df5f-4945-a7e1-230ef43eac80",
           name: "Operator Portal",
           baseUrl: "https://portal.synosec.local",
+          executionBaseUrl: "http://portal.internal:8080",
           environment: "production",
           status: "active",
           lastScannedAt: "2026-04-12T12:00:00.000Z",
@@ -105,6 +109,7 @@ describe("contracts", () => {
     const result = createTargetBodySchema.safeParse({
       name: "Report Builder",
       baseUrl: "",
+      executionBaseUrl: "",
       environment: "staging",
       status: "investigating",
       lastScannedAt: null
@@ -114,6 +119,7 @@ describe("contracts", () => {
 
     if (result.success) {
       expect(result.data.baseUrl).toBeNull();
+      expect(result.data.executionBaseUrl).toBeNull();
     }
   });
 
@@ -154,6 +160,14 @@ describe("contracts", () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it("allows default connector capability policy to run seeded auth-flow probes", () => {
+    expect(DEFAULT_CONNECTOR_ALLOWED_CAPABILITIES).toEqual(expect.arrayContaining([
+      "auth",
+      "session",
+      "login"
+    ]));
   });
 
   it("accepts workflow trace events for system and verification lanes", () => {
@@ -318,6 +332,38 @@ describe("contracts", () => {
         severity: "high"
       },
       tags: ["admin"]
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts long workflow finding explanation fields", () => {
+    const longText = "x".repeat(1200);
+    const result = workflowFindingSubmissionSchema.safeParse({
+      type: "other",
+      title: "Long explanation finding",
+      severity: "medium",
+      confidence: 0.8,
+      target: {
+        host: "target.local"
+      },
+      evidence: [
+        {
+          sourceTool: "httpx",
+          quote: "GET /status returned 200",
+          toolRunRef: "tool-run-1"
+        }
+      ],
+      impact: "Impact text.",
+      recommendation: "Recommendation text.",
+      explanationSummary: longText,
+      confidenceReason: longText,
+      relationshipExplanations: {
+        relatedTo: longText,
+        derivedFrom: longText,
+        enables: longText,
+        chainRole: longText
+      }
     });
 
     expect(result.success).toBe(true);
@@ -545,6 +591,47 @@ describe("contracts", () => {
       outputSchema: { type: "object", properties: { accepted: { type: "boolean" } } },
       createdAt: "2026-04-21T12:00:00.000Z",
       updatedAt: "2026-04-21T12:00:00.000Z"
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts report_finding finding mode submissions", () => {
+    const result = workflowReportFindingSubmissionSchema.safeParse({
+      mode: "finding",
+      type: "service_exposure",
+      title: "Admin Panel Reachable",
+      severity: "medium",
+      confidence: 0.95,
+      target: { host: "demo.local", url: "http://localhost:3000/admin" },
+      evidence: [{
+        sourceTool: "custom-http-proof",
+        quote: "URL: http://localhost:3000/admin Status: 200",
+        toolRunRef: "tool-run-1"
+      }],
+      impact: "The admin panel is reachable from the assessed surface.",
+      recommendation: "Restrict access to trusted operators."
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts report_finding attack_vector mode submissions", () => {
+    const result = workflowReportFindingSubmissionSchema.safeParse({
+      mode: "attack_vector",
+      attackVectors: [{
+        kind: "derived_from",
+        sourceFindingId: "20000000-0000-4000-8000-000000000001",
+        destinationFindingId: "20000000-0000-4000-8000-000000000002",
+        summary: "Admin reachability supports follow-on auth abuse.",
+        impact: "Enables a chained compromise path.",
+        confidence: 0.84,
+        transitionEvidence: [{
+          sourceTool: "custom-http-proof",
+          quote: "URL: http://localhost:3000/admin Status: 200",
+          toolRunRef: "tool-run-1"
+        }]
+      }]
     });
 
     expect(result.success).toBe(true);

@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
+  workflowReportedAttackVectorSchema,
   workflowReportedFindingSchema,
+  type WorkflowAttackVectorSubmission,
+  type WorkflowReportedAttackVector,
   type WorkflowFindingSubmission,
   type WorkflowReportedFinding
 } from "@synosec/contracts";
@@ -57,6 +60,20 @@ export function createWorkflowReportedFinding(input: {
   createdAt?: string;
 }): WorkflowReportedFinding {
   return workflowReportedFindingSchema.parse({
+    id: input.id ?? randomUUID(),
+    workflowRunId: input.runId,
+    createdAt: input.createdAt ?? new Date().toISOString(),
+    ...input.submission
+  });
+}
+
+export function createWorkflowReportedAttackVector(input: {
+  runId: string;
+  submission: WorkflowAttackVectorSubmission;
+  id?: string;
+  createdAt?: string;
+}): WorkflowReportedAttackVector {
+  return workflowReportedAttackVectorSchema.parse({
     id: input.id ?? randomUUID(),
     workflowRunId: input.runId,
     createdAt: input.createdAt ?? new Date().toISOString(),

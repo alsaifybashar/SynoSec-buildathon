@@ -6,7 +6,7 @@ import {
   resolveEffectiveExecutionConstraints,
   type EffectiveExecutionConstraintSet
 } from "./execution-constraints.js";
-import { inferLayer } from "./workflow-execution.utils.js";
+import { inferLayer, parseTarget } from "./workflow-execution.utils.js";
 import type {
   RuntimeStartContext,
   StageDependencies,
@@ -67,10 +67,16 @@ export class WorkflowRunPreflight implements WorkflowPreflightReader {
     }
     const runtime = this.loadRuntimeForExecution(executionKind);
 
+    const executionBaseUrl = targetRecord.executionBaseUrl?.trim()
+      || constraintSet.normalizedTarget.baseUrl
+      || targetRecord.baseUrl
+      || `http://${constraintSet.normalizedTarget.host}`;
+    const executionTarget = parseTarget(executionBaseUrl);
     const target = {
-      baseUrl: constraintSet.normalizedTarget.baseUrl ?? targetRecord.baseUrl ?? `http://${constraintSet.normalizedTarget.host}`,
-      host: constraintSet.normalizedTarget.host,
-      ...(constraintSet.normalizedTarget.port === undefined ? {} : { port: constraintSet.normalizedTarget.port })
+      baseUrl: executionTarget.baseUrl,
+      host: executionTarget.host,
+      ...(executionTarget.port === undefined ? {} : { port: executionTarget.port }),
+      ...(targetRecord.baseUrl ? { displayBaseUrl: targetRecord.baseUrl } : {})
     };
 
     const tools = (

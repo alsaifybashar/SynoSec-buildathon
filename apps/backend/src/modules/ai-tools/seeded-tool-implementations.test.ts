@@ -867,4 +867,29 @@ describe("seeded bash tool implementations", () => {
       })
     ]));
   });
+
+  it("agent bash command rejects missing command input with explicit validation feedback", async () => {
+    const tool = createSeededTool("seed-agent-bash-command");
+
+    await expect(runAiTool(createRuntime(tool), tool.id, {
+      target: "127.0.0.1",
+      baseUrl: vulnerableBaseUrl,
+      command: "   "
+    })).rejects.toMatchObject({
+      message: "Missing required tool input: command."
+    });
+  });
+
+  it("agent bash command reports malformed env input as a runtime error", async () => {
+    const tool = createSeededTool("seed-agent-bash-command");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      target: "127.0.0.1",
+      baseUrl: vulnerableBaseUrl,
+      command: "echo hi",
+      env: "not-an-object"
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.statusReason).toContain("toolInput.env must be an object");
+  });
 });

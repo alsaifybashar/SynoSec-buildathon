@@ -15,6 +15,7 @@ export const targetTransfer = {
   toCreateBody: (target: Target): CreateTargetBody => ({
     name: target.name,
     baseUrl: target.baseUrl,
+    executionBaseUrl: target.executionBaseUrl ?? null,
     environment: target.environment,
     status: target.status,
     lastScannedAt: target.lastScannedAt

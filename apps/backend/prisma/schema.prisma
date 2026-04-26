@@ -70,6 +70,7 @@ enum WorkflowTraceEventType {
   tool_result
   verification
   finding_reported
+  attack_vector_reported
   stage_result_submitted
   stage_contract_validation_failed
   agent_summary
@@ -104,6 +105,7 @@ model Application {
   id            String                 @id @db.Uuid
   name          String
   baseUrl       String?                @map("base_url")
+  executionBaseUrl String?             @map("execution_base_url")
   environment   ApplicationEnvironment
   status        ApplicationStatus
   lastScannedAt DateTime?              @map("last_scanned_at")

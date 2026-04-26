@@ -42,7 +42,7 @@ class DefaultWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
         });
         currentRun = outcome.run;
 
-        if (outcome.result.status !== "completed") {
+        if (outcome.result.status === "insufficient_evidence") {
           currentRun = await this.writer.appendEvent(
             currentRun,
             this.writer.createEvent(
@@ -87,6 +87,7 @@ class DefaultWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
         }
 
         assertStageResultSubmitted(currentRun, stage.id);
+        const isBlocked = outcome.result.status === "blocked";
         currentRun = await this.writer.appendEvent(
           currentRun,
           this.writer.createEvent(
@@ -97,14 +98,14 @@ class DefaultWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
             "stage_completed",
             "completed",
             { stageResult: outcome.result, stageLabel: stage.label },
-            `Stage completed: ${stage.label}`,
+            `${isBlocked ? "Stage blocked" : "Stage completed"}: ${stage.label}`,
             outcome.result.summary,
             outcome.result.residualRisk
           ),
           index === stages.length - 1 ? undefined : { currentStepIndex: index + 1 }
         );
 
-        if (index === stages.length - 1) {
+        if (index === stages.length - 1 || isBlocked) {
           assertRunReadyForCompletion(currentRun, stage.id);
           const closeoutBody = [
             `Recommended next step: ${outcome.result.recommendedNextStep}`,
@@ -120,13 +121,13 @@ class DefaultWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
               "run_completed",
               "completed",
               {
-                title: "Pipeline completed",
+                title: isBlocked ? "Pipeline blocked" : "Pipeline completed",
                 summary: outcome.result.summary,
                 body: closeoutBody,
                 recommendedNextStep: outcome.result.recommendedNextStep,
                 residualRisk: outcome.result.residualRisk
               },
-              "Pipeline completed",
+              isBlocked ? "Pipeline blocked" : "Pipeline completed",
               outcome.result.summary,
               closeoutBody
             ),
@@ -136,6 +137,7 @@ class DefaultWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
             }
           );
           await this.writer.createExecutionReport(currentRun.id);
+          return;
         }
       } catch (error) {
         await this.writer.failRunWithStageError(currentRun, context.workflow.id, stage, error);

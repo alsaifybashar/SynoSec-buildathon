@@ -77,6 +77,7 @@ async function main() {
     update: {
       name: "Local Vulnerable Target",
       baseUrl: localDemoTargetDefaults.hostUrl,
+      executionBaseUrl: localDemoTargetDefaults.internalUrl,
       environment: "development",
       status: "active",
       lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
@@ -85,6 +86,7 @@ async function main() {
       id: localApplicationId,
       name: "Local Vulnerable Target",
       baseUrl: localDemoTargetDefaults.hostUrl,
+      executionBaseUrl: localDemoTargetDefaults.internalUrl,
       environment: "development",
       status: "active",
       lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
@@ -96,6 +98,7 @@ async function main() {
     update: {
       name: "Local Attack Path Target",
       baseUrl: localAttackPathTargetDefaults.hostUrl,
+      executionBaseUrl: localAttackPathTargetDefaults.internalUrl,
       environment: "development",
       status: "active",
       lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
@@ -104,6 +107,7 @@ async function main() {
       id: localAttackPathApplicationId,
       name: "Local Attack Path Target",
       baseUrl: localAttackPathTargetDefaults.hostUrl,
+      executionBaseUrl: localAttackPathTargetDefaults.internalUrl,
       environment: "development",
       status: "active",
       lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
@@ -115,6 +119,7 @@ async function main() {
     update: {
       name: "Nils Wickman Portfolio",
       baseUrl: "https://nilswickman.com",
+      executionBaseUrl: null,
       environment: "production",
       status: "active",
       lastScannedAt: null
@@ -123,6 +128,7 @@ async function main() {
       id: portfolioApplicationId,
       name: "Nils Wickman Portfolio",
       baseUrl: "https://nilswickman.com",
+      executionBaseUrl: null,
       environment: "production",
       status: "active",
       lastScannedAt: null
@@ -134,6 +140,7 @@ async function main() {
     update: {
       name: "SecurePent",
       baseUrl: "https://securepent.com",
+      executionBaseUrl: null,
       environment: "production",
       status: "active",
       lastScannedAt: null
@@ -142,6 +149,7 @@ async function main() {
       id: securePentApplicationId,
       name: "SecurePent",
       baseUrl: "https://securepent.com",
+      executionBaseUrl: null,
       environment: "production",
       status: "active",
       lastScannedAt: null

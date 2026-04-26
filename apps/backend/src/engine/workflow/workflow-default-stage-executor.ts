@@ -1,6 +1,15 @@
 import { stepCountIs, streamText, tool as createSdkTool, type LanguageModel } from "ai";
-import type { OsiLayer, Scan, Workflow, WorkflowLiveModelOutput, WorkflowReportedFinding, WorkflowRun, WorkflowStage, WorkflowStageCompletionRule, WorkflowStageResult, WorkflowTraceEvent } from "@synosec/contracts";
-import { getWorkflowReportedFindings, workflowFindingSubmissionSchema } from "@synosec/contracts";
+import type { OsiLayer, Scan, Workflow, WorkflowAttackVectorSubmission, WorkflowLiveModelOutput, WorkflowReportedAttackVector, WorkflowReportedFinding, WorkflowRun, WorkflowStage, WorkflowStageCompletionRule, WorkflowStageResult, WorkflowTraceEvent } from "@synosec/contracts";
+import {
+  getWorkflowReportedAttackVectors,
+  getWorkflowReportedFindings,
+  parseAttackPathHandoff,
+  validateAttackPathHandoffReferences,
+  workflowAttackVectorSubmissionSchema,
+  workflowBlockedCompletionSchema,
+  workflowFindingSubmissionSchema,
+  workflowReportFindingSubmissionSchema
+} from "@synosec/contracts";
 import { z } from "zod";
 import { createScan, getScan } from "@/engine/scans/index.js";
 import { RequestError } from "@/shared/http/request-error.js";
@@ -9,7 +18,7 @@ import { getSemanticFamilyDefinition } from "@/modules/ai-tools/index.js";
 import { ToolBroker } from "./broker/tool-broker.js";
 import { executeSemanticFamilyTool } from "./semantic-family-tool-executor.js";
 import {
-  attachEvidenceReferences,
+  applyWorkflowRuntimeTarget,
   enrichWorkflowFindingDetails,
   inferLayer,
   normalizeToolInput,
@@ -18,7 +27,7 @@ import {
   validateFindingEvidenceReferences,
   verifyFindingEvidence
 } from "./workflow-execution.utils.js";
-import { createWorkflowReportedFinding } from "./workflow-finding-factory.js";
+import { createWorkflowReportedAttackVector, createWorkflowReportedFinding } from "./workflow-finding-factory.js";
 import type {
   ExecutedToolResult,
   PipelineTerminalState,
@@ -32,23 +41,32 @@ import { createWorkflowScan } from "./workflow-runtime-types.js";
 import { WorkflowRunPreflight } from "./workflow-run-preflight.js";
 import { createLanguageModelFromRuntime } from "./language-model-factory.js";
 
+const DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS = 120_000;
+const MODEL_STREAM_IDLE_TIMEOUT_ENV = "WORKFLOW_MODEL_STREAM_IDLE_TIMEOUT_MS";
+const ATTACK_PATH_HANDOFF_HINT = "When handoff is required, use this shape exactly: handoff.attackVenues[] with {id,label,venueType,targetLabel,summary,findingIds}; handoff.attackVectors[] with {id,label,sourceVenueId,preconditions,impact,confidence,findingIds}; handoff.attackPaths[] with {id,title,summary,severity,venueIds,vectorIds,findingIds}.";
+
 export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
   private readonly broker: ToolBroker;
   private static readonly TARGET_CONTEXT_SUFFIX = [
     "Runtime target context:",
     "Target: {{target.name}}",
-    "Target URL: {{target.url}}"
+    "Operator URL: {{target.displayUrl}}",
+    "Execution URL: {{target.url}}"
   ].join("\n");
   private static readonly SYSTEM_PROTOCOL_SUFFIX = [
     "Workflow execution contract:",
     "Use only the approved tools and built-in workflow actions exposed for this run.",
-    "Required action order: run evidence tools first, then call report_finding for supported weaknesses, then reference returned finding ids in relationships or handoff attack paths, then call complete_run last.",
-    "Report concrete evidence-backed findings with report_finding. report_finding returns the finding id.",
+    "Required action order: run evidence tools first, then call report_finding for supported weaknesses and existing-finding attack vectors, then call complete_run last.",
+    "Report concrete evidence-backed findings with report_finding mode `finding`.",
+    "For report_finding mode `finding`, prefer a minimal payload: required fields plus at least one evidence item with a persisted reference.",
+    "Use report_finding mode `attack_vector` to submit one or more transitions between existing finding ids only. Non-related vectors require grounded transition evidence.",
     "Do not report a finding unless the quote is traceable to a persisted tool result and contains concrete proof details.",
+    "If required evidence tools fail because the runtime target is unreachable or infrastructure is misconfigured, finish with complete_run blocked details instead of reporting target unavailability as a vulnerability.",
     "Prefer at most four strong findings. Stop once the main compromise path is proven.",
     "complete_run does not create findings and cannot satisfy missing evidence, missing finding, or missing chain requirements.",
     "If complete_run is rejected, call the missing required actions or evidence tools before trying completion again.",
-    "When requireChainedFindings is enabled, satisfy it through finding relationship fields, chain metadata, or a handoff attack path referencing finding ids.",
+    "When requireChainedFindings is enabled, satisfy it through explicit validated attack vectors, finding relationship fields, chain metadata, or a handoff attack path referencing finding ids.",
+    ATTACK_PATH_HANDOFF_HINT,
     "End every run explicitly with complete_run."
   ].join("\n");
 
@@ -104,14 +122,16 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       stageLabel: stage.label,
       stageObjective: stage.objective,
       targetName: targetRecord.name,
-      targetUrl: target.baseUrl
+      targetUrl: target.baseUrl,
+      targetDisplayUrl: target.displayBaseUrl ?? target.baseUrl
     });
     const targetContextPrompt = this.renderPromptTemplate(DefaultWorkflowStageExecutor.TARGET_CONTEXT_SUFFIX, {
       workflowName: workflow.name,
       stageLabel: stage.label,
       stageObjective: stage.objective,
       targetName: targetRecord.name,
-      targetUrl: target.baseUrl
+      targetUrl: target.baseUrl,
+      targetDisplayUrl: target.displayBaseUrl ?? target.baseUrl
     });
     const systemPrompt = [
       renderedStageSystemPrompt,
@@ -121,6 +141,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     const builtinLifecycleToolNames = new Set([
       "log_progress",
       "report_finding",
+      "report_attack_vector",
       "complete_run"
     ]);
     const evidenceToolEntries = tools.flatMap((tool) => {
@@ -130,7 +151,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           tool,
           description: tool.description ?? tool.name,
           execute: async (rawInput: unknown) => {
-            const toolInput = normalizeToolInput(rawInput);
+            const toolInput = applyWorkflowRuntimeTarget(normalizeToolInput(rawInput), target);
             const executionTarget = parseExecutionTarget(toolInput, target);
             const request = await this.ports.toolRuntime.compile(tool.id, {
               target: executionTarget.target,
@@ -255,8 +276,8 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         title: "Built-in actions",
         tools: [
           { name: "log_progress", description: "Persist a short operator-visible progress update in the workflow transcript. Use this before or after meaningful tool calls to explain the current action or decision in one concise sentence. Provide `message`. Returns acceptance only; it does not create evidence, findings, or attack-path links." },
-          { name: "report_finding", description: "Persist one evidence-backed security finding. Run evidence tools first. Provide supported weakness details and persisted evidence quotes. Returns the finding id; use that id in related findings and handoff attack paths." },
-          { name: "complete_run", description: "Finish the workflow run last, after required evidence, report_finding calls, finding ids, and any handoff attack paths have been submitted. Use this only as the final action. Provide `summary`, `recommendedNextStep`, `residualRisk`, and optional `handoff`. It does not create findings and cannot satisfy missing evidence, finding, or chain requirements." }
+          { name: "report_finding", description: "Persist findings and attack-vector links through one mode-based action. Use `mode: \"finding\"` for evidence-backed findings (optionally with `attackVectors` between existing finding ids) and `mode: \"attack_vector\"` to submit one or more vectors between existing findings only. Non-related vectors require grounded transition evidence." },
+          { name: "complete_run", description: `Finish the workflow run last, after required evidence, report_finding calls, finding ids, and any handoff attack paths have been submitted. Use this only as the final action. Provide \`summary\`, \`recommendedNextStep\`, \`residualRisk\`, and optional \`handoff\`. It does not create findings and cannot satisfy missing evidence, finding, or chain requirements. ${ATTACK_PATH_HANDOFF_HINT}` }
         ]
       }
     ]);
@@ -289,10 +310,11 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       }, "Policy-filtered tools", `Excluded ${excludedTools.length} incompatible tool${excludedTools.length === 1 ? "" : "s"} for this target run.`, excludedToolSummary);
     }
 
-    const scan = createWorkflowScan(currentRun, constraintSet);
+    const scan = createWorkflowScan(currentRun, constraintSet, target);
     await this.ensureWorkflowScan(scan, targetRecord.id, agent.id);
     const executedResults: ExecutedToolResult[] = [];
     const reportedFindings = new Map(getWorkflowReportedFindings(currentRun).map((finding) => [finding.id, finding]));
+    const reportedAttackVectors = new Map(getWorkflowReportedAttackVectors(currentRun).map((vector) => [vector.id, vector]));
     let terminalState: PipelineTerminalState | null = null;
     let liveModelOutput: WorkflowLiveModelOutput | null = null;
     const abortController = new AbortController();
@@ -303,7 +325,8 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     const hasObservationRef = (observationRef: string) => executedResults.some((result) => result.observationKeys.includes(observationRef));
     const hasArtifactRef = (artifactRef: string) =>
       executedResults.some((result) => result.toolRun.id === artifactRef)
-      || [...reportedFindings.values()].some((finding) => finding.evidence.some((entry) => entry.artifactRef === artifactRef));
+      || [...reportedFindings.values()].some((finding) => finding.evidence.some((entry) => entry.artifactRef === artifactRef))
+      || [...reportedAttackVectors.values()].some((vector) => vector.transitionEvidence.some((entry) => entry.artifactRef === artifactRef));
 
     const appendLiveText = (delta: string) => {
       if (!liveModelOutput) {
@@ -386,6 +409,160 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       })
     ]));
 
+    const submitAttackVector = async (
+      rawInput: unknown,
+      options?: {
+        requireExistingFindingIdsOnly?: boolean;
+      }
+    ) => {
+      const vectorInput = attachAttackVectorEvidenceReferences(
+        parseWorkflowToolInput(workflowAttackVectorSubmissionSchema, rawInput, "Attack vector submission"),
+        executedResults
+      );
+      const allowedFindingIds = options?.requireExistingFindingIdsOnly
+        ? new Set(reportedFindings.keys())
+        : null;
+      if (allowedFindingIds && !allowedFindingIds.has(vectorInput.sourceFindingId)) {
+        throw new RequestError(400, `Unknown source finding reference: ${vectorInput.sourceFindingId}`);
+      }
+      if (!reportedFindings.has(vectorInput.sourceFindingId)) {
+        throw new RequestError(400, `Unknown source finding reference: ${vectorInput.sourceFindingId}`);
+      }
+      if (allowedFindingIds && !allowedFindingIds.has(vectorInput.destinationFindingId)) {
+        throw new RequestError(400, `Unknown destination finding reference: ${vectorInput.destinationFindingId}`);
+      }
+      if (!reportedFindings.has(vectorInput.destinationFindingId)) {
+        throw new RequestError(400, `Unknown destination finding reference: ${vectorInput.destinationFindingId}`);
+      }
+      const referenceError = validateAttackVectorEvidenceReferences(vectorInput, executedResults);
+      if (referenceError) {
+        throw new RequestError(400, referenceError);
+      }
+      for (const evidence of vectorInput.transitionEvidence) {
+        if (evidence.traceEventId && !hasTraceEvent(evidence.traceEventId)) {
+          throw new RequestError(400, `Unknown trace event reference: ${evidence.traceEventId}`);
+        }
+        if (evidence.toolRunRef && !hasToolRunRef(evidence.toolRunRef)) {
+          throw new RequestError(400, `Unknown tool run reference: ${evidence.toolRunRef}`);
+        }
+        if (evidence.observationRef && !hasObservationRef(evidence.observationRef)) {
+          throw new RequestError(400, `Unknown observation reference: ${evidence.observationRef}`);
+        }
+        if (evidence.artifactRef && !hasArtifactRef(evidence.artifactRef)) {
+          throw new RequestError(400, `Unknown artifact reference: ${evidence.artifactRef}`);
+        }
+      }
+
+      const verification = verifyAttackVectorEvidence(vectorInput, reportedFindings, executedResults);
+      if (verification.validationStatus === "rejected") {
+        throw new RequestError(400, verification.reason);
+      }
+      const attackVector = createWorkflowReportedAttackVector({
+        runId: currentRun.id,
+        submission: {
+          ...vectorInput,
+          validationStatus: verification.validationStatus,
+          confidence: verification.confidence
+        }
+      });
+      reportedAttackVectors.set(attackVector.id, attackVector);
+      await appendEvent("attack_vector_reported", "completed", {
+        attackVector
+      }, `Attack vector reported: ${attackVector.kind}`, `${attackVector.kind} from ${attackVector.sourceFindingId} to ${attackVector.destinationFindingId}.`, attackVector.summary);
+      return attackVector;
+    };
+    const hydrateEvidenceRefs = <TEvidence extends Record<string, unknown>>(evidence: TEvidence[]) => evidence.map((item) => {
+      const sourceTool = typeof item["sourceTool"] === "string" ? item["sourceTool"] : null;
+      if (!sourceTool) {
+        return item;
+      }
+      const toolRunRef = typeof item["toolRunRef"] === "string" ? item["toolRunRef"] : null;
+      const observationRef = typeof item["observationRef"] === "string" ? item["observationRef"] : null;
+      const artifactRef = typeof item["artifactRef"] === "string" ? item["artifactRef"] : null;
+      const traceEventId = typeof item["traceEventId"] === "string" ? item["traceEventId"] : null;
+      if (toolRunRef || observationRef || artifactRef || traceEventId) {
+        return item;
+      }
+      const candidates = executedResults.filter((result) => result.toolName === sourceTool || result.toolId === sourceTool);
+      if (candidates.length !== 1) {
+        return item;
+      }
+      return {
+        ...item,
+        toolRunRef: candidates[0]!.toolRun.id
+      };
+    });
+
+    const relaxedFindingEvidenceToolInputSchema = z.object({
+      sourceTool: z.string().min(1),
+      quote: z.string().min(1),
+      artifactRef: z.string().min(1).optional(),
+      observationRef: z.string().min(1).optional(),
+      toolRunRef: z.string().min(1).optional(),
+      traceEventId: z.string().uuid().optional(),
+      externalUrl: z.string().url().optional()
+    });
+    const relaxedAttackVectorSubmissionToolInputSchema = z.object({
+      kind: z.enum(["enables", "derived_from", "related", "lateral_movement"]),
+      sourceFindingId: z.string().uuid(),
+      destinationFindingId: z.string().uuid(),
+      summary: z.string().min(1),
+      preconditions: z.array(z.string().min(1)).optional(),
+      impact: z.string().min(1),
+      transitionEvidence: z.array(relaxedFindingEvidenceToolInputSchema).optional(),
+      confidence: z.number(),
+      validationStatus: z.enum(["unverified", "suspected", "single_source", "cross_validated", "reproduced", "blocked", "rejected"]).optional()
+    });
+    const reportFindingToolInputSchema = z.object({
+      mode: z.enum(["finding", "attack_vector"]).optional(),
+      type: z.enum(["service_exposure", "content_discovery", "missing_security_header", "tls_weakness", "injection_signal", "auth_weakness", "sensitive_data_exposure", "misconfiguration", "other"]).optional(),
+      title: z.string().min(1).optional(),
+      severity: z.enum(["info", "low", "medium", "high", "critical"]).optional(),
+      confidence: z.number().optional(),
+      target: z.object({
+        host: z.string().min(1),
+        port: z.number().int().optional(),
+        url: z.string().url().optional(),
+        path: z.string().min(1).optional()
+      }).optional(),
+      evidence: z.array(relaxedFindingEvidenceToolInputSchema).optional(),
+      impact: z.string().min(1).optional(),
+      recommendation: z.string().min(1).optional(),
+      validationStatus: z.enum(["unverified", "suspected", "single_source", "cross_validated", "reproduced", "blocked", "rejected"]).optional(),
+      cwe: z.string().min(1).optional(),
+      mitreId: z.string().min(1).optional(),
+      owasp: z.string().min(1).optional(),
+      reproduction: z.object({
+        commandPreview: z.string().min(1).optional(),
+        steps: z.array(z.string().min(1)).min(1)
+      }).optional(),
+      derivedFromFindingIds: z.array(z.string().uuid()).optional(),
+      relatedFindingIds: z.array(z.string().uuid()).optional(),
+      enablesFindingIds: z.array(z.string().uuid()).optional(),
+      chain: z.object({
+        id: z.string().min(1).optional(),
+        title: z.string().min(1),
+        summary: z.string().min(1),
+        severity: z.enum(["info", "low", "medium", "high", "critical"]).optional()
+      }).optional(),
+      explanationSummary: z.string().min(1).optional(),
+      confidenceReason: z.string().min(1).optional(),
+      relationshipExplanations: z.object({
+        derivedFrom: z.string().min(1).optional(),
+        relatedTo: z.string().min(1).optional(),
+        enables: z.string().min(1).optional(),
+        chainRole: z.string().min(1).optional()
+      }).optional(),
+      tags: z.array(z.string().min(1)).optional(),
+      attackVectors: z.array(relaxedAttackVectorSubmissionToolInputSchema).optional(),
+      kind: z.enum(["enables", "derived_from", "related", "lateral_movement"]).optional(),
+      sourceFindingId: z.string().uuid().optional(),
+      destinationFindingId: z.string().uuid().optional(),
+      summary: z.string().min(1).optional(),
+      preconditions: z.array(z.string().min(1)).optional(),
+      transitionEvidence: z.array(relaxedFindingEvidenceToolInputSchema).optional()
+    }).passthrough();
+
     const systemTools = {
       log_progress: createSdkTool({
         description: "Persist a short operator-visible progress update in the workflow transcript. Use this before or after meaningful tool calls to explain the current action or decision in one concise sentence. Provide `message`. Returns acceptance only; it does not create evidence, findings, or attack-path links.",
@@ -405,13 +582,61 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         }
       }),
       report_finding: createSdkTool({
-        description: "Persist one evidence-backed security finding. Run evidence tools first. Provide supported weakness details and persisted evidence quotes. Returns the finding id; use that id in related findings and handoff attack paths.",
-        inputSchema: workflowFindingSubmissionSchema,
+        description: "Persist findings and attack-vector links through one mode-based action. Use `mode: \"finding\"` for evidence-backed findings (optionally with `attackVectors` between existing finding ids) and `mode: \"attack_vector\"` to submit one or more vectors between existing findings only. In finding mode, `type` must be one of: service_exposure, content_discovery, missing_security_header, tls_weakness, injection_signal, auth_weakness, sensitive_data_exposure, misconfiguration, other. `confidence` must be a number from 0 to 1 and `target` must be an object with at least `host`.",
+        inputSchema: reportFindingToolInputSchema,
         execute: async (rawInput) => {
-          const findingInput = attachEvidenceReferences(
-            workflowFindingSubmissionSchema.parse(rawInput),
-            executedResults
-          );
+          const normalizedInput = normalizeWorkflowToolInput(rawInput, "Finding submission");
+          const mode = typeof normalizedInput === "object" && normalizedInput !== null
+            ? (normalizedInput as Record<string, unknown>)["mode"]
+            : undefined;
+          const reportInput = parseWorkflowToolInput(reportFindingToolInputSchema, normalizedInput, mode === "attack_vector" ? "Attack vector submission" : "Finding submission");
+
+          if (reportInput.mode === "attack_vector") {
+            const rawVectors = reportInput.attackVectors ?? [];
+            const parsedVectors = rawVectors.map((vector) =>
+              parseWorkflowToolInput(workflowAttackVectorSubmissionSchema, {
+                ...vector,
+                preconditions: vector.preconditions ?? [],
+                transitionEvidence: hydrateEvidenceRefs(vector.transitionEvidence ?? [])
+              }, "Attack vector submission")
+            );
+            const attackVectorIds: string[] = [];
+            for (const vector of parsedVectors) {
+              let attackVector: WorkflowReportedAttackVector;
+              try {
+                attackVector = await submitAttackVector(vector, {
+                  requireExistingFindingIdsOnly: true
+                });
+              } catch (error) {
+                if (error instanceof RequestError) {
+                  const message = error.message.startsWith("Attack vector submission validation failed:")
+                    ? error.message
+                    : `Attack vector submission validation failed: ${error.message}`;
+                  throw new RequestError(error.status, message, {
+                    cause: error
+                  });
+                }
+                throw error;
+              }
+              attackVectorIds.push(attackVector.id);
+            }
+            return {
+              accepted: true,
+              attackVectorIds
+            };
+          }
+
+          const parsedFindingInput = parseWorkflowToolInput(workflowFindingSubmissionSchema, {
+            ...reportInput,
+            mode: "finding",
+            evidence: hydrateEvidenceRefs(reportInput.evidence ?? []),
+            derivedFromFindingIds: reportInput.derivedFromFindingIds ?? [],
+            relatedFindingIds: reportInput.relatedFindingIds ?? [],
+            enablesFindingIds: reportInput.enablesFindingIds ?? [],
+            tags: reportInput.tags ?? []
+          }, "Finding submission");
+          const findingInput = parsedFindingInput;
+          const nestedAttackVectors = reportInput.attackVectors ?? [];
           validateRelatedFindingSubmission(findingInput);
           const referenceError = validateFindingEvidenceReferences(findingInput, executedResults);
           if (referenceError) {
@@ -442,6 +667,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             }
           }
 
+          const existingFindingIds = new Set(reportedFindings.keys());
           const enrichedDetails = enrichWorkflowFindingDetails({
             title: findingInput.title,
             target: findingInput.target,
@@ -472,20 +698,60 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           await appendEvent("finding_reported", "completed", {
             finding
           }, `Finding reported: ${finding.title}`, `${finding.severity.toUpperCase()} ${finding.type} on ${finding.target.host}.`, finding.impact);
+
+          const attackVectorIds: string[] = [];
+          for (const vector of nestedAttackVectors) {
+            if (!existingFindingIds.has(vector.sourceFindingId) || !existingFindingIds.has(vector.destinationFindingId)) {
+              throw new RequestError(400, "Attack vector submission validation failed: attackVectors must reference existing finding ids only.");
+            }
+            let attackVector: WorkflowReportedAttackVector;
+            try {
+              attackVector = await submitAttackVector(vector, {
+                requireExistingFindingIdsOnly: true
+              });
+            } catch (error) {
+              if (error instanceof RequestError) {
+                const message = error.message.startsWith("Attack vector submission validation failed:")
+                  ? error.message
+                  : `Attack vector submission validation failed: ${error.message}`;
+                throw new RequestError(error.status, message, {
+                  cause: error
+                });
+              }
+              throw error;
+            }
+            attackVectorIds.push(attackVector.id);
+          }
+
           return {
             findingId: finding.id,
             title: finding.title,
             severity: finding.severity,
-            host: finding.target.host
+            host: finding.target.host,
+            attackVectorIds
+          };
+        }
+      }),
+      report_attack_vector: createSdkTool({
+        description: "Deprecated compatibility action for older workflow runs. Prefer report_finding with `mode: \"attack_vector\"` for new submissions. Non-related vectors require transitionEvidence grounded in persisted tool results.",
+        inputSchema: workflowAttackVectorSubmissionSchema,
+        execute: async (rawInput) => {
+          const attackVector = await submitAttackVector(rawInput);
+          return {
+            attackVectorId: attackVector.id,
+            kind: attackVector.kind,
+            sourceFindingId: attackVector.sourceFindingId,
+            destinationFindingId: attackVector.destinationFindingId
           };
         }
       }),
       complete_run: createSdkTool({
-        description: "Finish the workflow run last, after required evidence, report_finding calls, finding ids, and any handoff attack paths have been submitted. Use this only as the final action. Provide `summary`, `recommendedNextStep`, `residualRisk`, and optional `handoff`. It does not create findings and cannot satisfy missing evidence, finding, or chain requirements.",
+        description: `Finish the workflow run last, after required evidence, report_finding calls, finding ids, and any handoff attack paths have been submitted. Use this only as the final action. Provide \`summary\`, \`recommendedNextStep\`, \`residualRisk\`, and optional \`handoff\`. It does not create findings and cannot satisfy missing evidence, finding, or chain requirements. ${ATTACK_PATH_HANDOFF_HINT}`,
         inputSchema: z.object({
           summary: z.string().min(1),
           recommendedNextStep: z.string().min(1),
           residualRisk: z.string().min(1),
+          blocked: workflowBlockedCompletionSchema.optional(),
           handoff: z.record(z.string(), z.unknown()).nullable().optional()
         }),
         execute: async (rawInput) => {
@@ -493,44 +759,109 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             summary: z.string().min(1),
             recommendedNextStep: z.string().min(1),
             residualRisk: z.string().min(1),
+            blocked: workflowBlockedCompletionSchema.optional(),
             handoff: z.record(z.string(), z.unknown()).nullable().optional()
           }).parse(rawInput);
-          const completionAssertions = evaluateCompletionAssertions({
-            completionRule: stage.completionRule,
-            executedResults,
-            findings: [...reportedFindings.values()],
-            handoff: completion.handoff ?? null
-          });
-          if (completionAssertions.enabled) {
-            await appendEvent("verification", completionAssertions.failures.length > 0 ? "failed" : "completed", {
-              messageKind: completionAssertions.failures.length > 0 ? "challenge" : "accept",
-              action: "readme_coverage_assertions",
-              assertions: completionAssertions.assertions,
-              failures: completionAssertions.failures
-            }, "README coverage assertions", completionAssertions.failures.length > 0
-              ? `Missing coverage assertion: ${completionAssertions.failures[0]}`
-              : "The run satisfied the configured README coverage assertions.", JSON.stringify(completionAssertions.assertions, null, 2));
+          const reportedFindingList = [...reportedFindings.values()];
+          const reportedAttackVectorList = [...reportedAttackVectors.values()];
+          const rejectedCompletion = async (message: string, detail?: string, payload: Record<string, unknown> = {}) => {
+            await appendEvent("verification", "failed", {
+              messageKind: "challenge",
+              action: "complete_run",
+              message,
+              ...payload
+            }, "Run completion rejected", message, detail ?? message);
+            return { accepted: false, error: message };
+          };
+          const blockedCompletion = (() => {
+            if (!completion.blocked) {
+              return null;
+            }
+
+            const failedToolRunIds = new Set(executedResults
+              .filter((result) => result.status === "failed" || result.status === "denied")
+              .map((result) => result.toolRun.id));
+            const invalidRefs = completion.blocked.failedToolRunIds.filter((toolRunId) => !failedToolRunIds.has(toolRunId));
+            if (invalidRefs.length > 0) {
+              return new RequestError(400, `Blocked completion references unknown or non-failed tool runs: ${invalidRefs.join(", ")}.`);
+            }
+
+            return completion.blocked;
+          })();
+          if (blockedCompletion instanceof RequestError) {
+            return rejectedCompletion(blockedCompletion.message);
           }
-          if (completionAssertions.failures.length > 0) {
-            throw new RequestError(400, `Workflow completion assertions failed: ${completionAssertions.failures.join("; ")}`);
+          const completionHandoff = (() => {
+            if (blockedCompletion) {
+              return null;
+            }
+            try {
+              return validateCompletionHandoff({
+                stage,
+                rawHandoff: completion.handoff ?? null,
+                findings: reportedFindingList,
+                attackVectors: reportedAttackVectorList
+              });
+            } catch (error) {
+              if (error instanceof RequestError) {
+                return error;
+              }
+              throw error;
+            }
+          })();
+          if (completionHandoff instanceof RequestError) {
+            return rejectedCompletion(completionHandoff.message, stage.handoffSchema ? `${completionHandoff.message}\n${ATTACK_PATH_HANDOFF_HINT}` : undefined);
+          }
+          if (!blockedCompletion) {
+            const completionAssertions = evaluateCompletionAssertions({
+              completionRule: stage.completionRule,
+              executedResults,
+              findings: reportedFindingList,
+              attackVectors: reportedAttackVectorList,
+              handoff: stage.handoffSchema ? completionHandoff : null
+            });
+            if (completionAssertions.enabled) {
+              await appendEvent("verification", completionAssertions.failures.length > 0 ? "failed" : "completed", {
+                messageKind: completionAssertions.failures.length > 0 ? "challenge" : "accept",
+                action: "readme_coverage_assertions",
+                assertions: completionAssertions.assertions,
+                failures: completionAssertions.failures
+              }, "README coverage assertions", completionAssertions.failures.length > 0
+                ? `Missing coverage assertion: ${completionAssertions.failures[0]}`
+                : "The run satisfied the configured README coverage assertions.", JSON.stringify(completionAssertions.assertions, null, 2));
+            }
+            if (completionAssertions.failures.length > 0) {
+              return {
+                accepted: false,
+                error: `Workflow completion assertions failed: ${completionAssertions.failures.join("; ")}`,
+                failures: completionAssertions.failures
+              };
+            }
           }
           const completionDetail = [
             `Agent summary: ${completion.summary}`,
             `Recommended next step: ${completion.recommendedNextStep}`,
-            `Residual risk: ${completion.residualRisk}`
+            `Residual risk: ${completion.residualRisk}`,
+            ...(blockedCompletion ? [
+              `Blocked reason: ${blockedCompletion.reason}`,
+              `Operator summary: ${blockedCompletion.operatorSummary}`,
+              `Recommended fix: ${blockedCompletion.recommendedFix}`
+            ] : [])
           ].join("\n");
           await appendEvent("verification", "completed", {
             messageKind: "accept",
             action: "complete_run",
-            summary: "The agent finished pen testing.",
-            detail: completionDetail
-          }, "Run completion accepted", "The agent finished pen testing.", completionDetail);
+            summary: blockedCompletion ? "The agent recorded a blocked workflow outcome." : "The agent finished pen testing.",
+            detail: completionDetail,
+            ...(blockedCompletion ? { blocked: blockedCompletion } : {})
+          }, "Run completion accepted", blockedCompletion ? "The agent recorded a blocked workflow outcome." : "The agent finished pen testing.", completionDetail);
           terminalState = {
-            status: "completed",
+            status: blockedCompletion ? "blocked" : "completed",
             summary: completion.summary,
             recommendedNextStep: completion.recommendedNextStep,
             residualRisk: completion.residualRisk,
-            handoff: completion.handoff ?? null
+            handoff: completionHandoff,
+            ...(blockedCompletion ? { blocked: blockedCompletion } : {})
           };
           abortController.abort("workflow-completed");
           return { accepted: true };
@@ -556,7 +887,14 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     }, "Pipeline stream started", "Started the workflow model stream.");
 
     try {
-      for await (const rawPart of result.fullStream) {
+      const streamIterator = result.fullStream[Symbol.asyncIterator]();
+      const modelStreamIdleTimeoutMs = getModelStreamIdleTimeoutMs();
+      while (true) {
+        const nextPart = await readNextModelStreamPart(streamIterator, modelStreamIdleTimeoutMs, abortController);
+        if (nextPart.done) {
+          break;
+        }
+        const rawPart = nextPart.value;
         const part = rawPart as any;
         switch (part.type) {
           case "start":
@@ -759,6 +1097,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             break;
         }
       }
+      await streamIterator.return?.();
     } catch (error) {
       if (!(error instanceof Error && error.name === "AbortError")) {
         await appendEvent("verification", "failed", {
@@ -774,12 +1113,13 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
 
     const finalTerminalState = terminalState as PipelineTerminalState;
     const stageResult: WorkflowStageResult = {
-      status: "completed",
+      status: finalTerminalState.status,
       summary: finalTerminalState.summary,
       findingIds: getWorkflowReportedFindings(currentRun).map((finding) => finding.id),
       recommendedNextStep: finalTerminalState.recommendedNextStep,
       residualRisk: finalTerminalState.residualRisk,
       handoff: finalTerminalState.handoff,
+      ...(finalTerminalState.blocked ? { blocked: finalTerminalState.blocked } : {}),
       submittedAt: new Date().toISOString()
     };
 
@@ -806,6 +1146,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       stageObjective: string;
       targetName: string;
       targetUrl: string;
+      targetDisplayUrl?: string;
     }
   ) {
     const supportedTokens = new Map<string, string>([
@@ -813,7 +1154,8 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       ["stage.label", values.stageLabel],
       ["stage.objective", values.stageObjective],
       ["target.name", values.targetName],
-      ["target.url", values.targetUrl]
+      ["target.url", values.targetUrl],
+      ["target.displayUrl", values.targetDisplayUrl ?? values.targetUrl]
     ]);
 
     return template.replace(/{{\s*([^}]+?)\s*}}/g, (match, tokenName: string) => {
@@ -860,6 +1202,45 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
   }
 }
 
+function getModelStreamIdleTimeoutMs() {
+  const rawTimeout = process.env[MODEL_STREAM_IDLE_TIMEOUT_ENV];
+  if (!rawTimeout) {
+    return DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS;
+  }
+
+  const parsedTimeout = Number(rawTimeout);
+  return Number.isFinite(parsedTimeout) && parsedTimeout > 0
+    ? parsedTimeout
+    : DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS;
+}
+
+async function readNextModelStreamPart<T>(
+  streamIterator: AsyncIterator<T>,
+  idleTimeoutMs: number,
+  abortController: AbortController
+): Promise<IteratorResult<T>> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      const seconds = Math.round(idleTimeoutMs / 1000);
+      const message = `Workflow model stream produced no events for ${seconds} second${seconds === 1 ? "" : "s"}.`;
+      reject(new RequestError(504, message, {
+        code: "WORKFLOW_MODEL_STREAM_IDLE_TIMEOUT",
+        userFriendlyMessage: "The model stream stalled and the workflow was failed instead of left running."
+      }));
+      abortController.abort("workflow-model-idle-timeout");
+    }, idleTimeoutMs);
+  });
+
+  try {
+    return await Promise.race([streamIterator.next(), timeoutPromise]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 function validateRelatedFindingSubmission(findingInput: z.infer<typeof workflowFindingSubmissionSchema>) {
   const hasRelationshipIds = findingInput.derivedFromFindingIds.length > 0
     || findingInput.relatedFindingIds.length > 0
@@ -891,10 +1272,254 @@ function validateRelatedFindingSubmission(findingInput: z.infer<typeof workflowF
   }
 }
 
+function attackVectorAsEvidenceCarrier(input: WorkflowAttackVectorSubmission, findings: Map<string, WorkflowReportedFinding>) {
+  const sourceFinding = findings.get(input.sourceFindingId);
+  return {
+    type: sourceFinding?.type ?? "other",
+    title: input.summary,
+    severity: sourceFinding?.severity ?? "medium",
+    confidence: input.confidence,
+    target: sourceFinding?.target ?? { host: "unknown" },
+    evidence: input.transitionEvidence,
+    impact: input.impact,
+    recommendation: "Validate and remediate the linked findings that enable this transition.",
+    validationStatus: input.validationStatus,
+    derivedFromFindingIds: [],
+    relatedFindingIds: [],
+    enablesFindingIds: [],
+    tags: []
+  } satisfies z.infer<typeof workflowFindingSubmissionSchema>;
+}
+
+function attachAttackVectorEvidenceReferences(
+  vector: WorkflowAttackVectorSubmission,
+  executedResults: ExecutedToolResult[]
+): WorkflowAttackVectorSubmission {
+  return {
+    ...vector,
+    transitionEvidence: vector.transitionEvidence.map((item) => {
+      if (item.toolRunRef || item.observationRef || item.artifactRef || item.traceEventId) {
+        return item;
+      }
+      const candidates = executedResults.filter((result) => result.toolName === item.sourceTool || result.toolId === item.sourceTool);
+      if (candidates.length !== 1) {
+        return item;
+      }
+      return {
+        ...item,
+        toolRunRef: candidates[0]!.toolRun.id
+      };
+    })
+  };
+}
+
+function validateAttackVectorEvidenceReferences(
+  vector: WorkflowAttackVectorSubmission,
+  executedResults: ExecutedToolResult[]
+) {
+  if (vector.transitionEvidence.length === 0) {
+    return null;
+  }
+  return validateFindingEvidenceReferences({
+    type: "other",
+    title: vector.summary,
+    severity: "medium",
+    confidence: vector.confidence,
+    target: { host: "transition" },
+    evidence: vector.transitionEvidence,
+    impact: vector.impact,
+    recommendation: "Validate the transition.",
+    validationStatus: vector.validationStatus,
+    derivedFromFindingIds: [],
+    relatedFindingIds: [],
+    enablesFindingIds: [],
+    tags: []
+  }, executedResults);
+}
+
+function verifyAttackVectorEvidence(
+  vector: WorkflowAttackVectorSubmission,
+  findings: Map<string, WorkflowReportedFinding>,
+  executedResults: ExecutedToolResult[]
+): { validationStatus: WorkflowAttackVectorSubmission["validationStatus"]; confidence: number; reason: string } {
+  if (vector.transitionEvidence.length === 0) {
+    return {
+      validationStatus: vector.kind === "related" ? "suspected" : "rejected",
+      confidence: vector.kind === "related" ? Math.min(vector.confidence, 0.65) : 0.1,
+      reason: vector.kind === "related"
+        ? "Related attack vector was reported without transition evidence."
+        : "Transition evidence is required for this attack vector kind."
+    };
+  }
+
+  const verification = verifyFindingEvidence(attackVectorAsEvidenceCarrier(vector, findings), executedResults);
+  return {
+    validationStatus: verification.validationStatus,
+    confidence: verification.confidence,
+    reason: verification.reason
+  };
+}
+
+function validateCompletionHandoff(input: {
+  stage: WorkflowStage;
+  rawHandoff: Record<string, unknown> | null;
+  findings: WorkflowReportedFinding[];
+  attackVectors: WorkflowReportedAttackVector[];
+}) {
+  if (!input.stage.handoffSchema) {
+    return input.rawHandoff;
+  }
+
+  if (!input.rawHandoff) {
+    throw new RequestError(400, "Workflow completion requires a handoff that matches the stage handoff schema.");
+  }
+
+  const parsed = (() => {
+    try {
+      return parseAttackPathHandoff(input.rawHandoff);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        throw new RequestError(400, `Workflow handoff validation failed: ${formatZodIssues(error, "handoff")}`);
+      }
+      throw error;
+    }
+  })();
+  const referenceErrors = validateAttackPathHandoffReferences({
+    handoff: parsed,
+    findingIds: input.findings.map((finding) => finding.id),
+    vectorIds: input.attackVectors.map((vector) => vector.id)
+  });
+  if (referenceErrors.length > 0) {
+    throw new RequestError(400, `Workflow handoff reference validation failed: ${referenceErrors.join("; ")}`);
+  }
+
+  return parsed;
+}
+
+function formatZodIssues(error: z.ZodError, rootPathLabel = "input") {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.join(".") : rootPathLabel;
+      return `${path}: ${issue.message}`;
+    })
+    .join("; ");
+}
+
+function parseWorkflowToolInput<TSchema extends z.ZodTypeAny>(
+  schema: TSchema,
+  rawInput: unknown,
+  label: string
+): z.output<TSchema> {
+  const normalizedInput = normalizeWorkflowToolInput(rawInput, label);
+  try {
+    return schema.parse(normalizedInput);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      const rootPathLabel = label.toLowerCase();
+      throw new RequestError(400, `${label} validation failed: ${formatZodIssues(error, rootPathLabel)}`);
+    }
+    throw error;
+  }
+}
+
+function normalizeWorkflowToolInput(rawInput: unknown, label: string): unknown {
+  const parsedInput = (() => {
+    if (typeof rawInput !== "string") {
+      return rawInput;
+    }
+
+    const trimmed = rawInput.trim();
+    if (!trimmed) {
+      return rawInput;
+    }
+
+    try {
+      return JSON.parse(trimmed);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown JSON parsing error.";
+      throw new RequestError(400, `${label} parsing failed: ${reason}`);
+    }
+  })();
+
+  return coerceWorkflowToolInput(parsedInput, label);
+}
+
+function coerceWorkflowToolInput(rawInput: unknown, label: string): unknown {
+  if (label !== "Finding submission") {
+    return rawInput;
+  }
+
+  if (!rawInput || typeof rawInput !== "object" || Array.isArray(rawInput)) {
+    return rawInput;
+  }
+
+  const normalized = { ...(rawInput as Record<string, unknown>) };
+
+  if (typeof normalized["confidence"] === "string") {
+    const parsedConfidence = Number(normalized["confidence"]);
+    if (Number.isFinite(parsedConfidence)) {
+      normalized["confidence"] = parsedConfidence;
+    }
+  }
+
+  if (typeof normalized["target"] === "string") {
+    const host = normalized["target"].trim();
+    if (host.length > 0) {
+      normalized["target"] = { host };
+    }
+  }
+
+  const parseEvidenceArrayString = (value: unknown) => {
+    if (typeof value !== "string") {
+      return value;
+    }
+    const trimmed = value.trim();
+    if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+      return value;
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed : value;
+    } catch {
+      return value;
+    }
+  };
+  normalized["evidence"] = parseEvidenceArrayString(normalized["evidence"]);
+
+  const mode = normalized["mode"];
+  if (mode === "attack_vector") {
+    normalized["transitionEvidence"] = parseEvidenceArrayString(normalized["transitionEvidence"]);
+    if (!Array.isArray(normalized["attackVectors"])) {
+      const hasFlatVectorFields = typeof normalized["kind"] === "string"
+        && typeof normalized["sourceFindingId"] === "string"
+        && typeof normalized["destinationFindingId"] === "string"
+        && typeof normalized["summary"] === "string";
+      if (hasFlatVectorFields) {
+        normalized["attackVectors"] = [{
+          kind: normalized["kind"],
+          sourceFindingId: normalized["sourceFindingId"],
+          destinationFindingId: normalized["destinationFindingId"],
+          summary: normalized["summary"],
+          preconditions: Array.isArray(normalized["preconditions"]) ? normalized["preconditions"] : [],
+          impact: normalized["impact"],
+          transitionEvidence: Array.isArray(normalized["transitionEvidence"]) ? normalized["transitionEvidence"] : [],
+          confidence: normalized["confidence"],
+          validationStatus: normalized["validationStatus"]
+        }];
+      }
+    }
+  } else if (mode === undefined && normalized["type"] !== undefined) {
+    normalized["mode"] = "finding";
+  }
+
+  return normalized;
+}
+
 function evaluateCompletionAssertions(input: {
   completionRule: WorkflowStageCompletionRule;
   executedResults: ExecutedToolResult[];
   findings: WorkflowReportedFinding[];
+  attackVectors: WorkflowReportedAttackVector[];
   handoff: Record<string, unknown> | null;
 }) {
   const successfulToolResults = input.executedResults.filter((result) =>
@@ -906,7 +1531,10 @@ function evaluateCompletionAssertions(input: {
     && ["single_source", "cross_validated", "reproduced"].includes(finding.validationStatus)
   );
   const coveredLayers = getCoveredWorkflowLayers(successfulToolResults, input.findings);
-  const hasChainedFindings = input.findings.some((finding) =>
+  const validatedAttackVectors = input.attackVectors.filter((vector) =>
+    ["single_source", "cross_validated", "reproduced"].includes(vector.validationStatus)
+  );
+  const hasChainedFindings = validatedAttackVectors.length > 0 || input.findings.some((finding) =>
     finding.derivedFromFindingIds.length > 0
     || finding.relatedFindingIds.length > 0
     || finding.enablesFindingIds.length > 0
@@ -938,7 +1566,8 @@ function evaluateCompletionAssertions(input: {
         || finding.relatedFindingIds.length > 0
         || finding.enablesFindingIds.length > 0
         || Boolean(finding.chain)
-      ).length
+      ).length,
+      attackVectorCount: validatedAttackVectors.length
     }
   };
 

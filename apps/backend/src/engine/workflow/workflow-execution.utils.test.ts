@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyWorkflowRuntimeTarget,
   attachEvidenceReferences,
   enrichWorkflowFindingDetails,
   parseExecutionTarget,
@@ -101,7 +102,7 @@ describe("verifyFindingEvidence", () => {
     expect(result.confidence).toBe(0.1);
   });
 
-  it("rejects pure speculation even when it references a real tool run", () => {
+  it("downgrades non-verbatim grounded evidence to suspected", () => {
     const finding = attachEvidenceReferences({
       title: "Imaginary Bug",
       severity: "high" as const,
@@ -119,8 +120,8 @@ describe("verifyFindingEvidence", () => {
     }, [mockResult]);
 
     const result = verifyFindingEvidence(finding, [mockResult]);
-    expect(result.validationStatus).toBe("rejected");
-    expect(result.confidence).toBe(0.1);
+    expect(result.validationStatus).toBe("suspected");
+    expect(result.confidence).toBeLessThanOrEqual(0.69);
   });
 });
 
@@ -171,6 +172,31 @@ describe("enrichWorkflowFindingDetails", () => {
 });
 
 describe("parseExecutionTarget", () => {
+  it("rewrites model-provided localhost URLs onto the runtime target origin", () => {
+    expect(applyWorkflowRuntimeTarget({
+      url: "http://localhost:8890/admin?tab=release",
+      startUrl: "/cases",
+      validationTargets: [{
+        label: "Case detail",
+        url: "http://localhost:8890/cases/case-1"
+      }]
+    }, {
+      baseUrl: "http://synosec-attack-path-target:8890/",
+      host: "synosec-attack-path-target",
+      port: 8890
+    })).toMatchObject({
+      target: "synosec-attack-path-target",
+      baseUrl: "http://synosec-attack-path-target:8890/admin?tab=release",
+      port: 8890,
+      url: "http://synosec-attack-path-target:8890/admin?tab=release",
+      startUrl: "http://synosec-attack-path-target:8890/cases",
+      validationTargets: [{
+        label: "Case detail",
+        url: "http://synosec-attack-path-target:8890/cases/case-1"
+      }]
+    });
+  });
+
   it("inherits the configured port when the model sends a baseUrl without one", () => {
     const result = parseExecutionTarget({
       baseUrl: "http://localhost",

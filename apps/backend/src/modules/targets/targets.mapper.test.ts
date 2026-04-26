@@ -14,6 +14,7 @@ function createApplicationRow(overrides: Partial<Application> = {}): Application
     id: "1f92a3d7-4f70-4950-b750-9bf74c6f3591",
     name: "Nils Wickman Portfolio",
     baseUrl: "https://nilswickman.com",
+    executionBaseUrl: null,
     environment: "production" as ApplicationEnvironment,
     status: "active" as ApplicationStatus,
     lastScannedAt: null,
@@ -70,6 +71,7 @@ describe("mapTargetRow", () => {
 
     expect(target.name).toBe("Nils Wickman Portfolio");
     expect(target.baseUrl).toBe("https://nilswickman.com");
+    expect(target.executionBaseUrl).toBeNull();
     expect(target.constraintBindings).toHaveLength(1);
     expect(target.constraintBindings?.[0]?.constraint?.provider).toBe("cloudflare");
     expect(target.constraintBindings?.[0]?.constraint?.documentationUrls).toEqual([

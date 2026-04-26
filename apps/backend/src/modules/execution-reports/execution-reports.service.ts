@@ -10,6 +10,7 @@ import {
   executionReportSummarySchema,
   executionReportToolActivitySchema,
   executionReportFindingSchema,
+  getWorkflowReportedAttackVectors,
   getWorkflowReportedFindings,
   normalizeExecutionReportStatus,
   summarizeHighestSeverity,
@@ -33,12 +34,23 @@ type ExecutionReportSnapshot = Omit<ExecutionReportDetail, "id" | "archivedAt"> 
 
 function parseGraph(value: Prisma.JsonValue) {
   const parsed = executionReportGraphSchema.safeParse(value);
-  return parsed.success ? parsed.data : { nodes: [], edges: [] };
+  if (!parsed.success) {
+    throw new RequestError(500, `Execution report graph payload is invalid: ${parsed.error.message}`);
+  }
+  return parsed.data;
 }
 
 function parseAttackPaths(value: Prisma.JsonValue) {
+  if (value === null || value === undefined) {
+    return { venues: [], vectors: [], paths: [] };
+  }
+
   const parsed = attackPathSummarySchema.safeParse(value);
-  return parsed.success ? parsed.data : { venues: [], vectors: [], paths: [] };
+  if (!parsed.success) {
+    throw new RequestError(500, `Execution report attackPaths payload is invalid: ${parsed.error.message}`);
+  }
+
+  return parsed.data;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -139,8 +151,8 @@ function buildWorkflowExecutionGraph(findings: WorkflowReportedFinding[]) {
       edges.push({
         id: `${relatedFindingId}:derived:${finding.id}`,
         kind: "derived_from",
-        source: finding.id,
-        target: relatedFindingId,
+        source: relatedFindingId,
+        target: finding.id,
         createdAt: finding.createdAt
       });
     }
@@ -302,24 +314,30 @@ function includesQuery(parts: Array<string | null | undefined>, query: string) {
 
 function parseFindings(value: Prisma.JsonValue) {
   if (!Array.isArray(value)) {
-    return [];
+    throw new RequestError(500, "Execution report findings payload is invalid: expected an array.");
   }
 
-  return value
-    .map((entry) => executionReportFindingSchema.safeParse(entry))
-    .filter((entry): entry is { success: true; data: ExecutionReportFinding } => entry.success)
-    .map((entry) => entry.data);
+  return value.map((entry, index) => {
+    const parsed = executionReportFindingSchema.safeParse(entry);
+    if (!parsed.success) {
+      throw new RequestError(500, `Execution report findings[${index}] payload is invalid: ${parsed.error.message}`);
+    }
+    return parsed.data;
+  });
 }
 
 function parseToolActivity(value: Prisma.JsonValue) {
   if (!Array.isArray(value)) {
-    return [];
+    throw new RequestError(500, "Execution report toolActivity payload is invalid: expected an array.");
   }
 
-  return value
-    .map((entry) => executionReportToolActivitySchema.safeParse(entry))
-    .filter((entry): entry is { success: true; data: ExecutionReportDetail["toolActivity"][number] } => entry.success)
-    .map((entry) => entry.data);
+  return value.map((entry, index) => {
+    const parsed = executionReportToolActivitySchema.safeParse(entry);
+    if (!parsed.success) {
+      throw new RequestError(500, `Execution report toolActivity[${index}] payload is invalid: ${parsed.error.message}`);
+    }
+    return parsed.data;
+  });
 }
 
 function normalizeExecutionKind(value: string | null | undefined): ExecutionKind | null {
@@ -527,6 +545,7 @@ export class ExecutionReportsService {
     }
 
     const workflowFindings = getWorkflowReportedFindings(workflowRun);
+    const workflowAttackVectors = getWorkflowReportedAttackVectors(workflowRun);
     const findings = workflowFindings.map((finding) => executionReportFindingFromWorkflowFinding(finding));
     const toolActivity = workflowRun.events
       .filter((event) => event.type === "tool_result")
@@ -557,6 +576,7 @@ export class ExecutionReportsService {
       ?? normalizeExecutionKind(run.workflow.executionKind)
       ?? "workflow";
     const graph = buildWorkflowExecutionGraph(workflowFindings);
+    const attackPaths = report.attackPaths;
 
     return {
       executionId: workflowRun.id,
@@ -572,7 +592,7 @@ export class ExecutionReportsService {
       updatedAt: run.completedAt.toISOString(),
       executiveSummary: report.executiveSummary,
       attackPathExecutiveSummary: report.attackPathExecutiveSummary,
-      attackPaths: report.attackPaths,
+      attackPaths,
       graph,
       findings,
       toolActivity,
@@ -588,7 +608,8 @@ export class ExecutionReportsService {
       raw: {
         eventCount: workflowRun.events.length,
         graph,
-        attackPaths: report.attackPaths,
+        attackPaths,
+        attackVectors: workflowAttackVectors,
         attackPathExecutiveSummary: report.attackPathExecutiveSummary
       }
     };

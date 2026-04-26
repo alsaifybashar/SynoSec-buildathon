@@ -10,10 +10,12 @@ import {
   type AiAgent,
   type AiTool,
   type Workflow,
+  type WorkflowReportedAttackVector,
   type WorkflowReportedFinding,
   type WorkflowRun,
   type WorkflowRunTokenUsage,
   type WorkflowTraceEvent,
+  workflowReportedAttackVectorSchema,
   workflowReportedFindingSchema
 } from "./resources.js";
 
@@ -400,6 +402,11 @@ function parseWorkflowFinding(value: unknown): WorkflowReportedFinding | null {
   return parsed.success ? parsed.data : null;
 }
 
+function parseWorkflowAttackVector(value: unknown): WorkflowReportedAttackVector | null {
+  const parsed = workflowReportedAttackVectorSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 function getToolName(event: WorkflowTraceEvent, toolLookup: Record<string, string>) {
   const payload = event.payload ?? {};
   const payloadToolId = getPayloadString(payload, "toolId");
@@ -615,6 +622,17 @@ export function getWorkflowReportedFindings(run: WorkflowRun | null) {
     .filter((finding): finding is WorkflowReportedFinding => Boolean(finding));
 }
 
+export function getWorkflowReportedAttackVectors(run: WorkflowRun | null) {
+  if (!run) {
+    return [];
+  }
+
+  return run.events
+    .filter((event) => event.type === "attack_vector_reported")
+    .map((event) => parseWorkflowAttackVector((event.payload ?? {})["attackVector"]))
+    .filter((vector): vector is WorkflowReportedAttackVector => Boolean(vector));
+}
+
 export function getWorkflowRunCoverage(_run: WorkflowRun | null): WorkflowRunCoverage[] {
   return [];
 }
@@ -653,7 +671,8 @@ export function buildWorkflowRunReport(run: WorkflowRun | null): WorkflowRunRepo
   }
 
   const findings = getWorkflowReportedFindings(run);
-  const attackPaths = attackPathSummaryFromWorkflowFindings(findings, getLatestWorkflowRunHandoff(run));
+  const attackVectors = getWorkflowReportedAttackVectors(run);
+  const attackPaths = attackPathSummaryFromWorkflowFindings(findings, getLatestWorkflowRunHandoff(run), attackVectors);
   const findingsBySeverity = emptySeveritySummary();
   for (const finding of findings) {
     findingsBySeverity[finding.severity] += 1;

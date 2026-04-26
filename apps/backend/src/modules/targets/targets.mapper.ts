@@ -43,6 +43,7 @@ export function mapTargetRow(row: Application & {
     id: row.id,
     name: row.name,
     baseUrl: row.baseUrl,
+    executionBaseUrl: row.executionBaseUrl,
     environment: row.environment,
     status: row.status,
     lastScannedAt: row.lastScannedAt?.toISOString() ?? null,

@@ -131,6 +131,69 @@ export function normalizeToolInput(input: unknown): Record<string, unknown> {
   return normalized;
 }
 
+function rewriteUrlToRuntimeOrigin(value: string, runtimeBaseUrl: string) {
+  try {
+    const runtime = new URL(runtimeBaseUrl);
+    const parsed = new URL(value, runtime);
+    return new URL(`${parsed.pathname}${parsed.search}${parsed.hash}`, runtime).toString();
+  } catch {
+    return value;
+  }
+}
+
+function rewriteValidationTargets(value: unknown, runtimeBaseUrl: string) {
+  if (!Array.isArray(value)) {
+    return value;
+  }
+
+  return value.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return entry;
+    }
+
+    const next = { ...(entry as Record<string, unknown>) };
+    for (const key of ["url", "endpoint"] as const) {
+      const candidate = next[key];
+      if (typeof candidate === "string" && candidate.trim().length > 0) {
+        next[key] = rewriteUrlToRuntimeOrigin(candidate, runtimeBaseUrl);
+      }
+    }
+    return next;
+  });
+}
+
+export function applyWorkflowRuntimeTarget(
+  toolInput: Record<string, unknown>,
+  target: { baseUrl: string; host: string; port?: number }
+): Record<string, unknown> {
+  let firstEndpointUrl: string | null = null;
+  const scopedInput: Record<string, unknown> = {
+    ...toolInput,
+    target: target.host,
+    baseUrl: target.baseUrl,
+    ...(target.port === undefined ? {} : { port: target.port })
+  };
+
+  for (const key of ["url", "startUrl", "loginUrl"] as const) {
+    const value = toolInput[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      const rewritten = rewriteUrlToRuntimeOrigin(value, target.baseUrl);
+      scopedInput[key] = rewritten;
+      firstEndpointUrl ??= rewritten;
+    }
+  }
+
+  if (firstEndpointUrl) {
+    scopedInput["baseUrl"] = firstEndpointUrl;
+  }
+
+  if ("validationTargets" in toolInput) {
+    scopedInput["validationTargets"] = rewriteValidationTargets(toolInput["validationTargets"], target.baseUrl);
+  }
+
+  return scopedInput;
+}
+
 export function parseExecutionTarget(
   toolInput: Record<string, unknown>,
   fallbackTarget: { baseUrl: string; host: string; port?: number }
@@ -227,12 +290,21 @@ export function verifyFindingEvidence(
     quote: item.quote.trim()
   }));
 
-  const ungrounded = matches.filter((match) => !match.result || !quoteAppearsInResult(match.quote, match.result));
-  if (ungrounded.length > 0) {
+  const unresolved = matches.filter((match) => !match.result);
+  if (unresolved.length > 0) {
     return {
       validationStatus: "rejected",
       confidence: 0.1,
-      reason: `Evidence grounding failed for item ${ungrounded[0]!.evidenceIndex + 1}; the quote was not traceable to a persisted tool result.`
+      reason: `Evidence grounding failed for item ${unresolved[0]!.evidenceIndex + 1}; the evidence reference did not map to a persisted tool result.`
+    };
+  }
+
+  const nonVerbatim = matches.filter((match) => !quoteAppearsInResult(match.quote, match.result!));
+  if (nonVerbatim.length > 0) {
+    return {
+      validationStatus: "suspected",
+      confidence: Math.min(finding.confidence, 0.69),
+      reason: `Evidence item ${nonVerbatim[0]!.evidenceIndex + 1} mapped to a persisted tool result but the quote was not verbatim-traceable.`
     };
   }
 

@@ -50,4 +50,24 @@ describe("authorizeToolRequest", () => {
 
     expect(result.allowed).toBe(true);
   });
+
+  it("allows connector execution aliases when they are included in scan scope", () => {
+    const result = authorizeToolRequest({
+      ...scan,
+      scope: {
+        ...scan.scope,
+        targets: [
+          ...scan.scope.targets,
+          "synosec-attack-path-target",
+          "http://synosec-attack-path-target:8890/"
+        ]
+      }
+    }, {
+      ...request,
+      target: "synosec-attack-path-target",
+      port: 8890
+    });
+
+    expect(result.allowed).toBe(true);
+  });
 });

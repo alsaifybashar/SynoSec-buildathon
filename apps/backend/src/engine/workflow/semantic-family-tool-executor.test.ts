@@ -402,6 +402,44 @@ describe("executeSemanticFamilyTool", () => {
     ]));
   });
 
+  it("treats completed zero-observation semantic runs as negative results instead of failures", async () => {
+    const familyTool = getBuiltinAiTool("builtin-parameter-discovery");
+    const familyDefinition = getSemanticFamilyDefinition("parameter_discovery");
+    if (!familyTool || !familyDefinition) {
+      throw new Error("Missing builtin semantic family tool definition");
+    }
+
+    const runtime = createToolRuntime(new MemoryAiToolsRepository([
+      createSeededTool("seed-arjun"),
+      createSeededTool("seed-paramspider")
+    ]));
+    const broker = new ToolBroker({ broadcast: () => undefined });
+    const rawInput = {
+      target: "127.0.0.1",
+      url: `${baseUrl}health`,
+      candidateParameters: ["unlikely_parameter"],
+      maxRequests: 1
+    };
+
+    const family = await executeSemanticFamilyTool({
+      broker,
+      toolRuntime: runtime,
+      familyTool,
+      familyDefinition,
+      target: {
+        baseUrl,
+        host: "127.0.0.1"
+      },
+      scan,
+      tacticId: "tactic-family-parameter-negative",
+      agentId: "agent-family-parameter-negative"
+    }, rawInput);
+
+    expect(family.response.status).toBe("completed");
+    expect(family.response.observations).toEqual([]);
+    expect(family.response.outputPreview).toContain("No likely parameters were confirmed");
+  });
+
   it("returns usable reflected-input evidence for xss validation", async () => {
     const familyTool = getBuiltinAiTool("builtin-xss-validation");
     const familyDefinition = getSemanticFamilyDefinition("xss_validation");

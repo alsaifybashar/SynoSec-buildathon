@@ -61,7 +61,17 @@ const report: ExecutionReportDetail = {
         findingIds: ["finding-1", "finding-2"],
         supportingFindingIds: ["finding-1", "finding-2"],
         suspectedFindingIds: [],
-        blockedFindingIds: []
+        blockedFindingIds: [],
+        validation: {
+          evidenceLevel: "single_source_findings",
+          summary: "The attack vector is backed by concrete evidence on both findings, but still lacks end-to-end chain replay.",
+          observedTransition: "The initial admin exposure provided the entrypoint that the follow-on credential test used.",
+          evidenceRefs: [
+            { findingId: "finding-1", sourceTool: "httpx", quote: "GET /admin returned 200", toolRunRef: "tool-run-1" },
+            { findingId: "finding-2", sourceTool: "hydra", quote: "credential reuse succeeded for admin:testpass", toolRunRef: "tool-run-2" }
+          ],
+          blockedReason: null
+        }
       }
     ],
     paths: [
@@ -89,7 +99,17 @@ const report: ExecutionReportDetail = {
             status: "qualified",
             supportingFindingIds: ["finding-1", "finding-2"],
             suspectedFindingIds: [],
-            blockedFindingIds: []
+            blockedFindingIds: [],
+            validation: {
+              evidenceLevel: "single_source_findings",
+              summary: "The attack vector is backed by concrete evidence on both findings, but still lacks end-to-end chain replay.",
+              observedTransition: "The initial admin exposure provided the entrypoint that the follow-on credential test used.",
+              evidenceRefs: [
+                { findingId: "finding-1", sourceTool: "httpx", quote: "GET /admin returned 200", toolRunRef: "tool-run-1" },
+                { findingId: "finding-2", sourceTool: "hydra", quote: "credential reuse succeeded for admin:testpass", toolRunRef: "tool-run-2" }
+              ],
+              blockedReason: null
+            }
           }
         ]
       }
@@ -343,6 +363,8 @@ describe("ExecutionReportsPage", () => {
     expect(screen.getAllByText("Findings").length).toBeGreaterThan(0);
     expect(screen.getByText("Executive Summary")).toBeInTheDocument();
     expect(screen.getByText("Ordered findings")).toBeInTheDocument();
+    expect(screen.getByText("single source findings")).toBeInTheDocument();
+    expect(screen.getByText(/2 evidence references/)).toBeInTheDocument();
     expect(screen.getByText("Verification")).toBeInTheDocument();
   });
 

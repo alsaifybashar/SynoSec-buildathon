@@ -76,7 +76,15 @@ export function compileToolRequestFromDefinition(tool: CompilableTool, input: Co
     baseUrl: explicitUrl ?? `http://${input.target}${input.port ? `:${input.port}` : ""}`,
     ...(input.toolInput ?? {})
   };
-  const timeoutMs = Math.max(1_000, Math.min(tool.timeoutMs, MAX_TOOL_TIMEOUT_MS));
+  const requestedTimeoutMs = (() => {
+    const value = input.toolInput?.["timeout_ms"] ?? input.toolInput?.["timeoutMs"];
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return null;
+    }
+
+    return value;
+  })();
+  const timeoutMs = Math.max(1_000, Math.min(requestedTimeoutMs ?? tool.timeoutMs, MAX_TOOL_TIMEOUT_MS));
 
   return {
     toolId: tool.id,

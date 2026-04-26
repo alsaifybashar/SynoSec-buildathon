@@ -15,7 +15,7 @@ describe("workflow stage contracts", () => {
     expect(contract).toEqual({
       objective: "Complete the Recon stage using allowed tools and structured reporting.",
       stageSystemPrompt: defaultStageSystemPromptTemplate,
-      allowedToolIds: ["builtin-http-surface-assessment", "builtin-content-discovery"],
+      allowedToolIds: ["builtin-http-surface-assessment", "seed-http-recon", "builtin-content-discovery"],
       requiredEvidenceTypes: [],
       findingPolicy: expect.objectContaining({ taxonomy: "typed-core-v1" }),
       completionRule: {
@@ -45,7 +45,7 @@ describe("workflow stage contracts", () => {
 
     expect(contract.objective).toBe("Complete the Validate stage using allowed tools and structured reporting.");
     expect(contract.stageSystemPrompt).toBe(defaultStageSystemPromptTemplate);
-    expect(contract.allowedToolIds).toEqual(["builtin-http-surface-assessment", "builtin-content-discovery"]);
+    expect(contract.allowedToolIds).toEqual(["builtin-http-surface-assessment", "seed-http-recon", "builtin-content-discovery"]);
     expect(contract.requiredEvidenceTypes).toEqual(["http", "headers"]);
     expect(contract.resultSchemaVersion).toBe(1);
     expect(contract.handoffSchema).toBeNull();

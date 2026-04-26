@@ -54,4 +54,47 @@ describe("compileToolRequestFromDefinition", () => {
       baseUrl: "http://localhost:8888/search?q=1"
     });
   });
+
+  it("allows tool input timeout override via timeout_ms", () => {
+    const request = compileToolRequestFromDefinition({
+      id: "seed-agent-bash-command",
+      name: "Agent Bash Command",
+      executorType: "bash",
+      bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
+      capabilities: ["agent-bash-command"],
+      riskTier: "active",
+      timeoutMs: 30000
+    }, {
+      target: "localhost",
+      layer: "L7",
+      justification: "test",
+      toolInput: {
+        command: "echo hello",
+        timeout_ms: 120000
+      }
+    });
+
+    expect(request.parameters["timeoutMs"]).toBe(10000);
+  });
+
+  it("keeps default tool timeout when timeout override is absent", () => {
+    const request = compileToolRequestFromDefinition({
+      id: "seed-agent-bash-command",
+      name: "Agent Bash Command",
+      executorType: "bash",
+      bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
+      capabilities: ["agent-bash-command"],
+      riskTier: "active",
+      timeoutMs: 8000
+    }, {
+      target: "localhost",
+      layer: "L7",
+      justification: "test",
+      toolInput: {
+        command: "echo hello"
+      }
+    });
+
+    expect(request.parameters["timeoutMs"]).toBe(8000);
+  });
 });

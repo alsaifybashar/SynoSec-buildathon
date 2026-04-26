@@ -37,6 +37,7 @@ import { fierceTool } from "./tools/subdomain/fierce.js";
 import { subfinderTool } from "./tools/subdomain/subfinder.js";
 import { sublist3rEnumTool } from "./tools/subdomain/sublist3r-enum.js";
 import { theHarvesterTool } from "./tools/subdomain/theharvester.js";
+import { agentBashCommandTool } from "./tools/utility/agent-bash-command.js";
 import { bashProbeTool } from "./tools/utility/bash-probe.js";
 import { checksecTool } from "./tools/utility/checksec.js";
 import { gDBTool } from "./tools/utility/gdb.js";
@@ -76,6 +77,7 @@ import { evilWinRMTool } from "./tools/windows/evil-winrm.js";
 import { netExecTool } from "./tools/windows/netexec.js";
 import { responderTool } from "./tools/windows/responder.js";
 import {
+  attackPathHandoffJsonSchema,
   defaultWorkflowStageSystemPrompt,
   type AiTool
 } from "@synosec/contracts";
@@ -87,6 +89,7 @@ export const securePentApplicationId = "4d8e9e0a-bfd4-4b24-8fb9-8656b511a2b8";
 export const osiSingleAgentWorkflowId = "8b57f0e7-1dd7-4d6a-8db5-c4ff7be80a21";
 export const osiCompactFamilyWorkflowId = "0e8e3912-c48f-4c34-9ac0-c54ec70df3f6";
 export const attackVectorPlanningWorkflowId = "9b59b237-c956-44db-aab0-a46b9f4bf8b3";
+export const bashSingleToolWorkflowId = "6b8d087e-43bc-48d8-8e66-a167f8d9f5cb";
 export const portfolioEvidenceGraphWorkflowId = "5edb1601-27cf-4a87-b7d4-a50873f5d985";
 
 const defaultWorkflowStagePrompts = {
@@ -95,104 +98,31 @@ const defaultWorkflowStagePrompts = {
 
 const attackVectorPlanningStagePrompt = [
   "Role and goal:",
-  "Complete the current workflow stage for SynoSec by mapping plausible attack vectors and attack venues across the approved target surface.",
+  "Complete the current workflow stage by mapping plausible attack venues, attack vectors, and prioritized attack paths across the approved target surface.",
   "",
   "Working style:",
   "Keep progress updates concise and action-oriented.",
-  "Do not expose private chain-of-thought.",
   "",
   "Evidence expectations:",
   "Prefer concrete, evidence-backed findings over unsupported narrative.",
+  "Use persisted tool-result quotes as evidence; do not invent evidence.",
   "Distinguish confirmed findings from weaker hypotheses when the evidence is incomplete.",
-  "Link related weaknesses explicitly and capture what each venue exposes, what each vector requires, and which findings support the path.",
+  "Do not describe an attack path as confirmed compromise, takeover, credential theft, or privilege escalation unless the final outcome was directly observed or the transition was validated end-to-end.",
+  "If individual findings are confirmed but the full chain lacks replay, label the path as plausible or qualified and state the missing validation explicitly.",
   "",
-  "Completion checklist:",
-  "1. Run evidence tools first and inspect their persisted tool results before reporting weaknesses.",
-  "2. Call report_finding for 1-4 supported weaknesses. Use persisted evidence quotes from tool results; do not invent evidence.",
-  "3. When a finding supports a path, include relationship fields such as derivedFromFindingIds, relatedFindingIds, or enablesFindingIds, or include chain metadata with explanationSummary and confidenceReason.",
-  "4. Before complete_run, make sure report_finding has returned finding ids and use those finding ids in related findings and handoff attack paths.",
-  "5. Include handoff.attackVenues, handoff.attackVectors, and handoff.attackPaths in complete_run; attack paths must reference the returned finding ids.",
-  "6. Call complete_run only after the required finding ids and handoff path references exist.",
+  "Finding and path requirements:",
+  "Report 1-4 supported weaknesses.",
+  "Use returned finding ids when linking findings, reporting attack vectors, and building handoff paths.",
+  "When one finding enables or supports another, prefer explicit attack-vector records after both findings exist.",
+  "If an explicit attack-vector record is not applicable, include relationship fields such as derivedFromFindingIds, relatedFindingIds, or enablesFindingIds, or include chain metadata with explanationSummary and confidenceReason.",
+  "Each linked path must state what the venue exposes, what the vector requires, which finding ids support it, and what uncertainty remains.",
   "",
   "Stage result expectations:",
-  "Use the handoff to summarize attackVenues, attackVectors, and prioritized attackPaths that reference finding ids."
+  "Use the handoff to summarize attackVenues, attackVectors, and prioritized attackPaths.",
+  "Every handoff attack path must reference returned finding ids.",
+  "Separate confirmed findings from unproven attack-path outcomes.",
+  "Present recommended next steps as validation work unless compromise was directly observed."
 ].join("\n");
-
-const attackVectorPlanningHandoffSchema = {
-  type: "object",
-  properties: {
-    attackVenues: {
-      type: "array",
-      description: "Observed entrypoints or reachable surfaces that matter to the attack map.",
-      items: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          label: { type: "string" },
-          venueType: { type: "string" },
-          targetLabel: { type: "string" },
-          summary: { type: "string" },
-          findingIds: {
-            type: "array",
-            items: { type: "string" }
-          }
-        },
-        required: ["id", "label", "venueType", "targetLabel", "summary", "findingIds"]
-      }
-    },
-    attackVectors: {
-      type: "array",
-      description: "Potential exploit or abuse routes derived from linked findings.",
-      items: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          label: { type: "string" },
-          sourceVenueId: { type: "string" },
-          destinationVenueId: { type: "string" },
-          preconditions: {
-            type: "array",
-            items: { type: "string" }
-          },
-          impact: { type: "string" },
-          confidence: { type: "number" },
-          findingIds: {
-            type: "array",
-            items: { type: "string" }
-          }
-        },
-        required: ["id", "label", "preconditions", "impact", "confidence", "findingIds"]
-      }
-    },
-    attackPaths: {
-      type: "array",
-      description: "Prioritized end-to-end routes through the observed attack map.",
-      items: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          title: { type: "string" },
-          summary: { type: "string" },
-          severity: { type: "string" },
-          venueIds: {
-            type: "array",
-            items: { type: "string" }
-          },
-          vectorIds: {
-            type: "array",
-            items: { type: "string" }
-          },
-          findingIds: {
-            type: "array",
-            items: { type: "string" }
-          }
-        },
-        required: ["id", "title", "summary", "severity", "venueIds", "vectorIds", "findingIds"]
-      }
-    }
-  },
-  required: ["attackVenues", "attackVectors", "attackPaths"]
-} as const;
 
 const attackPathSemanticFamilyToolIds = [
   "builtin-http-surface-assessment",
@@ -215,7 +145,7 @@ const workflowBuiltinActionToolIds = [
   "builtin-complete-run"
 ] as const;
 
-export type SeededRoleKey = "generic-pentester";
+export type SeededRoleKey = "generic-pentester" | "bash-poc-agent";
 
 function withConstraintProfile<
   T extends {
@@ -326,6 +256,7 @@ const rawSeededToolDefinitions = [
   subfinderTool,
   sublist3rEnumTool,
   theHarvesterTool,
+  agentBashCommandTool,
   bashProbeTool,
   checksecTool,
   gDBTool,
@@ -386,26 +317,20 @@ export const seededRoleDefinitions = [
     systemPrompt:
       [
         "Role and goal:",
-        "You are the generic pentesting agent for SynoSec. Use the exposed capability-level tools to map how weaknesses may connect, identify plausible attack paths, and keep every linked vulnerability grounded in evidence or explicitly qualified uncertainty.",
+        "Map how weaknesses may connect, identify plausible attack paths, and keep every linked vulnerability grounded in evidence or explicitly qualified uncertainty.",
         "",
         "Scope and safety boundaries:",
-        "Use only the available capability tools and built-in workflow actions for this run.",
         "Do not ask for raw tool access, brand-specific substitutions, or alternate execution paths outside the exposed workflow surface.",
         "",
         "Evidence and reporting requirements:",
         "Prefer structured evidence-backed findings over free-form narrative.",
         "Focus on linking potential vulnerabilities, preconditions, and follow-on impact rather than reporting isolated observations with no attack-path context.",
         "Distinguish confirmed findings, plausible hypotheses, and rejected leads in your reporting.",
-        "Use report_finding for concrete supported findings and for plausible linked vulnerabilities when the evidence is partial, but mark those with lower confidence and validationStatus such as suspected or unverified.",
+        "For concrete supported findings and plausible linked vulnerabilities with partial evidence, use lower confidence and validationStatus such as suspected or unverified.",
         "When findings connect, capture the relationship explicitly with derivedFromFindingIds, relatedFindingIds, or enablesFindingIds instead of implying the connection only in prose.",
         "Use relationshipExplanations, chain, explanationSummary, and confidenceReason to explain why a finding belongs in an attack path and what uncertainty remains.",
         "Each finding should describe the affected asset or URL, the preconditions that make the issue matter, the observed or plausible impact, and the most direct remediation.",
-        "Call log_progress for short operator-visible updates before tool calls and after meaningful results, but treat log_progress as secondary to high-quality report_finding calls.",
-        "Do not expose private chain-of-thought; provide concise action-oriented progress notes instead.",
-        "",
-        "Completion requirements:",
-        "When the workflow completion rule has minFindings greater than 0, report_finding is mandatory before complete_run; complete_run cannot create or replace missing findings.",
-        "Use report_finding for concrete supported findings and plausible linked vulnerabilities, then use the returned finding ids in relationships and attack-path handoff data before ending the workflow with complete_run.",
+        "Keep operator-visible progress updates short and action-oriented, and treat them as secondary to evidence quality.",
         "",
         "Blocked or failed behavior:",
         "If evidence does not support a vulnerability link or attack path, keep it out of findings, preserve the original uncertainty, and close with a qualified summary of the remaining hypotheses."
@@ -418,11 +343,36 @@ export const seededRoleDefinitions = [
       "builtin-web-vulnerability-audit",
       "builtin-sql-injection-validation"
     ] as const
+  },
+  {
+    key: "bash-poc-agent" as const,
+    name: "Bash PoC Agent",
+    description: "Proof-of-concept agent with a single seeded bash execution tool.",
+    systemPrompt:
+      [
+        "Role and goal:",
+        "Execute bounded project tasks by calling the single bash tool with structured arguments.",
+        "",
+        "Scope and safety boundaries:",
+        "Only use the exposed bash tool for execution and keep commands focused on the current project objective.",
+        "",
+        "Evidence and reporting requirements:",
+        "Write bash source in the `command` argument.",
+        "Put execution controls in separate fields when needed: `cwd`, `timeout_ms`, `env`, `stdin`.",
+        "Use log_progress for concise status updates and report_finding for structured outputs when evidence should be persisted.",
+        "",
+        "Blocked or failed behavior:",
+        "When command execution fails, preserve the failure context and avoid presenting partial success as completion."
+      ].join("\n"),
+    toolIds: [
+      "seed-agent-bash-command"
+    ] as const
   }
 ] as const;
 
 export const seededAgentIds = {
-  "anthropic:generic-pentester": "4c526f02-d11c-4e01-aeb4-a84f271ec3bc"
+  "anthropic:generic-pentester": "4c526f02-d11c-4e01-aeb4-a84f271ec3bc",
+  "anthropic:bash-poc-agent": "56e647a5-3fa2-4c52-a937-61b17f88bc9d"
 } as const;
 
 export function seededAgentId(roleKey: SeededRoleKey) {
@@ -447,7 +397,7 @@ export function getSeededWorkflowDefinitions() {
           label: "Compact Evaluation",
           agentId: seededAgentId("generic-pentester"),
           objective:
-            "Run one evidence-backed compact capability evaluation across the configured target. Use only the exposed workflow tools for collection and validation, think in terms of assessment intent rather than tool brands, register concrete findings through report_finding, and end only through complete_run.",
+            "Run one evidence-backed compact capability evaluation across the configured target. Think in terms of assessment intent rather than tool brands, identify concrete supported weaknesses, and produce a clear stage result.",
           ...defaultWorkflowStagePrompts,
           allowedToolIds: [
             ...workflowBuiltinActionToolIds,
@@ -495,7 +445,7 @@ export function getSeededWorkflowDefinitions() {
           label: "Attack Vector Planning",
           agentId: seededAgentId("generic-pentester"),
           objective:
-            "Run one evidence-backed attack-vector planning pass across the configured target. Use only the exposed workflow tools for discovery and validation, link plausible vulnerabilities into explicit attack paths, register supported and clearly qualified suspected findings through report_finding, and end only through complete_run.",
+            "Run one evidence-backed attack-vector planning pass across the configured target. Link plausible vulnerabilities into explicit attack paths, distinguish supported findings from clearly qualified suspected findings, and produce a clear stage result.",
           stageSystemPrompt: attackVectorPlanningStagePrompt,
           allowedToolIds: [
             ...workflowBuiltinActionToolIds,
@@ -527,7 +477,55 @@ export function getSeededWorkflowDefinitions() {
             requireChainedFindings: true
           },
           resultSchemaVersion: 1,
-          handoffSchema: attackVectorPlanningHandoffSchema
+          handoffSchema: attackPathHandoffJsonSchema
+        }
+      ]
+    },
+    {
+      id: bashSingleToolWorkflowId,
+      name: "Bash Single-Tool PoC",
+      status: "active" as const,
+      executionKind: "workflow" as const,
+      description: "Proof-of-concept workflow where agent execution is constrained to one seeded bash tool plus built-in reporting actions.",
+      stages: [
+        {
+          id: "84f366d7-638d-4403-a012-0f27d4e6e981",
+          label: "Bash Execution",
+          agentId: seededAgentId("bash-poc-agent"),
+          objective:
+            "Complete the task by calling the bash tool with structured arguments. Put bash source in `command` and keep execution metadata in dedicated fields.",
+          ...defaultWorkflowStagePrompts,
+          allowedToolIds: [
+            ...workflowBuiltinActionToolIds,
+            "seed-agent-bash-command"
+          ],
+          requiredEvidenceTypes: [],
+          findingPolicy: {
+            taxonomy: "typed-core-v1",
+            allowedTypes: [
+              "service_exposure",
+              "content_discovery",
+              "missing_security_header",
+              "tls_weakness",
+              "injection_signal",
+              "auth_weakness",
+              "sensitive_data_exposure",
+              "misconfiguration",
+              "other"
+            ]
+          },
+          completionRule: {
+            requireStageResult: true,
+            requireToolCall: true,
+            allowEmptyResult: false,
+            minFindings: 0,
+            requireReachableSurface: false,
+            requireEvidenceBackedWeakness: false,
+            requireOsiCoverageStatus: false,
+            requireChainedFindings: false
+          },
+          resultSchemaVersion: 1,
+          handoffSchema: null
         }
       ]
     }

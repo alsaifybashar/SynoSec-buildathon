@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { type WorkflowReportedFinding, workflowReportedFindingSchema, workflowFindingValidationStatusSchema } from "./resources.js";
+import {
+  type WorkflowReportedAttackVector,
+  type WorkflowReportedFinding,
+  workflowAttackVectorKindSchema,
+  workflowFindingValidationStatusSchema,
+  workflowReportedAttackVectorSchema,
+  workflowReportedFindingSchema
+} from "./resources.js";
 import { severitySchema } from "./scan-core.js";
 
 const attackPathRouteStatusSchema = z.enum(["confirmed", "qualified", "blocked"]);
@@ -8,8 +15,46 @@ export type AttackPathRouteStatus = z.infer<typeof attackPathRouteStatusSchema>;
 const attackPathConfidenceBandSchema = z.enum(["low", "medium", "high"]);
 export type AttackPathConfidenceBand = z.infer<typeof attackPathConfidenceBandSchema>;
 
-const attackPathLinkKindSchema = z.enum(["enables", "derived_from", "related"]);
+const attackPathLinkKindSchema = workflowAttackVectorKindSchema;
 export type AttackPathLinkKind = z.infer<typeof attackPathLinkKindSchema>;
+
+const attackPathEvidenceLevelSchema = z.enum([
+  "relationship_only",
+  "single_source",
+  "cross_validated",
+  "reproduced",
+  "single_source_findings",
+  "confirmed_findings",
+  "blocked"
+]);
+export type AttackPathEvidenceLevel = z.infer<typeof attackPathEvidenceLevelSchema>;
+
+export const attackPathValidationEvidenceRefSchema = z.object({
+  findingId: z.string().uuid(),
+  sourceTool: z.string().min(1),
+  quote: z.string().min(1),
+  artifactRef: z.string().min(1).optional(),
+  observationRef: z.string().min(1).optional(),
+  toolRunRef: z.string().min(1).optional(),
+  traceEventId: z.string().uuid().optional(),
+  externalUrl: z.string().url().optional()
+});
+export type AttackPathValidationEvidenceRef = z.infer<typeof attackPathValidationEvidenceRefSchema>;
+
+export const attackPathValidationSchema = z.object({
+  evidenceLevel: attackPathEvidenceLevelSchema,
+  summary: z.string().min(1),
+  observedTransition: z.string().min(1).nullable().default(null),
+  evidenceRefs: z.array(attackPathValidationEvidenceRefSchema).default([]),
+  blockedReason: z.string().min(1).nullable().default(null)
+}).default({
+  evidenceLevel: "relationship_only",
+  summary: "This attack-vector relationship was derived from reported finding metadata and has not been independently validated.",
+  observedTransition: null,
+  evidenceRefs: [],
+  blockedReason: null
+});
+export type AttackPathValidation = z.infer<typeof attackPathValidationSchema>;
 
 export const attackPathVenueSchema = z.object({
   id: z.string().min(1),
@@ -35,7 +80,8 @@ export const attackPathVectorSchema = z.object({
   findingIds: z.array(z.string().uuid()).default([]),
   supportingFindingIds: z.array(z.string().uuid()).default([]),
   suspectedFindingIds: z.array(z.string().uuid()).default([]),
-  blockedFindingIds: z.array(z.string().uuid()).default([])
+  blockedFindingIds: z.array(z.string().uuid()).default([]),
+  validation: attackPathValidationSchema
 });
 export type AttackPathVector = z.infer<typeof attackPathVectorSchema>;
 
@@ -48,7 +94,8 @@ export const attackPathLinkSchema = z.object({
   status: attackPathRouteStatusSchema,
   supportingFindingIds: z.array(z.string().uuid()).default([]),
   suspectedFindingIds: z.array(z.string().uuid()).default([]),
-  blockedFindingIds: z.array(z.string().uuid()).default([])
+  blockedFindingIds: z.array(z.string().uuid()).default([]),
+  validation: attackPathValidationSchema
 });
 export type AttackPathLink = z.infer<typeof attackPathLinkSchema>;
 
@@ -77,39 +124,205 @@ export const attackPathSummarySchema = z.object({
 });
 export type AttackPathSummary = z.infer<typeof attackPathSummarySchema>;
 
-const attackPathHandoffVenueSchema = z.object({
-  id: z.string().min(1).optional(),
-  label: z.string().min(1).optional(),
-  venueType: z.string().min(1).optional(),
-  targetLabel: z.string().min(1).optional(),
-  summary: z.string().min(1).optional(),
-  findingIds: z.array(z.string().uuid()).default([])
+const uniqueNonEmptyStringArraySchema = z.array(z.string().min(1)).min(1).refine((values) => new Set(values).size === values.length, {
+  message: "Expected unique string values."
+});
+const uniqueFindingIdArraySchema = z.array(z.string().uuid()).min(1).refine((values) => new Set(values).size === values.length, {
+  message: "Expected unique finding ids."
 });
 
-const attackPathHandoffVectorSchema = z.object({
-  id: z.string().min(1).optional(),
-  label: z.string().min(1).optional(),
+export const attackPathHandoffVenueSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  venueType: z.string().min(1),
+  targetLabel: z.string().min(1),
+  summary: z.string().min(1),
+  findingIds: uniqueFindingIdArraySchema
+}).strict();
+export type AttackPathHandoffVenue = z.infer<typeof attackPathHandoffVenueSchema>;
+
+export const attackPathHandoffVectorSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
   sourceVenueId: z.string().min(1).optional(),
   destinationVenueId: z.string().min(1).optional(),
-  preconditions: z.array(z.string().min(1)).default([]),
-  impact: z.string().min(1).optional(),
-  confidence: z.number().min(0).max(1).optional(),
-  findingIds: z.array(z.string().uuid()).default([])
-});
+  preconditions: uniqueNonEmptyStringArraySchema,
+  impact: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  findingIds: uniqueFindingIdArraySchema
+}).strict();
+export type AttackPathHandoffVector = z.infer<typeof attackPathHandoffVectorSchema>;
 
-const attackPathHandoffPathSchema = z.object({
-  id: z.string().min(1).optional(),
-  title: z.string().min(1).optional(),
-  summary: z.string().min(1).optional(),
-  severity: severitySchema.optional(),
-  venueIds: z.array(z.string().min(1)).default([]),
-  vectorIds: z.array(z.string().min(1)).default([]),
-  findingIds: z.array(z.string().uuid()).default([])
-});
+export const attackPathHandoffPathSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  severity: severitySchema,
+  venueIds: uniqueNonEmptyStringArraySchema,
+  vectorIds: uniqueNonEmptyStringArraySchema,
+  findingIds: uniqueFindingIdArraySchema
+}).strict();
+export type AttackPathHandoffPath = z.infer<typeof attackPathHandoffPathSchema>;
 
-type AttackPathHandoffVenue = z.infer<typeof attackPathHandoffVenueSchema>;
-type AttackPathHandoffVector = z.infer<typeof attackPathHandoffVectorSchema>;
-type AttackPathHandoffPath = z.infer<typeof attackPathHandoffPathSchema>;
+export const attackPathHandoffSchema = z.object({
+  attackVenues: z.array(attackPathHandoffVenueSchema).min(1),
+  attackVectors: z.array(attackPathHandoffVectorSchema).min(1),
+  attackPaths: z.array(attackPathHandoffPathSchema).min(1)
+}).strict().superRefine((value, ctx) => {
+  const requireUniqueIds = (path: string, ids: string[]) => {
+    const seen = new Set<string>();
+    ids.forEach((id, index) => {
+      if (seen.has(id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate ${path} id ${id}.`,
+          path: [path, index, "id"]
+        });
+      }
+      seen.add(id);
+    });
+  };
+
+  requireUniqueIds("attackVenues", value.attackVenues.map((venue) => venue.id));
+  requireUniqueIds("attackVectors", value.attackVectors.map((vector) => vector.id));
+  requireUniqueIds("attackPaths", value.attackPaths.map((path) => path.id));
+});
+export type AttackPathHandoff = z.infer<typeof attackPathHandoffSchema>;
+
+const uuidJsonSchema = { type: "string", format: "uuid" } as const;
+const idJsonSchema = { type: "string", minLength: 1 } as const;
+const nonEmptyStringArrayJsonSchema = {
+  type: "array",
+  minItems: 1,
+  uniqueItems: true,
+  items: idJsonSchema
+} as const;
+const findingIdArrayJsonSchema = {
+  type: "array",
+  minItems: 1,
+  uniqueItems: true,
+  items: uuidJsonSchema
+} as const;
+
+export const attackPathHandoffJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["attackVenues", "attackVectors", "attackPaths"],
+  properties: {
+    attackVenues: {
+      type: "array",
+      minItems: 1,
+      description: "Observed entrypoints or reachable surfaces that matter to the attack map.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "label", "venueType", "targetLabel", "summary", "findingIds"],
+        properties: {
+          id: idJsonSchema,
+          label: idJsonSchema,
+          venueType: idJsonSchema,
+          targetLabel: idJsonSchema,
+          summary: idJsonSchema,
+          findingIds: findingIdArrayJsonSchema
+        }
+      }
+    },
+    attackVectors: {
+      type: "array",
+      minItems: 1,
+      description: "Potential exploit or abuse routes derived from linked findings.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "label", "preconditions", "impact", "confidence", "findingIds"],
+        properties: {
+          id: idJsonSchema,
+          label: idJsonSchema,
+          sourceVenueId: idJsonSchema,
+          destinationVenueId: idJsonSchema,
+          preconditions: nonEmptyStringArrayJsonSchema,
+          impact: idJsonSchema,
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+          findingIds: findingIdArrayJsonSchema
+        }
+      }
+    },
+    attackPaths: {
+      type: "array",
+      minItems: 1,
+      description: "Prioritized end-to-end routes through the observed attack map.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "title", "summary", "severity", "venueIds", "vectorIds", "findingIds"],
+        properties: {
+          id: idJsonSchema,
+          title: idJsonSchema,
+          summary: idJsonSchema,
+          severity: { type: "string", enum: severitySchema.options },
+          venueIds: nonEmptyStringArrayJsonSchema,
+          vectorIds: nonEmptyStringArrayJsonSchema,
+          findingIds: findingIdArrayJsonSchema
+        }
+      }
+    }
+  }
+} as const;
+
+export function parseAttackPathHandoff(input: unknown): AttackPathHandoff {
+  return attackPathHandoffSchema.parse(input);
+}
+
+export function validateAttackPathHandoffReferences(input: {
+  handoff: AttackPathHandoff;
+  findingIds: Iterable<string>;
+  vectorIds?: Iterable<string>;
+}) {
+  const knownFindingIds = new Set(input.findingIds);
+  const venueIds = new Set(input.handoff.attackVenues.map((venue) => venue.id));
+  const vectorIds = new Set([
+    ...input.handoff.attackVectors.map((vector) => vector.id),
+    ...(input.vectorIds ? [...input.vectorIds] : [])
+  ]);
+  const errors: string[] = [];
+  const checkFindingIds = (path: string, findingIds: string[]) => {
+    for (const findingId of findingIds) {
+      if (!knownFindingIds.has(findingId)) {
+        errors.push(`${path} references unknown finding id ${findingId}`);
+      }
+    }
+  };
+
+  input.handoff.attackVenues.forEach((venue, index) => {
+    checkFindingIds(`attackVenues[${index}].findingIds`, venue.findingIds);
+  });
+
+  input.handoff.attackVectors.forEach((vector, index) => {
+    if (vector.sourceVenueId && !venueIds.has(vector.sourceVenueId)) {
+      errors.push(`attackVectors[${index}].sourceVenueId references unknown venue id ${vector.sourceVenueId}`);
+    }
+    if (vector.destinationVenueId && !venueIds.has(vector.destinationVenueId)) {
+      errors.push(`attackVectors[${index}].destinationVenueId references unknown venue id ${vector.destinationVenueId}`);
+    }
+    checkFindingIds(`attackVectors[${index}].findingIds`, vector.findingIds);
+  });
+
+  input.handoff.attackPaths.forEach((path, index) => {
+    for (const venueId of path.venueIds) {
+      if (!venueIds.has(venueId)) {
+        errors.push(`attackPaths[${index}].venueIds references unknown venue id ${venueId}`);
+      }
+    }
+    for (const vectorId of path.vectorIds) {
+      if (!vectorIds.has(vectorId)) {
+        errors.push(`attackPaths[${index}].vectorIds references unknown vector id ${vectorId}`);
+      }
+    }
+    checkFindingIds(`attackPaths[${index}].findingIds`, path.findingIds);
+  });
+
+  return errors;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -161,6 +374,10 @@ function isConfirmedFinding(finding: WorkflowReportedFinding) {
   return validationTier(finding.validationStatus) >= 3;
 }
 
+function isCrossValidatedFinding(finding: WorkflowReportedFinding) {
+  return finding.validationStatus === "cross_validated" || finding.validationStatus === "reproduced";
+}
+
 function isBlockedFinding(finding: WorkflowReportedFinding) {
   return finding.validationStatus === "blocked" || finding.validationStatus === "rejected";
 }
@@ -196,9 +413,17 @@ function confidenceBand(input: {
   return "low";
 }
 
+function isEndToEndValidatedEvidenceLevel(evidenceLevel: AttackPathEvidenceLevel) {
+  return evidenceLevel === "cross_validated" || evidenceLevel === "reproduced";
+}
+
 function routeStatus(input: {
   findings: WorkflowReportedFinding[];
-  criticalLinks: Array<{ kind: AttackPathLinkKind; status: AttackPathRouteStatus }>;
+  criticalLinks: Array<{
+    kind: AttackPathLinkKind;
+    status: AttackPathRouteStatus;
+    evidenceLevel?: AttackPathEvidenceLevel;
+  }>;
 }) {
   if (input.findings.some(isBlockedFinding) || input.criticalLinks.some((link) => link.status === "blocked")) {
     return "blocked" as const;
@@ -207,11 +432,95 @@ function routeStatus(input: {
     input.findings.length > 0
     && input.findings.every(isConfirmedFinding)
     && input.criticalLinks.length > 0
-    && input.criticalLinks.every((link) => link.kind !== "related" && link.status === "confirmed")
+    && input.criticalLinks.every((link) => (
+      link.kind !== "related"
+      && link.status === "confirmed"
+      && isEndToEndValidatedEvidenceLevel(link.evidenceLevel ?? "relationship_only")
+    ))
   ) {
     return "confirmed" as const;
   }
   return "qualified" as const;
+}
+
+function evidenceLevelForFindings(findings: WorkflowReportedFinding[], relatedOnly: boolean): AttackPathEvidenceLevel {
+  if (findings.some(isBlockedFinding)) {
+    return "blocked";
+  }
+  if (relatedOnly) {
+    return "relationship_only";
+  }
+  if (!relatedOnly && findings.length > 0 && findings.every(isCrossValidatedFinding)) {
+    return "confirmed_findings";
+  }
+  if (findings.length > 0 && findings.every(isConfirmedFinding)) {
+    return "single_source_findings";
+  }
+  return "relationship_only";
+}
+
+function collectValidationEvidenceRefs(findings: WorkflowReportedFinding[]): AttackPathValidationEvidenceRef[] {
+  return findings.flatMap((finding) =>
+    finding.evidence.map((item) => attackPathValidationEvidenceRefSchema.parse({
+      findingId: finding.id,
+      sourceTool: item.sourceTool,
+      quote: item.quote,
+      ...(item.artifactRef ? { artifactRef: item.artifactRef } : {}),
+      ...(item.observationRef ? { observationRef: item.observationRef } : {}),
+      ...(item.toolRunRef ? { toolRunRef: item.toolRunRef } : {}),
+      ...(item.traceEventId ? { traceEventId: item.traceEventId } : {}),
+      ...(item.externalUrl ? { externalUrl: item.externalUrl } : {})
+    }))
+  );
+}
+
+function blockedReasonForFindings(findings: WorkflowReportedFinding[]) {
+  const blocked = findings.find(isBlockedFinding);
+  if (!blocked) {
+    return null;
+  }
+  return blocked.confidenceReason ?? blocked.explanationSummary ?? `${blocked.title} blocked attack-vector validation.`;
+}
+
+function validationSummaryFor(input: {
+  evidenceLevel: AttackPathEvidenceLevel;
+  sourceTitle: string;
+  targetTitle: string;
+  relatedOnly: boolean;
+}) {
+  switch (input.evidenceLevel) {
+    case "blocked":
+      return `Attack-vector validation from ${input.sourceTitle} to ${input.targetTitle} is blocked.`;
+    case "confirmed_findings":
+      return `Both sides of the attack vector are cross-validated, supporting progression from ${input.sourceTitle} to ${input.targetTitle}.`;
+    case "single_source_findings":
+      return `The linked findings are evidence-backed, but the attack vector itself still lacks end-to-end transition validation.`;
+    case "relationship_only":
+    default:
+      return input.relatedOnly
+        ? `The attack vector is a correlation candidate between ${input.sourceTitle} and ${input.targetTitle}.`
+        : `The attack vector depends on finding relationship metadata and needs stronger validation.`;
+  }
+}
+
+function buildAttackPathValidation(input: {
+  findings: WorkflowReportedFinding[];
+  kind: AttackPathLinkKind;
+  summary: string;
+}): AttackPathValidation {
+  const evidenceLevel = evidenceLevelForFindings(input.findings, input.kind === "related");
+  return attackPathValidationSchema.parse({
+    evidenceLevel,
+    summary: validationSummaryFor({
+      evidenceLevel,
+      sourceTitle: input.findings[0]?.title ?? "source finding",
+      targetTitle: input.findings[input.findings.length - 1]?.title ?? "target finding",
+      relatedOnly: input.kind === "related"
+    }),
+    observedTransition: input.kind === "related" ? null : input.summary,
+    evidenceRefs: collectValidationEvidenceRefs(input.findings),
+    blockedReason: blockedReasonForFindings(input.findings)
+  });
 }
 
 function classifyVenueType(finding: WorkflowReportedFinding) {
@@ -236,7 +545,7 @@ function candidateVenueKey(finding: WorkflowReportedFinding) {
   return `${finding.chain?.id ?? finding.chain?.title ?? "surface"}::${createFindingTargetLabel(finding)}`;
 }
 
-function parseAttackPathHandoff(handoff: unknown) {
+function parseAttackPathHandoffEnrichment(handoff: unknown) {
   if (!isRecord(handoff)) {
     return { venues: [], vectors: [], paths: [] } as {
       venues: AttackPathHandoffVenue[];
@@ -245,25 +554,11 @@ function parseAttackPathHandoff(handoff: unknown) {
     };
   }
 
+  const parsed = parseAttackPathHandoff(handoff);
   return {
-    venues: Array.isArray(handoff["attackVenues"])
-      ? handoff["attackVenues"]
-        .map((item) => attackPathHandoffVenueSchema.safeParse(item))
-        .filter((result): result is { success: true; data: AttackPathHandoffVenue } => result.success)
-        .map((result) => result.data)
-      : [],
-    vectors: Array.isArray(handoff["attackVectors"])
-      ? handoff["attackVectors"]
-        .map((item) => attackPathHandoffVectorSchema.safeParse(item))
-        .filter((result): result is { success: true; data: AttackPathHandoffVector } => result.success)
-        .map((result) => result.data)
-      : [],
-    paths: Array.isArray(handoff["attackPaths"])
-      ? handoff["attackPaths"]
-        .map((item) => attackPathHandoffPathSchema.safeParse(item))
-        .filter((result): result is { success: true; data: AttackPathHandoffPath } => result.success)
-        .map((result) => result.data)
-      : []
+    venues: parsed.attackVenues,
+    vectors: parsed.attackVectors,
+    paths: parsed.attackPaths
   };
 }
 
@@ -275,6 +570,7 @@ type DerivedLink = {
   summary: string;
   sourceFinding: WorkflowReportedFinding;
   targetFinding: WorkflowReportedFinding;
+  explicitVector?: WorkflowReportedAttackVector;
 };
 
 function compareFindings(left: WorkflowReportedFinding, right: WorkflowReportedFinding) {
@@ -366,6 +662,73 @@ function buildDerivedLinks(findings: WorkflowReportedFinding[]) {
   }
 
   return links.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function explicitVectorValidation(vector: WorkflowReportedAttackVector): AttackPathValidation {
+  const evidenceLevel: AttackPathEvidenceLevel = (() => {
+    switch (vector.validationStatus) {
+      case "reproduced":
+        return "reproduced";
+      case "cross_validated":
+        return "cross_validated";
+      case "single_source":
+        return "single_source";
+      case "blocked":
+      case "rejected":
+        return "blocked";
+      default:
+        return "relationship_only";
+    }
+  })();
+
+  return attackPathValidationSchema.parse({
+    evidenceLevel,
+    summary: vector.validationStatus === "single_source" || vector.validationStatus === "cross_validated" || vector.validationStatus === "reproduced"
+      ? "The attack vector transition is backed by explicit transition evidence."
+      : vector.kind === "related"
+        ? "The attack vector is an explicit relationship without observed transition evidence."
+        : "The attack vector has not been independently validated.",
+    observedTransition: vector.kind === "related" ? null : vector.summary,
+    evidenceRefs: vector.transitionEvidence.map((evidence: WorkflowReportedAttackVector["transitionEvidence"][number]) => attackPathValidationEvidenceRefSchema.parse({
+      findingId: vector.sourceFindingId,
+      sourceTool: evidence.sourceTool,
+      quote: evidence.quote,
+      ...(evidence.artifactRef ? { artifactRef: evidence.artifactRef } : {}),
+      ...(evidence.observationRef ? { observationRef: evidence.observationRef } : {}),
+      ...(evidence.toolRunRef ? { toolRunRef: evidence.toolRunRef } : {}),
+      ...(evidence.traceEventId ? { traceEventId: evidence.traceEventId } : {}),
+      ...(evidence.externalUrl ? { externalUrl: evidence.externalUrl } : {})
+    })),
+    blockedReason: vector.validationStatus === "blocked" || vector.validationStatus === "rejected"
+      ? "Attack-vector transition validation was blocked or rejected."
+      : null
+  });
+}
+
+function buildAttackVectorLinks(findings: WorkflowReportedFinding[], attackVectors: WorkflowReportedAttackVector[] = []) {
+  const lookup = new Map(findings.map((finding) => [finding.id, finding]));
+  const explicitLinks = attackVectors.flatMap((vector): DerivedLink[] => {
+    const sourceFinding = lookup.get(vector.sourceFindingId);
+    const targetFinding = lookup.get(vector.destinationFindingId);
+    if (!sourceFinding || !targetFinding || vector.validationStatus === "rejected") {
+      return [];
+    }
+    return [{
+      id: vector.id,
+      kind: vector.kind,
+      sourceFindingId: vector.sourceFindingId,
+      targetFindingId: vector.destinationFindingId,
+      summary: vector.summary,
+      sourceFinding,
+      targetFinding,
+      explicitVector: vector
+    }];
+  });
+  const explicitKeys = new Set(explicitLinks.map((link) => `${link.kind}:${link.sourceFindingId}:${link.targetFindingId}`));
+  return [
+    ...explicitLinks,
+    ...buildDerivedLinks(findings).filter((link) => !explicitKeys.has(`${link.kind}:${link.sourceFindingId}:${link.targetFindingId}`))
+  ].sort((left, right) => left.id.localeCompare(right.id));
 }
 
 function buildConnectedComponents(findings: WorkflowReportedFinding[], links: DerivedLink[]) {
@@ -626,32 +989,61 @@ function mergePathEnrichment(path: DerivedAttackPath, enrichment: AttackPathHand
     || candidate.findingIds.some((findingId) => path.findingIds.includes(findingId))
   ));
   if (!match) {
-    return path;
+    return {
+      ...path,
+      title: qualifyUnconfirmedOutcomeClaim(path.title, path.status),
+      summary: qualifyUnconfirmedOutcomeClaim(path.summary, path.status)
+    };
   }
 
   return {
     ...path,
-    title: match.title ?? path.title,
-    summary: match.summary ?? path.summary,
+    title: qualifyUnconfirmedOutcomeClaim(match.title ?? path.title, path.status),
+    summary: qualifyUnconfirmedOutcomeClaim(match.summary ?? path.summary, path.status),
     pathSeverity: match.severity ?? path.pathSeverity
   };
 }
 
+const inflatedOutcomePattern = /\b(takeover|compromise|credential theft|credential compromise|privilege escalation)\b/i;
+
+function softenOutcomeClaims(value: string) {
+  return value
+    .replace(/\b(?:complete\s+)?takeover\b/gi, "possible takeover")
+    .replace(/\bcredential theft\b/gi, "credential-theft opportunity")
+    .replace(/\bcredential compromise\b/gi, "credential-compromise opportunity")
+    .replace(/\bprivilege escalation\b/gi, "privilege-escalation opportunity");
+}
+
+function qualifyUnconfirmedOutcomeClaim(value: string, status: AttackPathRouteStatus) {
+  if (status === "confirmed" || !inflatedOutcomePattern.test(value)) {
+    return value;
+  }
+
+  const softened = softenOutcomeClaims(value);
+  return /^(potential|possible|plausible|unproven|qualified)\b/i.test(softened)
+    ? softened
+    : `Potential ${softened}`;
+}
+
 export function buildAttackPathSummary(input: {
   findings: WorkflowReportedFinding[];
+  attackVectors?: WorkflowReportedAttackVector[];
   handoff?: unknown;
 }): AttackPathSummary {
   const findings = input.findings
     .filter((finding) => finding.validationStatus !== "rejected")
     .slice()
     .sort(compareFindings);
-  const links = buildDerivedLinks(findings);
+  const attackVectors = (input.attackVectors ?? [])
+    .map((vector) => workflowReportedAttackVectorSchema.parse(vector))
+    .filter((vector) => vector.validationStatus !== "rejected");
+  const links = buildAttackVectorLinks(findings, attackVectors);
   const components = buildConnectedComponents(findings, links);
   if (components.length === 0) {
     return attackPathSummarySchema.parse({ venues: [], vectors: [], paths: [] });
   }
 
-  const handoff = parseAttackPathHandoff(input.handoff);
+  const handoff = parseAttackPathHandoffEnrichment(input.handoff);
   const venueMap = new Map<string, AttackPathVenue>();
   const vectors: AttackPathVector[] = [];
   const paths: DerivedAttackPath[] = [];
@@ -694,15 +1086,23 @@ export function buildAttackPathSummary(input: {
     const routeFindings = route.findingIds.map((findingId) => component.find((finding) => finding.id === findingId)!).filter(Boolean);
     const pathLinks = route.links.map((link) => {
       const linkFindings = [link.sourceFinding, link.targetFinding];
+      const validation = link.explicitVector
+        ? explicitVectorValidation(link.explicitVector)
+        : buildAttackPathValidation({
+          findings: linkFindings,
+          kind: link.kind,
+          summary: link.summary
+        });
       const status = routeStatus({
         findings: linkFindings,
         criticalLinks: [{
           kind: link.kind,
           status: linkFindings.some(isBlockedFinding)
             ? "blocked"
-            : link.kind === "related" || linkFindings.some(isSuspectedFinding)
-              ? "qualified"
-              : "confirmed"
+            : link.kind !== "related" && isEndToEndValidatedEvidenceLevel(validation.evidenceLevel)
+              ? "confirmed"
+              : "qualified",
+          evidenceLevel: validation.evidenceLevel
         }]
       });
       return attackPathLinkSchema.parse({
@@ -714,13 +1114,18 @@ export function buildAttackPathSummary(input: {
         status,
         supportingFindingIds: linkFindings.filter(isConfirmedFinding).map((finding) => finding.id),
         suspectedFindingIds: linkFindings.filter(isSuspectedFinding).map((finding) => finding.id),
-        blockedFindingIds: linkFindings.filter(isBlockedFinding).map((finding) => finding.id)
+        blockedFindingIds: linkFindings.filter(isBlockedFinding).map((finding) => finding.id),
+        validation
       });
     });
 
     const routeStatusValue = routeStatus({
       findings: routeFindings,
-      criticalLinks: pathLinks.map((link) => ({ kind: link.kind, status: link.status }))
+      criticalLinks: pathLinks.map((link) => ({
+        kind: link.kind,
+        status: link.status,
+        evidenceLevel: link.validation.evidenceLevel
+      }))
     });
 
     const routeSupporting = component.filter(isConfirmedFinding).map((finding) => finding.id);
@@ -732,20 +1137,22 @@ export function buildAttackPathSummary(input: {
     for (const pathLink of pathLinks) {
       const sourceVenueId = getVenueForFinding(component.find((finding) => finding.id === pathLink.sourceFindingId)!);
       const destinationVenueId = getVenueForFinding(component.find((finding) => finding.id === pathLink.targetFindingId)!);
-      const vectorId = `vector:${slugify(pathLink.id)}`;
+      const link = route.links.find((candidate) => candidate.id === pathLink.id);
+      const vectorId = link?.explicitVector?.id ?? `vector:${slugify(pathLink.id)}`;
       routeVectorIds.push(vectorId);
       if (vectorIdsInUse.has(vectorId)) {
         continue;
       }
       vectorIdsInUse.add(vectorId);
+      const explicitVector = link?.explicitVector;
       vectors.push(mergeVectorEnrichment({
         id: vectorId,
-        label: pathLink.summary,
+        label: explicitVector?.summary ?? pathLink.summary,
         sourceVenueId,
         destinationVenueId,
-        summary: pathLink.summary,
-        preconditions: [],
-        impact: component.find((finding) => finding.id === pathLink.targetFindingId)?.impact ?? pathLink.summary,
+        summary: explicitVector?.summary ?? pathLink.summary,
+        preconditions: explicitVector?.preconditions ?? [],
+        impact: explicitVector?.impact ?? component.find((finding) => finding.id === pathLink.targetFindingId)?.impact ?? pathLink.summary,
         kind: pathLink.kind,
         status: pathLink.status,
         confidence: confidenceBand({
@@ -758,7 +1165,8 @@ export function buildAttackPathSummary(input: {
         findingIds: [pathLink.sourceFindingId, pathLink.targetFindingId],
         supportingFindingIds: pathLink.supportingFindingIds,
         suspectedFindingIds: pathLink.suspectedFindingIds,
-        blockedFindingIds: pathLink.blockedFindingIds
+        blockedFindingIds: pathLink.blockedFindingIds,
+        validation: explicitVector ? explicitVectorValidation(explicitVector) : pathLink.validation
       }, handoff.vectors));
     }
 
@@ -848,10 +1256,12 @@ export function summarizeAttackPaths(summary: AttackPathSummary) {
 
 export function attackPathSummaryFromWorkflowFindings(
   findings: Array<z.infer<typeof workflowReportedFindingSchema>>,
-  handoff?: unknown
+  handoff?: unknown,
+  attackVectors: Array<z.infer<typeof workflowReportedAttackVectorSchema>> = []
 ) {
   return buildAttackPathSummary({
     findings: findings.map((finding) => workflowReportedFindingSchema.parse(finding)),
+    attackVectors: attackVectors.map((vector) => workflowReportedAttackVectorSchema.parse(vector)),
     handoff
   });
 }
