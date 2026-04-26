@@ -17,7 +17,7 @@ function buildEngineGeneratedTargetContext(target: Target | null) {
 
 const workflowCompletionContract = [
   "Required end state:",
-  "Before the run stops, call complete_run to submit the current stage result or fail_run to stop with an explicit failure."
+  "Before the run stops, call complete_run to submit the current stage result."
 ].join("\n");
 
 export function PromptEditModal({
@@ -85,9 +85,9 @@ export function PromptEditModal({
             <section className="space-y-3 rounded-2xl border border-border/70 bg-card/55 p-4">
               <div className="space-y-1">
                 <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Workflow-owned</p>
-                <h3 className="text-base text-foreground">Editable system prompt</h3>
+                <h3 className="text-base text-foreground">Editable workflow instructions</h3>
                 <p className="text-xs text-muted-foreground">
-                  This is only the workflow-owned prompt text. Engine-generated target context and runtime contract are appended separately at run time.
+                  This editable text is the workflow-owned instruction layer. The engine appends resolved target context and the runtime contract at execution time.
                 </p>
               </div>
               <Textarea

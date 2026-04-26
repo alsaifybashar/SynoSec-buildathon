@@ -92,7 +92,13 @@ export const workflowsDefinition: CrudFeatureDefinition<
       <>
         <DetailSidebarItem label="Status">{workflowStatusLabels[item.status]}</DetailSidebarItem>
         <DetailSidebarItem label="Agent">{context.agentLookup[item.agentId]?.name ?? "Unknown"}</DetailSidebarItem>
-        <DetailSidebarItem label="Allowed tools">
+        <DetailSidebarItem label="Workflow surface">
+          {item.allowedToolIds.length}
+        </DetailSidebarItem>
+        <DetailSidebarItem label="Persisted agent grants">
+          {context.agentLookup[item.agentId]?.toolIds.length ?? 0}
+        </DetailSidebarItem>
+        <DetailSidebarItem label="Effective tools">
           {item.allowedToolIds.length > 0 ? item.allowedToolIds.length : context.agentLookup[item.agentId]?.toolIds.length ?? 0}
         </DetailSidebarItem>
         <DetailSidebarItem label="Updated">{formatTimestamp(item.updatedAt)}</DetailSidebarItem>

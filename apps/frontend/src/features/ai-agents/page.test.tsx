@@ -4,8 +4,28 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fixedAiRuntimeLabel, type AiAgent, type AiTool } from "@synosec/contracts";
 import { AiAgentsPage } from "@/features/ai-agents/page";
 
-const tool: AiTool = {
-  id: "tool-1",
+const familyTool: AiTool = {
+  id: "tool-family-1",
+  name: "HTTP Surface",
+  status: "active",
+  source: "system",
+  description: "Family wrapper for safe HTTP reconnaissance",
+  binary: "httpx",
+  executorType: "bash",
+  bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
+  capabilities: ["semantic-family", "http-surface", "passive"],
+  category: "web",
+  riskTier: "passive",
+  notes: "Semantic family wrapper",
+  timeoutMs: 30000,
+  inputSchema: { type: "object", properties: {} },
+  outputSchema: { type: "object", properties: {} },
+  createdAt: "2026-04-21T00:00:00.000Z",
+  updatedAt: "2026-04-21T00:00:00.000Z"
+};
+
+const categoryTool: AiTool = {
+  id: "tool-2",
   name: "HTTP Recon",
   status: "active",
   source: "custom",
@@ -30,7 +50,7 @@ const agent: AiAgent = {
   status: "active",
   description: "Uses passive reconnaissance first.",
   systemPrompt: "Inspect the target first.",
-  toolIds: [tool.id],
+  toolIds: [familyTool.id],
   createdAt: "2026-04-21T00:00:00.000Z",
   updatedAt: "2026-04-21T00:00:00.000Z"
 };
@@ -41,10 +61,10 @@ function createFetchMock() {
 
     if (url.startsWith("/api/ai-tools?")) {
       return new Response(JSON.stringify({
-        tools: [tool],
+        tools: [familyTool, categoryTool],
         page: 1,
         pageSize: 100,
-        total: 1,
+        total: 2,
         totalPages: 1
       }));
     }
@@ -76,7 +96,7 @@ describe("AiAgentsPage", () => {
     vi.stubGlobal("fetch", createFetchMock());
 
     render(
-      <MemoryRouter initialEntries={["/ai-agents"]}>
+      <MemoryRouter initialEntries={["/ai/agents"]}>
         <AiAgentsPage
           onNavigateToList={() => {}}
           onNavigateToCreate={() => {}}
@@ -89,11 +109,11 @@ describe("AiAgentsPage", () => {
     expect(screen.getAllByText(fixedAiRuntimeLabel).length).toBeGreaterThan(0);
   });
 
-  it("renders create detail after context loads", async () => {
+  it("renders grouped tools without exposing prompt editing", async () => {
     vi.stubGlobal("fetch", createFetchMock());
 
     render(
-      <MemoryRouter initialEntries={["/ai-agents/new"]}>
+      <MemoryRouter initialEntries={["/ai/agents/new"]}>
         <AiAgentsPage
           agentId="new"
           onNavigateToList={() => {}}
@@ -104,8 +124,11 @@ describe("AiAgentsPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText("System prompt")).toBeInTheDocument();
+      expect(screen.getByText("Tool Families")).toBeInTheDocument();
     });
+    expect(screen.getAllByText("HTTP Surface").length).toBeGreaterThan(0);
+    expect(screen.getByText("Web Tools")).toBeInTheDocument();
     expect(screen.getByText("HTTP Recon")).toBeInTheDocument();
+    expect(screen.queryByLabelText("System prompt")).not.toBeInTheDocument();
   });
 });

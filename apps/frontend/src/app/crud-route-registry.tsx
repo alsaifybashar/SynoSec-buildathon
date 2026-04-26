@@ -56,6 +56,7 @@ export const legacyCrudRedirects = [
   { path: "/applications/new", redirectTo: crudRouteConfigs.targets.createPath },
   { path: "/applications/:applicationId", section: "targets", legacyParamName: "applicationId" },
   { path: "/ai-agents", redirectTo: crudRouteConfigs["ai-agents"].listPath },
+  { path: "/ai-agents/new", redirectTo: crudRouteConfigs["ai-agents"].createPath },
   { path: "/ai-agents/:agentId", section: "ai-agents", legacyParamName: "agentId" },
   { path: "/ai-tools", redirectTo: crudRouteConfigs["ai-tools"].listPath },
   { path: "/ai-tools/:toolId", section: "ai-tools", legacyParamName: "toolId" }

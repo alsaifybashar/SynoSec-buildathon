@@ -20,7 +20,7 @@ export const workflowExecutionKindLabels: Record<ExecutionKind, string> = {
 const workflowFieldHints = {
   executionKind: "Choose how this workflow executes within the standard workflow engine.",
   agent: "The linked AI agent provides the model, provider, and default tool grants used by this workflow.",
-  systemPrompt: "This workflow-owned system prompt is sent on every run and should contain the instructions specific to this workflow.",
+  systemPrompt: "This workflow-owned instruction layer is sent on every run before the engine-appended target context and runtime contract.",
   allowedTools: "Select a narrower tool set for this workflow. If nothing is selected, the workflow inherits every tool granted to the linked agent."
 } as const;
 
@@ -41,7 +41,8 @@ export function WorkflowConfigEditor({
 }) {
   const selectedAgent = agentLookup[formValues.agentId];
   const inheritedToolIds = selectedAgent?.toolIds ?? [];
-  const effectiveToolIds = formValues.allowedToolIds.length > 0 ? formValues.allowedToolIds : inheritedToolIds;
+  const workflowProvidedToolIds = formValues.allowedToolIds;
+  const effectiveToolIds = workflowProvidedToolIds.length > 0 ? workflowProvidedToolIds : inheritedToolIds;
   const workflowActions = ["Complete run", "Fail run"];
 
   return (
@@ -105,6 +106,26 @@ export function WorkflowConfigEditor({
         <DetailField label="Allowed tools" hint={workflowFieldHints.allowedTools} className="md:col-span-2">
           <div className="space-y-3 rounded-xl border border-border bg-background/40 p-4">
             <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
+              <p className="text-xs font-medium text-foreground">Every agent receives these for this workflow</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                This workflow-level tool surface is counted separately from the linked agent&apos;s persisted grants.
+              </p>
+              <p className="mt-2 text-sm text-foreground">
+                {workflowProvidedToolIds.length > 0
+                  ? `${workflowProvidedToolIds.length} workflow-provided tool${workflowProvidedToolIds.length === 1 ? "" : "s"}`
+                  : "No workflow-level tool surface selected. This workflow will inherit persisted agent grants instead."}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
+              <p className="text-xs font-medium text-foreground">Linked agent persisted grants</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                These are the tool grants stored on the agent itself.
+              </p>
+              <p className="mt-2 text-sm text-foreground">
+                {inheritedToolIds.length} persisted grant{inheritedToolIds.length === 1 ? "" : "s"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
               <p className="text-xs font-medium text-foreground">
                 {formValues.allowedToolIds.length === 0
                   ? "Mode: inherit all agent tools"
@@ -114,6 +135,14 @@ export function WorkflowConfigEditor({
                 Click a tool to allow it for this workflow. If none are selected, the workflow uses every granted tool on the agent, including visible built-in reporting actions.
               </p>
             </div>
+            {workflowProvidedToolIds.length > 0 ? (
+              <p className="text-sm text-foreground">
+                Workflow-provided tools: {workflowProvidedToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ")}
+              </p>
+            ) : null}
+            <p className="text-sm text-foreground">
+              Persisted agent grants: {inheritedToolIds.length > 0 ? inheritedToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ") : "None"}
+            </p>
             <div className="flex flex-wrap gap-2">
               {inheritedToolIds.length > 0 ? inheritedToolIds.map((toolId) => {
                 const restricted = formValues.allowedToolIds.length > 0;

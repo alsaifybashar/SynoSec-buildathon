@@ -1,4 +1,5 @@
 import {
+  fixedAiRuntimeLabel,
   type AiAgent,
   type AiTool,
   type CreateAiAgentBody,
@@ -25,7 +26,7 @@ async function loadAiAgentContext(): Promise<AiAgentDefinitionContext> {
 
   return {
     tools,
-    runtimeLabel: "Anthropic · claude-sonnet-4-6"
+    runtimeLabel: fixedAiRuntimeLabel
   };
 }
 

@@ -81,6 +81,8 @@ export function WorkflowDetailPage({
   const workflowAgent = workflow
     ? (agentOverride?.id === workflow.agentId ? agentOverride : context.agentLookup[workflow.agentId] ?? null)
     : null;
+  const workflowProvidedToolIds = workflow?.allowedToolIds ?? [];
+  const inheritedAgentToolIds = workflowAgent?.toolIds ?? [];
   const targetTabs = useMemo(() => context.targets.map((target) => ({
     target,
     summary: currentLaunch?.runs.find((item) => item.targetId === target.id) ?? null,
@@ -88,16 +90,16 @@ export function WorkflowDetailPage({
   })), [context.targets, currentLaunch]);
   const activeTarget = targetTabs.find((item) => item.target.id === selectedTargetId)?.target ?? null;
   const approvedToolCount = workflow
-    ? (workflow.allowedToolIds.length > 0 ? workflow.allowedToolIds.length : workflowAgent?.toolIds.length ?? 0)
+    ? (workflowProvidedToolIds.length > 0 ? workflowProvidedToolIds.length : inheritedAgentToolIds.length)
     : 0;
   const visibleToolNames = useMemo(() => {
     if (!workflow) {
       return [];
     }
 
-    const visibleToolIds = workflow.allowedToolIds.length > 0 ? workflow.allowedToolIds : workflowAgent?.toolIds ?? [];
+    const visibleToolIds = workflowProvidedToolIds.length > 0 ? workflowProvidedToolIds : inheritedAgentToolIds;
     return visibleToolIds.map((toolId) => context.toolLookup[toolId] ?? toolId);
-  }, [context.toolLookup, workflow, workflowAgent?.toolIds]);
+  }, [context.toolLookup, inheritedAgentToolIds, workflow, workflowProvidedToolIds]);
 
   useEffect(() => {
     if (targetTabs.length === 0) {
@@ -263,6 +265,36 @@ export function WorkflowDetailPage({
         sidebar={null}
         relatedContent={null}
       >
+        <div className="mb-4 space-y-3 rounded-xl border border-border bg-background/40 px-4 py-3">
+          <div>
+            <span className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+              Every agent receives these for this workflow
+            </span>
+            <p className="mt-1 text-sm text-foreground">
+              {workflowProvidedToolIds.length > 0
+                ? `${workflowProvidedToolIds.length} workflow-provided tool${workflowProvidedToolIds.length === 1 ? "" : "s"}`
+                : "No workflow-level surface selected. This workflow inherits the linked agent grants."}
+            </p>
+            {workflowProvidedToolIds.length > 0 ? (
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {workflowProvidedToolIds.map((toolId) => context.toolLookup[toolId] ?? toolId).join(", ")}
+              </p>
+            ) : null}
+          </div>
+          <div>
+            <span className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+              Linked agent persisted grants
+            </span>
+            <p className="mt-1 text-sm text-foreground">
+              {inheritedAgentToolIds.length} persisted grant{inheritedAgentToolIds.length === 1 ? "" : "s"}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {inheritedAgentToolIds.length > 0
+                ? inheritedAgentToolIds.map((toolId) => context.toolLookup[toolId] ?? toolId).join(", ")
+                : "None"}
+            </p>
+          </div>
+        </div>
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <span className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">
             Targets
