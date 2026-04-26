@@ -249,7 +249,20 @@ export function useWorkflowRunState({
 
       eventSource.onerror = () => {
         setRunStreamState("disconnected");
-        setStreamError("Live workflow stream disconnected. Reload the page or start a fresh run if updates stop.");
+        void fetchWorkflowRun(runId)
+          .then((run) => {
+            setCurrentLaunch((current) => updateLaunchWithRun(current, run));
+            setCurrentRun((current) => current?.id === run.id ? run : current);
+            if (run.status === "running") {
+              setStreamError("Live workflow stream disconnected. Reload the page or start a fresh run if updates stop.");
+              return;
+            }
+
+            setStreamError(null);
+          })
+          .catch(() => {
+            setStreamError("Live workflow stream disconnected. Reload the page or start a fresh run if updates stop.");
+          });
       };
     }
 

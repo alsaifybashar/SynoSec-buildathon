@@ -48,6 +48,10 @@ function createTestApp(config = createTestConfig()) {
   app.get("/api/targets", (_req, res) => {
     res.json({ ok: true });
   });
+  app.get("/api/workflow-runs/:id/events", (_req, res) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.status(200).end();
+  });
 
   app.use(createErrorHandler());
   return app;
@@ -181,5 +185,37 @@ describe("createRateLimitMiddleware", () => {
       .get("/api/auth/session")
       .set("X-Forwarded-For", "198.51.100.50")
       .expect(200);
+  });
+
+  it("does not count event-stream requests against the api rate limit", async () => {
+    const app = createTestApp(createTestConfig({
+      api: { windowMs: 60_000, max: 1 }
+    }));
+
+    await request(app)
+      .get("/api/workflow-runs/run-1/events")
+      .set("Accept", "text/event-stream")
+      .set("X-Forwarded-For", "198.51.100.60")
+      .set("x-user-id", "user-1")
+      .expect(200);
+
+    await request(app)
+      .get("/api/workflow-runs/run-1/events")
+      .set("Accept", "text/event-stream")
+      .set("X-Forwarded-For", "198.51.100.60")
+      .set("x-user-id", "user-1")
+      .expect(200);
+
+    await request(app)
+      .get("/api/targets")
+      .set("X-Forwarded-For", "198.51.100.60")
+      .set("x-user-id", "user-1")
+      .expect(200);
+
+    await request(app)
+      .get("/api/targets")
+      .set("X-Forwarded-For", "198.51.100.60")
+      .set("x-user-id", "user-1")
+      .expect(429);
   });
 });

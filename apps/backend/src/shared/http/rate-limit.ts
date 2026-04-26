@@ -16,7 +16,16 @@ const authRoutes = new Set<string>([
   apiRoutes.authLogout
 ]);
 
+function isEventStreamRequest(request: Request) {
+  const accept = request.header("accept");
+  return typeof accept === "string" && accept.includes("text/event-stream");
+}
+
 function classifySurface(request: Request): RateLimitSurface | null {
+  if (isEventStreamRequest(request)) {
+    return null;
+  }
+
   const path = request.path;
   if (path === apiRoutes.health) {
     return "health";
