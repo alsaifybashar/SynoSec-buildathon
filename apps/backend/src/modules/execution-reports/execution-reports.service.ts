@@ -317,7 +317,7 @@ function parseToolActivity(value: Prisma.JsonValue) {
 }
 
 function normalizeExecutionKind(value: string | null | undefined): ExecutionKind | null {
-  if (value === "workflow" || value === "attack-map") {
+  if (value === "workflow") {
     return value;
   }
 
@@ -413,11 +413,6 @@ export class ExecutionReportsService {
 
   async createForWorkflowRun(runId: string) {
     const snapshot = await this.buildWorkflowSnapshot(runId);
-    return this.createFromSnapshot(snapshot);
-  }
-
-  async createForAttackMapRun(runId: string) {
-    const snapshot = await this.buildAttackMapSnapshot(runId);
     return this.createFromSnapshot(snapshot);
   }
 
@@ -538,23 +533,6 @@ export class ExecutionReportsService {
         completedAt: event.createdAt
       }));
 
-    const closeoutEvent = workflowRun.events
-      .filter((event) => event.type === "run_completed" || event.type === "run_failed")
-      .slice()
-      .sort((left, right) => right.ord - left.ord)[0] ?? null;
-    const closeoutPayload = closeoutEvent?.payload && typeof closeoutEvent.payload === "object" && !Array.isArray(closeoutEvent.payload)
-      ? closeoutEvent.payload as Record<string, unknown>
-      : {};
-    const planEvent = workflowRun.events
-      .filter((event) => event.type === "system_message" && typeof event.payload["plan"] === "object")
-      .slice()
-      .sort((left, right) => right.ord - left.ord)[0] ?? null;
-    const overallRisk = planEvent?.payload && typeof planEvent.payload === "object" && !Array.isArray(planEvent.payload)
-      && typeof (planEvent.payload as Record<string, unknown>)["plan"] === "object"
-      && (planEvent.payload as Record<string, unknown>)["plan"] !== null
-      && typeof ((planEvent.payload as Record<string, unknown>)["plan"] as Record<string, unknown>)["overallRisk"] === "string"
-      ? ((planEvent.payload as Record<string, unknown>)["plan"] as Record<string, unknown>)["overallRisk"] as "critical" | "high" | "medium" | "low"
-      : null;
     const executionKind = normalizeExecutionKind(workflowRun.executionKind)
       ?? normalizeExecutionKind(run.workflow.executionKind)
       ?? "workflow";
@@ -577,74 +555,16 @@ export class ExecutionReportsService {
       findings,
       toolActivity,
       coverageOverview: report.coverageOverview,
-      sourceSummary: executionKind === "attack-map"
-        ? {
-            executionKind: "attack-map",
-            runId: workflowRun.id,
-            phase: typeof closeoutPayload["phase"] === "string" ? closeoutPayload["phase"] : "workflow",
-            overallRisk,
-            chainCount: typeof closeoutPayload["chainCount"] === "number" ? closeoutPayload["chainCount"] : 0,
-            findingNodeCount: typeof closeoutPayload["findingNodeCount"] === "number" ? closeoutPayload["findingNodeCount"] : findings.length
-          }
-        : {
-            executionKind: "workflow",
-            runId: workflowRun.id,
-            workflowId: run.workflowId,
-            stopReason: report.stopReason,
-            totalFindings: report.totalFindings,
-            topFindingIds: report.topFindings.map((item) => item.id)
-          },
-      raw: {
-        eventCount: workflowRun.events.length,
-        graph
-      }
-    };
-  }
-
-  private async buildAttackMapSnapshot(runId: string): Promise<ExecutionReportSnapshot> {
-    const run = await prisma.orchestratorRun.findUnique({ where: { id: runId } });
-    if (!run) {
-      throw new RequestError(404, "Execution report source run not found.");
-    }
-    if (run.status !== "completed" && run.status !== "failed") {
-      throw new RequestError(400, "Execution report can only be created after the attack-map run finishes.");
-    }
-
-    const findings = parseFindings(run.findings ?? []);
-    const toolActivity = parseToolActivity(run.toolActivity ?? []);
-    const plan = run.plan && typeof run.plan === "object" && !Array.isArray(run.plan) ? run.plan as Record<string, unknown> : null;
-    const mapNodes = Array.isArray(run.mapNodes) ? run.mapNodes as Array<Record<string, unknown>> : [];
-    const mapEdges = Array.isArray(run.mapEdges) ? run.mapEdges as Array<Record<string, unknown>> : [];
-    const graph = buildAttackMapExecutionGraph({ findings, mapNodes, mapEdges });
-
-    return {
-      executionId: run.id,
-      executionKind: "attack-map",
-      sourceDefinitionId: null,
-      status: normalizeExecutionReportStatus(run.status),
-      title: "Attack map run",
-      targetLabel: run.targetUrl,
-      sourceLabel: "Attack map",
-      findingsCount: findings.length,
-      highestSeverity: summarizeHighestSeverity(findings),
-      generatedAt: run.updatedAt.toISOString(),
-      updatedAt: run.updatedAt.toISOString(),
-      executiveSummary: run.summary ?? "The attack-map run completed without a closeout summary.",
-      graph,
-      findings,
-      toolActivity,
-      coverageOverview: {},
       sourceSummary: {
-        executionKind: "attack-map",
-        runId: run.id,
-        phase: run.phase,
-        overallRisk: typeof plan?.["overallRisk"] === "string" ? plan["overallRisk"] as "critical" | "high" | "medium" | "low" : null,
-        chainCount: mapNodes.filter((node) => node["type"] === "chain").length,
-        findingNodeCount: mapNodes.filter((node) => node["type"] === "finding").length
+        executionKind: "workflow",
+        runId: workflowRun.id,
+        workflowId: run.workflowId,
+        stopReason: report.stopReason,
+        totalFindings: report.totalFindings,
+        topFindingIds: report.topFindings.map((item) => item.id)
       },
       raw: {
-        mapNodeCount: mapNodes.length,
-        mapEdgeCount: mapEdges.length,
+        eventCount: workflowRun.events.length,
         graph
       }
     };

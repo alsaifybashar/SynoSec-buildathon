@@ -1,7 +1,6 @@
 import type { StartWorkflowRunBody } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
 import { DefaultWorkflowStageExecutor } from "./workflow-default-stage-executor.js";
-import { AttackMapWorkflowRunExecutor } from "./workflow-attack-map-run-executor.js";
 import { WorkflowRunExecutor } from "./workflow-run-executor.js";
 import { WorkflowRunPreflight } from "./workflow-run-preflight.js";
 import { WorkflowRunWriter } from "./workflow-run-writer.js";
@@ -13,15 +12,13 @@ export class WorkflowRuntimeService {
   private readonly preflight: WorkflowRunPreflight;
   private readonly writer: WorkflowRunWriter;
   private readonly stageExecutor: DefaultWorkflowStageExecutor;
-  private readonly attackMapExecutor: AttackMapWorkflowRunExecutor;
   private readonly runExecutor: WorkflowRunExecutor;
 
   constructor(private readonly ports: WorkflowRuntimePorts) {
     this.preflight = new WorkflowRunPreflight(ports);
     this.writer = new WorkflowRunWriter(ports);
     this.stageExecutor = new DefaultWorkflowStageExecutor(ports, this.preflight, this.writer);
-    this.attackMapExecutor = new AttackMapWorkflowRunExecutor(ports, this.preflight, this.writer);
-    this.runExecutor = new WorkflowRunExecutor(this.preflight, this.writer, this.stageExecutor, this.attackMapExecutor);
+    this.runExecutor = new WorkflowRunExecutor(this.preflight, this.writer, this.stageExecutor);
   }
 
   async launchWorkflowRun(workflowId: string, input: StartWorkflowRunBody = {}): Promise<WorkflowLaunchResult> {

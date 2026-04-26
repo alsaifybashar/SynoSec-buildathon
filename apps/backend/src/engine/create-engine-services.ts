@@ -1,4 +1,3 @@
-import { OrchestratorExecutionEngineService, OrchestratorStream } from "@/engine/orchestrator/index.js";
 import { WorkflowExecutionEngineService, WorkflowRunStream } from "@/engine/workflow/index.js";
 import type { ExecutionReportsService } from "@/modules/execution-reports/index.js";
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
@@ -19,14 +18,6 @@ export type EngineDependencies = {
 export function createEngineServices(dependencies: EngineDependencies) {
   const toolRuntime = dependencies.toolRuntime ?? createToolRuntime(dependencies.aiToolsRepository);
   const fixedAnthropicRuntime = loadFixedAnthropicRuntime();
-  const orchestratorEventStream = new OrchestratorStream();
-  const orchestratorExecutionEngine = new OrchestratorExecutionEngineService(
-    orchestratorEventStream,
-    dependencies.aiToolsRepository,
-    toolRuntime,
-    dependencies.executionReportsService
-  );
-
   const workflowRunEventStream = new WorkflowRunStream();
   const workflowExecutionEngine = new WorkflowExecutionEngineService({
     workflowsRepository: dependencies.workflowsRepository,
@@ -35,7 +26,6 @@ export function createEngineServices(dependencies: EngineDependencies) {
     aiToolsRepository: dependencies.aiToolsRepository,
     toolRuntime,
     workflowRunStream: workflowRunEventStream,
-    orchestratorExecutionEngine,
     executionReportsService: dependencies.executionReportsService,
     fixedAnthropicRuntime
   });
@@ -47,8 +37,6 @@ export function createEngineServices(dependencies: EngineDependencies) {
 
   return {
     toolRuntime,
-    orchestratorEventStream,
-    orchestratorExecutionEngine,
     workflowRunEventStream,
     workflowExecutionEngine,
     workflowRunArtifactsService

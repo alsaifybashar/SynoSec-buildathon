@@ -14,12 +14,11 @@ export const workflowStatusLabels: Record<WorkflowStatus, string> = {
 };
 
 export const workflowExecutionKindLabels: Record<ExecutionKind, string> = {
-  workflow: "Workflow",
-  "attack-map": "Attack-map"
+  workflow: "Workflow"
 };
 
 const workflowFieldHints = {
-  executionKind: "Choose whether this run executes a standard workflow or produces an attack-map oriented output.",
+  executionKind: "Choose how this workflow executes within the standard workflow engine.",
   agent: "The linked AI agent provides the model, provider, and default tool grants used by this workflow.",
   systemPrompt: "This workflow-owned system prompt is sent on every run and should contain the instructions specific to this workflow.",
   allowedTools: "Select a narrower tool set for this workflow. If nothing is selected, the workflow inherits every tool granted to the linked agent."

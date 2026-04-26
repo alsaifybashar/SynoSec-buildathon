@@ -642,6 +642,86 @@ describe("WorkflowExecutionService", () => {
     expect(executionReportsService.createForWorkflowRun).toHaveBeenCalledWith(createdRuns[0]!.id);
   });
 
+  it("normalizes empty attack-map tool summaries so empty previews do not violate the event contract", async () => {
+    const workflow = makeWorkflow({
+      executionKind: "attack-map",
+      name: "Attack Map Workflow"
+    });
+    const { service, createdRuns } = createService({
+      workflow,
+      orchestrator: {
+        runRecon: async () => ({
+          openPorts: [],
+          technologies: [],
+          httpHeaders: {},
+          serverInfo: {},
+          interestingPaths: [],
+          probes: [],
+          rawNmap: "",
+          rawCurl: ""
+        }),
+        createPlan: async () => ({
+          phases: [{
+            id: "phase-1",
+            name: "Web Surface Enumeration",
+            priority: "medium" as const,
+            rationale: "Map the web surface.",
+            targetService: "http",
+            tools: ["Katana"],
+            status: "pending" as const
+          }],
+          overallRisk: "low" as const,
+          summary: "Attack plan generated."
+        }),
+        adaptAttackPlan: async (_targetUrl: string, plan: Record<string, unknown>) => plan,
+        executePhase: async (
+          _targetUrl: string,
+          _phase: unknown,
+          _recon: unknown,
+          _runId: string,
+          _runtime: unknown,
+          _model: unknown,
+          _emitReasoning: unknown,
+          recordToolActivity: (activity: Record<string, unknown>) => Promise<void>,
+          updateToolActivity: (id: string, patch: Record<string, unknown>) => Promise<void>
+        ) => {
+          await recordToolActivity({
+            id: "tool-activity-1",
+            phase: "execution",
+            toolName: "Katana",
+            command: "katana -u http://localhost:3000"
+          });
+          await updateToolActivity("tool-activity-1", {
+            status: "failed",
+            outputPreview: "",
+            exitCode: 1
+          });
+          return {
+            findings: [],
+            probeCommand: "katana -u http://localhost:3000",
+            probeOutput: "",
+            toolAttempts: [{
+              toolRunId: "tool-run-katana",
+              toolName: "Katana",
+              output: ""
+            }]
+          };
+        },
+        deepDiveFinding: async () => [],
+        correlateAttackChains: async () => []
+      }
+    });
+
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    const katanaResult = createdRuns[0]!.events.find((event) => event.type === "tool_result" && event.payload?.["toolName"] === "Katana");
+    expect(katanaResult?.summary).toBe("Katana failed.");
+  });
+
   it("updates attack-map workflow plans after each completed phase and executes adaptive additions", async () => {
     const workflow = makeWorkflow({
       executionKind: "attack-map",

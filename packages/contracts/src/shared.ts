@@ -82,7 +82,7 @@ export type GoogleLoginBody = z.infer<typeof googleLoginBodySchema>;
 export const sortDirectionSchema = z.enum(["asc", "desc"]);
 export type SortDirection = z.infer<typeof sortDirectionSchema>;
 
-export const executionKindSchema = z.enum(["workflow", "attack-map"]);
+export const executionKindSchema = z.enum(["workflow"]);
 export type ExecutionKind = z.infer<typeof executionKindSchema>;
 
 export const pageSchema = z.coerce.number().int().min(1).default(1);

@@ -95,9 +95,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       "log_progress",
       "report_finding",
       "complete_run",
-      "fail_run",
-      "deep_analysis",
-      "attack_chain_correlation"
+      "fail_run"
     ]);
     const evidenceToolEntries = tools.flatMap((tool) => {
       if (tool.executorType === "bash" && tool.bashSource) {
@@ -580,9 +578,11 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           }
           case "abort": {
             const finalLiveModelOutput = finalizeLiveModelOutput();
+            const abortReason = typeof part.reason === "string" ? part.reason : "workflow-aborted";
+            const isExpectedCompletion = abortReason === "workflow-completed";
             await appendEvent("verification", "completed", {
-              message: typeof part.reason === "string" ? part.reason : "workflow-aborted"
-            }, "Model stream aborted", typeof part.reason === "string" ? part.reason : "workflow-aborted", null, undefined, {
+              message: abortReason
+            }, isExpectedCompletion ? "Model stream closed" : "Model stream aborted", isExpectedCompletion ? "workflow-completed" : abortReason, null, undefined, {
               rawStreamPartType: part.type,
               liveModelOutput: finalLiveModelOutput
             });

@@ -1,6 +1,5 @@
 import type { RuntimeStartContext, WorkflowExecutionStrategy, WorkflowRuntimePorts, WorkflowRunWriterPort, WorkflowStageRunner } from "./workflow-runtime-types.js";
 import { WorkflowRunPreflight } from "./workflow-run-preflight.js";
-import { AttackMapWorkflowRunExecutor } from "./workflow-attack-map-run-executor.js";
 
 class DefaultWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
   constructor(
@@ -10,7 +9,7 @@ class DefaultWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
   ) {}
 
   supports(kind: RuntimeStartContext["workflow"]["executionKind"] | undefined) {
-    return kind !== "attack-map";
+    return kind === "workflow" || kind === undefined;
   }
 
   async execute(context: RuntimeStartContext): Promise<void> {
@@ -139,29 +138,15 @@ class DefaultWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
   }
 }
 
-class AttackMapWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
-  constructor(private readonly attackMapExecutor: AttackMapWorkflowRunExecutor) {}
-
-  supports(kind: RuntimeStartContext["workflow"]["executionKind"] | undefined) {
-    return kind === "attack-map";
-  }
-
-  execute(context: RuntimeStartContext): Promise<void> {
-    return this.attackMapExecutor.execute(context);
-  }
-}
-
 export class WorkflowRunExecutor {
   private readonly strategies: WorkflowExecutionStrategy[];
 
   constructor(
     preflight: WorkflowRunPreflight,
     writer: WorkflowRunWriterPort,
-    stageRunner: WorkflowStageRunner,
-    attackMapExecutor: AttackMapWorkflowRunExecutor
+    stageRunner: WorkflowStageRunner
   ) {
     this.strategies = [
-      new AttackMapWorkflowExecutionStrategy(attackMapExecutor),
       new DefaultWorkflowExecutionStrategy(preflight, writer, stageRunner)
     ];
   }

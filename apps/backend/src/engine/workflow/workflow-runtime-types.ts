@@ -16,7 +16,6 @@ import type {
   WorkflowStageResult,
   WorkflowTraceEvent
 } from "@synosec/contracts";
-import type { OrchestratorExecutionEngineService } from "@/engine/orchestrator/index.js";
 import type { ToolRuntime } from "@/modules/ai-tools/index.js";
 import type { ExecutionReportsService } from "@/modules/execution-reports/index.js";
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
@@ -41,7 +40,6 @@ export interface WorkflowRuntimePorts {
   aiToolsRepository: AiToolsRepository;
   toolRuntime: ToolRuntime;
   workflowRunStream: WorkflowRunStream;
-  orchestratorExecutionEngine: OrchestratorExecutionEngineService;
   executionReportsService: ExecutionReportsService;
   fixedAnthropicRuntime: FixedAnthropicRuntime;
 }

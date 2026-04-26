@@ -26,6 +26,18 @@ function normalizeOptionalText(value: string | null) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function normalizeWorkflowExecutionKind(value: string | null, id: string) {
+  if (value === "workflow") {
+    return value;
+  }
+
+  if (value === "attack-map") {
+    throw new Error(`Workflow ${id} uses unsupported execution kind: attack-map`);
+  }
+
+  return undefined;
+}
+
 function mapWorkflowStageRow(row: WorkflowStageRow) {
   const persistedStageSystemPrompt = (row as WorkflowStageRow & { stageSystemPrompt?: string | null }).stageSystemPrompt;
   const contract = normalizeWorkflowStageContract({
@@ -72,7 +84,7 @@ export function mapWorkflowRow(
     id: row.id,
     name: row.name,
     status: row.status,
-    executionKind: row.executionKind as Workflow["executionKind"],
+    executionKind: normalizeWorkflowExecutionKind(row.executionKind, row.id),
     description: row.description,
     agentId: primaryContract.agentId,
     objective: primaryContract.objective,
@@ -117,7 +129,7 @@ export function mapWorkflowRunRow(
     workflowId: row.workflowId,
     workflowLaunchId: row.workflowLaunchId,
     targetId: row.targetId,
-    executionKind: row.executionKind as WorkflowRun["executionKind"],
+    executionKind: normalizeWorkflowExecutionKind(row.executionKind, row.workflowId),
     status: row.status,
     currentStepIndex: row.currentStepIndex,
     startedAt: row.startedAt.toISOString(),

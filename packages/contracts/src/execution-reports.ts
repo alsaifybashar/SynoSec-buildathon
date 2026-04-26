@@ -12,7 +12,7 @@ import { createPaginatedResponseSchema, executionKindSchema, resourceListQuerySc
 export const executionReportStatusSchema = z.enum(["pending", "running", "completed", "failed", "aborted"]);
 export type ExecutionReportStatus = z.infer<typeof executionReportStatusSchema>;
 
-export const executionReportFindingSourceSchema = z.enum(["workflow-finding", "attack-map-finding"]);
+export const executionReportFindingSourceSchema = z.enum(["workflow-finding"]);
 export type ExecutionReportFindingSource = z.infer<typeof executionReportFindingSourceSchema>;
 
 export const executionReportFindingSchema = z.object({
@@ -167,14 +167,6 @@ export const executionReportSourceSummarySchema = z.discriminatedUnion("executio
     stopReason: z.string().nullable(),
     totalFindings: z.number().int().min(0),
     topFindingIds: z.array(z.string().min(1)).default([])
-  }),
-  z.object({
-    executionKind: z.literal("attack-map"),
-    runId: z.string().uuid(),
-    phase: z.string().min(1),
-    overallRisk: z.enum(["critical", "high", "medium", "low"]).nullable(),
-    chainCount: z.number().int().min(0),
-    findingNodeCount: z.number().int().min(0)
   })
 ]);
 export type ExecutionReportSourceSummary = z.infer<typeof executionReportSourceSummarySchema>;

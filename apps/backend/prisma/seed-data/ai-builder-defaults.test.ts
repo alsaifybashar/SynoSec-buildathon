@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  adaptivePlanningAttackMapWorkflowId,
   getSeededRoleDefinition,
   getSeededWorkflowDefinitions,
   osiCompactFamilyWorkflowId,
@@ -16,19 +15,11 @@ const canonicalPromptSections = [
 ] as const;
 
 describe("getSeededWorkflowDefinitions", () => {
-  it("seeds only the compact evaluation and adaptive attack-map workflows", () => {
+  it("seeds only the compact evaluation workflow", () => {
     const workflows = getSeededWorkflowDefinitions();
-    const adaptiveAttackMapWorkflow = workflows.find((candidate) => candidate.id === adaptivePlanningAttackMapWorkflowId);
     const compactWorkflow = workflows.find((candidate) => candidate.id === osiCompactFamilyWorkflowId);
 
-    expect(workflows).toHaveLength(2);
-    expect(adaptiveAttackMapWorkflow).toBeDefined();
-    expect(adaptiveAttackMapWorkflow?.executionKind).toBe("attack-map");
-    expect(adaptiveAttackMapWorkflow?.description).toContain("continuously updates its attack plan");
-    expect(adaptiveAttackMapWorkflow?.stages.map((stage) => stage.label)).toEqual(["Adaptive Attack Map"]);
-    expect(adaptiveAttackMapWorkflow?.stages[0]?.agentId).toBe(seededAgentId("orchestrator"));
-    expect(adaptiveAttackMapWorkflow?.stages[0]?.objective).toContain("update the plan after each completed phase");
-    expect(adaptiveAttackMapWorkflow?.stages[0]?.objective).toContain("skip stale paths");
+    expect(workflows).toHaveLength(1);
     expect(compactWorkflow).toBeDefined();
     expect(compactWorkflow?.executionKind).toBe("workflow");
     expect(compactWorkflow?.stages.map((stage) => stage.label)).toEqual(["Compact Evaluation"]);
@@ -44,7 +35,6 @@ describe("getSeededWorkflowDefinitions", () => {
 
   it("gives the seeded system prompts a canonical instruction shape", () => {
     const prompts = [
-      getSeededRoleDefinition("orchestrator")?.systemPrompt,
       getSeededRoleDefinition("compact-evaluator")?.systemPrompt,
       getSeededRoleDefinition("portfolio-evaluator")?.systemPrompt
     ];

@@ -400,8 +400,7 @@ export function ExecutionReportsPage({
         placeholder: "Filter kind",
         allLabel: "All kinds",
         options: [
-          { label: "Workflow", value: "workflow" },
-          { label: "Attack-map", value: "attack-map" }
+          { label: "Workflow", value: "workflow" }
         ]
       },
       {
@@ -514,7 +513,7 @@ export function ExecutionReportsPage({
       )}
       sidebar={(
         <>
-          <DetailSidebarItem label="Execution kind" hint="Whether this report came from a workflow run or an attack-map style execution.">{report.executionKind}</DetailSidebarItem>
+          <DetailSidebarItem label="Execution kind" hint="The execution mode recorded for the workflow run that generated this report.">{report.executionKind}</DetailSidebarItem>
           <DetailSidebarItem label="Status" hint="Terminal or in-flight state recorded for the report lifecycle.">{report.status}</DetailSidebarItem>
           <DetailSidebarItem label="Target" hint="Human-readable label of the target asset or scope this report is about.">{report.targetLabel}</DetailSidebarItem>
           <DetailSidebarItem label="Findings" hint="Count of persisted structured findings attached to this report.">{report.findingsCount}</DetailSidebarItem>

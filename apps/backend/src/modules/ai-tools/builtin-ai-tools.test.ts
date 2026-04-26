@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getBuiltinAiTool, getBuiltinAiTools } from "./builtin-ai-tools.js";
 
 describe("builtin ai tools", () => {
-  it("defines the system builtin tools for reporting, orchestration, and semantic family execution", () => {
+  it("defines the system builtin tools for reporting and semantic family execution", () => {
     const ids = getBuiltinAiTools().map((tool) => tool.id);
 
     expect(ids).toEqual(expect.arrayContaining([
@@ -10,8 +10,6 @@ describe("builtin ai tools", () => {
       "builtin-report-finding",
       "builtin-complete-run",
       "builtin-fail-run",
-      "builtin-deep-analysis",
-      "builtin-attack-chain-correlation",
       "builtin-http-surface-assessment",
       "builtin-content-discovery",
       "builtin-auth-flow-assessment",
@@ -39,11 +37,6 @@ describe("builtin ai tools", () => {
       source: "system",
       executorType: "builtin",
       builtinActionKey: "fail_run"
-    });
-    expect(getBuiltinAiTool("builtin-deep-analysis")).toMatchObject({
-      source: "system",
-      executorType: "builtin",
-      builtinActionKey: "deep_analysis"
     });
     expect(getBuiltinAiTool("builtin-http-surface-assessment")).toMatchObject({
       source: "system",

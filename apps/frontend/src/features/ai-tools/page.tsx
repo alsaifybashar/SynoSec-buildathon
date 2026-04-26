@@ -161,9 +161,7 @@ function describeBuiltinAction(tool: AiTool) {
     log_progress: "Workflow built-in: persists a short operator-visible progress update into the workflow transcript.",
     report_finding: "Workflow built-in: persists a structured finding and supplies the metadata used to project execution-report graph nodes and edges.",
     complete_run: "Workflow built-in: marks the current workflow run as complete.",
-    fail_run: "Workflow built-in: marks the current workflow run as failed.",
-    deep_analysis: "Attack map built-in: performs deeper orchestrator analysis on a significant finding.",
-    attack_chain_correlation: "Attack map built-in: correlates confirmed findings into chained attack paths."
+    fail_run: "Workflow built-in: marks the current workflow run as failed."
   };
 
   return labels[actionKey] ?? null;

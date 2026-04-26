@@ -11,7 +11,6 @@ export { WorkflowRunPreflight } from "./workflow-run-preflight.js";
 export { WorkflowRunWriter } from "./workflow-run-writer.js";
 export { WorkflowRunExecutor } from "./workflow-run-executor.js";
 export { DefaultWorkflowStageExecutor } from "./workflow-default-stage-executor.js";
-export { AttackMapWorkflowRunExecutor } from "./workflow-attack-map-run-executor.js";
 export {
   createToolSelectionSummary,
   inferLayer,

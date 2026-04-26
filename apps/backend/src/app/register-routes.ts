@@ -18,7 +18,6 @@ import { registerTargetsRoutes, type TargetsRepository } from "@/modules/targets
 import { registerWorkflowsRoutes, type WorkflowsRepository } from "@/modules/workflows/index.js";
 import { createConnectorsRouter } from "@/integrations/connectors/routes.js";
 import { createRouteServices } from "@/app/create-route-services.js";
-import { registerOrchestratorRoutes } from "@/engine/index.js";
 
 export function registerRoutes(app: Express, dependencies: {
   authConfig: AuthConfig;
@@ -49,5 +48,4 @@ export function registerRoutes(app: Express, dependencies: {
     routeServices.workflowRunEventStream,
     routeServices.workflowRunArtifactsService
   );
-  registerOrchestratorRoutes(app, routeServices.orchestratorExecutionEngine, routeServices.orchestratorEventStream);
 }

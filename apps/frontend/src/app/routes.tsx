@@ -1,14 +1,13 @@
 import type { ComponentType, ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams } from "react-router-dom";
-import { AttackMapPage } from "@/features/attack-map/page";
 import { ExecutionReportsPage } from "@/features/execution-reports/page";
 import { LoginPage } from "@/features/auth/login-page";
 import { DesignDuplex } from "@/features/designs/design-duplex";
 import { DesignStream } from "@/features/designs/design-stream";
-import { DesignReportFindingMap } from "@/features/designs/design-report-finding-map";
-import { DesignReportFindingList } from "@/features/designs/design-report-finding-list";
 import { DesignReportFindingSplit } from "@/features/designs/design-report-finding-split";
-import { DesignReportFindingZen } from "@/features/designs/design-report-finding-zen";
+import { DesignReportFindingSplitCanvas } from "@/features/designs/design-report-finding-split-canvas";
+import { DesignReportFindingSplitFocus } from "@/features/designs/design-report-finding-split-focus";
+import { DesignReportFindingSplitLedger } from "@/features/designs/design-report-finding-split-ledger";
 import { crudRouteRegistry, legacyCrudRedirects } from "@/app/crud-route-registry";
 import {
   crudRouteConfigs,
@@ -176,15 +175,14 @@ export function AppContentRoutes({
         <Route key={`${definition.id}-detail`} path={crudRouteConfigs[definition.id].detailPath} element={protect(<CrudGeneratedRoute routeId={definition.id} />)} />
       ]))}
 
-      <Route path="/attack-map" element={protect(<AttackMapPage />)} />
       <Route path="/execution-reports" element={protect(<ExecutionReportsRouteAdapter />)} />
       <Route path="/execution-reports/:reportId" element={protect(<ExecutionReportsRouteAdapter />)} />
       <Route path="/designs/stream" element={protect(<DesignStream />)} />
       <Route path="/designs/duplex" element={protect(<DesignDuplex />)} />
-      <Route path="/designs/report-finding-map" element={protect(<DesignReportFindingMap />)} />
-      <Route path="/designs/report-finding-list" element={protect(<DesignReportFindingList />)} />
       <Route path="/designs/report-finding-split" element={protect(<DesignReportFindingSplit />)} />
-      <Route path="/designs/report-finding-zen" element={protect(<DesignReportFindingZen />)} />
+      <Route path="/designs/report-finding-split-canvas" element={protect(<DesignReportFindingSplitCanvas />)} />
+      <Route path="/designs/report-finding-split-focus" element={protect(<DesignReportFindingSplitFocus />)} />
+      <Route path="/designs/report-finding-split-ledger" element={protect(<DesignReportFindingSplitLedger />)} />
 
       {legacyCrudRedirects.map((redirect) => (
         "redirectTo" in redirect

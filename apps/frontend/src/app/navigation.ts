@@ -3,15 +3,14 @@ import {
   Bot,
   Columns2,
   FileSearch,
-  Orbit,
   Route,
   ScrollText,
   Shapes,
   Sparkles,
-  ListChecks,
-  List,
   PanelsLeftBottom,
-  Feather,
+  LayoutGrid,
+  Crosshair,
+  Rows3,
   Wrench,
   type LucideIcon
 } from "lucide-react";
@@ -23,13 +22,12 @@ export type NavigationId =
   | "execution-constraints"
   | "workflows"
   | "execution-reports"
-  | "attack-map"
   | "design-stream"
   | "design-duplex"
-  | "design-report-finding-map"
-  | "design-report-finding-list"
   | "design-report-finding-split"
-  | "design-report-finding-zen";
+  | "design-report-finding-split-canvas"
+  | "design-report-finding-split-focus"
+  | "design-report-finding-split-ledger";
 
 export type NavigationState = {
   detailLabel?: string;
@@ -137,15 +135,6 @@ export const navigationTree: NavigationTreeEntry[] = [
     })
   },
   {
-    kind: "item",
-    item: createNavigationItem({
-      id: "attack-map",
-      label: "Attack Map",
-      path: "/attack-map",
-      icon: Orbit
-    })
-  },
-  {
     kind: "group",
     group: {
       id: "configuration",
@@ -199,28 +188,28 @@ export const navigationTree: NavigationTreeEntry[] = [
           icon: Columns2
         }),
         createNavigationItem({
-          id: "design-report-finding-map",
-          label: "Finding · map",
-          path: "/designs/report-finding-map",
-          icon: ListChecks
-        }),
-        createNavigationItem({
-          id: "design-report-finding-list",
-          label: "Finding · list",
-          path: "/designs/report-finding-list",
-          icon: List
-        }),
-        createNavigationItem({
           id: "design-report-finding-split",
           label: "Finding · split",
           path: "/designs/report-finding-split",
           icon: PanelsLeftBottom
         }),
         createNavigationItem({
-          id: "design-report-finding-zen",
-          label: "Finding · zen",
-          path: "/designs/report-finding-zen",
-          icon: Feather
+          id: "design-report-finding-split-canvas",
+          label: "Finding · split canvas",
+          path: "/designs/report-finding-split-canvas",
+          icon: LayoutGrid
+        }),
+        createNavigationItem({
+          id: "design-report-finding-split-focus",
+          label: "Finding · split focus",
+          path: "/designs/report-finding-split-focus",
+          icon: Crosshair
+        }),
+        createNavigationItem({
+          id: "design-report-finding-split-ledger",
+          label: "Finding · split ledger",
+          path: "/designs/report-finding-split-ledger",
+          icon: Rows3
         })
       ]
     }
