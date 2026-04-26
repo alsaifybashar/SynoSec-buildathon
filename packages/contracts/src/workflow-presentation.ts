@@ -11,6 +11,7 @@ import {
   type Workflow,
   type WorkflowReportedFinding,
   type WorkflowRun,
+  type WorkflowRunTokenUsage,
   type WorkflowTraceEvent,
   workflowReportedFindingSchema
 } from "./resources.js";
@@ -255,6 +256,67 @@ function getPayloadObservationList(payload: Record<string, unknown> | null | und
     .map((item) => observationSchema.safeParse(item))
     .filter((result) => result.success)
     .map((result) => result.data);
+}
+
+function parseTokenCount(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+export function emptyWorkflowRunTokenUsage(): WorkflowRunTokenUsage {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0
+  };
+}
+
+function parseWorkflowRunTokenUsage(value: unknown): WorkflowRunTokenUsage | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const inputTokens = parseTokenCount(value["inputTokens"]);
+  const outputTokens = parseTokenCount(value["outputTokens"]);
+  const totalTokens = parseTokenCount(value["totalTokens"]);
+  if (inputTokens === null || outputTokens === null || totalTokens === null) {
+    return null;
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens
+  };
+}
+
+export function getWorkflowRunTokenUsage(run: WorkflowRun | null): WorkflowRunTokenUsage {
+  if (!run) {
+    return emptyWorkflowRunTokenUsage();
+  }
+
+  const orderedEvents = run.events.slice().sort((left, right) => right.ord - left.ord);
+  const finalUsageEvent = orderedEvents.find((event) => getTraceKind(event) === "finish");
+  const finalUsage = parseWorkflowRunTokenUsage(finalUsageEvent?.payload?.["totalUsage"]);
+  if (finalUsage) {
+    return finalUsage;
+  }
+
+  return run.events.reduce<WorkflowRunTokenUsage>((usage, event) => {
+    if (getTraceKind(event) !== "finish-step") {
+      return usage;
+    }
+
+    const stepUsage = parseWorkflowRunTokenUsage(event.payload?.["usage"]);
+    if (!stepUsage) {
+      return usage;
+    }
+
+    return {
+      inputTokens: usage.inputTokens + stepUsage.inputTokens,
+      outputTokens: usage.outputTokens + stepUsage.outputTokens,
+      totalTokens: usage.totalTokens + stepUsage.totalTokens
+    };
+  }, emptyWorkflowRunTokenUsage());
 }
 
 function getPayloadAttemptList(payload: Record<string, unknown> | null | undefined, key: string) {

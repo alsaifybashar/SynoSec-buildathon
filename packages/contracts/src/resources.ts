@@ -720,6 +720,13 @@ export type WorkflowRunStatus = z.infer<typeof workflowRunStatusSchema>;
 export const startWorkflowRunBodySchema = z.object({});
 export type StartWorkflowRunBody = z.infer<typeof startWorkflowRunBodySchema>;
 
+export const workflowRunTokenUsageSchema = z.object({
+  inputTokens: z.number().int().min(0),
+  outputTokens: z.number().int().min(0),
+  totalTokens: z.number().int().min(0)
+});
+export type WorkflowRunTokenUsage = z.infer<typeof workflowRunTokenUsageSchema>;
+
 export const workflowTraceEntryStatusSchema = z.enum(["completed", "failed"]);
 export type WorkflowTraceEntryStatus = z.infer<typeof workflowTraceEntryStatusSchema>;
 
@@ -801,6 +808,7 @@ export const workflowRunSchema = z.object({
   currentStepIndex: z.number().int().min(0).default(0),
   startedAt: z.string().datetime(),
   completedAt: z.string().datetime().nullable(),
+  tokenUsage: workflowRunTokenUsageSchema,
   trace: z.array(workflowTraceEntrySchema).default([]),
   events: z.array(workflowTraceEventSchema).default([])
 });

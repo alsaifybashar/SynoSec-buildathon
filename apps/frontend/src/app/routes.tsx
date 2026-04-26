@@ -2,12 +2,9 @@ import type { ComponentType, ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ExecutionReportsPage } from "@/features/execution-reports/page";
 import { LoginPage } from "@/features/auth/login-page";
-import { DesignDuplex } from "@/features/designs/design-duplex";
-import { DesignStream } from "@/features/designs/design-stream";
-import { DesignReportFindingSplit } from "@/features/designs/design-report-finding-split";
-import { DesignReportFindingSplitCanvas } from "@/features/designs/design-report-finding-split-canvas";
-import { DesignReportFindingSplitFocus } from "@/features/designs/design-report-finding-split-focus";
-import { DesignReportFindingSplitLedger } from "@/features/designs/design-report-finding-split-ledger";
+import { DesignReportFindingSplitCanvasVectors } from "@/features/designs/design-report-finding-split-canvas-vectors";
+import { DesignReportFindingSplitCanvasVectorsRadial } from "@/features/designs/design-report-finding-split-canvas-vectors-radial";
+import { DesignReportFindingSplitCanvasVectorsCinema } from "@/features/designs/design-report-finding-split-canvas-vectors-cinema";
 import { crudRouteRegistry, legacyCrudRedirects } from "@/app/crud-route-registry";
 import {
   crudRouteConfigs,
@@ -177,21 +174,15 @@ export function AppContentRoutes({
 
       <Route path="/execution-reports" element={protect(<ExecutionReportsRouteAdapter />)} />
       <Route path="/execution-reports/:reportId" element={protect(<ExecutionReportsRouteAdapter />)} />
-      <Route path="/designs/stream" element={protect(<DesignStream />)} />
-      <Route path="/designs/duplex" element={protect(<DesignDuplex />)} />
-      <Route path="/designs/report-finding-split" element={protect(<DesignReportFindingSplit />)} />
-      <Route path="/designs/report-finding-split-canvas" element={protect(<DesignReportFindingSplitCanvas />)} />
-      <Route path="/designs/report-finding-split-focus" element={protect(<DesignReportFindingSplitFocus />)} />
-      <Route path="/designs/report-finding-split-ledger" element={protect(<DesignReportFindingSplitLedger />)} />
+      <Route path="/designs/report-finding-split-canvas-vectors" element={protect(<DesignReportFindingSplitCanvasVectors />)} />
+      <Route path="/designs/report-finding-split-canvas-vectors-radial" element={protect(<DesignReportFindingSplitCanvasVectorsRadial />)} />
+      <Route path="/designs/report-finding-split-canvas-vectors-cinema" element={protect(<DesignReportFindingSplitCanvasVectorsCinema />)} />
 
       {legacyCrudRedirects.map((redirect) => (
         "redirectTo" in redirect
           ? <Route key={redirect.path} path={redirect.path} element={protect(<Navigate to={redirect.redirectTo} replace />)} />
           : <Route key={redirect.path} path={redirect.path} element={protect(<LegacyDetailRedirect section={redirect.section} legacyParamName={redirect.legacyParamName} />)} />
       ))}
-      <Route path="/designs-stream" element={protect(<Navigate to="/designs/stream" replace />)} />
-      <Route path="/designs-duplex" element={protect(<Navigate to="/designs/duplex" replace />)} />
-
       <Route path="*" element={protect(<Navigate to={defaultRoutePath} replace />)} />
     </Routes>
   );

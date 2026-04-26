@@ -1,4 +1,4 @@
-import type { Workflow, WorkflowLaunch, WorkflowRun, WorkflowTraceEvent } from "@synosec/contracts";
+import { getWorkflowRunTokenUsage, type Workflow, type WorkflowLaunch, type WorkflowRun, type WorkflowTraceEvent } from "@synosec/contracts";
 import type {
   WorkflowLaunch as WorkflowLaunchRow,
   Workflow as WorkflowRow,
@@ -124,6 +124,7 @@ export function mapWorkflowRunRow(
     traceEvents: WorkflowTraceEventRow[];
   }
 ): WorkflowRun {
+  const events = row.traceEvents.sort((left, right) => left.ord - right.ord).map(mapWorkflowTraceEventRow);
   return {
     id: row.id,
     workflowId: row.workflowId,
@@ -134,8 +135,22 @@ export function mapWorkflowRunRow(
     currentStepIndex: row.currentStepIndex,
     startedAt: row.startedAt.toISOString(),
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+    tokenUsage: getWorkflowRunTokenUsage({
+      id: row.id,
+      workflowId: row.workflowId,
+      workflowLaunchId: row.workflowLaunchId,
+      targetId: row.targetId,
+      executionKind: normalizeWorkflowExecutionKind(row.executionKind, row.workflowId),
+      status: row.status,
+      currentStepIndex: row.currentStepIndex,
+      startedAt: row.startedAt.toISOString(),
+      completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+      tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      trace: [],
+      events
+    }),
     trace: [],
-    events: row.traceEvents.sort((left, right) => left.ord - right.ord).map(mapWorkflowTraceEventRow)
+    events
   };
 }
 

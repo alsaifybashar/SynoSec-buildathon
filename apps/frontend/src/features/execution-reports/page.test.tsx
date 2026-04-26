@@ -16,7 +16,7 @@ const reportSummary: ExecutionReportSummary = {
   title: "Workflow execution report",
   targetLabel: "https://target.local",
   sourceLabel: "Workflow Alpha",
-  findingsCount: 1,
+  findingsCount: 2,
   highestSeverity: "high",
   generatedAt: "2026-04-25T12:00:00.000Z",
   updatedAt: "2026-04-25T12:05:00.000Z",
@@ -49,6 +49,17 @@ const report: ExecutionReportDetail = {
         confidence: 0.91,
         targetLabel: "https://target.local/admin",
         createdAt: "2026-04-25T12:03:00.000Z"
+      },
+      {
+        id: "finding-2",
+        kind: "finding",
+        findingId: "finding-2",
+        title: "Privilege pivot confirmed",
+        summary: "The workflow model linked the exposed admin surface to credential reuse.",
+        severity: "high",
+        confidence: 0.96,
+        targetLabel: "https://target.local/admin/pivot",
+        createdAt: "2026-04-25T12:04:00.000Z"
       }
     ],
     edges: [
@@ -58,6 +69,13 @@ const report: ExecutionReportDetail = {
         source: "evidence-1",
         target: "finding-1",
         createdAt: "2026-04-25T12:03:30.000Z"
+      },
+      {
+        id: "edge-2",
+        kind: "derived_from",
+        source: "finding-1",
+        target: "finding-2",
+        createdAt: "2026-04-25T12:04:30.000Z"
       }
     ]
   },
@@ -87,17 +105,74 @@ const report: ExecutionReportDetail = {
       sourceToolIds: ["httpx"],
       sourceToolRunIds: ["tool-run-1"],
       createdAt: "2026-04-25T12:03:00.000Z"
+    },
+    {
+      id: "finding-2",
+      executionId: "run-1",
+      executionKind: "workflow",
+      source: "workflow-finding",
+      severity: "high",
+      title: "Privilege pivot confirmed",
+      type: "credential_reuse",
+      summary: "The workflow model linked the exposed admin surface to credential reuse.",
+      recommendation: "Rotate privileged credentials and gate the admin surface.",
+      confidence: 0.96,
+      validationStatus: "cross_validated",
+      explanationSummary: "The model reported a second finding because separate evidence showed the same credentials crossed into a higher-privilege admin path.",
+      confidenceReason: "A persisted tool run confirmed credential reuse immediately after the admin surface exposure was validated.",
+      targetLabel: "https://target.local/admin/pivot",
+      derivedFromFindingIds: ["finding-1"],
+      relatedFindingIds: [],
+      enablesFindingIds: [],
+      relationshipExplanations: {
+        derivedFrom: "The initial admin exposure provided the entrypoint that the follow-on credential test used."
+      },
+      chain: null,
+      reproduction: null,
+      evidence: [{ sourceTool: "hydra", quote: "credential reuse succeeded for admin:testpass", toolRunRef: "tool-run-2" }],
+      sourceToolIds: ["hydra"],
+      sourceToolRunIds: ["tool-run-2"],
+      createdAt: "2026-04-25T12:04:00.000Z"
     }
   ],
-  toolActivity: [],
+  toolActivity: [
+    {
+      id: "tool-run-1",
+      executionId: "run-1",
+      executionKind: "workflow",
+      phase: "validation",
+      toolId: "tool-httpx",
+      toolName: "httpx",
+      command: "httpx https://target.local/admin",
+      status: "completed",
+      outputPreview: "GET /admin returned 200",
+      exitCode: 0,
+      startedAt: "2026-04-25T12:02:00.000Z",
+      completedAt: "2026-04-25T12:02:05.000Z"
+    },
+    {
+      id: "tool-run-2",
+      executionId: "run-1",
+      executionKind: "workflow",
+      phase: "validation",
+      toolId: "tool-hydra",
+      toolName: "hydra",
+      command: "hydra -l admin -p testpass https://target.local/admin",
+      status: "completed",
+      outputPreview: "credential reuse succeeded for admin:testpass",
+      exitCode: 0,
+      startedAt: "2026-04-25T12:04:00.000Z",
+      completedAt: "2026-04-25T12:04:05.000Z"
+    }
+  ],
   coverageOverview: {},
   sourceSummary: {
     executionKind: "workflow",
     runId: "run-1",
     workflowId: "workflow-1",
     stopReason: null,
-    totalFindings: 1,
-    topFindingIds: ["finding-1"]
+    totalFindings: 2,
+    topFindingIds: ["finding-2"]
   },
   raw: {}
 };
@@ -184,7 +259,7 @@ describe("ExecutionReportsPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the execution graph before supporting findings and activity sections", () => {
+  it("renders the cinema findings hero before the summary and details", () => {
     render(
       <ExecutionReportsPage
         reportId="report-1"
@@ -193,18 +268,15 @@ describe("ExecutionReportsPage", () => {
       />
     );
 
-    expect(screen.getByText("Execution Graph")).toBeInTheDocument();
-    expect(screen.getByText("2 nodes")).toBeInTheDocument();
-    expect(screen.getByText("1 edges")).toBeInTheDocument();
-    expect(screen.getAllByText("Admin response").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Admin surface exposed").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("tool:tool-run-1").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("supports").length).toBeGreaterThan(0);
-    expect(screen.getByText("Why this finding exists")).toBeInTheDocument();
-    expect(screen.getByText("Verification")).toBeInTheDocument();
+    expect(screen.getByText("Model-reported findings")).toBeInTheDocument();
+    expect(screen.getByText("The workflow model reported these findings. The cinema map below shows the supporting evidence, tool trace, and relational chain context used to back each reported finding.")).toBeInTheDocument();
+    expect(screen.getByText("02 / 02")).toBeInTheDocument();
+    expect(screen.getByText("Executive Summary")).toBeInTheDocument();
+    expect(screen.getAllByText("Why this finding exists").length).toBe(2);
+    expect(screen.getAllByText("Verification").length).toBe(2);
   });
 
-  it("renders explainability markers for report sections", async () => {
+  it("renders explainability markers for persisted findings and tool activity sections", async () => {
     render(
       <ExecutionReportsPage
         reportId="report-1"
@@ -213,10 +285,27 @@ describe("ExecutionReportsPage", () => {
       />
     );
 
-    fireEvent.focus(screen.getByRole("button", { name: "Show guidance for Graph structure" }));
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("Nodes capture persisted evidence or findings.");
     expect(screen.getByRole("button", { name: "Show guidance for Persisted findings" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show guidance for Persisted tool activity" })).toBeInTheDocument();
+    fireEvent.focus(screen.getByRole("button", { name: "Show guidance for Persisted findings" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("These persisted workflow findings are the report's authoritative outputs.");
+  });
+
+  it("defaults the cinema hero to the top model-reported finding and exposes tool trace references", () => {
+    render(
+      <ExecutionReportsPage
+        reportId="report-1"
+        onNavigateToList={vi.fn()}
+        onNavigateToDetail={vi.fn()}
+      />
+    );
+
+    expect(screen.getAllByText("The model reported a second finding because separate evidence showed the same credentials crossed into a higher-privilege admin path.").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /hydra credential reuse succeeded for admin:testpass/i }));
+
+    expect(screen.getAllByText("tool:tool-run-2").length).toBeGreaterThan(0);
+    expect(screen.getByText(/\$ hydra -l admin -p testpass/)).toBeInTheDocument();
   });
 
   it("exports the list row by fetching canonical report detail", async () => {

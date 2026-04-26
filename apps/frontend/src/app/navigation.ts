@@ -1,16 +1,13 @@
 import {
   AppWindow,
   Bot,
-  Columns2,
   FileSearch,
+  Film,
+  Orbit,
   Route,
   ScrollText,
   Shapes,
-  Sparkles,
-  PanelsLeftBottom,
-  LayoutGrid,
-  Crosshair,
-  Rows3,
+  GitBranch,
   Wrench,
   type LucideIcon
 } from "lucide-react";
@@ -22,12 +19,9 @@ export type NavigationId =
   | "execution-constraints"
   | "workflows"
   | "execution-reports"
-  | "design-stream"
-  | "design-duplex"
-  | "design-report-finding-split"
-  | "design-report-finding-split-canvas"
-  | "design-report-finding-split-focus"
-  | "design-report-finding-split-ledger";
+  | "design-report-finding-split-canvas-vectors"
+  | "design-report-finding-split-canvas-vectors-radial"
+  | "design-report-finding-split-canvas-vectors-cinema";
 
 export type NavigationState = {
   detailLabel?: string;
@@ -176,40 +170,22 @@ export const navigationTree: NavigationTreeEntry[] = [
       icon: Shapes,
       items: [
         createNavigationItem({
-          id: "design-stream",
-          label: "Streaming Document",
-          path: "/designs/stream",
-          icon: Sparkles
+          id: "design-report-finding-split-canvas-vectors",
+          label: "Finding · canvas vectors",
+          path: "/designs/report-finding-split-canvas-vectors",
+          icon: GitBranch
         }),
         createNavigationItem({
-          id: "design-duplex",
-          label: "Duplex Stream",
-          path: "/designs/duplex",
-          icon: Columns2
+          id: "design-report-finding-split-canvas-vectors-radial",
+          label: "Finding · vectors radial",
+          path: "/designs/report-finding-split-canvas-vectors-radial",
+          icon: Orbit
         }),
         createNavigationItem({
-          id: "design-report-finding-split",
-          label: "Finding · split",
-          path: "/designs/report-finding-split",
-          icon: PanelsLeftBottom
-        }),
-        createNavigationItem({
-          id: "design-report-finding-split-canvas",
-          label: "Finding · split canvas",
-          path: "/designs/report-finding-split-canvas",
-          icon: LayoutGrid
-        }),
-        createNavigationItem({
-          id: "design-report-finding-split-focus",
-          label: "Finding · split focus",
-          path: "/designs/report-finding-split-focus",
-          icon: Crosshair
-        }),
-        createNavigationItem({
-          id: "design-report-finding-split-ledger",
-          label: "Finding · split ledger",
-          path: "/designs/report-finding-split-ledger",
-          icon: Rows3
+          id: "design-report-finding-split-canvas-vectors-cinema",
+          label: "Finding · vectors cinema",
+          path: "/designs/report-finding-split-canvas-vectors-cinema",
+          icon: Film
         })
       ]
     }

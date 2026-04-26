@@ -14,7 +14,7 @@ import { DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } f
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Button } from "@/shared/ui/button";
-import { ExecutionReportGraphMap } from "@/features/execution-reports/execution-report-graph";
+import { ExecutionReportCinema } from "@/features/execution-reports/execution-report-cinema";
 import { executionReportsResource } from "@/features/execution-reports/resource";
 import { fetchJson } from "@/shared/lib/api";
 
@@ -69,20 +69,6 @@ function SectionTitleWithHint({ title, hint }: { title: string; hint: string }) 
         </Tooltip>
       </TooltipProvider>
     </div>
-  );
-}
-
-function GraphSection({ report }: { report: ExecutionReportDetail }) {
-  return (
-    <DetailFieldGroup title="Execution Graph" className="bg-card/70">
-      <div className="col-span-full space-y-4">
-        <SectionTitleWithHint
-          title="Graph structure"
-          hint="Nodes capture persisted evidence or findings. Edges explain how one node supports or relates to another."
-        />
-        <ExecutionReportGraphMap graph={report.graph} />
-      </div>
-    </DetailFieldGroup>
   );
 }
 
@@ -144,7 +130,7 @@ function FindingsSection({ report }: { report: ExecutionReportDetail }) {
       <div className="col-span-full space-y-3">
         <SectionTitleWithHint
           title="Persisted findings"
-          hint="These are the structured issues saved to the report, not every intermediate observation the tools produced."
+          hint="These persisted workflow findings are the report's authoritative outputs. Evidence and relationships explain why the model reported them."
         />
         {report.findings.length === 0 ? <p className="text-sm text-muted-foreground">No structured findings were reported for this execution.</p> : null}
         {report.findings.map((finding) => (
@@ -522,7 +508,8 @@ export function ExecutionReportsPage({
         </>
       )}
     >
-      <DetailFieldGroup title="Summary" className="bg-card/70">
+      <ExecutionReportCinema report={report} onJumpToToolActivity={scrollToToolActivity} />
+      <DetailFieldGroup title="Executive Summary" className="bg-card/70">
         <div className="col-span-full space-y-3 rounded-xl border border-border bg-background/50 px-4 py-4">
           <p className="text-sm leading-6 text-foreground">{report.executiveSummary}</p>
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
@@ -531,7 +518,6 @@ export function ExecutionReportsPage({
           </div>
         </div>
       </DetailFieldGroup>
-      <GraphSection report={report} />
       <FindingsSection report={report} />
       <ToolActivitySection report={report} />
     </DetailPage>
