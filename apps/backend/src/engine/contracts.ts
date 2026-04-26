@@ -1,5 +1,5 @@
-import type { StartWorkflowRunBody, WorkflowRun, WorkflowRunStreamMessage } from "@synosec/contracts";
-import type { OrchestratorEvent, OrchestratorRunRecord } from "@/engine/orchestrator/index.js";
+import type { OrchestratorStreamMessage, StartWorkflowRunBody, WorkflowRun, WorkflowRunStreamMessage } from "@synosec/contracts";
+import type { OrchestratorRunRecord } from "@/engine/orchestrator/index.js";
 
 export type RunStream<Message> = {
   subscribe(runId: string, listener: (message: Message) => void): () => void;
@@ -20,4 +20,4 @@ export type OrchestratorExecutionEngine = {
   startAsync(runId: string): void;
 };
 
-export type OrchestratorEventStream = RunStream<OrchestratorEvent>;
+export type OrchestratorEventStream = RunStream<OrchestratorStreamMessage>;

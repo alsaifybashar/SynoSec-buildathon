@@ -2,15 +2,20 @@ import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateText } from "ai";
+import { streamText } from "ai";
 import {
+  executionReportFindingFromWorkflowFinding,
   executionReportFindingSchema,
   executionReportToolActivitySchema,
+  liveModelOutputSchema,
   type AiTool,
   type ExecutionReportFinding,
   type ExecutionReportToolActivity,
+  type LiveModelOutput,
   type Observation,
-  type ToolRun
+  type OrchestratorStreamMessage,
+  type ToolRun,
+  type WorkflowReportedFinding
 } from "@synosec/contracts";
 import type {
   AttackMapEdge,
@@ -27,6 +32,7 @@ import { prisma } from "@/shared/database/prisma-client.js";
 import { RequestError } from "@/shared/http/request-error.js";
 import type { AiToolsRepository, ResolvedAiTool, ToolRuntime } from "@/modules/ai-tools/index.js";
 import type { AiProvidersRepository, StoredAiProvider } from "@/modules/ai-providers/index.js";
+import { createAttackMapFindingSubmission, createWorkflowReportedFinding } from "@/engine/workflow/workflow-finding-factory.js";
 import { AttackMapRunLauncher } from "./attack-map-run-launcher.js";
 
 const execFileAsync = promisify(execFile);
@@ -86,6 +92,13 @@ type DecisionEnvelope<T> = {
   data: T;
 };
 
+type DecisionModelStreamOptions = {
+  runId?: string;
+  onLiveModelOutput?: (output: LiveModelOutput) => void;
+  onTextDelta?: (delta: string) => void;
+  onReasoningDelta?: (delta: string) => void;
+};
+
 type AdaptivePlanDecision = {
   skipPhaseIds?: string[];
   newPhases?: Partial<AttackPlanPhase>[];
@@ -106,6 +119,32 @@ class StructuredDecisionParseError extends Error {
 
 function normalizeToolName(value: string) {
   return value.trim().toLowerCase();
+}
+
+function includesEvidence(haystack: string, needle: string) {
+  const normalizedHaystack = haystack.trim();
+  const normalizedNeedle = needle.trim();
+  return normalizedHaystack.length > 0
+    && normalizedNeedle.length > 0
+    && normalizedHaystack.includes(normalizedNeedle);
+}
+
+function selectEvidenceAttempts(toolAttempts: SuggestedToolAttempt[], rawEvidence?: string) {
+  const normalizedEvidence = rawEvidence?.trim() ?? "";
+  if (normalizedEvidence.length === 0) {
+    return toolAttempts
+      .filter((attempt) => attempt.output.trim().length > 0)
+      .slice(0, 3);
+  }
+
+  return toolAttempts.filter((attempt) =>
+    includesEvidence(attempt.output, normalizedEvidence)
+    || attempt.observations.some((observation) =>
+      includesEvidence(observation.evidence ?? "", normalizedEvidence)
+      || includesEvidence(normalizedEvidence, observation.title)
+      || includesEvidence(normalizedEvidence, observation.summary)
+    )
+  );
 }
 
 function createToolRun(runId: string, phase: AttackPlanPhase, tool: AiTool, startedAt: string, commandPreview: string, target: string): ToolRun {
@@ -320,6 +359,19 @@ export class OrchestratorExecutionEngineService {
     this.launcher.start(runId);
   }
 
+  private publishStreamMessage(runId: string, message: OrchestratorStreamMessage) {
+    this.stream.publish(runId, message);
+  }
+
+  private publishRunEvent(runId: string, event?: OrchestratorEvent, liveModelOutput?: LiveModelOutput | null) {
+    const payload = {
+      type: "run_event" as const,
+      ...(event === undefined ? {} : { event }),
+      ...(liveModelOutput === undefined ? {} : { liveModelOutput })
+    };
+    this.publishStreamMessage(runId, payload);
+  }
+
   async runAttackMapRun(runId: string): Promise<void> {
     const run = await this.getRun(runId);
     if (!run) {
@@ -340,10 +392,10 @@ export class OrchestratorExecutionEngineService {
           data: { status: "failed", error: message }
         });
         await this.executionReportsService.createForAttackMapRun(runId);
-        this.stream.publish(runId, { type: "failed", error: message });
+        this.publishRunEvent(runId, { type: "failed", error: message });
       })().catch((reportError) => {
         console.error("Failed to persist attack-map failure report.", reportError);
-        this.stream.publish(runId, { type: "failed", error: message });
+        this.publishRunEvent(runId, { type: "failed", error: message });
       });
     }
   }
@@ -359,7 +411,10 @@ export class OrchestratorExecutionEngineService {
     const reportedFindings: ExecutionReportFinding[] = [];
     const toolActivity: ExecutionReportToolActivity[] = [];
 
-    const emit = (event: OrchestratorEvent) => this.stream.publish(runId, event);
+    const emit = (event: OrchestratorEvent) => this.publishRunEvent(runId, event);
+    const emitLiveModelOutput = (output: LiveModelOutput) => {
+      this.publishRunEvent(runId, undefined, liveModelOutputSchema.parse(output));
+    };
     const emitReasoning = (phase: string, title: string, summary: string) => {
       emit({ type: "reasoning", phase, title, summary });
       emit({ type: "log", level: "info", message: `${title}: ${summary}` });
@@ -439,7 +494,10 @@ export class OrchestratorExecutionEngineService {
     emit({ type: "log", level: "info", message: `Starting reconnaissance against ${targetUrl}` });
     emit({ type: "log", level: "info", message: `Decision model: ${providerLabel}` });
 
-    const recon = await this.runRecon(targetUrl, runId, provider, modelName, emitReasoning);
+    const recon = await this.runRecon(targetUrl, runId, provider, modelName, emitReasoning, {
+      runId,
+      onLiveModelOutput: emitLiveModelOutput
+    });
     await prisma.orchestratorRun.update({ where: { id: runId }, data: { recon } });
 
     await updateNode(targetNodeId, {
@@ -504,7 +562,10 @@ export class OrchestratorExecutionEngineService {
     emit({ type: "log", level: "info", message: "Generating attack plan from recon data" });
 
     const plannerTools = await this.listOrchestratorRunnableTools();
-    let plan = await this.createPlan(targetUrl, recon, plannerTools, provider, modelName, emitReasoning);
+    let plan = await this.createPlan(targetUrl, recon, plannerTools, provider, modelName, emitReasoning, {
+      runId,
+      onLiveModelOutput: emitLiveModelOutput
+    });
     await prisma.orchestratorRun.update({ where: { id: runId }, data: { plan } });
     emit({ type: "plan_created", plan });
 
@@ -585,7 +646,11 @@ export class OrchestratorExecutionEngineService {
         modelName,
         emitReasoning,
         recordToolActivity,
-        updateToolActivity
+        updateToolActivity,
+        {
+          runId,
+          onLiveModelOutput: emitLiveModelOutput
+        }
       );
       findings.push(...phaseFindings);
       phase.status = "completed";
@@ -598,31 +663,43 @@ export class OrchestratorExecutionEngineService {
       }
 
       for (const finding of phaseFindings) {
-        await recordFinding(executionReportFindingSchema.parse({
-          id: randomUUID(),
+        const evidenceAttempts = selectEvidenceAttempts(toolAttempts, finding.rawEvidence);
+        const reportedFinding = createWorkflowReportedFinding({
+          runId,
+          submission: createAttackMapFindingSubmission({
+            target: { baseUrl: targetUrl, host: new URL(targetUrl).hostname },
+            title: finding.title,
+            severity: finding.severity as WorkflowReportedFinding["severity"],
+            description: finding.description,
+            vector: finding.vector,
+            evidence: evidenceAttempts.length > 0
+              ? evidenceAttempts
+                  .slice(0, 3)
+                  .map((attempt) => ({
+                    sourceTool: attempt.toolName,
+                    quote: (finding.rawEvidence ?? attempt.output).slice(0, 600),
+                    toolRunRef: attempt.toolRunId
+                  }))
+              : [{
+                  sourceTool: phase.name,
+                  quote: (finding.rawEvidence ?? finding.description).slice(0, 600),
+                  externalUrl: targetUrl
+                }],
+            toolCommandPreview: probeCommand || null,
+            tags: ["attack-map", phase.name.toLowerCase().replace(/\s+/g, "-")]
+          })
+        });
+        await recordFinding(executionReportFindingFromWorkflowFinding(reportedFinding, {
           executionId: runId,
           executionKind: "attack-map",
           source: "attack-map-finding",
-          severity: finding.severity,
-          title: finding.title,
           type: "phase-finding",
           summary: finding.description,
           recommendation: null,
           confidence: null,
           targetLabel: targetUrl,
-          evidence: toolAttempts.length > 0
-            ? toolAttempts
-                .filter((attempt) => attempt.output.trim().length > 0)
-                .slice(0, 3)
-                .map((attempt) => ({
-                  sourceTool: attempt.toolName,
-                  quote: (finding.rawEvidence ?? attempt.output).slice(0, 600),
-                  toolRunRef: attempt.toolRunId
-                }))
-            : [],
-          sourceToolIds: toolAttempts.map((attempt) => attempt.toolId),
-          sourceToolRunIds: toolAttempts.map((attempt) => attempt.toolRunId),
-          createdAt: new Date().toISOString()
+          sourceToolIds: evidenceAttempts.map((attempt) => attempt.toolId),
+          sourceToolRunIds: evidenceAttempts.map((attempt) => attempt.toolRunId)
         }));
         const nodeId = randomUUID();
         const findingNode: AttackMapNode = {
@@ -657,7 +734,11 @@ export class OrchestratorExecutionEngineService {
         plannerTools,
         provider,
         modelName,
-        emitReasoning
+        emitReasoning,
+        {
+          runId,
+          onLiveModelOutput: emitLiveModelOutput
+        }
       );
       await syncPlanVectorNodes();
       await prisma.orchestratorRun.update({ where: { id: runId }, data: { plan } });
@@ -685,28 +766,44 @@ export class OrchestratorExecutionEngineService {
           recon,
           provider,
           modelName,
-          emitReasoning
+          emitReasoning,
+          {
+            runId,
+            onLiveModelOutput: emitLiveModelOutput
+          }
         );
 
         await updateNode(finding.id, { status: finding.severity === "critical" || finding.severity === "high" ? "vulnerable" : "completed" });
 
         for (const child of childFindings) {
-          await recordFinding(executionReportFindingSchema.parse({
+          const reportedFinding = createWorkflowReportedFinding({
+            runId,
             id: child.id,
+            submission: createAttackMapFindingSubmission({
+              target: { baseUrl: targetUrl, host: new URL(targetUrl).hostname },
+              title: child.label,
+              severity: (child.severity ?? "info") as WorkflowReportedFinding["severity"],
+              description: String(child.data["description"] ?? ""),
+              vector: String(child.data["vector"] ?? ""),
+              evidence: [{
+                sourceTool: "deep_analysis",
+                quote: String(child.data["description"] ?? child.label).slice(0, 600),
+                externalUrl: targetUrl
+              }],
+              tags: ["attack-map", "deep-analysis"]
+            })
+          });
+          await recordFinding(executionReportFindingFromWorkflowFinding(reportedFinding, {
             executionId: runId,
             executionKind: "attack-map",
             source: "attack-map-finding",
-            severity: child.severity ?? "info",
-            title: child.label,
             type: "deep-analysis-finding",
             summary: String(child.data["description"] ?? ""),
             recommendation: null,
             confidence: null,
             targetLabel: targetUrl,
-            evidence: [],
             sourceToolIds: ["deep_analysis"],
-            sourceToolRunIds: [],
-            createdAt: new Date().toISOString()
+            sourceToolRunIds: []
           }));
           await addNode(child);
           await addEdge({ id: randomUUID(), source: finding.id, target: child.id, kind: "discovery" });
@@ -727,7 +824,10 @@ export class OrchestratorExecutionEngineService {
       emit({ type: "phase_changed", phase: "correlation", status: "running" });
       emit({ type: "log", level: "info", message: `Correlating ${allFindingNodes.length} findings for attack chains` });
 
-      const chains = await this.correlateAttackChains(allFindingNodes, targetUrl, provider, modelName, emitReasoning);
+      const chains = await this.correlateAttackChains(allFindingNodes, targetUrl, provider, modelName, emitReasoning, {
+        runId,
+        onLiveModelOutput: emitLiveModelOutput
+      });
 
       for (const chain of chains) {
         const chainNodeId = randomUUID();
@@ -784,9 +884,10 @@ export class OrchestratorExecutionEngineService {
     runId: string,
     provider: StoredAiProvider,
     model: string,
-    emitReasoning: (phase: string, title: string, summary: string) => void
+    emitReasoning: (phase: string, title: string, summary: string) => void,
+    streamOptions?: DecisionModelStreamOptions
   ): Promise<ReconResult> {
-    const emit = (message: string) => this.stream.publish(runId, { type: "log", level: "info", message });
+    const emit = (message: string) => this.publishRunEvent(runId, { type: "log", level: "info", message });
 
     const url = new URL(targetUrl.includes("://") ? targetUrl : `http://${targetUrl}`);
     const host = url.hostname;
@@ -823,7 +924,7 @@ export class OrchestratorExecutionEngineService {
     }
 
     emit(`Parsing recon results with ${provider.name}`);
-    const parsed = await this.parseReconWithAI(rawNmap, rawCurl, targetUrl, port, provider, model, emitReasoning);
+    const parsed = await this.parseReconWithAI(rawNmap, rawCurl, targetUrl, port, provider, model, emitReasoning, streamOptions);
     return {
       ...parsed,
       probes: [
@@ -850,7 +951,8 @@ export class OrchestratorExecutionEngineService {
     _port: string,
     provider: StoredAiProvider,
     model: string,
-    emitReasoning: (phase: string, title: string, summary: string) => void
+    emitReasoning: (phase: string, title: string, summary: string) => void,
+    streamOptions?: DecisionModelStreamOptions
   ): Promise<ReconResult> {
     const envelope = await this.callStructuredDecisionModel<Partial<ReconResult>>(provider, model, [
       `You are a security analyst parsing raw recon output for ${targetUrl}.`,
@@ -862,7 +964,7 @@ export class OrchestratorExecutionEngineService {
       "",
       "--- HTTP HEADERS ---",
       rawCurl.slice(0, 2000)
-    ].join("\n"));
+    ].join("\n"), streamOptions);
     emitReasoning("recon", "Recon reasoning", envelope.reasoningSummary);
     const parsed = envelope.data;
     return {
@@ -883,7 +985,8 @@ export class OrchestratorExecutionEngineService {
     plannerTools: ResolvedAiTool[],
     provider: StoredAiProvider,
     model: string,
-    emitReasoning: (phase: string, title: string, summary: string) => void
+    emitReasoning: (phase: string, title: string, summary: string) => void,
+    streamOptions?: DecisionModelStreamOptions
   ): Promise<AttackPlan> {
     const reconSummary = JSON.stringify({
       openPorts: recon.openPorts,
@@ -911,7 +1014,7 @@ export class OrchestratorExecutionEngineService {
       "Return ONLY a JSON object with this exact shape:",
       '{"reasoningSummary":"short summary of the main planning logic and prioritization","data":{"phases":[{"id":"phase-1","name":"Web App Scanning","priority":"high","rationale":"HTTP service found","targetService":"port 80 http","tools":["nikto","nuclei"],"status":"pending"}],"overallRisk":"high","summary":"Brief risk assessment"}}',
       "Include 3-6 phases. priorities: critical/high/medium/low. Status always 'pending'. Pick 1-3 tools per phase from the available tools list above."
-    ].join("\n"));
+    ].join("\n"), streamOptions);
     emitReasoning("planning", "Planning reasoning", envelope.reasoningSummary);
     const parsed = envelope.data;
     return {
@@ -931,7 +1034,8 @@ export class OrchestratorExecutionEngineService {
     plannerTools: ResolvedAiTool[],
     provider: StoredAiProvider,
     model: string,
-    emitReasoning: (phase: string, title: string, summary: string) => void
+    emitReasoning: (phase: string, title: string, summary: string) => void,
+    streamOptions?: DecisionModelStreamOptions
   ): Promise<AttackPlan> {
     if (plannerTools.length === 0) {
       throw new RequestError(500, "Adaptive attack planning requires at least one planner-visible AI tool, but none are available.", {
@@ -991,7 +1095,7 @@ export class OrchestratorExecutionEngineService {
       "Return ONLY a JSON object with this exact shape:",
       '{"reasoningSummary":"short summary of why the plan should change or stay the same","data":{"skipPhaseIds":["phase-2"],"newPhases":[{"id":"phase-adaptive-1","name":"Targeted Auth Probe","priority":"high","rationale":"Confirmed session weakness warrants deeper auth testing","targetService":"http auth","tools":["Auth Flow Probe"],"status":"pending"}],"overallRisk":"high","updatedSummary":"Brief updated risk and plan summary"}}',
       "Only include phase IDs in skipPhaseIds when their current status is pending. New phase IDs must be unique. Return empty arrays when no change is needed."
-    ].join("\n"));
+    ].join("\n"), streamOptions);
     emitReasoning("planning", `Adaptive planning reasoning · ${completedPhase.name}`, envelope.reasoningSummary);
 
     const data = envelope.data;
@@ -1077,7 +1181,8 @@ export class OrchestratorExecutionEngineService {
     model: string,
     emitReasoning: (phase: string, title: string, summary: string) => void,
     recordToolActivity: (activity: ExecutionReportToolActivity) => Promise<void>,
-    updateToolActivity: (id: string, patch: Partial<ExecutionReportToolActivity>) => Promise<void>
+    updateToolActivity: (id: string, patch: Partial<ExecutionReportToolActivity>) => Promise<void>,
+    streamOptions?: DecisionModelStreamOptions
   ): Promise<{
     findings: { title: string; severity: string; description: string; vector: string; rawEvidence?: string }[];
     probeCommand: string;
@@ -1114,7 +1219,7 @@ export class OrchestratorExecutionEngineService {
       "Identify 0-3 realistic security findings. Return ONLY JSON object:",
       '{"reasoningSummary":"short summary of why the evidence does or does not justify findings","data":{"findings":[{"title":"Finding name","severity":"high","description":"What was found and why it matters","vector":"The attack technique","rawEvidence":"relevant excerpt from probe output"}]}}',
       "Use severity: info/low/medium/high/critical. Return [] if nothing notable found."
-    ].join("\n"));
+    ].join("\n"), streamOptions);
     emitReasoning("execution", `Execution reasoning · ${phase.name}`, envelope.reasoningSummary);
     return {
       findings: Array.isArray(envelope.data.findings) ? envelope.data.findings.slice(0, 3) : [],
@@ -1131,7 +1236,7 @@ export class OrchestratorExecutionEngineService {
     recordToolActivity: (activity: ExecutionReportToolActivity) => Promise<void> = async () => undefined,
     updateToolActivity: (id: string, patch: Partial<ExecutionReportToolActivity>) => Promise<void> = async () => undefined
   ): Promise<SuggestedToolAttempt[]> {
-    const emit = (message: string) => this.stream.publish(runId, { type: "log", level: "info", message });
+    const emit = (message: string) => this.publishRunEvent(runId, { type: "log", level: "info", message });
     const resolvedTools = await this.resolvePlannedTools(phase);
     const parsedTargetUrl = new URL(targetUrl);
     const targetHost = parsedTargetUrl.hostname;
@@ -1171,7 +1276,7 @@ export class OrchestratorExecutionEngineService {
           startedAt,
           completedAt: null
         }));
-        this.stream.publish(runId, {
+        this.publishRunEvent(runId, {
           type: "tool_started",
           phase: phase.name,
           toolId: tool.tool.id,
@@ -1187,7 +1292,7 @@ export class OrchestratorExecutionEngineService {
         });
         const completedAt = new Date().toISOString();
         const durationMs = new Date(completedAt).getTime() - new Date(startedAt).getTime();
-        this.stream.publish(runId, {
+        this.publishRunEvent(runId, {
           type: "tool_completed",
           phase: phase.name,
           toolId: tool.tool.id,
@@ -1245,7 +1350,7 @@ export class OrchestratorExecutionEngineService {
             completedAt
           }));
         }
-        this.stream.publish(runId, {
+        this.publishRunEvent(runId, {
           type: "tool_completed",
           phase: phase.name,
           toolId: tool.tool.id,
@@ -1257,7 +1362,7 @@ export class OrchestratorExecutionEngineService {
           exitCode: 1,
           outputPreview: message.slice(0, 600)
         });
-        this.stream.publish(runId, {
+        this.publishRunEvent(runId, {
           type: "log",
           level: "error",
           message: `Tool ${tool.tool.name} failed for "${phase.name}": ${message}`
@@ -1280,7 +1385,8 @@ export class OrchestratorExecutionEngineService {
     recon: ReconResult,
     provider: StoredAiProvider,
     model: string,
-    emitReasoning: (phase: string, title: string, summary: string) => void
+    emitReasoning: (phase: string, title: string, summary: string) => void,
+    streamOptions?: DecisionModelStreamOptions
   ): Promise<AttackMapNode[]> {
     const contextSummary = siblingFindings
       .filter((node) => node.id !== finding.id)
@@ -1311,7 +1417,7 @@ export class OrchestratorExecutionEngineService {
       "Return ONLY a JSON object:",
       '{"reasoningSummary":"short summary of the exploitation path or why no deeper path is justified","data":{"findings":[{"title":"...","severity":"critical|high|medium|low|info","description":"...","vector":"..."}]}}',
       "Return [] if no deeper paths are meaningful."
-    ].join("\n"));
+    ].join("\n"), streamOptions);
     emitReasoning("deep_analysis", `Deep analysis reasoning · ${finding.label}`, envelope.reasoningSummary);
     const parsed = envelope.data.findings;
     if (!Array.isArray(parsed)) {
@@ -1327,7 +1433,8 @@ export class OrchestratorExecutionEngineService {
         recon,
         provider,
         model,
-        emitReasoning
+        emitReasoning,
+        streamOptions
       );
 
       if (verification.accepted) {
@@ -1348,11 +1455,13 @@ export class OrchestratorExecutionEngineService {
           }
         });
       } else {
-        this.stream.publish(randomUUID(), {
-          type: "log",
-          level: "warn",
-          message: `Adversarial Verifier REJECTED finding "${candidate.title}": ${verification.reasoning}`
-        });
+        if (streamOptions?.runId) {
+          this.publishRunEvent(streamOptions.runId, {
+            type: "log",
+            level: "warn",
+            message: `Adversarial Verifier REJECTED finding "${candidate.title}": ${verification.reasoning}`
+          });
+        }
       }
     }
 
@@ -1366,7 +1475,8 @@ export class OrchestratorExecutionEngineService {
     recon: ReconResult,
     provider: StoredAiProvider,
     model: string,
-    emitReasoning: (phase: string, title: string, summary: string) => void
+    emitReasoning: (phase: string, title: string, summary: string) => void,
+    streamOptions?: DecisionModelStreamOptions
   ): Promise<{ accepted: boolean; reasoning: string }> {
     const envelope = await this.callStructuredDecisionModel<{ accepted: boolean; reasoning: string }>(provider, model, [
       "You are an Adversarial Verifier. Your job is to challenge a hypothesized security finding and determine if it is concrete and reachable given actual evidence.",
@@ -1388,7 +1498,7 @@ export class OrchestratorExecutionEngineService {
       "Challenge: Is this vector concrete and reachable given what was actually observed? Or is it pure model speculation?",
       "Return ONLY a JSON object:",
       '{"reasoningSummary":"short summary of why you accept or reject the finding","data":{"accepted":true|false,"reasoning":"detailed explanation for the operator"}}'
-    ].join("\n"));
+    ].join("\n"), streamOptions);
 
     emitReasoning("verification", `Adversarial verification · ${candidate.title}`, envelope.reasoningSummary);
     return {
@@ -1402,7 +1512,8 @@ export class OrchestratorExecutionEngineService {
     targetUrl: string,
     provider: StoredAiProvider,
     model: string,
-    emitReasoning: (phase: string, title: string, summary: string) => void
+    emitReasoning: (phase: string, title: string, summary: string) => void,
+    streamOptions?: DecisionModelStreamOptions
   ): Promise<{ title: string; description: string; severity: Severity; findingIds: string[]; exploitation: string; impact: string }[]> {
     const findingsSummary = allFindings.map((finding) =>
       `id:${finding.id} | severity:${finding.severity ?? "info"} | title:${finding.label} | desc:${String(finding.data["description"] ?? "").slice(0, 120)}`
@@ -1429,7 +1540,7 @@ export class OrchestratorExecutionEngineService {
       "Return ONLY a JSON object:",
       '{"reasoningSummary":"short summary of why the findings do or do not chain together","data":{"chains":[{"title":"...","description":"How these connect","severity":"critical|high|medium","findingIds":["id1","id2"],"exploitation":"Step-by-step chained attack","impact":"What the attacker ultimately achieves"}]}}',
       "Use exact finding IDs from the list above. Return [] if no meaningful chains exist."
-    ].join("\n"));
+    ].join("\n"), streamOptions);
     emitReasoning("correlation", "Correlation reasoning", envelope.reasoningSummary);
     const parsed = envelope.data.chains;
     if (!Array.isArray(parsed)) {
@@ -1472,32 +1583,114 @@ export class OrchestratorExecutionEngineService {
     return anthropic(model);
   }
 
-  private async callDecisionModel(provider: StoredAiProvider, model: string, prompt: string) {
+  private async callDecisionModel(
+    provider: StoredAiProvider,
+    model: string,
+    prompt: string,
+    streamOptions?: DecisionModelStreamOptions
+  ) {
     if (provider.kind === "local") {
-      return this.callLocalDecisionModel(provider, model, prompt);
+      return this.callLocalDecisionModel(provider, model, prompt, streamOptions);
     }
 
-    return this.callHostedDecisionModel(provider, model, prompt);
+    return this.callHostedDecisionModel(provider, model, prompt, streamOptions);
   }
 
-  private async callStructuredDecisionModel<T>(provider: StoredAiProvider, model: string, prompt: string): Promise<DecisionEnvelope<T>> {
-    const text = await this.callDecisionModel(provider, model, [
-      prompt,
-      "",
-      "JSON validity requirement: any backslash in a string must be escaped as \\\\, and regular expressions or Windows paths must be written as plain text unless correctly JSON-escaped."
-    ].join("\n"));
-    const json = extractJsonObject(text, "Selected AI provider returned structured reasoning output without a JSON object.");
-    const parsed = await this.parseOrRepairDecisionEnvelope<T>(provider, model, json);
-    if (!parsed || typeof parsed !== "object") {
-      throw new Error("Selected AI provider returned an invalid structured reasoning payload.");
-    }
-
-    return {
-      reasoningSummary: typeof parsed.reasoningSummary === "string" && parsed.reasoningSummary.trim()
-        ? parsed.reasoningSummary.trim()
-        : "No reasoning summary provided.",
-      data: parsed.data as T
+  private async callStructuredDecisionModel<T>(
+    provider: StoredAiProvider,
+    model: string,
+    prompt: string,
+    streamOptions?: DecisionModelStreamOptions
+  ): Promise<DecisionEnvelope<T>> {
+    const liveOutputSource: LiveModelOutput["source"] = provider.kind === "local" ? "local" : "hosted";
+    let liveModelOutput: LiveModelOutput | null = null;
+    const publishLiveModelOutput = () => {
+      if (liveModelOutput && streamOptions?.onLiveModelOutput) {
+        streamOptions.onLiveModelOutput(liveModelOutputSchema.parse(liveModelOutput));
+      }
     };
+    const appendLiveText = (delta: string) => {
+      if (!streamOptions?.runId || !streamOptions.onLiveModelOutput || delta.length === 0) {
+        return;
+      }
+      if (!liveModelOutput) {
+        liveModelOutput = {
+          runId: streamOptions.runId,
+          source: liveOutputSource,
+          text: "",
+          reasoning: null,
+          final: false,
+          createdAt: new Date().toISOString()
+        };
+      }
+      liveModelOutput = {
+        ...liveModelOutput,
+        text: `${liveModelOutput.text}${delta}`,
+        final: false,
+        createdAt: new Date().toISOString()
+      };
+      publishLiveModelOutput();
+    };
+    const appendLiveReasoning = (delta: string) => {
+      if (!streamOptions?.runId || !streamOptions.onLiveModelOutput || delta.length === 0) {
+        return;
+      }
+      if (!liveModelOutput) {
+        liveModelOutput = {
+          runId: streamOptions.runId,
+          source: liveOutputSource,
+          text: "",
+          reasoning: null,
+          final: false,
+          createdAt: new Date().toISOString()
+        };
+      }
+      liveModelOutput = {
+        ...liveModelOutput,
+        reasoning: `${liveModelOutput.reasoning ?? ""}${delta}`,
+        final: false,
+        createdAt: new Date().toISOString()
+      };
+      publishLiveModelOutput();
+    };
+    const finalizeLiveModelOutput = () => {
+      if (!liveModelOutput || !streamOptions?.onLiveModelOutput) {
+        liveModelOutput = null;
+        return;
+      }
+      streamOptions.onLiveModelOutput(liveModelOutputSchema.parse({
+        ...liveModelOutput,
+        final: true,
+        createdAt: new Date().toISOString()
+      }));
+      liveModelOutput = null;
+    };
+
+    try {
+      const text = await this.callDecisionModel(provider, model, [
+        prompt,
+        "",
+        "JSON validity requirement: any backslash in a string must be escaped as \\\\, and regular expressions or Windows paths must be written as plain text unless correctly JSON-escaped."
+      ].join("\n"), {
+        ...streamOptions,
+        onTextDelta: appendLiveText,
+        onReasoningDelta: appendLiveReasoning
+      });
+      const json = extractJsonObject(text, "Selected AI provider returned structured reasoning output without a JSON object.");
+      const parsed = await this.parseOrRepairDecisionEnvelope<T>(provider, model, json);
+      if (!parsed || typeof parsed !== "object") {
+        throw new Error("Selected AI provider returned an invalid structured reasoning payload.");
+      }
+
+      return {
+        reasoningSummary: typeof parsed.reasoningSummary === "string" && parsed.reasoningSummary.trim()
+          ? parsed.reasoningSummary.trim()
+          : "No reasoning summary provided.",
+        data: parsed.data as T
+      };
+    } finally {
+      finalizeLiveModelOutput();
+    }
   }
 
   private async parseOrRepairDecisionEnvelope<T>(
@@ -1535,21 +1728,52 @@ export class OrchestratorExecutionEngineService {
     }
   }
 
-  private async callHostedDecisionModel(provider: StoredAiProvider, model: string, prompt: string) {
-    const result = await generateText({
+  private async callHostedDecisionModel(
+    provider: StoredAiProvider,
+    model: string,
+    prompt: string,
+    streamOptions?: DecisionModelStreamOptions
+  ) {
+    const result = streamText({
       model: this.createAnthropicLanguageModel(provider, model),
       prompt
     });
+    let content = "";
+    for await (const rawPart of result.fullStream) {
+      const part = rawPart as { type: string; text?: string };
+      if (part.type === "text" && typeof part.text === "string") {
+        content = `${content}${part.text}`;
+        streamOptions?.onTextDelta?.(part.text);
+      }
+      if (part.type === "reasoning" && typeof part.text === "string") {
+        streamOptions?.onReasoningDelta?.(part.text);
+      }
+    }
 
-    const content = result.text.trim();
-    if (!content) {
+    let trimmed = content.trim();
+    if (!trimmed) {
+      const finalText = (await result.text).trim();
+      if (finalText.length > 0) {
+        if (content.length === 0) {
+          streamOptions?.onTextDelta?.(finalText);
+        }
+        content = finalText;
+        trimmed = finalText;
+      }
+    }
+    if (!trimmed) {
       throw new Error("Hosted provider returned an empty attack-map response.");
     }
 
-    return content;
+    return trimmed;
   }
 
-  private async callLocalDecisionModel(provider: StoredAiProvider, model: string, prompt: string) {
+  private async callLocalDecisionModel(
+    provider: StoredAiProvider,
+    model: string,
+    prompt: string,
+    streamOptions?: DecisionModelStreamOptions
+  ) {
     const baseUrl = provider.baseUrl;
     if (!baseUrl) {
       throw new Error("Local attack-map execution requires a provider base URL.");
@@ -1562,7 +1786,7 @@ export class OrchestratorExecutionEngineService {
       },
       body: JSON.stringify({
         model,
-        stream: false,
+        stream: true,
         format: "json",
         options: {
           temperature: 0
@@ -1580,12 +1804,56 @@ export class OrchestratorExecutionEngineService {
       throw new Error(`Local provider request failed with status ${response.status}.`);
     }
 
-    const payload = await response.json() as { message?: { content?: string } };
-    const content = payload.message?.content?.trim();
-    if (!content) {
+    if (!response.body) {
       throw new Error("Local provider returned an empty attack-map response.");
     }
 
-    return content;
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let content = "";
+    const publishDelta = (delta: string) => {
+      if (delta.length === 0) {
+        return;
+      }
+      content = `${content}${delta}`;
+      streamOptions?.onTextDelta?.(delta);
+    };
+    const parseLine = (line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return;
+      }
+      const payload = JSON.parse(trimmed) as { message?: { content?: string } };
+      const delta = payload.message?.content;
+      if (typeof delta === "string" && delta.length > 0) {
+        publishDelta(delta);
+      }
+    };
+
+    const reader = response.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      let newlineIndex = buffer.indexOf("\n");
+      while (newlineIndex !== -1) {
+        parseLine(buffer.slice(0, newlineIndex));
+        buffer = buffer.slice(newlineIndex + 1);
+        newlineIndex = buffer.indexOf("\n");
+      }
+    }
+    buffer += decoder.decode();
+    if (buffer.trim().length > 0) {
+      parseLine(buffer);
+    }
+
+    const trimmed = content.trim();
+    if (!trimmed) {
+      throw new Error("Local provider returned an empty attack-map response.");
+    }
+
+    return trimmed;
   }
 }

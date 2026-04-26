@@ -1,6 +1,6 @@
 import { type Express } from "express";
 import { z } from "zod";
-import type { OrchestratorEvent } from "@/engine/orchestrator/index.js";
+import { orchestratorStreamMessageSchema } from "@synosec/contracts";
 import type { OrchestratorEventStream, OrchestratorExecutionEngine } from "@/engine/contracts.js";
 
 const createRunBodySchema = z.object({
@@ -64,11 +64,12 @@ export function registerOrchestratorRoutes(
       res.setHeader("X-Accel-Buffering", "no");
       res.flushHeaders();
 
-      writeSse(res, { type: "snapshot", run });
+      writeSse(res, orchestratorStreamMessageSchema.parse({ type: "snapshot", run }));
 
-      const unsub = stream.subscribe(req.params.id, (event: OrchestratorEvent) => {
-        writeSse(res, event);
-        if (event.type === "completed" || event.type === "failed") {
+      const unsub = stream.subscribe(req.params.id, (message) => {
+        const payload = orchestratorStreamMessageSchema.parse(message);
+        writeSse(res, payload);
+        if (payload.type === "run_event" && (payload.event?.type === "completed" || payload.event?.type === "failed")) {
           res.end();
         }
       });

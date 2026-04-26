@@ -5,7 +5,19 @@ import { createToolRuntime } from "@/modules/ai-tools/tool-runtime.js";
 import { OrchestratorExecutionEngineService } from "./orchestrator-execution-service.js";
 import { OrchestratorStream, type AttackPlanPhase } from "./orchestrator-stream.js";
 
+const { streamTextMock } = vi.hoisted(() => ({
+  streamTextMock: vi.fn()
+}));
+
 const executeScriptedToolMock = vi.fn();
+
+vi.mock("ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("ai")>();
+  return {
+    ...actual,
+    streamText: streamTextMock
+  };
+});
 
 vi.mock("@/engine/tools/script-executor.js", () => ({
   executeScriptedTool: (...args: unknown[]) => executeScriptedToolMock(...args)
@@ -71,6 +83,7 @@ const recon = {
 describe("OrchestratorExecutionEngineService", () => {
   beforeEach(() => {
     executeScriptedToolMock.mockReset();
+    streamTextMock.mockReset();
   });
 
   it("builds planner tool lists from custom bash ai tools", async () => {
@@ -302,6 +315,58 @@ describe("OrchestratorExecutionEngineService", () => {
     )).rejects.toMatchObject({
       status: 500,
       code: "ORCHESTRATOR_ADAPTIVE_PLAN_INVALID_TOOL"
+    });
+  });
+
+  it("streams live model output while building structured decisions", async () => {
+    streamTextMock.mockImplementation(() => ({
+      fullStream: (async function* () {
+        yield { type: "reasoning", text: "Plan " };
+        yield { type: "reasoning", text: "carefully" };
+        yield { type: "text", text: "{\"reasoningSummary\":\"" };
+        yield { type: "text", text: "Focus web first\",\"data\":{\"phases\":[],\"overallRisk\":\"medium\",\"summary\":\"ok\"}}" };
+      })()
+    }));
+
+    const service = createService([createTool({ id: "tool-1", name: "Nuclei" })]);
+    const privateService = service as any;
+    const outputs: Array<{ text: string; reasoning: string | null; final: boolean }> = [];
+
+    await privateService.callStructuredDecisionModel(
+      provider,
+      "sonnet",
+      "Return a plan.",
+      {
+        runId: "50000000-0000-0000-0000-000000000001",
+        onLiveModelOutput: (output: { text: string; reasoning: string | null; final: boolean }) => {
+          outputs.push(output);
+        }
+      }
+    );
+
+    expect(outputs.some((output) => output.text.includes("\"reasoningSummary\""))).toBe(true);
+    expect(outputs.some((output) => output.reasoning === "Plan carefully")).toBe(true);
+    expect(outputs.some((output) => output.final)).toBe(true);
+  });
+
+  it("falls back to the final hosted text when the stream yields no text chunks", async () => {
+    streamTextMock.mockImplementation(() => ({
+      fullStream: (async function* () {
+        yield { type: "start" };
+        yield { type: "finish", finishReason: "stop" };
+      })(),
+      text: Promise.resolve("{\"reasoningSummary\":\"Fallback\",\"data\":{\"phases\":[],\"overallRisk\":\"medium\",\"summary\":\"ok\"}}")
+    }));
+
+    const service = createService([createTool({ id: "tool-1", name: "Nuclei" })]);
+    const privateService = service as any;
+
+    await expect(privateService.callStructuredDecisionModel(
+      provider,
+      "sonnet",
+      "Return a plan."
+    )).resolves.toMatchObject({
+      reasoningSummary: "Fallback"
     });
   });
 });

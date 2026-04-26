@@ -520,7 +520,7 @@ export class ExecutionReportsService {
     }
 
     const workflowFindings = getWorkflowReportedFindings(workflowRun);
-    const findings = workflowFindings.map(executionReportFindingFromWorkflowFinding);
+    const findings = workflowFindings.map((finding) => executionReportFindingFromWorkflowFinding(finding));
     const toolActivity = workflowRun.events
       .filter((event) => event.type === "tool_result")
       .map((event) => executionReportToolActivitySchema.parse({

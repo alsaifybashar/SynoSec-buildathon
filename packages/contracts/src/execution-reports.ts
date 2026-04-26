@@ -235,27 +235,39 @@ export function summarizeHighestSeverity(findings: Array<{ severity: SecurityVul
 }
 
 export function executionReportFindingFromWorkflowFinding(
-  finding: z.infer<typeof workflowReportedFindingSchema>
+  finding: z.infer<typeof workflowReportedFindingSchema>,
+  options?: {
+    executionId?: string;
+    executionKind?: ExecutionReportFinding["executionKind"];
+    source?: ExecutionReportFindingSource;
+    type?: string;
+    summary?: string;
+    recommendation?: string | null;
+    confidence?: number | null;
+    targetLabel?: string;
+    sourceToolIds?: string[];
+    sourceToolRunIds?: string[];
+  }
 ): ExecutionReportFinding {
   return executionReportFindingSchema.parse({
     id: finding.id,
-    executionId: finding.workflowRunId,
-    executionKind: "workflow",
-    source: "workflow-finding",
+    executionId: options?.executionId ?? finding.workflowRunId,
+    executionKind: options?.executionKind ?? "workflow",
+    source: options?.source ?? "workflow-finding",
     severity: finding.severity,
     title: finding.title,
-    type: finding.type,
-    summary: finding.impact,
-    recommendation: finding.recommendation,
-    confidence: finding.confidence,
-    targetLabel: finding.target.url ?? [
+    type: options?.type ?? finding.type,
+    summary: options?.summary ?? finding.impact,
+    recommendation: options?.recommendation ?? finding.recommendation,
+    confidence: options?.confidence ?? finding.confidence,
+    targetLabel: options?.targetLabel ?? finding.target.url ?? [
       finding.target.host,
       finding.target.port ? `:${finding.target.port}` : "",
       finding.target.path ?? ""
     ].join(""),
     evidence: finding.evidence,
-    sourceToolIds: uniqueExecutionReportValues(finding.evidence.map((item) => item.sourceTool)),
-    sourceToolRunIds: [],
+    sourceToolIds: uniqueExecutionReportValues(options?.sourceToolIds ?? finding.evidence.map((item) => item.sourceTool)),
+    sourceToolRunIds: uniqueExecutionReportValues(options?.sourceToolRunIds ?? []),
     createdAt: finding.createdAt
   });
 }

@@ -804,7 +804,7 @@ export const workflowRunSchema = z.object({
 });
 export type WorkflowRun = z.infer<typeof workflowRunSchema>;
 
-export const workflowLiveModelOutputSchema = z.object({
+export const liveModelOutputSchema = z.object({
   runId: z.string().uuid(),
   source: z.enum(["local", "hosted"]),
   text: z.string(),
@@ -812,19 +812,171 @@ export const workflowLiveModelOutputSchema = z.object({
   final: z.boolean().default(false),
   createdAt: z.string().datetime()
 });
-export type WorkflowLiveModelOutput = z.infer<typeof workflowLiveModelOutputSchema>;
+export type LiveModelOutput = z.infer<typeof liveModelOutputSchema>;
+
+export const workflowLiveModelOutputSchema = liveModelOutputSchema;
+export type WorkflowLiveModelOutput = LiveModelOutput;
+
+export const orchestratorAttackMapNodeSchema = z.object({
+  id: z.string().min(1),
+  type: z.enum(["target", "port", "tech", "vector", "scan", "finding", "chain"]),
+  label: z.string().min(1),
+  status: z.enum(["pending", "scanning", "completed", "vulnerable", "blocked"]),
+  severity: z.enum(["info", "low", "medium", "high", "critical"]).optional(),
+  parentId: z.string().min(1).optional(),
+  data: z.record(z.unknown())
+});
+export type OrchestratorAttackMapNode = z.infer<typeof orchestratorAttackMapNodeSchema>;
+
+export const orchestratorAttackMapEdgeSchema = z.object({
+  id: z.string().min(1),
+  source: z.string().min(1),
+  target: z.string().min(1),
+  label: z.string().min(1).optional(),
+  kind: z.enum(["discovery", "chain"]).optional()
+});
+export type OrchestratorAttackMapEdge = z.infer<typeof orchestratorAttackMapEdgeSchema>;
+
+export const orchestratorAttackPlanPhaseSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  priority: z.enum(["critical", "high", "medium", "low"]),
+  rationale: z.string().min(1),
+  targetService: z.string().min(1),
+  tools: z.array(z.string().min(1)),
+  status: z.enum(["pending", "running", "completed", "skipped"])
+});
+export type OrchestratorAttackPlanPhase = z.infer<typeof orchestratorAttackPlanPhaseSchema>;
+
+export const orchestratorAttackPlanSchema = z.object({
+  phases: z.array(orchestratorAttackPlanPhaseSchema),
+  overallRisk: z.enum(["critical", "high", "medium", "low"]),
+  summary: z.string().min(1)
+});
+export type OrchestratorAttackPlan = z.infer<typeof orchestratorAttackPlanSchema>;
+
+export const orchestratorRunSchema = z.object({
+  id: z.string().uuid(),
+  targetUrl: z.string().url(),
+  providerId: z.string().uuid(),
+  status: z.string().min(1),
+  phase: z.string().min(1),
+  recon: z.unknown(),
+  plan: z.unknown(),
+  mapNodes: z.array(orchestratorAttackMapNodeSchema),
+  mapEdges: z.array(orchestratorAttackMapEdgeSchema),
+  findings: z.array(z.unknown()),
+  toolActivity: z.array(z.unknown()),
+  summary: z.string().nullable(),
+  error: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type OrchestratorRun = z.infer<typeof orchestratorRunSchema>;
+
+export const orchestratorEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("phase_changed"),
+    phase: z.string().min(1),
+    status: z.string().min(1)
+  }),
+  z.object({
+    type: z.literal("node_added"),
+    node: orchestratorAttackMapNodeSchema
+  }),
+  z.object({
+    type: z.literal("node_updated"),
+    node: orchestratorAttackMapNodeSchema
+  }),
+  z.object({
+    type: z.literal("edge_added"),
+    edge: orchestratorAttackMapEdgeSchema
+  }),
+  z.object({
+    type: z.literal("plan_created"),
+    plan: orchestratorAttackPlanSchema
+  }),
+  z.object({
+    type: z.literal("plan_updated"),
+    plan: orchestratorAttackPlanSchema
+  }),
+  z.object({
+    type: z.literal("reasoning"),
+    phase: z.string().min(1),
+    title: z.string().min(1),
+    summary: z.string().min(1)
+  }),
+  z.object({
+    type: z.literal("tool_started"),
+    phase: z.string().min(1),
+    toolId: z.string().min(1).optional(),
+    toolName: z.string().min(1),
+    command: z.string().min(1),
+    startedAt: z.string().datetime()
+  }),
+  z.object({
+    type: z.literal("tool_completed"),
+    phase: z.string().min(1),
+    toolId: z.string().min(1).optional(),
+    toolName: z.string().min(1),
+    command: z.string().min(1),
+    startedAt: z.string().datetime(),
+    completedAt: z.string().datetime(),
+    durationMs: z.number().int().min(0),
+    exitCode: z.number().int(),
+    outputPreview: z.string()
+  }),
+  z.object({
+    type: z.literal("log"),
+    level: z.enum(["info", "warn", "error"]),
+    message: z.string().min(1)
+  }),
+  z.object({
+    type: z.literal("completed"),
+    summary: z.string().min(1)
+  }),
+  z.object({
+    type: z.literal("failed"),
+    error: z.string().min(1)
+  })
+]);
+export type OrchestratorEvent = z.infer<typeof orchestratorEventSchema>;
+
+export const orchestratorStreamMessageSchema = z.object({
+  type: z.enum(["snapshot", "run_event"]),
+  run: orchestratorRunSchema.optional(),
+  event: orchestratorEventSchema.optional(),
+  liveModelOutput: liveModelOutputSchema.nullable().optional()
+}).superRefine((value, ctx) => {
+  if (value.type === "snapshot" && !value.run) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Snapshot messages must include a run.",
+      path: ["run"]
+    });
+  }
+
+  if (value.type === "run_event" && value.event === undefined && value.liveModelOutput === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Run events must include an orchestrator event or live model output.",
+      path: ["event"]
+    });
+  }
+});
+export type OrchestratorStreamMessage = z.infer<typeof orchestratorStreamMessageSchema>;
 
 export const workflowRunStreamMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("snapshot"),
     run: workflowRunSchema,
-    liveModelOutput: workflowLiveModelOutputSchema.nullable().optional()
+    liveModelOutput: liveModelOutputSchema.nullable().optional()
   }),
   z.object({
     type: z.literal("run_event"),
     run: workflowRunSchema,
     event: workflowTraceEventSchema,
-    liveModelOutput: workflowLiveModelOutputSchema.nullable().optional()
+    liveModelOutput: liveModelOutputSchema.nullable().optional()
   })
 ]);
 export type WorkflowRunStreamMessage = z.infer<typeof workflowRunStreamMessageSchema>;

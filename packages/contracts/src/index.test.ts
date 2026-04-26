@@ -12,6 +12,7 @@ import {
   executeDefensiveIteration,
   executionReportDetailSchema,
   executionReportsListQuerySchema,
+  orchestratorStreamMessageSchema,
   prioritizeDefensiveAction,
   healthResponseSchema,
   listTargetsResponseSchema,
@@ -244,6 +245,22 @@ describe("contracts", () => {
             toolInput: { baseUrl: "http://example.com", target: "example.com" }
           }
         }
+      }
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts orchestrator stream messages with live model output", () => {
+    const result = orchestratorStreamMessageSchema.safeParse({
+      type: "run_event",
+      liveModelOutput: {
+        runId: "11111111-1111-1111-1111-111111111111",
+        source: "hosted",
+        text: "{\"reasoningSummary\":\"Planning\"",
+        reasoning: "Prioritize the web surface first.",
+        final: false,
+        createdAt: "2026-04-26T00:00:00.000Z"
       }
     });
 

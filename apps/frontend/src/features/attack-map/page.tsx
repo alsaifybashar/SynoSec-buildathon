@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { OrchestratorStreamMessage, WorkflowLiveModelOutput } from "@synosec/contracts";
 import { fetchJson } from "@/shared/lib/api";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -108,20 +109,6 @@ type AiProvider = {
   baseUrl: string | null;
   apiKeyConfigured: boolean;
 };
-
-type OrchestratorEvent =
-  | { type: "snapshot"; run: OrchestratorRun }
-  | { type: "phase_changed"; phase: string; status: string }
-  | { type: "node_added"; node: MapNode }
-  | { type: "node_updated"; node: MapNode }
-  | { type: "edge_added"; edge: MapEdge }
-  | { type: "plan_created"; plan: AttackPlan }
-  | { type: "reasoning"; phase: string; title: string; summary: string }
-  | { type: "tool_started"; phase: string; toolId?: string; toolName: string; command: string; startedAt: string }
-  | { type: "tool_completed"; phase: string; toolId?: string; toolName: string; command: string; startedAt: string; completedAt: string; durationMs: number; exitCode: number; outputPreview: string }
-  | { type: "log"; level: string; message: string }
-  | { type: "completed"; summary: string }
-  | { type: "failed"; error: string };
 
 // ─── Node styling ─────────────────────────────────────────────────────────────
 
@@ -500,14 +487,15 @@ function NetworkMap({
       pinNode(dragging.current.id, x - dragging.current.ox, y - dragging.current.oy);
       return;
     }
-    if (panning.current) {
+    const panStart = panning.current;
+    if (panStart) {
       moved.current = true;
       const current = screenCoords(e.clientX, e.clientY);
-      const start = screenCoords(panning.current.clientX, panning.current.clientY);
+      const start = screenCoords(panStart.clientX, panStart.clientY);
       setViewport((prev) => ({
         ...prev,
-        x: panning.current!.x + current.x - start.x,
-        y: panning.current!.y + current.y - start.y
+        x: panStart.x + current.x - start.x,
+        y: panStart.y + current.y - start.y
       }));
     }
   }
@@ -965,6 +953,7 @@ export function AttackMapPage() {
   const [edges, setEdges] = useState<MapEdge[]>([]);
   const [plan, setPlan] = useState<AttackPlan | null>(null);
   const [reasoning, setReasoning] = useState<ReasoningEntry[]>([]);
+  const [liveModelOutput, setLiveModelOutput] = useState<WorkflowLiveModelOutput | null>(null);
   const [toolActivity, setToolActivity] = useState<ToolActivity[]>([]);
   const [logs, setLogs] = useState<{ level: string; message: string }[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -1039,6 +1028,7 @@ export function AttackMapPage() {
     setEdges((run.mapEdges as MapEdge[]) ?? []);
     setPlan((run.plan as AttackPlan) ?? null);
     setReasoning([]);
+    setLiveModelOutput(null);
     setToolActivity([]);
     setLogs([]);
     setSelectedNodeId(null);
@@ -1051,32 +1041,44 @@ export function AttackMapPage() {
     eventSourceRef.current = es;
 
     es.onmessage = (evt) => {
-      const event = JSON.parse(evt.data as string) as OrchestratorEvent;
-      if (event.type === "snapshot") {
-        const s = event.run;
+      const payload = JSON.parse(evt.data as string) as OrchestratorStreamMessage;
+      setLiveModelOutput(payload.liveModelOutput && !payload.liveModelOutput.final ? payload.liveModelOutput : null);
+
+      if (payload.type === "snapshot") {
+        const s = payload.run as OrchestratorRun;
         setActiveRun(s);
         setNodes((s.mapNodes as MapNode[]) ?? []);
         setEdges((s.mapEdges as MapEdge[]) ?? []);
         setPlan((s.plan as AttackPlan) ?? null);
-      } else if (event.type === "node_added") {
-        setNodes((prev) => [...prev.filter((n) => n.id !== event.node.id), event.node]);
-        if (event.node.status === "scanning" && event.node.data["command"]) {
-          setCurrentCommand(String(event.node.data["command"]));
+        return;
+      }
+
+      const event = payload.event;
+      if (!event) {
+        return;
+      }
+
+      if (event.type === "node_added") {
+        const node = event.node as MapNode;
+        setNodes((prev) => [...prev.filter((n) => n.id !== node.id), node]);
+        if (node.status === "scanning" && node.data["command"]) {
+          setCurrentCommand(String(node.data["command"]));
         }
       } else if (event.type === "node_updated") {
-        setNodes((prev) => prev.map((n) => n.id === event.node.id ? event.node : n));
-        if (event.node.status === "scanning" && event.node.data["command"]) {
-          setCurrentCommand(String(event.node.data["command"]));
+        const node = event.node as MapNode;
+        setNodes((prev) => prev.map((n) => n.id === node.id ? node : n));
+        if (node.status === "scanning" && node.data["command"]) {
+          setCurrentCommand(String(node.data["command"]));
         }
-        if (event.node.status === "completed" && event.node.data["rawOutput"]) {
+        if (node.status === "completed" && node.data["rawOutput"]) {
           setLastOutput({
-            command: event.node.data["command"] ? String(event.node.data["command"]) : null,
-            output: String(event.node.data["rawOutput"])
+            command: node.data["command"] ? String(node.data["command"]) : null,
+            output: String(node.data["rawOutput"])
           });
           setCurrentCommand(null);
         }
       } else if (event.type === "edge_added") {
-        setEdges((prev) => [...prev, event.edge]);
+        setEdges((prev) => [...prev, event.edge as MapEdge]);
       } else if (event.type === "plan_created") {
         setPlan(event.plan);
       } else if (event.type === "reasoning") {
@@ -1118,10 +1120,12 @@ export function AttackMapPage() {
         setLogs((prev) => [...prev.slice(-199), { level: event.level, message: event.message }]);
       } else if (event.type === "completed") {
         setActiveRun((prev) => prev ? { ...prev, status: "completed", phase: "complete", summary: event.summary } : prev);
+        setLiveModelOutput(null);
         void loadRuns();
         es.close();
       } else if (event.type === "failed") {
         setActiveRun((prev) => prev ? { ...prev, status: "failed", error: event.error } : prev);
+        setLiveModelOutput(null);
         void loadRuns();
         es.close();
       }
@@ -1312,6 +1316,29 @@ export function AttackMapPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {liveModelOutput && (liveModelOutput.reasoning || liveModelOutput.text) && (
+          <div className="px-4 py-2 border-b overflow-y-auto" style={{ borderColor: theme.border, maxHeight: 220 }}>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <div className="text-[0.6rem] font-semibold uppercase tracking-wider" style={{ color: theme.textSubtle }}>Live Model Output</div>
+              <div className="text-[0.52rem] font-mono uppercase text-amber-400">streaming</div>
+            </div>
+            <div className="space-y-1.5">
+              {liveModelOutput.reasoning ? (
+                <div className="rounded px-2 py-1.5" style={{ background: theme.panel, border: `1px solid ${theme.border}` }}>
+                  <div className="text-[0.55rem] font-semibold uppercase tracking-wider" style={{ color: theme.textSubtle }}>Reasoning</div>
+                  <div className="mt-1 text-[0.58rem] leading-relaxed whitespace-pre-wrap" style={{ color: theme.textMuted }}>{liveModelOutput.reasoning}</div>
+                </div>
+              ) : null}
+              {liveModelOutput.text ? (
+                <div className="rounded px-2 py-1.5" style={{ background: theme.panel, border: `1px solid ${theme.border}` }}>
+                  <div className="text-[0.55rem] font-semibold uppercase tracking-wider" style={{ color: theme.textSubtle }}>Model text</div>
+                  <pre className="mt-1 whitespace-pre-wrap break-words text-[0.58rem] leading-relaxed font-mono" style={{ color: theme.text }}>{liveModelOutput.text}</pre>
+                </div>
+              ) : null}
             </div>
           </div>
         )}

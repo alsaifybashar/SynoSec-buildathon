@@ -1,3 +1,4 @@
+import type { OrchestratorStreamMessage } from "@synosec/contracts";
 import { InMemoryRunStream } from "@/engine/streams/in-memory-run-stream.js";
 
 export type OrchestratorEvent =
@@ -52,4 +53,4 @@ export type AttackPlan = {
   summary: string;
 };
 
-export class OrchestratorStream extends InMemoryRunStream<OrchestratorEvent> {}
+export class OrchestratorStream extends InMemoryRunStream<OrchestratorStreamMessage> {}
