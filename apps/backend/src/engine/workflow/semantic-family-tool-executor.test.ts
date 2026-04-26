@@ -301,9 +301,75 @@ describe("executeSemanticFamilyTool", () => {
     expect(family.result.observationKeys).toEqual(direct.observations.map((observation) => observation.key));
     expect(family.result.observationSummaries).toEqual(direct.observations.map((observation) => observation.summary));
     expect(family.response.outputPreview).toBe(direct.observations[0]?.summary ?? family.result.outputPreview);
-    expect(family.response.fallbackUsed).toBe(false);
-    expect(family.response.attempts).toHaveLength(1);
-    expect(family.response.attempts[0]?.selected).toBe(true);
+    expect(family.response.attempts.length).toBeGreaterThan(0);
+    const selectedAttempts = family.response.attempts.filter((attempt) => attempt.selected);
+    expect(selectedAttempts).toHaveLength(1);
+    expect(selectedAttempts[0]?.toolId).toBe(family.response.usedToolId);
+    expect(selectedAttempts[0]?.status).toBe(family.response.status);
+    if (family.response.fallbackUsed) {
+      expect(family.response.attempts.length).toBeGreaterThan(1);
+      expect(family.response.attempts[0]?.selected).toBe(false);
+    } else {
+      expect(family.response.attempts).toHaveLength(1);
+      expect(family.response.attempts[0]?.selected).toBe(true);
+    }
+  });
+
+  it("falls through to later semantic candidates when the primary tool fails", async () => {
+    const familyTool = getBuiltinAiTool("builtin-http-surface-assessment");
+    const familyDefinition = getSemanticFamilyDefinition("http_surface_assessment");
+    if (!familyTool || !familyDefinition) {
+      throw new Error("Missing builtin semantic family tool definition");
+    }
+
+    const forcedPrimaryFailure: AiTool = {
+      ...createSeededTool("seed-http-recon"),
+      bashSource: "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' '{\"output\":\"forced primary failure\",\"statusReason\":\"primary candidate failed for semantic fallback test\"}'\nexit 64\n"
+    };
+    const forcedSecondarySuccess: AiTool = {
+      ...createSeededTool("seed-httpx"),
+      bashSource: "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' '{\"output\":\"forced secondary success\",\"observations\":[{\"key\":\"semantic-fallback:success\",\"title\":\"Fallback candidate succeeded\",\"summary\":\"Second candidate completed after primary failure.\",\"severity\":\"info\",\"confidence\":0.8,\"evidence\":\"forced fallback evidence\",\"technique\":\"semantic fallback test\"}],\"commandPreview\":\"seed-httpx forced fallback\"}'\n"
+    };
+
+    const runtime = createToolRuntime(new MemoryAiToolsRepository([
+      forcedPrimaryFailure,
+      forcedSecondarySuccess,
+      createSeededTool("seed-http-headers"),
+      createSeededTool("seed-whatweb")
+    ]));
+    const broker = new ToolBroker({ broadcast: () => undefined });
+
+    const family = await executeSemanticFamilyTool({
+      broker,
+      toolRuntime: runtime,
+      familyTool,
+      familyDefinition,
+      target: {
+        baseUrl,
+        host: "127.0.0.1"
+      },
+      scan,
+      tacticId: "tactic-family-fallback",
+      agentId: "agent-family-fallback"
+    }, {
+      target: "127.0.0.1",
+      baseUrl
+    });
+
+    expect(family.response.status).toBe("completed");
+    expect(family.response.usedToolId).toBe("seed-httpx");
+    expect(family.response.fallbackUsed).toBe(true);
+    expect(family.response.attempts).toHaveLength(2);
+    expect(family.response.attempts[0]).toMatchObject({
+      toolId: "seed-http-recon",
+      status: "failed",
+      selected: false
+    });
+    expect(family.response.attempts[1]).toMatchObject({
+      toolId: "seed-httpx",
+      status: "completed",
+      selected: true
+    });
   });
 
   it("preserves explicit path targets for SQL injection validation", async () => {

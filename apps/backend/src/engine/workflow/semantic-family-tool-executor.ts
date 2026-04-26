@@ -1,4 +1,4 @@
-import type { AiTool, Scan, ToolRun } from "@synosec/contracts";
+import type { AiTool, Observation, Scan, ToolRequest, ToolRun } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
 import type { ToolRuntime } from "@/modules/ai-tools/index.js";
 import type { SemanticFamilyDefinition } from "@/modules/ai-tools/semantic-family-tools.js";
@@ -124,82 +124,125 @@ export async function executeSemanticFamilyTool(
   }
 
   const executionTarget = parseExecutionTarget(toolInput, context.target);
-  const primaryToolId = context.familyDefinition.candidateToolIds[0];
-  if (!primaryToolId) {
+  const candidateToolIds = context.familyDefinition.candidateToolIds;
+  if (candidateToolIds.length === 0) {
     throw new RequestError(500, `${context.familyTool.name} has no primary seeded tool configured.`, {
       code: "SEMANTIC_FAMILY_TOOL_MISSING",
       userFriendlyMessage: `${context.familyTool.name} is missing an internal seeded tool dependency.`
     });
   }
 
-  const resolvedCandidate = await context.toolRuntime.get(primaryToolId);
-  assertCandidateRunnable(resolvedCandidate, context.familyTool.name, primaryToolId);
+  let selectedAttemptIndex = -1;
+  let selectedToolId: string | null = null;
+  let selectedToolName: string | null = null;
+  let selectedRequest: ToolRequest | null = null;
+  let selectedToolRun: ToolRun | null = null;
+  let selectedObservations: Observation[] = [];
+  const attempts: ExecutedToolResult["attempts"] = [];
 
-  const request = await context.toolRuntime.compile(resolvedCandidate.tool.id, {
-    target: executionTarget.target,
-    ...(executionTarget.port === undefined ? {} : { port: executionTarget.port }),
-    layer: inferLayer(resolvedCandidate.tool.category),
-    justification: `${context.familyTool.name} delegated execution to ${resolvedCandidate.tool.name}.`,
-    toolInput
-  });
+  for (const candidateToolId of candidateToolIds) {
+    const resolvedCandidate = await context.toolRuntime.get(candidateToolId);
+    assertCandidateRunnable(resolvedCandidate, context.familyTool.name, candidateToolId);
 
-  const brokerResult = await context.broker.executeRequests({
-    scan: context.scan,
-    tacticId: context.tacticId,
-    agentId: context.agentId,
-    requests: [request],
-    toolLookup: {
-      [resolvedCandidate.tool.id]: resolvedCandidate.tool
-    },
-    ...(context.constraintSet ? { constraintSet: context.constraintSet } : {})
-  });
+    const request = await context.toolRuntime.compile(resolvedCandidate.tool.id, {
+      target: executionTarget.target,
+      ...(executionTarget.port === undefined ? {} : { port: executionTarget.port }),
+      layer: inferLayer(resolvedCandidate.tool.category),
+      justification: `${context.familyTool.name} delegated execution to ${resolvedCandidate.tool.name}.`,
+      toolInput
+    });
 
-  const toolRun = brokerResult.toolRuns[0];
-  if (!toolRun) {
-    throw new RequestError(500, `${context.familyTool.name} did not receive a tool run from ${resolvedCandidate.tool.name}.`, {
+    const brokerResult = await context.broker.executeRequests({
+      scan: context.scan,
+      tacticId: context.tacticId,
+      agentId: context.agentId,
+      requests: [request],
+      toolLookup: {
+        [resolvedCandidate.tool.id]: resolvedCandidate.tool
+      },
+      ...(context.constraintSet ? { constraintSet: context.constraintSet } : {})
+    });
+
+    const toolRun = brokerResult.toolRuns[0];
+    if (!toolRun) {
+      throw new RequestError(500, `${context.familyTool.name} did not receive a tool run from ${resolvedCandidate.tool.name}.`, {
+        code: "SEMANTIC_FAMILY_TOOL_RUN_MISSING",
+        userFriendlyMessage: `${context.familyTool.name} did not receive a valid internal tool run.`
+      });
+    }
+
+    attempts.push(createAttempt({
+      toolId: resolvedCandidate.tool.id,
+      toolName: resolvedCandidate.tool.name,
+      toolRun,
+      output: toolRun.output ?? toolRun.statusReason ?? "",
+      selected: false
+    }));
+
+    if (toolRun.status === "completed") {
+      selectedAttemptIndex = attempts.length - 1;
+      selectedToolId = resolvedCandidate.tool.id;
+      selectedToolName = resolvedCandidate.tool.name;
+      selectedRequest = request;
+      selectedToolRun = toolRun;
+      selectedObservations = brokerResult.observations;
+      break;
+    }
+
+    if (selectedAttemptIndex < 0) {
+      selectedAttemptIndex = attempts.length - 1;
+      selectedToolId = resolvedCandidate.tool.id;
+      selectedToolName = resolvedCandidate.tool.name;
+      selectedRequest = request;
+      selectedToolRun = toolRun;
+      selectedObservations = brokerResult.observations;
+    }
+  }
+
+  if (selectedAttemptIndex < 0 || !selectedToolId || !selectedToolName || !selectedRequest || !selectedToolRun) {
+    throw new RequestError(500, `${context.familyTool.name} could not execute any candidate seeded tool.`, {
       code: "SEMANTIC_FAMILY_TOOL_RUN_MISSING",
-      userFriendlyMessage: `${context.familyTool.name} did not receive a valid internal tool run.`
+      userFriendlyMessage: `${context.familyTool.name} could not execute a valid internal tool run.`
     });
   }
+
+  const selectedAttempts = attempts.map((attempt, index) => ({
+    ...attempt,
+    selected: index === selectedAttemptIndex
+  }));
 
   const result: ExecutedToolResult = {
     toolId: context.familyTool.id,
     toolName: context.familyDefinition.tool.builtinActionKey ?? context.familyTool.id,
     toolInput,
-    toolRequest: request,
-    toolRun,
-    status: toolRun.status,
-    observations: brokerResult.observations,
-    observationKeys: brokerResult.observations.map((observation) => observation.key),
-    observationSummaries: brokerResult.observations.map((observation) => observation.summary),
+    toolRequest: selectedRequest,
+    toolRun: selectedToolRun,
+    status: selectedToolRun.status,
+    observations: selectedObservations,
+    observationKeys: selectedObservations.map((observation) => observation.key),
+    observationSummaries: selectedObservations.map((observation) => observation.summary),
     outputPreview: truncate(
-      brokerResult.observations[0]?.summary
-        ?? toolRun.statusReason
-        ?? toolRun.output
-        ?? `${context.familyTool.name} ${toolRun.status}.`
+      selectedObservations[0]?.summary
+        ?? selectedToolRun.statusReason
+        ?? selectedToolRun.output
+        ?? `${context.familyTool.name} ${selectedToolRun.status}.`
     ),
-    fullOutput: toolRun.output ?? toolRun.statusReason ?? "",
-    commandPreview: toolRun.commandPreview,
-    ...(toolRun.exitCode === undefined ? {} : { exitCode: toolRun.exitCode }),
-    usedToolId: resolvedCandidate.tool.id,
-    usedToolName: resolvedCandidate.tool.name,
-    fallbackUsed: false,
-    attempts: [createAttempt({
-      toolId: resolvedCandidate.tool.id,
-      toolName: resolvedCandidate.tool.name,
-      toolRun,
-      output: toolRun.output ?? toolRun.statusReason ?? "",
-      selected: true
-    })]
+    fullOutput: selectedToolRun.output ?? selectedToolRun.statusReason ?? "",
+    commandPreview: selectedToolRun.commandPreview,
+    ...(selectedToolRun.exitCode === undefined ? {} : { exitCode: selectedToolRun.exitCode }),
+    usedToolId: selectedToolId,
+    usedToolName: selectedToolName,
+    fallbackUsed: selectedAttemptIndex > 0,
+    attempts: selectedAttempts
   };
 
   return {
     result,
     response: {
-      toolRunId: toolRun.id,
+      toolRunId: selectedToolRun.id,
       toolId: context.familyTool.id,
       toolName: result.toolName,
-      status: toolRun.status,
+      status: selectedToolRun.status,
       outputPreview: result.outputPreview,
       rawOutput: result.fullOutput,
       observations: result.observations,
