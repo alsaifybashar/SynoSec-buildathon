@@ -36,6 +36,10 @@ async function binaryExists(binary: string): Promise<boolean> {
   }
 }
 
+function withCapabilityNote(entry: ToolCatalogEntry, note: string): string {
+  return entry.notes ? `${entry.notes} ${note}` : note;
+}
+
 export function getToolCatalog(): ToolCatalogEntry[] {
   return [...TOOL_CATALOG];
 }
@@ -67,7 +71,9 @@ export async function getToolCapabilities(): Promise<ToolCapabilitiesResponse> {
         category: entry.category,
         status: available ? "installed" : "missing",
         available,
-        notes: entry.notes,
+        notes: available
+          ? withCapabilityNote(entry, "Binary detected on PATH only; successful wrapper execution is not verified here.")
+          : entry.notes,
         implementedBy: "script"
       };
     })

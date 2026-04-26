@@ -171,6 +171,14 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function clipText(value: unknown, maxLength: number, fallback = ""): string {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  return value.slice(0, maxLength);
+}
+
 function escapeInvalidJsonBackslashes(json: string): string {
   return json.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
 }
@@ -225,6 +233,98 @@ function extractJsonObject(text: string, errorPrefix: string): string {
 
   return text.slice(jsonStart, jsonEnd + 1);
 }
+
+function normalizeSuggestedToolResult(
+  phase: AttackPlanPhase,
+  toolName: string,
+  result: {
+    observations?: unknown;
+    output?: unknown;
+    exitCode?: unknown;
+    statusReason?: unknown;
+    commandPreview?: unknown;
+  }
+): ScriptedToolResultBoundary {
+  if (typeof result.output !== "string") {
+    throw new RequestError(500, `Attack map phase "${phase.name}" received an invalid result output from ${toolName}.`, {
+      code: "ORCHESTRATOR_TOOL_RESULT_INVALID",
+      userFriendlyMessage: `Attack map execution received an invalid result from ${toolName}.`
+    });
+  }
+
+  if (!Array.isArray(result.observations)) {
+    throw new RequestError(500, `Attack map phase "${phase.name}" received invalid observations from ${toolName}.`, {
+      code: "ORCHESTRATOR_TOOL_RESULT_INVALID",
+      userFriendlyMessage: `Attack map execution received an invalid result from ${toolName}.`
+    });
+  }
+
+  if (typeof result.exitCode !== "number" || !Number.isFinite(result.exitCode)) {
+    throw new RequestError(500, `Attack map phase "${phase.name}" received an invalid exit code from ${toolName}.`, {
+      code: "ORCHESTRATOR_TOOL_RESULT_INVALID",
+      userFriendlyMessage: `Attack map execution received an invalid result from ${toolName}.`
+    });
+  }
+
+  return {
+    observations: result.observations as Observation[],
+    output: result.output,
+    exitCode: result.exitCode,
+    ...(typeof result.statusReason === "string" ? { statusReason: result.statusReason } : {}),
+    ...(typeof result.commandPreview === "string" && result.commandPreview.trim().length > 0
+      ? { commandPreview: result.commandPreview }
+      : {})
+  };
+}
+
+function normalizePhaseFindings(
+  phase: AttackPlanPhase,
+  findings: unknown
+): { title: string; severity: string; description: string; vector: string; rawEvidence?: string }[] {
+  if (!Array.isArray(findings)) {
+    return [];
+  }
+
+  return findings.slice(0, 3).map((item, index) => {
+    if (!item || typeof item !== "object") {
+      throw new RequestError(500, `Attack map phase "${phase.name}" returned a malformed finding at index ${index}.`, {
+        code: "ORCHESTRATOR_FINDINGS_INVALID",
+        userFriendlyMessage: "The attack map provider returned malformed findings."
+      });
+    }
+
+    const candidate = item as Record<string, unknown>;
+    const title = typeof candidate["title"] === "string" && candidate["title"].trim().length > 0 ? candidate["title"].trim() : null;
+    const severity = typeof candidate["severity"] === "string" && candidate["severity"].trim().length > 0 ? candidate["severity"].trim() : null;
+    const description = typeof candidate["description"] === "string" && candidate["description"].trim().length > 0 ? candidate["description"].trim() : null;
+    const vector = typeof candidate["vector"] === "string" && candidate["vector"].trim().length > 0 ? candidate["vector"].trim() : null;
+
+    if (!title || !severity || !description || !vector) {
+      throw new RequestError(500, `Attack map phase "${phase.name}" returned an incomplete finding at index ${index}.`, {
+        code: "ORCHESTRATOR_FINDINGS_INVALID",
+        userFriendlyMessage: "The attack map provider returned incomplete findings."
+      });
+    }
+
+    return {
+      title,
+      severity,
+      description,
+      vector,
+      ...(typeof candidate["rawEvidence"] === "string" && candidate["rawEvidence"].trim().length > 0
+        ? { rawEvidence: candidate["rawEvidence"].trim() }
+        : {})
+    };
+  });
+}
+
+type ScriptedToolResultBoundary = {
+  observations: Observation[];
+  output: string;
+  exitCode: number;
+  statusReason?: string;
+  commandPreview?: string;
+};
 
 function mapRow(row: {
   id: string;
@@ -317,7 +417,7 @@ export class OrchestratorExecutionEngineService {
         return false;
       }
 
-      return tool.tool.source === "custom" && tool.runtime !== null;
+      return tool.tool.status === "active" && tool.runtime !== null;
     });
   }
 
@@ -677,12 +777,12 @@ export class OrchestratorExecutionEngineService {
                   .slice(0, 3)
                   .map((attempt) => ({
                     sourceTool: attempt.toolName,
-                    quote: (finding.rawEvidence ?? attempt.output).slice(0, 600),
+                    quote: clipText(finding.rawEvidence ?? attempt.output, 600),
                     toolRunRef: attempt.toolRunId
                   }))
               : [{
                   sourceTool: phase.name,
-                  quote: (finding.rawEvidence ?? finding.description).slice(0, 600),
+                  quote: clipText(finding.rawEvidence ?? finding.description, 600),
                   externalUrl: targetUrl
                 }],
             toolCommandPreview: probeCommand || null,
@@ -713,7 +813,7 @@ export class OrchestratorExecutionEngineService {
             command: probeCommand,
             sourceType: "probe",
             source: targetUrl,
-            rawOutput: finding.rawEvidence ?? probeOutput.slice(0, 600)
+            rawOutput: typeof finding.rawEvidence === "string" ? finding.rawEvidence : clipText(probeOutput, 600)
           }
         };
         if (finding.severity) findingNode.severity = finding.severity as Severity;
@@ -1058,7 +1158,7 @@ export class OrchestratorExecutionEngineService {
       title: finding.title,
       severity: finding.severity,
       vector: finding.vector,
-      description: finding.description.slice(0, 500)
+      description: clipText(finding.description, 500)
     }));
 
     const envelope = await this.callStructuredDecisionModel<AdaptivePlanDecision>(provider, model, [
@@ -1080,7 +1180,7 @@ export class OrchestratorExecutionEngineService {
           title: finding.title,
           severity: finding.severity,
           vector: finding.vector,
-          description: finding.description.slice(0, 500)
+          description: clipText(finding.description, 500)
         }))
       }, null, 2),
       "",
@@ -1222,7 +1322,7 @@ export class OrchestratorExecutionEngineService {
     ].join("\n"), streamOptions);
     emitReasoning("execution", `Execution reasoning · ${phase.name}`, envelope.reasoningSummary);
     return {
-      findings: Array.isArray(envelope.data.findings) ? envelope.data.findings.slice(0, 3) : [],
+      findings: normalizePhaseFindings(phase, envelope.data.findings),
       probeCommand,
       probeOutput,
       toolAttempts
@@ -1284,12 +1384,13 @@ export class OrchestratorExecutionEngineService {
           command: commandPreview,
           startedAt
         });
-        const result = await executeScriptedTool({
+        const rawResult = await executeScriptedTool({
           scanId: runId,
           tacticId: phase.id,
           toolRun,
           request
         });
+        const result = normalizeSuggestedToolResult(phase, tool.tool.name, rawResult);
         const completedAt = new Date().toISOString();
         const durationMs = new Date(completedAt).getTime() - new Date(startedAt).getTime();
         this.publishRunEvent(runId, {
@@ -1302,11 +1403,11 @@ export class OrchestratorExecutionEngineService {
           completedAt,
           durationMs,
           exitCode: result.exitCode,
-          outputPreview: result.output.slice(0, 600)
+          outputPreview: clipText(result.output, 600)
         });
         await updateToolActivity(activityId, {
           status: "completed",
-          outputPreview: result.output.slice(0, 600),
+          outputPreview: clipText(result.output, 600),
           exitCode: result.exitCode,
           completedAt
         });

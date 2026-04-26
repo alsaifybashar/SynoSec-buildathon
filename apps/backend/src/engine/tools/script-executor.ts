@@ -44,6 +44,26 @@ export interface ScriptExecutionResult {
   commandPreview?: string;
 }
 
+function terminateProcessGroup(pid: number | undefined) {
+  if (pid == null) {
+    return;
+  }
+
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch {
+    return;
+  }
+
+  setTimeout(() => {
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {
+      // The process group may have already exited.
+    }
+  }, 250).unref();
+}
+
 async function materializeBashScript(
   toolName: string,
   bashSource: string
@@ -149,7 +169,8 @@ export async function executeScriptedTool(
 
   return new Promise<ScriptExecutionResult>((resolve, reject) => {
     const child = spawn(materialized.executablePath, [], {
-      stdio: ["pipe", "pipe", "pipe"]
+      stdio: ["pipe", "pipe", "pipe"],
+      detached: true
     });
 
     let stdout = "";
@@ -162,7 +183,7 @@ export async function executeScriptedTool(
       }
       settled = true;
       void materialized.cleanup();
-      child.kill("SIGTERM");
+      terminateProcessGroup(child.pid);
       resolve({
         observations: [],
         output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),

@@ -12,6 +12,14 @@ import type {
 } from "./workflow-runtime-types.js";
 import { WorkflowRunPreflight } from "./workflow-run-preflight.js";
 
+function clipText(value: unknown, maxLength: number, fallback = "") {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  return value.slice(0, maxLength);
+}
+
 export class AttackMapWorkflowRunExecutor {
   constructor(
     private readonly ports: WorkflowRuntimePorts,
@@ -180,7 +188,7 @@ export class AttackMapWorkflowRunExecutor {
       },
       "Recon completed",
       `Recon completed for ${target.baseUrl}.`,
-      recon.rawCurl.slice(0, 1000)
+      clipText(recon.rawCurl, 1000)
     );
 
     let plan = await orchestrator.createPlan(target.baseUrl, recon, plannerTools, provider, provider.model, (phase: string, title: string, summary: string) => {
@@ -239,12 +247,12 @@ export class AttackMapWorkflowRunExecutor {
             evidence: result.toolAttempts.length > 0
               ? result.toolAttempts.slice(0, 3).map((attempt: { toolRunId: string; toolName: string; output: string }) => ({
                   sourceTool: attempt.toolName,
-                  quote: (finding.rawEvidence ?? attempt.output).slice(0, 600),
+                  quote: clipText(finding.rawEvidence ?? attempt.output, 600, finding.title),
                   artifactRef: attempt.toolRunId
                 }))
               : [{
                   sourceTool: phase.name,
-                  quote: (finding.rawEvidence ?? finding.description).slice(0, 600),
+                  quote: clipText(finding.rawEvidence ?? finding.description, 600, finding.title),
                   externalUrl: target.baseUrl
                 }],
             toolCommandPreview: result.probeCommand || null,
@@ -334,7 +342,7 @@ export class AttackMapWorkflowRunExecutor {
             vector: String(child.data["vector"] ?? ""),
             evidence: [{
               sourceTool: "deep_analysis",
-              quote: String(child.data["description"] ?? child.label).slice(0, 600),
+              quote: clipText(child.data["description"] ?? child.label, 600, child.label),
               externalUrl: target.baseUrl
             }],
             tags: ["attack-map", "workflow-orchestrator", "deep-analysis"]

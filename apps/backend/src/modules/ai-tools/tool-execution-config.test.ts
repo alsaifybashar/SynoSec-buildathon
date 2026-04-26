@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { resolveToolExecutionFields } from "./tool-execution-config.js";
 
 describe("resolveToolExecutionFields", () => {
-  it("falls back to seeded execution config when runtime config is missing", () => {
-    const result = resolveToolExecutionFields({
+  it("fails loudly when runtime config is missing, even for seeded tool ids", () => {
+    expect(() => resolveToolExecutionFields({
       id: "seed-http-headers",
       name: "HTTP Headers",
       category: "web",
@@ -13,13 +13,7 @@ describe("resolveToolExecutionFields", () => {
       properties: {
         baseUrl: { type: "string" }
       }
-    });
-
-    expect(result.executorType).toBe("bash");
-    expect(result.bashSource).toContain("curl");
-    expect(result.sandboxProfile).toBe("network-recon");
-    expect(result.timeoutMs).toBeGreaterThan(0);
-    expect(result.constraintProfile?.enforced).toBe(true);
+    })).toThrow("missing required execution settings");
   });
 
   it("hydrates a missing constraint profile from the seeded definition", () => {

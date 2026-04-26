@@ -58,7 +58,7 @@ Use this structure when adding a new feature to the catalog:
 - How it is tested: Seed execution against local Postgres plus targeted provider/agent/tool route tests.
 - Local validation: Run `pnpm --filter @synosec/backend prisma:seed`, then verify `/api/ai-providers`, `/api/ai-agents`, and `/api/ai-tools` return the seeded records.
 - Contribution notes: Add or adjust starter records only through the seed path. Do not reintroduce runtime auto-population for builder defaults. Keep a clear distinction between a seeded tool record existing in the database and that tool having a real executable implementation.
-- Current limits or non-goals: Seeded defaults are starter records, not immutable system resources. Some seeded bash tools still use placeholder implementations that only check whether a binary exists, then return an explicit "installed but not implemented yet" response.
+- Current limits or non-goals: Seeded defaults are starter records, not immutable system resources. A seeded record is only runnable when its stored execution config is present and valid; the runtime no longer masks missing config by silently borrowing execution settings from repo defaults.
 
 ### Seeded Tool Runtime Availability
 
@@ -69,7 +69,7 @@ Use this structure when adding a new feature to the catalog:
 - How it is tested: Manual worker validation by checking `PATH`, confirming the expected binary family, and running the shell wrappers with JSON payloads through `scripts/tools/run-tool.sh`.
 - Local validation: Confirm `bash`, `node`, `curl`, `httpx`, `katana`, `nmap`, `ffuf`, `nuclei`, and `sqlmap` resolve on `PATH`. Then exercise `scripts/tools/web/http-recon.sh`, `scripts/tools/content/web-crawl.sh`, `scripts/tools/network/service-scan.sh`, `scripts/tools/content/content-discovery.sh`, `scripts/tools/web/vuln-audit.sh`, and `scripts/tools/web/sql-injection-check.sh` with a minimal JSON payload that supplies `scriptArgs`.
 - Contribution notes: Treat dependency installation and seeded-tool implementation as separate concerns. The worker environment currently has the required binaries installed, including ProjectDiscovery `httpx`, `katana`, and `nuclei`, plus `ffuf`, `nmap`, and `sqlmap`. Before claiming a seeded tool is usable, verify both that the binary is available and that the seeded `bashSource` is wired to a real wrapper or execution script.
-- Current limits or non-goals: The seeded records for `seed-web-crawl`, `seed-service-scan`, `seed-content-discovery`, `seed-vuln-audit`, and `seed-sql-injection-check` still use `createBinaryMissingScript(...)` placeholder bash in `apps/backend/prisma/seed-data/ai-builder-defaults.ts`. Because `resolveToolExecutionFields(...)` falls back to those seeded definitions, those tools will still return an unimplemented placeholder response even though the binaries are installed. Only the environment dependency gap has been closed so far; the seeded runtime wiring still needs to be updated if those tools should execute real scans through the seeded path.
+- Current limits or non-goals: Capability inspection still answers only a dependency question. `installed` means the expected binary resolved on `PATH`; it does not prove the wrapper executed successfully or that a given persisted tool record has valid runtime configuration.
 
 ### Live Local Tool Evaluation
 

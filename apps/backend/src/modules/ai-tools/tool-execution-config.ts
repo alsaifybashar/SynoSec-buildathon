@@ -138,26 +138,6 @@ function getSeededExecutionConfig(toolId: string) {
   return seededToolDefinitions.find((candidate) => candidate.id === toolId) ?? null;
 }
 
-function resolveFallbackExecutionConfig(tool: ExecutionConfigLookup): ToolExecutionFields {
-  const seeded = getSeededExecutionConfig(tool.id);
-  if (seeded) {
-    return {
-      executorType: seeded.executorType,
-      bashSource: seeded.bashSource,
-      sandboxProfile: seeded.sandboxProfile,
-      privilegeProfile: seeded.privilegeProfile,
-      timeoutMs: seeded.timeoutMs,
-      capabilities: [...seeded.capabilities],
-      ...(seeded.constraintProfile ? { constraintProfile: seeded.constraintProfile } : {})
-    };
-  }
-
-  throw new RequestError(500, `The AI tool "${tool.name}" is missing required execution settings.`, {
-    code: "AI_TOOL_EXECUTION_CONFIG_MISSING",
-    userFriendlyMessage: "This AI tool is missing required execution settings."
-  });
-}
-
 export function stripExecutionConfig<T>(schema: T): T {
   const record = asJsonRecord(schema);
   if (!(EXECUTION_KEY in record) && !("x-synosec-execution" in record)) {
@@ -235,10 +215,6 @@ export function resolveToolExecutionFields(tool: ExecutionConfigLookup, inputSch
       constraintProfile: seeded.constraintProfile
     };
   } catch (error) {
-    if (error instanceof RequestError && error.code === "AI_TOOL_EXECUTION_CONFIG_MISSING") {
-      return resolveFallbackExecutionConfig(tool);
-    }
-
     if (error instanceof RequestError) {
       const options = {
         ...(error.code ? { code: error.code } : {}),

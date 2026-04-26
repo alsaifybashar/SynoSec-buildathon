@@ -131,6 +131,26 @@ describe("OrchestratorExecutionEngineService", () => {
     expect(prompt).not.toContain("Deep Analysis");
   });
 
+  it("includes active system bash tools in the planner-visible catalog", async () => {
+    const service = createService([
+      createTool({ id: "tool-1", name: "WhatWeb", source: "system" }),
+      createTool({
+        id: "builtin-deep-analysis",
+        name: "Deep Analysis",
+        source: "system",
+        executorType: "builtin",
+        builtinActionKey: "deep_analysis",
+        bashSource: null
+      })
+    ]);
+    const privateService = service as any;
+
+    const plannerTools = await privateService.listOrchestratorRunnableTools();
+
+    expect(plannerTools.map((entry: { tool: { name: string } }) => entry.tool.name)).toContain("WhatWeb");
+    expect(plannerTools.map((entry: { tool: { name: string } }) => entry.tool.name)).not.toContain("Deep Analysis");
+  });
+
   it("fails loudly when a planned tool name does not resolve uniquely", async () => {
     const service = createService([
       createTool({ id: "tool-1", name: "Nuclei" }),
@@ -187,6 +207,28 @@ describe("OrchestratorExecutionEngineService", () => {
 
   it("fails loudly when shared tool execution fails", async () => {
     executeScriptedToolMock.mockRejectedValue(new Error("tool crashed"));
+    const service = createService([createTool({ id: "tool-1", name: "Nuclei" })]);
+
+    await expect((service as any).executeSuggestedTools("https://example.com/app", {
+      id: "phase-1",
+      name: "Web App Scanning",
+      priority: "high",
+      rationale: "HTTP service found",
+      targetService: "https",
+      tools: ["Nuclei"],
+      status: "pending"
+    } satisfies AttackPlanPhase, "run-1")).rejects.toMatchObject({
+      status: 500,
+      code: "ORCHESTRATOR_TOOL_EXECUTION_FAILED"
+    });
+  });
+
+  it("fails loudly when a scripted tool returns an invalid output payload", async () => {
+    executeScriptedToolMock.mockResolvedValue({
+      observations: [],
+      exitCode: 0,
+      commandPreview: "Nuclei"
+    });
     const service = createService([createTool({ id: "tool-1", name: "Nuclei" })]);
 
     await expect((service as any).executeSuggestedTools("https://example.com/app", {
@@ -347,6 +389,51 @@ describe("OrchestratorExecutionEngineService", () => {
     expect(outputs.some((output) => output.text.includes("\"reasoningSummary\""))).toBe(true);
     expect(outputs.some((output) => output.reasoning === "Plan carefully")).toBe(true);
     expect(outputs.some((output) => output.final)).toBe(true);
+  });
+
+  it("fails loudly when execution findings are incomplete", async () => {
+    executeScriptedToolMock.mockResolvedValue({
+      observations: [],
+      output: "tool output",
+      exitCode: 0,
+      commandPreview: "Nuclei"
+    });
+
+    const service = createService([createTool({ id: "tool-1", name: "Nuclei" })]);
+    const privateService = service as any;
+    vi.spyOn(privateService, "callStructuredDecisionModel").mockResolvedValue({
+      reasoningSummary: "The provider returned malformed findings.",
+      data: {
+        findings: [{
+          title: "Exposed admin",
+          severity: "high",
+          vector: "/admin"
+        }]
+      }
+    });
+
+    await expect(privateService.executePhase(
+      "https://example.com/app",
+      {
+        id: "phase-1",
+        name: "Web App Scanning",
+        priority: "high",
+        rationale: "HTTP service found",
+        targetService: "https",
+        tools: ["Nuclei"],
+        status: "pending"
+      } satisfies AttackPlanPhase,
+      recon,
+      "run-1",
+      provider,
+      "sonnet",
+      vi.fn(),
+      async () => undefined,
+      async () => undefined
+    )).rejects.toMatchObject({
+      status: 500,
+      code: "ORCHESTRATOR_FINDINGS_INVALID"
+    });
   });
 
   it("falls back to the final hosted text when the stream yields no text chunks", async () => {

@@ -36,4 +36,22 @@ describe("tool-catalog", () => {
       available: false
     });
   });
+
+  it("marks installed status as a dependency check, not a wrapper execution guarantee", async () => {
+    vi.doMock("node:child_process", () => ({
+      execFile: vi.fn((_file: string, _args: string[], _options: { timeout: number }, callback: (error: null, stdout?: string) => void) => {
+        callback(null, "/usr/bin/amass\n");
+      })
+    }));
+
+    const { getToolCapabilities } = await import("./tool-catalog.js");
+    const payload = await getToolCapabilities();
+
+    expect(payload.capabilities.find((capability) => capability.id === "amass")).toMatchObject({
+      id: "amass",
+      status: "installed",
+      available: true,
+      notes: expect.stringContaining("Binary detected on PATH only")
+    });
+  });
 });

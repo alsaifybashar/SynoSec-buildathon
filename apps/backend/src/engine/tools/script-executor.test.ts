@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import path from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { executeScriptedTool } from "./script-executor.js";
 
@@ -91,5 +94,31 @@ describe("executeScriptedTool", () => {
     expect(result.exitCode).toBe(124);
     expect(result.statusReason).toBe("Bash tool timed out after 50ms.");
     expect(result.observations).toEqual([]);
+  });
+
+  it("terminates descendant processes when the tool times out", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "synosec-script-executor-test-"));
+    const markerPath = path.join(tempDir, "marker.txt");
+
+    try {
+      const context = createContext({
+        bashSource: [
+          "#!/usr/bin/env bash",
+          `marker_path=${JSON.stringify(markerPath)}`,
+          "bash -c 'sleep 0.15; printf killed > \"$0\"' \"$marker_path\" &",
+          "sleep 5"
+        ].join("\n"),
+        timeoutMs: 50,
+        tool: "Timeout Tool"
+      });
+
+      const result = await executeScriptedTool(context);
+      expect(result.exitCode).toBe(124);
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await expect(readFile(markerPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 });
