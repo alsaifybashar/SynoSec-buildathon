@@ -129,6 +129,15 @@ describe("connector client", () => {
   });
 
   it("registers, polls, and submits results to the control plane", async () => {
+    const binaryCheckedJob = makeJob({
+      request: {
+        ...makeJob().request,
+        parameters: {
+          ...makeJob().request.parameters,
+          bashSource: "#!/usr/bin/env bash\nif ! command -v httpx >/dev/null 2>&1; then exit 127; fi\nprintf '%s\\n' '{\"output\":\"ok\"}'"
+        }
+      }
+    });
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(
         new Response(JSON.stringify({
@@ -141,7 +150,7 @@ describe("connector client", () => {
       .mockResolvedValueOnce(
         new Response(JSON.stringify({
           connectorId: "connector-1",
-          job: makeJob()
+          job: binaryCheckedJob
         }))
       )
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true })));
@@ -154,9 +163,9 @@ describe("connector client", () => {
           name: "test-connector",
           version: "0.1.0",
           allowedCapabilities: ["web-recon"],
-          allowedSandboxProfiles: [],
-          allowedPrivilegeProfiles: [],
-          installedBinaries: [],
+          allowedSandboxProfiles: ["network-recon"],
+          allowedPrivilegeProfiles: ["read-only-network"],
+          installedBinaries: ["httpx"],
         runMode: "dry-run",
         concurrency: 1,
         capabilities: []
@@ -167,6 +176,9 @@ describe("connector client", () => {
 
     expect(job?.id).toBe("job-1");
     expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toMatchObject({
+      exitCode: 0
+    });
   });
 
   it("rejects bash tool jobs without sandbox and privilege profiles", async () => {
@@ -214,7 +226,7 @@ describe("connector client", () => {
           sandboxProfile: "network-recon",
           privilegeProfile: "read-only-network",
           parameters: {
-            bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"hello\"}'",
+            bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"hello\",\"observations\":[{\"key\":\"structured-echo\",\"title\":\"Structured echo\",\"summary\":\"Structured echo completed.\",\"severity\":\"info\",\"confidence\":0.5,\"evidence\":\"hello\",\"technique\":\"test\"}]}'",
             commandPreview: "structured-echo",
             toolInput: {}
           }
@@ -234,6 +246,13 @@ describe("connector client", () => {
     );
 
     expect(result.exitCode).toBeGreaterThanOrEqual(0);
+    expect(result.observations[0]).toMatchObject({
+      scanId: "scan-1",
+      tacticId: "tactic-1",
+      toolRunId: "tool-run-1",
+      tool: "Structured Echo",
+      key: "structured-echo"
+    });
   });
 
   it("accepts every executable seeded tool definition for connector execution policy", async () => {
@@ -311,7 +330,7 @@ describe("connector client", () => {
         allowedCapabilities: ["web-recon", "passive"],
         allowedSandboxProfiles: ["network-recon"],
         allowedPrivilegeProfiles: ["read-only-network"],
-        installedBinaries: []
+        installedBinaries: ["httpx"]
       }
     );
 

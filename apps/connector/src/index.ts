@@ -31,6 +31,7 @@ export class SynoSecConnectorClient {
       headers: this.headers(),
       body: JSON.stringify(this.options.registration)
     });
+    await assertOk(response, "Connector registration failed");
     const payload = connectorRegistrationResponseSchema.parse(await response.json());
     this.connectorId = payload.connectorId;
     return payload.connectorId;
@@ -42,6 +43,7 @@ export class SynoSecConnectorClient {
       method: "POST",
       headers: this.headers()
     });
+    await assertOk(response, "Connector poll failed");
     const payload = connectorPollResponseSchema.parse(await response.json());
     if (!payload.job) {
       return null;
@@ -52,14 +54,20 @@ export class SynoSecConnectorClient {
       allowedCapabilities: this.options.registration.allowedCapabilities,
       allowedSandboxProfiles: this.options.registration.allowedSandboxProfiles,
       allowedPrivilegeProfiles: this.options.registration.allowedPrivilegeProfiles,
+      installedBinaries: this.options.registration.installedBinaries,
       ...(this.options.commandTimeoutMs === undefined ? {} : { commandTimeoutMs: this.options.commandTimeoutMs })
     });
-    await this.fetchImpl(this.url(`/api/connectors/${connectorId}/jobs/${job.id}/result`), {
+    const resultResponse = await this.fetchImpl(this.url(`/api/connectors/${connectorId}/jobs/${job.id}/result`), {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify(result)
     });
+    await assertOk(resultResponse, "Connector result submission failed");
     return job;
+  }
+
+  invalidateRegistration(): void {
+    this.connectorId = null;
   }
 
   private headers(): HeadersInit {
@@ -72,6 +80,15 @@ export class SynoSecConnectorClient {
   private url(path: string): string {
     return new URL(path, this.options.baseUrl).toString();
   }
+}
+
+async function assertOk(response: Response, message: string) {
+  if (response.ok) {
+    return;
+  }
+
+  const body = await response.text();
+  throw new Error(`${message} (${response.status}): ${body}`);
 }
 
 export async function executeConnectorJob(

@@ -1,4 +1,4 @@
-.PHONY: help dev build test database dev-services docker-up docker-down docker-logs smoke-seeded-sandbox free-dev-ports wait-for-postgres check-docker-compose
+.PHONY: help dev build test database docker-database dev-services docker-up docker-down docker-logs smoke-seeded-sandbox free-dev-ports wait-for-postgres check-docker-compose
 
 ifneq (,$(wildcard .env))
 include .env
@@ -13,7 +13,7 @@ help:
 	@printf "\033[1;32m╔══════════════════════════════════╗\033[0m\n"
 	@printf "\033[1;32m║     SynoSec AI PenTest Tool      ║\033[0m\n"
 	@printf "\033[1;32m╚══════════════════════════════════╝\033[0m\n"
-	@printf "\033[33m  make docker-up\033[0m   Start full stack (Docker Compose), reset persisted app data, and reseed the database\n"
+	@printf "\033[33m  make docker-up\033[0m   Start full stack (Docker Compose) without resetting existing database data\n"
 	@printf "\033[33m  make docker-down\033[0m Stop and remove containers\n"
 	@printf "\033[33m  make docker-logs\033[0m Follow all container logs\n"
 	@printf "\033[35m  make database\033[0m    Start Postgres, reset persisted app data, then generate Prisma client, push schema, and seed app data\n"
@@ -43,7 +43,6 @@ check-docker-compose:
 
 docker-up:
 	@$(MAKE) dev-services
-	@$(MAKE) database
 	@set -e; \
 	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-FALSE}}" | tr '[:upper:]' '[:lower:]'); \
 	if [ "$$local_enabled" = "true" ]; then \
@@ -70,10 +69,7 @@ dev:
 	$(MAKE) free-dev-ports
 	$(MAKE) dev-services
 	$(MAKE) database
-	pnpm build
-	pnpm --filter @synosec/contracts build && pnpm exec concurrently -n backend,frontend -c green,magenta \
-		"pnpm --filter @synosec/backend start" \
-		"pnpm --filter @synosec/frontend preview"
+	pnpm dev
 
 free-dev-ports:
 	@set -e; \
@@ -142,9 +138,19 @@ database:
 	@$(MAKE) check-docker-compose
 	$(DOCKER_COMPOSE) up -d postgres
 	$(MAKE) wait-for-postgres
+	pnpm --filter @synosec/contracts build
 	DATABASE_URL=postgres://synosec:synosec@localhost:$${POSTGRES_PORT:-55432}/synosec pnpm --filter @synosec/backend prisma:generate
 	DATABASE_URL=postgres://synosec:synosec@localhost:$${POSTGRES_PORT:-55432}/synosec pnpm --filter @synosec/backend exec prisma db push --force-reset
 	DATABASE_URL=postgres://synosec:synosec@localhost:$${POSTGRES_PORT:-55432}/synosec pnpm --filter @synosec/backend prisma:seed
+
+docker-database:
+	@$(MAKE) check-docker-compose
+	$(MAKE) wait-for-postgres
+	$(DOCKER_COMPOSE) exec -T backend sh -c 'set -e; \
+		pnpm --filter @synosec/contracts build; \
+		DATABASE_URL=postgres://synosec:synosec@postgres:5432/synosec pnpm --filter @synosec/backend prisma:generate; \
+		DATABASE_URL=postgres://synosec:synosec@postgres:5432/synosec pnpm --filter @synosec/backend exec prisma db push --force-reset; \
+		DATABASE_URL=postgres://synosec:synosec@postgres:5432/synosec pnpm --filter @synosec/backend prisma:seed'
 
 wait-for-postgres:
 	@set -e; \

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm run prisma:generate && tsx watch src/main.ts",
+    "dev": "pnpm run prisma:generate && tsx watch --include \"../../packages/contracts/dist/**/*.js\" src/main.ts",
     "start": "node dist/src/main.js",
     "build": "pnpm --filter @synosec/contracts build && pnpm run prisma:generate && tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
     "typecheck": "pnpm --filter @synosec/contracts build && pnpm run prisma:generate && tsc -p tsconfig.json --noEmit",

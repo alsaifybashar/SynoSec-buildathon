@@ -258,7 +258,7 @@ cp .env.example .env
 make docker-up
 ```
 
-`make docker-up` now follows the same destructive local database bootstrap as `make dev`: it starts the required Docker-backed services, resets persisted app data, and re-seeds the Prisma database before the full stack comes up.
+`make docker-up` follows the same destructive local database bootstrap as `make dev`: it starts the Docker Compose stack, resets persisted app data, and re-seeds the Prisma database before reporting the stack as ready.
 
 ### Local Development
 

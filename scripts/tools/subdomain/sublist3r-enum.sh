@@ -8,7 +8,7 @@ if ! command -v sublist3r >/dev/null 2>&1; then
   exit 127
 fi
 
-domain="$(SEED_PAYLOAD="$payload" node -e 'const parsed=JSON.parse(process.env.SEED_PAYLOAD||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};const source=Array.isArray(toolInput.candidateDomains)&&toolInput.candidateDomains[0]||toolInput.domain||toolInput.target||parsed?.request?.target||toolInput.baseUrl||"";try{process.stdout.write(new URL(String(source)).hostname);}catch{process.stdout.write(String(source).replace(/^https?:\\/\\//,"").replace(/\\/.*$/,""));}')"
+domain="$(SEED_PAYLOAD="$payload" node -e 'const parsed=JSON.parse(process.env.SEED_PAYLOAD||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};const source=Array.isArray(toolInput.candidateDomains)&&toolInput.candidateDomains[0]||toolInput.domain||toolInput.target||parsed?.request?.target||toolInput.baseUrl||"";const normalize=(value)=>{const raw=String(value??"").trim();if(!raw){return"";}try{return new URL(raw.includes("://")?raw:`http://${raw}`).hostname;}catch{const withoutScheme=raw.startsWith("http://")?raw.slice(7):raw.startsWith("https://")?raw.slice(8):raw;return withoutScheme.split("/")[0]||"";}};process.stdout.write(normalize(source));')"
 outfile="$(mktemp)"
 trap 'rm -f "$outfile"' EXIT
 

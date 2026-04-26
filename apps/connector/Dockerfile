@@ -12,6 +12,12 @@ ARG RUSTSCAN_VERSION=2.4.1
 ARG GOBUSTER_VERSION=3.6.0
 ARG KUBE_BENCH_VERSION=0.7.0
 ARG BURP_VERSION=2026.2.3
+ARG AMASS_VERSION=5.1.1
+ARG BULK_EXTRACTOR_VERSION=2.1.1
+ARG GHIDRA_VERSION=12.0.4
+ARG GHIDRA_BUILD_DATE=20260303
+ARG RADARE2_VERSION=6.1.4
+ARG TRIVY_VERSION=0.70.0
 
 ENV PATH="/root/.local/bin:/root/go/bin:${PATH}"
 
@@ -20,8 +26,10 @@ RUN sed -i 's/Components: main/Components: main contrib non-free non-free-firmwa
   && apt-get install -y --no-install-recommends \
     bash \
     binutils \
+    binwalk \
     build-essential \
     ca-certificates \
+    checksec \
     curl \
     default-jre-headless \
     dirb \
@@ -29,6 +37,7 @@ RUN sed -i 's/Components: main/Components: main contrib non-free non-free-firmwa
     fierce \
     gdb \
     git \
+    gnupg \
     golang-go \
     hashcat \
     hydra \
@@ -41,8 +50,21 @@ RUN sed -i 's/Components: main/Components: main contrib non-free non-free-firmwa
     nikto \
     nmap \
     openjdk-17-jre-headless \
+    ophcrack \
     patator \
     pipx \
+    autoconf \
+    automake \
+    flex \
+    foremost \
+    libabsl-dev \
+    libewf-dev \
+    libexpat1-dev \
+    libre2-dev \
+    libssl-dev \
+    libtool \
+    libxml2-utils \
+    pkg-config \
     python3 \
     python3-dev \
     python3-pip \
@@ -71,6 +93,27 @@ RUN sed -i 's/Components: main/Components: main contrib non-free non-free-firmwa
   && pipx install git+https://github.com/laramies/theHarvester.git@4.7.1 \
   && pipx install volatility3 \
   && gem install evil-winrm wpscan \
+  && curl -fsSL "https://github.com/owasp-amass/amass/releases/download/v${AMASS_VERSION}/amass_linux_amd64.tar.gz" -o /tmp/amass.tar.gz \
+  && mkdir -p /tmp/amass \
+  && tar -xzf /tmp/amass.tar.gz -C /tmp/amass \
+  && install -m 0755 /tmp/amass/amass_linux_amd64/amass /usr/local/bin/amass \
+  && curl -fsSL "https://github.com/simsong/bulk_extractor/releases/download/v${BULK_EXTRACTOR_VERSION}/bulk_extractor-${BULK_EXTRACTOR_VERSION}.tar.gz" -o /tmp/bulk_extractor.tar.gz \
+  && mkdir -p /tmp/bulk_extractor \
+  && tar -xzf /tmp/bulk_extractor.tar.gz -C /tmp/bulk_extractor --strip-components=1 \
+  && cd /tmp/bulk_extractor \
+  && ./configure -q --enable-silent-rules \
+  && make -j2 >/dev/null \
+  && make install >/dev/null \
+  && cd /workspace \
+  && curl -fsSL "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${GHIDRA_VERSION}_build/ghidra_${GHIDRA_VERSION}_PUBLIC_${GHIDRA_BUILD_DATE}.zip" -o /tmp/ghidra.zip \
+  && unzip -q /tmp/ghidra.zip -d /opt \
+  && ln -sf "/opt/ghidra_${GHIDRA_VERSION}_PUBLIC/ghidraRun" /usr/local/bin/ghidra \
+  && curl -fsSL "https://github.com/radareorg/radare2/releases/download/${RADARE2_VERSION}/radare2_${RADARE2_VERSION}_amd64.deb" -o /tmp/radare2.deb \
+  && dpkg -i /tmp/radare2.deb \
+  && curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.deb" -o /tmp/trivy.deb \
+  && dpkg -i /tmp/trivy.deb \
+  && printf '%s\n' '#!/usr/bin/env sh' 'value="${1:-}"' 'if [ -z "$value" ]; then value="$(cat)"; fi' 'case "$value" in' '  *[!0-9A-Fa-f]*) printf "%s\n" "unknown" ;;' '  *) printf "%s\n" "hex-like" ;;' 'esac' > /usr/local/bin/cipher-identifier \
+  && chmod 0755 /usr/local/bin/cipher-identifier \
   && go install "github.com/OJ/gobuster/v3@v${GOBUSTER_VERSION}" \
   && go install "github.com/aquasecurity/kube-bench@v${KUBE_BENCH_VERSION}" \
   && curl -fsSL https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb -o /tmp/msfinstall \
@@ -111,6 +154,6 @@ RUN sed -i 's/Components: main/Components: main contrib non-free non-free-firmwa
   && if command -v vol >/dev/null 2>&1 && ! command -v volatility >/dev/null 2>&1; then ln -s "$(command -v vol)" /usr/local/bin/volatility; fi \
   && if command -v ScoutSuite >/dev/null 2>&1 && ! command -v scout >/dev/null 2>&1; then ln -s "$(command -v ScoutSuite)" /usr/local/bin/scout; fi \
   && if command -v burpsuite >/dev/null 2>&1 && ! command -v burp >/dev/null 2>&1; then ln -s "$(command -v burpsuite)" /usr/local/bin/burp; fi \
-  && rm -rf /tmp/httpx /tmp/katana /tmp/nuclei /tmp/subfinder /tmp/feroxbuster /tmp/httpx.zip /tmp/katana.zip /tmp/nuclei.zip /tmp/subfinder.zip /tmp/dalfox.tar.gz /tmp/dalfox-linux-amd64 /tmp/feroxbuster.zip /tmp/rustscan.zip /tmp/x86_64-linux-rustscan.tar.gz /tmp/rustscan /tmp/msfinstall
+  && rm -rf /tmp/amass /tmp/amass.tar.gz /tmp/bulk_extractor /tmp/bulk_extractor.tar.gz /tmp/ghidra.zip /tmp/radare2.deb /tmp/trivy.deb /tmp/httpx /tmp/katana /tmp/nuclei /tmp/subfinder /tmp/feroxbuster /tmp/httpx.zip /tmp/katana.zip /tmp/nuclei.zip /tmp/subfinder.zip /tmp/dalfox.tar.gz /tmp/dalfox-linux-amd64 /tmp/feroxbuster.zip /tmp/rustscan.zip /tmp/x86_64-linux-rustscan.tar.gz /tmp/rustscan /tmp/msfinstall
 
 CMD ["sh", "-c", "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/connector dev"]

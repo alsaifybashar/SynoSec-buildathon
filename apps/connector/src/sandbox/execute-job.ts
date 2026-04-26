@@ -6,7 +6,9 @@ import type {
   ConnectorSupportSubject,
   ConnectorExecutionJob,
   ConnectorExecutionResult,
-  ConnectorRegistrationRequest
+  ConnectorRegistrationRequest,
+  Observation,
+  Severity
 } from "@synosec/contracts";
 import { evaluateConnectorToolSupport } from "@synosec/contracts";
 
@@ -19,6 +21,18 @@ interface SandboxExecutionOptions {
 }
 
 const MAX_CONNECTOR_TOOL_TIMEOUT_MS = 10_000;
+
+interface BashObservation {
+  port?: number;
+  key: string;
+  title: string;
+  summary: string;
+  severity: Severity;
+  confidence: number;
+  evidence: string;
+  technique: string;
+  relatedKeys?: string[];
+}
 
 function validateSandboxedJob(
   job: ConnectorExecutionJob,
@@ -87,6 +101,33 @@ function toConnectorSupportSubject(job: ConnectorExecutionJob): ConnectorSupport
     sandboxProfile: job.request.sandboxProfile,
     privilegeProfile: job.request.privilegeProfile,
     parameters: job.request.parameters
+  };
+}
+
+function normalizeObservation(
+  job: ConnectorExecutionJob,
+  input: BashObservation,
+  index: number
+): Observation {
+  return {
+    id: `${job.toolRun.id}-obs-${index + 1}`,
+    scanId: job.scanId,
+    tacticId: job.tacticId,
+    toolRunId: job.toolRun.id,
+    ...(job.request.toolId ? { toolId: job.request.toolId } : {}),
+    tool: job.request.tool,
+    capabilities: job.request.capabilities,
+    target: job.request.target,
+    ...(input.port === undefined ? {} : { port: input.port }),
+    key: input.key,
+    title: input.title,
+    summary: input.summary,
+    severity: input.severity,
+    confidence: input.confidence,
+    evidence: input.evidence,
+    technique: input.technique,
+    relatedKeys: input.relatedKeys ?? [],
+    createdAt: new Date().toISOString()
   };
 }
 
@@ -172,11 +213,16 @@ async function executeStructuredCommand(
       void materialized.cleanup();
 
       try {
-        const parsed = JSON.parse(stdout.trim()) as ConnectorExecutionResult & { commandPreview?: string };
+        const parsed = JSON.parse(stdout.trim()) as Omit<ConnectorExecutionResult, "observations"> & {
+          observations?: BashObservation[];
+          commandPreview?: string;
+        };
         resolve({
           output: parsed.output,
           exitCode: code ?? 1,
-          observations: parsed.observations ?? [],
+          observations: Array.isArray(parsed.observations)
+            ? parsed.observations.map((observation, index) => normalizeObservation(job, observation, index))
+            : [],
           ...(parsed.statusReason ? { statusReason: parsed.statusReason } : {})
         });
       } catch (error) {
