@@ -1,10 +1,12 @@
 import {
   apiRoutes,
+  localDemoTargetDefaults,
   type CreateTargetBody,
   type Target,
   type TargetEnvironment,
   type TargetStatus
 } from "@synosec/contracts";
+import { Info } from "lucide-react";
 import { targetsResource } from "@/features/targets/resource";
 import { targetTransfer } from "@/features/targets/transfer";
 import type { CrudFeatureDefinition } from "@/shared/crud/crud-feature";
@@ -12,6 +14,7 @@ import { DetailField, DetailFieldGroup, DetailSidebarItem } from "@/shared/compo
 import type { TargetsQuery } from "@/shared/lib/resource-client";
 import { Input } from "@/shared/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 
 export type TargetFormValues = {
   name: string;
@@ -116,6 +119,64 @@ export function definedString(value: string | undefined) {
   return value ? { error: value } : {};
 }
 
+const seededTargetVulnerabilities = [
+  "SQL injection simulation on /login",
+  "Unauthenticated admin panel on /admin",
+  "Sensitive data exposure on /api/users",
+  "Directory listing simulation on /files",
+  "Reflected XSS on /search",
+  "Verbose errors and missing security headers"
+] as const;
+
+function isSeededLocalTarget(target: Pick<Target, "baseUrl" | "environment">) {
+  return target.baseUrl === localDemoTargetDefaults.hostUrl && target.environment === "development";
+}
+
+function SeededTargetTooltipContent() {
+  return (
+    <div className="space-y-2">
+      <p className="font-medium text-popover-foreground">Seeded lab target</p>
+      <ul className="list-disc space-y-1 pl-4">
+        {seededTargetVulnerabilities.map((entry) => (
+          <li key={entry}>{entry}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function SeededTargetHint() {
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-primary transition hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
+            aria-label="Show seeded target vulnerabilities"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Info className="h-3 w-3" />
+            Lab target
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-80">
+          <SeededTargetTooltipContent />
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+function TargetNameCell({ target }: { target: Target }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="font-medium text-foreground">{target.name}</span>
+      {isSeededLocalTarget(target) ? <SeededTargetHint /> : null}
+    </div>
+  );
+}
+
 export const targetsDefinition: CrudFeatureDefinition<
   Target,
   TargetFormValues,
@@ -145,7 +206,7 @@ export const targetsDefinition: CrudFeatureDefinition<
     title: "Targets",
     emptyMessage: "No targets matched the current search and filter.",
     columns: () => [
-      { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
+      { id: "name", header: "Name", cell: (row) => <TargetNameCell target={row} /> },
       { id: "baseUrl", header: "Base URL", cell: (row) => <span className="text-muted-foreground">{row.baseUrl ?? "Not set"}</span> },
       { id: "environment", header: "Environment", cell: (row) => <StatusBadge label={environmentLabels[row.environment]} className={environmentBadgeStyles[row.environment]} /> }
     ],
@@ -175,6 +236,11 @@ export const targetsDefinition: CrudFeatureDefinition<
         <DetailSidebarItem label="Environment" hint="The deployment tier this target record represents.">
           <StatusBadge label={environmentLabels[item.environment]} className={environmentBadgeStyles[item.environment]} />
         </DetailSidebarItem>
+        {isSeededLocalTarget(item) ? (
+          <DetailSidebarItem label="Seeded vulnerabilities" hint={seededTargetVulnerabilities.join("\n")}>
+            Known lab target
+          </DetailSidebarItem>
+        ) : null}
         <DetailSidebarItem label="Last scanned">
           {formatTimestamp(item.lastScannedAt)}
         </DetailSidebarItem>

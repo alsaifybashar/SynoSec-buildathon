@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Target } from "@synosec/contracts";
+import { localDemoTargetDefaults, type Target } from "@synosec/contracts";
 import { TargetsPage } from "@/features/targets/page";
 
 const target: Target = {
@@ -15,22 +15,37 @@ const target: Target = {
   updatedAt: "2026-04-21T00:00:00.000Z"
 };
 
+const seededTarget: Target = {
+  id: "target-2",
+  name: "Local Vulnerable Target",
+  baseUrl: localDemoTargetDefaults.hostUrl,
+  environment: "development",
+  status: "active",
+  lastScannedAt: null,
+  createdAt: "2026-04-20T00:00:00.000Z",
+  updatedAt: "2026-04-21T00:00:00.000Z"
+};
+
 function createFetchMock() {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
 
     if (url.startsWith("/api/targets?")) {
       return new Response(JSON.stringify({
-        targets: [target],
+        targets: [seededTarget, target],
         page: 1,
         pageSize: 25,
-        total: 1,
+        total: 2,
         totalPages: 1
       }));
     }
 
     if (url === `/api/targets/${target.id}`) {
       return new Response(JSON.stringify(target));
+    }
+
+    if (url === `/api/targets/${seededTarget.id}`) {
+      return new Response(JSON.stringify(seededTarget));
     }
 
     throw new Error(`Unhandled request: ${url}`);
@@ -57,6 +72,24 @@ describe("TargetsPage", () => {
 
     expect((await screen.findAllByText("Operator Portal")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("https://portal.example.test").length).toBeGreaterThan(0);
+  });
+
+  it("shows seeded vulnerability guidance on hover for the local lab target", async () => {
+    vi.stubGlobal("fetch", createFetchMock());
+
+    render(
+      <MemoryRouter initialEntries={["/targets"]}>
+        <TargetsPage
+          onNavigateToList={() => {}}
+          onNavigateToCreate={() => {}}
+          onNavigateToDetail={() => {}}
+        />
+      </MemoryRouter>
+    );
+
+    fireEvent.focus((await screen.findAllByRole("button", { name: "Show seeded target vulnerabilities" }))[0]);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("SQL injection simulation on /login");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Sensitive data exposure on /api/users");
   });
 
   it("renders detail state through the controller port", async () => {
