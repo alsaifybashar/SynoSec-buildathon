@@ -36,6 +36,16 @@ services:
     environment:
       PORT: 8890
 
+  full-stack-target:
+    build:
+      context: ./demos/full-stack-target
+    container_name: synosec-full-stack-target
+    hostname: synosec-full-stack-target
+    ports:
+      - "8891:8891"
+    environment:
+      PORT: 8891
+
   ollama:
     image: ollama/ollama:latest
     profiles:
@@ -85,6 +95,8 @@ services:
         condition: service_started
       attack-path-target:
         condition: service_started
+      full-stack-target:
+        condition: service_started
     environment:
       BACKEND_PORT: ${BACKEND_PORT:-3001}
       DATABASE_URL: postgres://synosec:synosec@postgres:5432/synosec
@@ -116,6 +128,7 @@ services:
       CONNECTOR_SHARED_TOKEN: ${CONNECTOR_SHARED_TOKEN:-synosec-connector-dev}
       CONNECTOR_NAME: ${CONNECTOR_NAME:-local-dev-connector}
       CONNECTOR_RUN_MODE: ${CONNECTOR_RUN_MODE:-execute}
+      CONNECTOR_COMMAND_TIMEOUT_MS: ${CONNECTOR_COMMAND_TIMEOUT_MS:-180000}
       CONNECTOR_ALLOWED_CAPABILITIES: ${CONNECTOR_ALLOWED_CAPABILITIES:-all}
       CONNECTOR_ALLOWED_SANDBOX_PROFILES: ${CONNECTOR_ALLOWED_SANDBOX_PROFILES:-all}
       CONNECTOR_ALLOWED_PRIVILEGE_PROFILES: ${CONNECTOR_ALLOWED_PRIVILEGE_PROFILES:-all}

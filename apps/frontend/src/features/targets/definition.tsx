@@ -2,6 +2,7 @@ import {
   apiRoutes,
   localAttackPathTargetDefaults,
   localDemoTargetDefaults,
+  localFullStackTargetDefaults,
   type CreateTargetBody,
   type Target,
   type TargetEnvironment,
@@ -153,6 +154,17 @@ const seededTargetCatalog = [
       "Weak magic-link issuance creates release-manager sessions",
       "Release secrets require chained build context plus approval or manager session",
       "Distractors include reflected search and verbose health metadata"
+    ]
+  },
+  {
+    hostUrl: localFullStackTargetDefaults.hostUrl,
+    vulnerabilities: [
+      "Vendor directory leaks vendor slugs and invoice references",
+      "Invoice detail IDOR leaks treasury approval codes",
+      "Support search leaks case ids and recovery workflow hints",
+      "Support case IDOR leaks finance-manager recovery tokens",
+      "Recovery token exchange creates finance-manager sessions",
+      "Finance export requires chained invoice approval or manager session"
     ]
   }
 ] as const;

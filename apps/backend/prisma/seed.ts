@@ -1,9 +1,10 @@
-import { localAttackPathTargetDefaults, localDemoTargetDefaults } from "@synosec/contracts";
+import { localAttackPathTargetDefaults, localDemoTargetDefaults, localFullStackTargetDefaults } from "@synosec/contracts";
 import { Prisma, PrismaClient } from "@prisma/client";
 import {
   getSeededWorkflowDefinitions,
   localAttackPathApplicationId,
   localApplicationId,
+  localFullStackApplicationId,
   osiSingleAgentWorkflowId,
   portfolioApplicationId,
   portfolioEvidenceGraphWorkflowId,
@@ -25,6 +26,9 @@ const legacySingleAgentSeedIds = {
   tacticId: "54ec7b8e-b8dc-4b58-bf5a-5f3f0f7e8d4c",
   vulnerabilityId: "64ec7b8e-b8dc-4b58-bf5a-5f3f0f7e8d4c"
 } as const;
+const deprecatedSeededWorkflowIds = [
+  "0e8e3912-c48f-4c34-9ac0-c54ec70df3f6"
+] as const;
 const deprecatedSeededAgentIds = [
   "3d9992c0-a20b-4527-86d3-9479e86d6c3b",
   "751d2c0b-85f1-4f7a-8ac6-2c05d0ce0f56",
@@ -58,7 +62,7 @@ async function main() {
 
   await prisma.application.deleteMany({
     where: {
-      id: { notIn: [localApplicationId, localAttackPathApplicationId, portfolioApplicationId, securePentApplicationId] },
+      id: { notIn: [localApplicationId, localAttackPathApplicationId, localFullStackApplicationId, portfolioApplicationId, securePentApplicationId] },
       name: {
         in: [
           "Nils Wickman Portfolio",
@@ -108,6 +112,27 @@ async function main() {
       name: "Local Attack Path Target",
       baseUrl: localAttackPathTargetDefaults.hostUrl,
       executionBaseUrl: localAttackPathTargetDefaults.internalUrl,
+      environment: "development",
+      status: "active",
+      lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
+    }
+  });
+
+  await prisma.application.upsert({
+    where: { id: localFullStackApplicationId },
+    update: {
+      name: "Local Full Stack Target",
+      baseUrl: localFullStackTargetDefaults.hostUrl,
+      executionBaseUrl: localFullStackTargetDefaults.internalUrl,
+      environment: "development",
+      status: "active",
+      lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
+    },
+    create: {
+      id: localFullStackApplicationId,
+      name: "Local Full Stack Target",
+      baseUrl: localFullStackTargetDefaults.hostUrl,
+      executionBaseUrl: localFullStackTargetDefaults.internalUrl,
       environment: "development",
       status: "active",
       lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
@@ -258,6 +283,20 @@ async function main() {
     update: {},
     create: {
       applicationId: localAttackPathApplicationId,
+      constraintId: localTargetBypassConstraintId
+    }
+  });
+
+  await prisma.applicationConstraintBinding.upsert({
+    where: {
+      applicationId_constraintId: {
+        applicationId: localFullStackApplicationId,
+        constraintId: localTargetBypassConstraintId
+      }
+    },
+    update: {},
+    create: {
+      applicationId: localFullStackApplicationId,
       constraintId: localTargetBypassConstraintId
     }
   });
@@ -439,7 +478,8 @@ async function main() {
       id: {
         in: [
           osiSingleAgentWorkflowId,
-          portfolioEvidenceGraphWorkflowId
+          portfolioEvidenceGraphWorkflowId,
+          ...deprecatedSeededWorkflowIds
         ],
         notIn: seededWorkflowIds
       }

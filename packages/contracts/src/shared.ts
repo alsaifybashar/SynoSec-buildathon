@@ -58,6 +58,15 @@ export const localAttackPathTargetDefaults = {
   hostGatewayTarget: "host.docker.internal:8890"
 } as const;
 
+export const localFullStackTargetDefaults = {
+  internalHost: "synosec-full-stack-target",
+  port: 8891,
+  internalTarget: "synosec-full-stack-target:8891",
+  internalUrl: "http://synosec-full-stack-target:8891",
+  hostUrl: "http://localhost:8891",
+  hostGatewayTarget: "host.docker.internal:8891"
+} as const;
+
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),
   service: z.literal("synosec-backend"),

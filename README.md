@@ -56,6 +56,7 @@ flowchart LR
 - `scripts/tools`: Bash-backed tool implementations used by the broker and seeded AI-tool definitions.
 - `demos/vulnerable-app`: Controlled vulnerable target used as the general cyber range for safe validation.
 - `demos/attack-path-target`: Controlled vulnerable target focused on chained attack-path validation.
+- `demos/full-stack-target`: Controlled full-stack target with UI, API, SQLite data, and two chained attack tracks.
 
 ## Vulnerability Discovery Method
 
@@ -197,10 +198,11 @@ Coverage is recorded as `covered`, `partially_covered`, or `not_covered`. A laye
 
 ## Cyber Range Evaluation
 
-The repository includes two safe local targets for controlled testing:
+The repository includes three safe local targets for controlled testing:
 
 - `demos/vulnerable-app`: an intentionally vulnerable Express application with standalone web flaws such as SQL injection, exposed admin access, sensitive API data, directory listing, and reflected XSS.
 - `demos/attack-path-target`: an intentionally vulnerable Express application where critical impact exists only when multiple lower-severity issues are chained into an attack path.
+- `demos/full-stack-target`: an intentionally vulnerable full-stack Express and SQLite application with browser workflows, JSON APIs, and two attack tracks that converge on the same finance export.
 
 The cyber range exists to evaluate whether agents can move from reconnaissance to evidence-backed conclusions and derived attack paths without touching a real third-party system.
 
@@ -267,7 +269,7 @@ pnpm install
 make dev
 ```
 
-Local development starts Postgres, both local demo targets, and the host-mode backend and frontend. Attack-map and scan execution should be started from the UI rather than as an automatic background action during development startup.
+Local development starts Postgres, all local demo targets, and the host-mode backend and frontend. Attack-map and scan execution should be started from the UI rather than as an automatic background action during development startup.
 
 Workflow execution now uses one backend-wide runtime selected by `LLM_PROVIDER`. Use `anthropic` with `ANTHROPIC_API_KEY` for hosted execution, or `local` with `LLM_LOCAL_BASE_URL` and `LLM_LOCAL_MODEL` for Ollama over its OpenAI-compatible `/v1` interface. `LLM_LOCAL_OPENAI_API_MODE` controls which OpenAI-style API path is used for local inference; keep it on `chat` for Ollama workflow/tool compatibility unless you are intentionally testing the `responses` path. When `LOCAL_ENABLED=TRUE`, the Docker-backed development path can start Ollama and prepare the configured local model.
 
@@ -279,6 +281,7 @@ Workflow execution now uses one backend-wide runtime selected by `LLM_PROVIDER`.
 | Backend API | `http://localhost:3001` |
 | Vulnerable target | `http://localhost:8888` |
 | Attack-path target | `http://localhost:8890` |
+| Full-stack target | `http://localhost:8891` |
 | Ollama, when enabled | `http://localhost:11434` |
 
 ### Common Commands
@@ -391,6 +394,7 @@ scripts/
 demos/
   vulnerable-app/ Controlled vulnerable target for evaluation
   attack-path-target/ Controlled target for attack-path validation
+  full-stack-target/ Controlled full-stack target with two attack tracks
 docs/
   *.md           Requirements, decisions, terminology, and feature notes
 ```

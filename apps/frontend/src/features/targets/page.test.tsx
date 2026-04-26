@@ -1,7 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { localAttackPathTargetDefaults, localDemoTargetDefaults, type Target } from "@synosec/contracts";
+import {
+  localAttackPathTargetDefaults,
+  localDemoTargetDefaults,
+  localFullStackTargetDefaults,
+  type Target
+} from "@synosec/contracts";
 import { TargetsPage } from "@/features/targets/page";
 
 const target: Target = {
@@ -37,16 +42,27 @@ const attackPathTarget: Target = {
   updatedAt: "2026-04-21T00:00:00.000Z"
 };
 
+const fullStackTarget: Target = {
+  id: "target-4",
+  name: "Local Full Stack Target",
+  baseUrl: localFullStackTargetDefaults.hostUrl,
+  environment: "development",
+  status: "active",
+  lastScannedAt: null,
+  createdAt: "2026-04-20T00:00:00.000Z",
+  updatedAt: "2026-04-21T00:00:00.000Z"
+};
+
 function createFetchMock() {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
 
     if (url.startsWith("/api/targets?")) {
       return new Response(JSON.stringify({
-        targets: [seededTarget, attackPathTarget, target],
+        targets: [seededTarget, attackPathTarget, fullStackTarget, target],
         page: 1,
         pageSize: 25,
-        total: 3,
+        total: 4,
         totalPages: 1
       }));
     }
@@ -61,6 +77,10 @@ function createFetchMock() {
 
     if (url === `/api/targets/${attackPathTarget.id}`) {
       return new Response(JSON.stringify(attackPathTarget));
+    }
+
+    if (url === `/api/targets/${fullStackTarget.id}`) {
+      return new Response(JSON.stringify(fullStackTarget));
     }
 
     throw new Error(`Unhandled request: ${url}`);
@@ -123,6 +143,24 @@ describe("TargetsPage", () => {
     fireEvent.focus((await screen.findAllByRole("button", { name: "Show lab target vulnerabilities" }))[1]);
     expect(await screen.findByRole("tooltip")).toHaveTextContent("Support case detail IDOR leaks one-time release approval tokens");
     expect(screen.getByRole("tooltip")).toHaveTextContent("Weak magic-link issuance creates release-manager sessions");
+  });
+
+  it("shows full-stack guidance for the local lab target", async () => {
+    vi.stubGlobal("fetch", createFetchMock());
+
+    render(
+      <MemoryRouter initialEntries={["/targets"]}>
+        <TargetsPage
+          onNavigateToList={() => {}}
+          onNavigateToCreate={() => {}}
+          onNavigateToDetail={() => {}}
+        />
+      </MemoryRouter>
+    );
+
+    fireEvent.focus((await screen.findAllByRole("button", { name: "Show lab target vulnerabilities" }))[2]);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Invoice detail IDOR leaks treasury approval codes");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Recovery token exchange creates finance-manager sessions");
   });
 
   it("renders detail state through the controller port", async () => {

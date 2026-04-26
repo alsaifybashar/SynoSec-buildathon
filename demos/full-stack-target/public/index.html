@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LedgerFlow Operations</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <nav>
+        <a href="/">Dashboard</a>
+        <a href="/vendors">Vendors</a>
+        <a href="/support/search?q=recovery">Support</a>
+      </nav>
+
+      <section class="hero">
+        <p class="eyebrow">LedgerFlow finance operations</p>
+        <h1>Treasury export console</h1>
+        <p>Demo environment for vendor payouts, recovery support, and export approval workflows.</p>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <h2>Vendor Payouts</h2>
+          <p>Review payout partners and invoice references used by support staff.</p>
+          <a href="/vendors">Open vendor directory</a>
+        </article>
+        <article class="panel">
+          <h2>Support Recovery</h2>
+          <p>Search recent support tickets related to blocked finance-manager recovery flows.</p>
+          <a href="/support/search?q=recovery">Search recovery cases</a>
+        </article>
+        <article class="panel">
+          <h2>Finance Export API</h2>
+          <p>Protected endpoint used by treasury automation after approval validation.</p>
+          <code>/api/finance/export</code>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

@@ -54,7 +54,7 @@ docker-up:
 	@printf "  Frontend: \033[36mhttp://localhost:%s\033[0m\n" "$${VITE_DEV_PORT:-5173}"
 	@printf "  Backend:  \033[36mhttp://localhost:%s\033[0m\n" "$${BACKEND_PORT:-3001}"
 	@printf "  Connector dispatch: \033[36m%s\033[0m\n" "$${TOOL_EXECUTION_MODE:-connector}"
-	@printf "  Targets:  \033[36mhttp://localhost:8888\033[0m and \033[36mhttp://localhost:8890\033[0m\n"
+	@printf "  Targets:  \033[36mhttp://localhost:8888\033[0m, \033[36mhttp://localhost:8890\033[0m, and \033[36mhttp://localhost:8891\033[0m\n"
 	@if [ "$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-FALSE}}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then \
 		printf "  Local LLM: \033[36mhttp://localhost:11434\033[0m\n"; \
 	fi
@@ -118,11 +118,11 @@ dev-services:
 	@set -e; \
 	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-FALSE}}" | tr '[:upper:]' '[:lower:]'); \
 	if [ "$$local_enabled" = "false" ]; then \
-		$(DOCKER_COMPOSE) up -d postgres vulnerable-target attack-path-target; \
+		$(DOCKER_COMPOSE) up -d postgres vulnerable-target attack-path-target full-stack-target; \
 	else \
 		model_name=$${LLM_LOCAL_MODEL:-qwen3:8b}; \
 		$(DOCKER_COMPOSE) rm -sf ollama ollama-init >/dev/null 2>&1 || true; \
-		$(DOCKER_COMPOSE) up -d postgres vulnerable-target attack-path-target ollama; \
+		$(DOCKER_COMPOSE) up -d postgres vulnerable-target attack-path-target full-stack-target ollama; \
 		until [ "$$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}starting{{end}}' synosec-buildathon-ollama-1 2>/dev/null)" = "healthy" ]; do \
 			sleep 1; \
 		done; \
