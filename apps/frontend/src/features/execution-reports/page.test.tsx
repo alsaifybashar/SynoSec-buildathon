@@ -259,7 +259,7 @@ describe("ExecutionReportsPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the cinema findings hero before the summary and details", () => {
+  it("renders the split findings view with graph, inspector, and executive summary", () => {
     render(
       <ExecutionReportsPage
         reportId="report-1"
@@ -268,15 +268,14 @@ describe("ExecutionReportsPage", () => {
       />
     );
 
-    expect(screen.getByText("Model-reported findings")).toBeInTheDocument();
-    expect(screen.getByText("The workflow model reported these findings. The cinema map below shows the supporting evidence, tool trace, and relational chain context used to back each reported finding.")).toBeInTheDocument();
-    expect(screen.getByText("02 / 02")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Finding traceability graph" })).toBeInTheDocument();
+    expect(screen.getByText("Findings · 2")).toBeInTheDocument();
     expect(screen.getByText("Executive Summary")).toBeInTheDocument();
-    expect(screen.getAllByText("Why this finding exists").length).toBe(2);
-    expect(screen.getAllByText("Verification").length).toBe(2);
+    expect(screen.getByText("Why this finding exists")).toBeInTheDocument();
+    expect(screen.getByText("Verification")).toBeInTheDocument();
   });
 
-  it("renders explainability markers for persisted findings and tool activity sections", async () => {
+  it("renders explainability markers for findings metadata and tool activity sections", async () => {
     render(
       <ExecutionReportsPage
         reportId="report-1"
@@ -285,13 +284,14 @@ describe("ExecutionReportsPage", () => {
       />
     );
 
-    expect(screen.getByRole("button", { name: "Show guidance for Persisted findings" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Finding traceability graph" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Findings" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show guidance for Persisted tool activity" })).toBeInTheDocument();
-    fireEvent.focus(screen.getByRole("button", { name: "Show guidance for Persisted findings" }));
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("These persisted workflow findings are the report's authoritative outputs.");
+    fireEvent.focus(screen.getByRole("button", { name: "Show guidance for Findings" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Count of persisted structured findings attached to this report.");
   });
 
-  it("defaults the cinema hero to the top model-reported finding and exposes tool trace references", () => {
+  it("defaults the findings inspector to the top reported finding and exposes tool trace references", () => {
     render(
       <ExecutionReportsPage
         reportId="report-1"
@@ -300,12 +300,10 @@ describe("ExecutionReportsPage", () => {
       />
     );
 
-    expect(screen.getAllByText("The model reported a second finding because separate evidence showed the same credentials crossed into a higher-privilege admin path.").length).toBeGreaterThan(0);
-
-    fireEvent.click(screen.getByRole("button", { name: /hydra credential reuse succeeded for admin:testpass/i }));
-
-    expect(screen.getAllByText("tool:tool-run-2").length).toBeGreaterThan(0);
-    expect(screen.getByText(/\$ hydra -l admin -p testpass/)).toBeInTheDocument();
+    expect(screen.getAllByText("Privilege pivot confirmed").length).toBeGreaterThan(0);
+    expect(screen.getByText("The model reported a second finding because separate evidence showed the same credentials crossed into a higher-privilege admin path.")).toBeInTheDocument();
+    expect(screen.getAllByText("tool:tool-run").length).toBeGreaterThan(0);
+    expect(screen.getByText(/hydra -l admin -p testpass/)).toBeInTheDocument();
   });
 
   it("exports the list row by fetching canonical report detail", async () => {

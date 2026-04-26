@@ -1,18 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
-import { ArrowDown, ArrowUp, ArrowUpDown, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ExecutionReportDetail, ExecutionReportFinding } from "@synosec/contracts";
 import { cn } from "@/shared/lib/utils";
-import { Button } from "@/shared/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/ui/table";
-
-const SEVERITY_RANK: Record<ExecutionReportFinding["severity"], number> = {
-  info: 0,
-  low: 1,
-  medium: 2,
-  high: 3,
-  critical: 4
-};
 
 const SEVERITY_DOT: Record<ExecutionReportFinding["severity"], string> = {
   info: "bg-slate-400",
@@ -30,148 +18,23 @@ const SEVERITY_TEXT: Record<ExecutionReportFinding["severity"], string> = {
   critical: "text-red-600 dark:text-red-400"
 };
 
-type SortKey = "index" | "severity" | "type" | "target" | "validation" | "confidence" | "title";
-type SortDir = "asc" | "desc";
-
-function compare(a: ExecutionReportFinding, b: ExecutionReportFinding, key: SortKey, indexA: number, indexB: number): number {
-  switch (key) {
-    case "index":
-      return indexA - indexB;
-    case "severity":
-      return SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
-    case "type":
-      return a.type.localeCompare(b.type);
-    case "target":
-      return a.targetLabel.localeCompare(b.targetLabel);
-    case "validation":
-      return (a.validationStatus ?? "").localeCompare(b.validationStatus ?? "");
-    case "confidence":
-      return (a.confidence ?? -1) - (b.confidence ?? -1);
-    case "title":
-      return a.title.localeCompare(b.title);
+function severityHex(severity: ExecutionReportFinding["severity"]) {
+  switch (severity) {
+    case "info": return "#94a3b8";
+    case "low": return "#3b82f6";
+    case "medium": return "#f59e0b";
+    case "high": return "#f97316";
+    case "critical": return "#dc2626";
   }
 }
 
-function SortHeader({
-  label,
-  column,
-  sortKey,
-  sortDir,
-  onClick
-}: {
-  label: string;
-  column: SortKey;
-  sortKey: SortKey;
-  sortDir: SortDir;
-  onClick: (column: SortKey) => void;
-}) {
-  const active = sortKey === column;
-  const Icon = active ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
-  return (
-    <button
-      type="button"
-      onClick={() => onClick(column)}
-      className={cn(
-        "inline-flex items-center gap-1 font-mono text-[0.6rem] uppercase tracking-[0.18em]",
-        active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-      )}
-    >
-      {label}
-      <Icon className="h-3 w-3" />
-    </button>
-  );
+function truncate(value: string, max: number) {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
-function SeverityCell({ severity }: { severity: ExecutionReportFinding["severity"] }) {
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span aria-hidden className={cn("h-2 w-2 rounded-full", SEVERITY_DOT[severity])} />
-      <span className={cn("font-mono text-[0.62rem] uppercase tracking-[0.16em]", SEVERITY_TEXT[severity])}>{severity}</span>
-    </span>
-  );
-}
-
-function ValidationPill({ status }: { status: ExecutionReportFinding["validationStatus"] }) {
-  if (!status) return <span className="text-muted-foreground">—</span>;
-  return (
-    <span className="rounded-full border border-border/60 px-2 py-0.5 font-mono text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">
-      {status.replaceAll("_", " ")}
-    </span>
-  );
-}
-
-function FindingsTable({
-  findings,
-  onSelect,
-  selectedId
-}: {
-  findings: ExecutionReportFinding[];
-  onSelect: (id: string) => void;
-  selectedId: string | null;
-}) {
-  const [sortKey, setSortKey] = useState<SortKey>("severity");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-
-  const sorted = useMemo(() => {
-    const indexed = findings.map((finding, index) => ({ finding, index }));
-    indexed.sort((left, right) => {
-      const result = compare(left.finding, right.finding, sortKey, left.index, right.index);
-      return sortDir === "asc" ? result : -result;
-    });
-    return indexed;
-  }, [findings, sortKey, sortDir]);
-
-  function toggleSort(column: SortKey) {
-    if (column === sortKey) {
-      setSortDir((current) => (current === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(column);
-      setSortDir(column === "severity" || column === "confidence" ? "desc" : "asc");
-    }
-  }
-
-  return (
-    <div className="overflow-hidden rounded-md border border-border/60 bg-background/40">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-muted/30 hover:bg-muted/30">
-            <TableHead className="w-[8%]"><SortHeader label="#" column="index" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} /></TableHead>
-            <TableHead className="w-[12%]"><SortHeader label="Severity" column="severity" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} /></TableHead>
-            <TableHead className="w-[14%]"><SortHeader label="Type" column="type" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} /></TableHead>
-            <TableHead className="w-[20%]"><SortHeader label="Target" column="target" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} /></TableHead>
-            <TableHead className="w-[12%]"><SortHeader label="Status" column="validation" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} /></TableHead>
-            <TableHead className="w-[10%]"><SortHeader label="Conf." column="confidence" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} /></TableHead>
-            <TableHead className="w-[24%]"><SortHeader label="Title" column="title" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} /></TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {sorted.map(({ finding, index }) => {
-            const selected = finding.id === selectedId;
-            return (
-              <TableRow
-                key={finding.id}
-                onClick={() => onSelect(finding.id)}
-                className={cn("cursor-pointer", selected && "bg-muted/40")}
-                data-state={selected ? "selected" : undefined}
-              >
-                <TableCell className="font-mono text-[0.7rem] text-muted-foreground">
-                  {String(index + 1).padStart(2, "0")}
-                </TableCell>
-                <TableCell><SeverityCell severity={finding.severity} /></TableCell>
-                <TableCell className="truncate text-foreground/90">{finding.type}</TableCell>
-                <TableCell className="truncate font-mono text-[0.7rem] text-muted-foreground">{finding.targetLabel}</TableCell>
-                <TableCell><ValidationPill status={finding.validationStatus} /></TableCell>
-                <TableCell className="font-mono text-[0.7rem] text-muted-foreground">
-                  {finding.confidence === null ? "—" : finding.confidence.toFixed(2)}
-                </TableCell>
-                <TableCell className="truncate font-medium text-foreground">{finding.title}</TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
-  );
+function preferredFindingId(report: ExecutionReportDetail) {
+  const topFindingId = report.sourceSummary.topFindingIds.find((findingId) => report.findings.some((finding) => finding.id === findingId));
+  return topFindingId ?? report.findings[0]?.id ?? null;
 }
 
 type GraphNodeShape = {
@@ -182,10 +45,36 @@ type GraphNodeShape = {
   severity?: ExecutionReportFinding["severity"];
 };
 
+type EdgeVariant = "supports" | "derived" | "related" | "enables";
+
 type GraphEdgeShape = {
   from: string;
   to: string;
-  variant: "supports" | "derived" | "related" | "enables";
+  variant: EdgeVariant;
+};
+
+const EDGE_STROKE: Record<EdgeVariant, string> = {
+  supports: "currentColor",
+  derived: "#a855f7",
+  related: "#64748b",
+  enables: "#ea580c"
+};
+
+const EDGE_DASH: Partial<Record<EdgeVariant, string>> = {
+  related: "3 3"
+};
+
+const EDGE_LABEL: Record<EdgeVariant, string> = {
+  supports: "supports",
+  derived: "derived from",
+  related: "related to",
+  enables: "enables"
+};
+
+const RELATION_SUBLABEL: Record<Exclude<EdgeVariant, "supports">, string> = {
+  derived: "Derived from",
+  related: "Related to",
+  enables: "Enables"
 };
 
 function buildGraphModel(finding: ExecutionReportFinding, all: ExecutionReportFinding[]) {
@@ -193,8 +82,14 @@ function buildGraphModel(finding: ExecutionReportFinding, all: ExecutionReportFi
   const toolNodes: GraphNodeShape[] = tools.map((tool) => ({ id: `t:${tool}`, label: tool, kind: "tool" }));
 
   const evidenceNodes: GraphNodeShape[] = finding.evidence.map((evidence, index) => {
-    const node: GraphNodeShape = { id: `e:${index}`, label: evidence.sourceTool, kind: "evidence" };
-    if (evidence.toolRunRef) node.sublabel = `tool:${evidence.toolRunRef.slice(0, 8)}`;
+    const node: GraphNodeShape = {
+      id: `e:${index}`,
+      label: `Signal ${String(index + 1).padStart(2, "0")}`,
+      kind: "evidence"
+    };
+    node.sublabel = evidence.toolRunRef
+      ? `run:${evidence.toolRunRef.slice(0, 8)}`
+      : truncate(evidence.quote.replace(/\s+/g, " "), 24);
     return node;
   });
 
@@ -211,13 +106,19 @@ function buildGraphModel(finding: ExecutionReportFinding, all: ExecutionReportFi
   const relatedEdges: GraphEdgeShape[] = [];
   const seen = new Set<string>();
 
-  function pushRelated(ids: string[], variant: GraphEdgeShape["variant"], reverse = false) {
+  function pushRelated(ids: string[], variant: Exclude<EdgeVariant, "supports">, reverse = false) {
     for (const id of ids) {
       const target = lookup.get(id);
       if (!target || seen.has(id)) continue;
       seen.add(id);
       const nodeId = `r:${id}`;
-      relatedNodes.push({ id: nodeId, label: target.title, sublabel: target.type, kind: "related", severity: target.severity });
+      relatedNodes.push({
+        id: nodeId,
+        label: target.title,
+        sublabel: RELATION_SUBLABEL[variant],
+        kind: "related",
+        severity: target.severity
+      });
       relatedEdges.push(reverse ? { from: nodeId, to: "f", variant } : { from: "f", to: nodeId, variant });
     }
   }
@@ -233,40 +134,42 @@ function buildGraphModel(finding: ExecutionReportFinding, all: ExecutionReportFi
   });
   edges.push(...relatedEdges);
 
-  return {
-    columns: [toolNodes, evidenceNodes, [findingNode], relatedNodes],
-    edges
-  };
+  const columns: GraphNodeShape[][] = [toolNodes, evidenceNodes, [findingNode]];
+  if (relatedNodes.length > 0) columns.push(relatedNodes);
+  return { columns, edges };
 }
 
-const EDGE_STROKE: Record<GraphEdgeShape["variant"], string> = {
-  supports: "currentColor",
-  derived: "#a855f7",
-  related: "#64748b",
-  enables: "#ea580c"
-};
-
-function FindingNodeGraph({ finding, allFindings }: { finding: ExecutionReportFinding; allFindings: ExecutionReportFinding[] }) {
+function FindingNodeGraph({
+  finding,
+  allFindings,
+  onSelectRelated
+}: {
+  finding: ExecutionReportFinding;
+  allFindings: ExecutionReportFinding[];
+  onSelectRelated: (id: string) => void;
+}) {
   const { columns, edges } = useMemo(() => buildGraphModel(finding, allFindings), [finding, allFindings]);
 
   const colWidth = 168;
-  const colGap = 32;
-  const nodeHeight = 38;
-  const nodeGap = 10;
-  const padX = 12;
-  const padY = 16;
-  const nodeWidth = colWidth - 16;
+  const colGap = 36;
+  const nodeHeight = 36;
+  const nodeGap = 8;
+  const padX = 14;
+  const padY = 18;
+  const nodeWidth = colWidth - 12;
 
   const maxRows = Math.max(...columns.map((col) => col.length), 1);
   const innerWidth = columns.length * colWidth + (columns.length - 1) * colGap;
   const width = innerWidth + padX * 2;
-  const height = padY * 2 + 14 + maxRows * nodeHeight + (maxRows - 1) * nodeGap;
+  const height = padY * 2 + 12 + maxRows * nodeHeight + Math.max(0, maxRows - 1) * nodeGap;
 
-  const positions = new Map<string, { x: number; y: number; w: number; h: number; cx: number; cy: number }>();
+  type Pos = { x: number; y: number; w: number; h: number; cx: number; cy: number };
+  const positions = new Map<string, Pos>();
   columns.forEach((col, colIndex) => {
     const colX = padX + colIndex * (colWidth + colGap) + (colWidth - nodeWidth) / 2;
-    const totalH = col.length * nodeHeight + (col.length - 1) * nodeGap;
-    const startY = padY + 14 + (maxRows * nodeHeight + (maxRows - 1) * nodeGap - totalH) / 2;
+    const totalH = col.length * nodeHeight + Math.max(0, col.length - 1) * nodeGap;
+    const slotH = maxRows * nodeHeight + Math.max(0, maxRows - 1) * nodeGap;
+    const startY = padY + 12 + (slotH - totalH) / 2;
     col.forEach((node, rowIndex) => {
       const y = startY + rowIndex * (nodeHeight + nodeGap);
       positions.set(node.id, {
@@ -280,11 +183,15 @@ function FindingNodeGraph({ finding, allFindings }: { finding: ExecutionReportFi
     });
   });
 
-  const colLabels = ["Tool", "Evidence", "Finding", "Related"];
+  const colLabels = columns.length === 4
+    ? ["Tool", "Evidence", "Finding", "Related findings"]
+    : ["Tool", "Evidence", "Finding"];
+
+  const presentVariants = Array.from(new Set(edges.map((edge) => edge.variant))) as EdgeVariant[];
 
   return (
-    <div className="overflow-x-auto rounded-md border border-border/60 bg-background/40">
-      <svg
+    <div className="space-y-2">
+      <div className="overflow-x-auto"><svg
         viewBox={`0 0 ${width} ${height}`}
         width={width}
         height={height}
@@ -296,7 +203,7 @@ function FindingNodeGraph({ finding, allFindings }: { finding: ExecutionReportFi
           <text
             key={label}
             x={padX + index * (colWidth + colGap) + colWidth / 2}
-            y={padY + 4}
+            y={padY + 2}
             textAnchor="middle"
             className="fill-muted-foreground font-mono"
             style={{ fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase" }}
@@ -322,8 +229,8 @@ function FindingNodeGraph({ finding, allFindings }: { finding: ExecutionReportFi
               fill="none"
               stroke={EDGE_STROKE[edge.variant]}
               strokeWidth={1}
-              strokeOpacity={edge.variant === "supports" ? 0.5 : 0.85}
-              strokeDasharray={edge.variant === "related" ? "3 3" : undefined}
+              strokeOpacity={edge.variant === "supports" ? 0.45 : 0.85}
+              strokeDasharray={EDGE_DASH[edge.variant]}
             />
           );
         })}
@@ -332,9 +239,15 @@ function FindingNodeGraph({ finding, allFindings }: { finding: ExecutionReportFi
           const pos = positions.get(node.id);
           if (!pos) return null;
           const isFinding = node.kind === "finding";
+          const isRelated = node.kind === "related";
           const sevDot = node.severity ? severityHex(node.severity) : null;
+          const handleClick = isRelated ? () => onSelectRelated(node.id.replace(/^r:/, "")) : undefined;
           return (
-            <g key={node.id}>
+            <g
+              key={node.id}
+              onClick={handleClick}
+              style={{ cursor: handleClick ? "pointer" : "default" }}
+            >
               <rect
                 x={pos.x}
                 y={pos.y}
@@ -342,10 +255,7 @@ function FindingNodeGraph({ finding, allFindings }: { finding: ExecutionReportFi
                 height={pos.h}
                 rx={6}
                 ry={6}
-                className={cn(
-                  isFinding ? "fill-card" : "fill-background",
-                  "stroke-border"
-                )}
+                className={cn(isFinding ? "fill-card" : "fill-background", "stroke-border")}
                 strokeWidth={isFinding ? 1.5 : 1}
               />
               {sevDot ? <circle cx={pos.x + 10} cy={pos.cy} r={3.5} fill={sevDot} /> : null}
@@ -370,208 +280,74 @@ function FindingNodeGraph({ finding, allFindings }: { finding: ExecutionReportFi
             </g>
           );
         })}
-      </svg>
+      </svg></div>
+      {presentVariants.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 font-mono text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">
+          {presentVariants.map((variant) => (
+            <span key={variant} className="inline-flex items-center gap-1.5">
+              <svg width={22} height={6} aria-hidden>
+                <line
+                  x1={1}
+                  x2={21}
+                  y1={3}
+                  y2={3}
+                  stroke={EDGE_STROKE[variant]}
+                  strokeWidth={1.4}
+                  strokeOpacity={variant === "supports" ? 0.55 : 0.95}
+                  strokeDasharray={EDGE_DASH[variant]}
+                />
+              </svg>
+              {EDGE_LABEL[variant]}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function severityHex(severity: ExecutionReportFinding["severity"]) {
-  switch (severity) {
-    case "info": return "#94a3b8";
-    case "low": return "#3b82f6";
-    case "medium": return "#f59e0b";
-    case "high": return "#f97316";
-    case "critical": return "#dc2626";
-  }
-}
-
-function truncate(value: string, max: number) {
-  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
-}
-
-function DrawerSection({ label, children }: { label: string; children: React.ReactNode }) {
+function FindingListItem({
+  finding,
+  index,
+  selected,
+  onClick
+}: {
+  finding: ExecutionReportFinding;
+  index: number;
+  selected: boolean;
+  onClick: () => void;
+}) {
   return (
-    <section className="space-y-2">
-      <p className="font-mono text-[0.62rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">{label}</p>
-      <div className="text-sm leading-6 text-foreground/90">{children}</div>
-    </section>
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "group flex w-full items-start gap-3 border-l-2 px-3 py-2.5 text-left transition",
+        selected
+          ? "border-l-foreground bg-muted/40"
+          : "border-l-transparent hover:border-l-border hover:bg-muted/20"
+      )}
+    >
+      <span aria-hidden className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", SEVERITY_DOT[finding.severity])} />
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex items-baseline gap-2 font-mono text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">
+          <span>{String(index + 1).padStart(2, "0")}</span>
+          <span className={SEVERITY_TEXT[finding.severity]}>{finding.severity}</span>
+          {finding.confidence !== null ? <span>· {finding.confidence.toFixed(2)}</span> : null}
+        </div>
+        <p className="truncate text-sm font-medium leading-tight text-foreground">{finding.title}</p>
+        <p className="truncate font-mono text-[0.65rem] text-muted-foreground">{finding.targetLabel}</p>
+      </div>
+    </button>
   );
 }
 
-function FindingDrawer({
-  finding,
-  allFindings,
-  onClose,
-  onSelect,
-  onJumpToToolActivity
-}: {
-  finding: ExecutionReportFinding;
-  allFindings: ExecutionReportFinding[];
-  onClose: () => void;
-  onSelect: (id: string) => void;
-  onJumpToToolActivity: (toolRunRef: string) => void;
-}) {
-  useEffect(() => {
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", handleKey);
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", handleKey);
-      document.body.style.overflow = "";
-    };
-  }, [onClose]);
-
-  const findingLookup = useMemo(() => new Map(allFindings.map((item) => [item.id, item])), [allFindings]);
-
-  return createPortal(
-    <div className="fixed inset-0 z-50">
-      <div
-        className="absolute inset-0 bg-background/60 backdrop-blur-sm"
-        onClick={onClose}
-        aria-hidden
-      />
-      <aside
-        role="dialog"
-        aria-label={`Finding: ${finding.title}`}
-        className="absolute right-0 top-0 flex h-full w-full max-w-3xl flex-col border-l border-border bg-background shadow-2xl"
-      >
-        <header className="flex items-start gap-3 border-b border-border/60 px-6 py-4">
-          <div className="min-w-0 flex-1 space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <SeverityCell severity={finding.severity} />
-              <span className="font-mono text-[0.62rem] uppercase tracking-[0.16em] text-muted-foreground">{finding.type}</span>
-              <ValidationPill status={finding.validationStatus} />
-              {finding.confidence !== null ? (
-                <span className="font-mono text-[0.62rem] uppercase tracking-[0.16em] text-muted-foreground">
-                  conf {finding.confidence.toFixed(2)}
-                </span>
-              ) : null}
-            </div>
-            <h2 className="text-lg font-semibold leading-tight text-foreground">{finding.title}</h2>
-            <p className="truncate font-mono text-[0.7rem] text-muted-foreground">{finding.targetLabel}</p>
-          </div>
-          <Button type="button" variant="outline" onClick={onClose} className="h-8 w-8 shrink-0 p-0" aria-label="Close">
-            <X className="h-4 w-4" />
-          </Button>
-        </header>
-
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          <div className="space-y-6">
-            <DrawerSection label="Traceability">
-              <FindingNodeGraph finding={finding} allFindings={allFindings} />
-            </DrawerSection>
-
-            <DrawerSection label="Summary">
-              <p>{finding.summary}</p>
-            </DrawerSection>
-
-            {finding.explanationSummary ? (
-              <DrawerSection label="Why this finding exists">
-                <p>{finding.explanationSummary}</p>
-              </DrawerSection>
-            ) : null}
-
-            {finding.evidence.length > 0 ? (
-              <DrawerSection label={`Evidence · ${finding.evidence.length}`}>
-                <ul className="space-y-3">
-                  {finding.evidence.map((evidence, index) => (
-                    <li key={`${finding.id}:evidence:${index}`} className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2 text-[0.7rem] text-muted-foreground">
-                        <span className="font-mono uppercase tracking-[0.14em] text-foreground/80">{evidence.sourceTool}</span>
-                        {evidence.toolRunRef ? (
-                          <button
-                            type="button"
-                            onClick={() => onJumpToToolActivity(evidence.toolRunRef as string)}
-                            className="font-mono text-[0.65rem] underline-offset-2 hover:underline"
-                          >
-                            tool:{evidence.toolRunRef.slice(0, 8)}
-                          </button>
-                        ) : null}
-                        {evidence.observationRef ? (
-                          <span className="font-mono text-[0.65rem]">obs:{evidence.observationRef.slice(0, 8)}</span>
-                        ) : null}
-                      </div>
-                      <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 font-mono text-[0.72rem] leading-5 text-muted-foreground">
-                        {evidence.quote}
-                      </pre>
-                    </li>
-                  ))}
-                </ul>
-              </DrawerSection>
-            ) : null}
-
-            {finding.confidenceReason || finding.reproduction ? (
-              <DrawerSection label="Verification">
-                {finding.confidenceReason ? <p>{finding.confidenceReason}</p> : null}
-                {finding.reproduction ? (
-                  <div className="mt-3 space-y-2">
-                    {finding.reproduction.commandPreview ? (
-                      <pre className="overflow-x-auto rounded-md bg-muted/40 p-3 font-mono text-[0.72rem] text-muted-foreground">
-                        {finding.reproduction.commandPreview}
-                      </pre>
-                    ) : null}
-                    {finding.reproduction.steps.length > 0 ? (
-                      <ol className="ml-4 list-decimal space-y-1 text-sm text-muted-foreground">
-                        {finding.reproduction.steps.map((step, index) => (
-                          <li key={`${finding.id}:step:${index}`}>{step}</li>
-                        ))}
-                      </ol>
-                    ) : null}
-                  </div>
-                ) : null}
-              </DrawerSection>
-            ) : null}
-
-            {(finding.derivedFromFindingIds.length
-              || finding.relatedFindingIds.length
-              || finding.enablesFindingIds.length
-              || finding.chain) ? (
-              <DrawerSection label="Relationships">
-                <div className="space-y-3">
-                  <RelationshipGroup
-                    label="Derived from"
-                    explanation={finding.relationshipExplanations?.derivedFrom}
-                    ids={finding.derivedFromFindingIds}
-                    findingLookup={findingLookup}
-                    onSelect={onSelect}
-                  />
-                  <RelationshipGroup
-                    label="Related to"
-                    explanation={finding.relationshipExplanations?.relatedTo}
-                    ids={finding.relatedFindingIds}
-                    findingLookup={findingLookup}
-                    onSelect={onSelect}
-                  />
-                  <RelationshipGroup
-                    label="Enables"
-                    explanation={finding.relationshipExplanations?.enables}
-                    ids={finding.enablesFindingIds}
-                    findingLookup={findingLookup}
-                    onSelect={onSelect}
-                  />
-                  {finding.chain ? (
-                    <div className="space-y-1">
-                      <p className="font-mono text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">Attack chain</p>
-                      <p className="text-sm font-medium text-foreground">{finding.chain.title}</p>
-                      <p className="text-sm text-muted-foreground">{finding.chain.summary}</p>
-                    </div>
-                  ) : null}
-                </div>
-              </DrawerSection>
-            ) : null}
-
-            {finding.recommendation ? (
-              <DrawerSection label="Recommendation">
-                <p>{finding.recommendation}</p>
-              </DrawerSection>
-            ) : null}
-          </div>
-        </div>
-      </aside>
-    </div>,
-    document.body
+function InspectorSection({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <section className="border-t border-border/50 pt-5 first:border-t-0 first:pt-0">
+      <p className="mb-2 font-mono text-[0.62rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">{label}</p>
+      <div className="text-sm leading-6 text-foreground/90">{children}</div>
+    </section>
   );
 }
 
@@ -614,6 +390,147 @@ function RelationshipGroup({
   );
 }
 
+function FindingInspector({
+  finding,
+  allFindings,
+  onSelect,
+  onJumpToToolActivity
+}: {
+  finding: ExecutionReportFinding;
+  allFindings: ExecutionReportFinding[];
+  onSelect: (id: string) => void;
+  onJumpToToolActivity: (toolRunRef: string) => void;
+}) {
+  const findingLookup = useMemo(() => new Map(allFindings.map((item) => [item.id, item])), [allFindings]);
+
+  return (
+    <div className="space-y-5">
+      <header className="space-y-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[0.62rem] uppercase tracking-[0.16em]">
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden className={cn("h-2 w-2 rounded-full", SEVERITY_DOT[finding.severity])} />
+            <span className={SEVERITY_TEXT[finding.severity]}>{finding.severity}</span>
+          </span>
+          <span className="text-muted-foreground">{finding.type}</span>
+          {finding.validationStatus ? (
+            <span className="text-muted-foreground">{finding.validationStatus.replaceAll("_", " ")}</span>
+          ) : null}
+          {finding.confidence !== null ? (
+            <span className="text-muted-foreground">conf {finding.confidence.toFixed(2)}</span>
+          ) : null}
+        </div>
+        <h2 className="text-lg font-semibold leading-tight text-foreground">{finding.title}</h2>
+        <p className="truncate font-mono text-[0.7rem] text-muted-foreground">{finding.targetLabel}</p>
+      </header>
+
+      <InspectorSection label="Summary">
+        <p>{finding.summary}</p>
+      </InspectorSection>
+
+      {finding.explanationSummary ? (
+        <InspectorSection label="Why this finding exists">
+          <p>{finding.explanationSummary}</p>
+        </InspectorSection>
+      ) : null}
+
+      {finding.evidence.length > 0 ? (
+        <InspectorSection label={`Evidence · ${finding.evidence.length}`}>
+          <ul className="space-y-3">
+            {finding.evidence.map((evidence, index) => (
+              <li key={`${finding.id}:evidence:${index}`} className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2 text-[0.7rem] text-muted-foreground">
+                  <span className="font-mono uppercase tracking-[0.14em] text-foreground/80">{evidence.sourceTool}</span>
+                  {evidence.toolRunRef ? (
+                    <button
+                      type="button"
+                      onClick={() => onJumpToToolActivity(evidence.toolRunRef as string)}
+                      className="font-mono text-[0.65rem] underline-offset-2 hover:underline"
+                    >
+                      tool:{evidence.toolRunRef.slice(0, 8)}
+                    </button>
+                  ) : null}
+                  {evidence.observationRef ? (
+                    <span className="font-mono text-[0.65rem]">obs:{evidence.observationRef.slice(0, 8)}</span>
+                  ) : null}
+                </div>
+                <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 font-mono text-[0.72rem] leading-5 text-muted-foreground">
+                  {evidence.quote}
+                </pre>
+              </li>
+            ))}
+          </ul>
+        </InspectorSection>
+      ) : null}
+
+      {finding.confidenceReason || finding.reproduction ? (
+        <InspectorSection label="Verification">
+          {finding.confidenceReason ? <p>{finding.confidenceReason}</p> : null}
+          {finding.reproduction ? (
+            <div className="mt-3 space-y-2">
+              {finding.reproduction.commandPreview ? (
+                <pre className="overflow-x-auto rounded-md bg-muted/40 p-3 font-mono text-[0.72rem] text-muted-foreground">
+                  {finding.reproduction.commandPreview}
+                </pre>
+              ) : null}
+              {finding.reproduction.steps.length > 0 ? (
+                <ol className="ml-4 list-decimal space-y-1 text-sm text-muted-foreground">
+                  {finding.reproduction.steps.map((step, index) => (
+                    <li key={`${finding.id}:step:${index}`}>{step}</li>
+                  ))}
+                </ol>
+              ) : null}
+            </div>
+          ) : null}
+        </InspectorSection>
+      ) : null}
+
+      {(finding.derivedFromFindingIds.length
+        || finding.relatedFindingIds.length
+        || finding.enablesFindingIds.length
+        || finding.chain) ? (
+        <InspectorSection label="Relationships">
+          <div className="space-y-3">
+            <RelationshipGroup
+              label="Derived from"
+              explanation={finding.relationshipExplanations?.derivedFrom}
+              ids={finding.derivedFromFindingIds}
+              findingLookup={findingLookup}
+              onSelect={onSelect}
+            />
+            <RelationshipGroup
+              label="Related to"
+              explanation={finding.relationshipExplanations?.relatedTo}
+              ids={finding.relatedFindingIds}
+              findingLookup={findingLookup}
+              onSelect={onSelect}
+            />
+            <RelationshipGroup
+              label="Enables"
+              explanation={finding.relationshipExplanations?.enables}
+              ids={finding.enablesFindingIds}
+              findingLookup={findingLookup}
+              onSelect={onSelect}
+            />
+            {finding.chain ? (
+              <div className="space-y-1">
+                <p className="font-mono text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">Attack chain</p>
+                <p className="text-sm font-medium text-foreground">{finding.chain.title}</p>
+                <p className="text-sm text-muted-foreground">{finding.chain.summary}</p>
+              </div>
+            ) : null}
+          </div>
+        </InspectorSection>
+      ) : null}
+
+      {finding.recommendation ? (
+        <InspectorSection label="Recommendation">
+          <p>{finding.recommendation}</p>
+        </InspectorSection>
+      ) : null}
+    </div>
+  );
+}
+
 export function ExecutionReportFindingsView({
   report,
   onJumpToToolActivity
@@ -621,11 +538,19 @@ export function ExecutionReportFindingsView({
   report: ExecutionReportDetail;
   onJumpToToolActivity: (toolRunRef: string) => void;
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => preferredFindingId(report));
+  const inspectorRef = useRef<HTMLDivElement>(null);
 
-  const selected = selectedId ? report.findings.find((finding) => finding.id === selectedId) ?? null : null;
+  useEffect(() => {
+    setSelectedId(preferredFindingId(report));
+  }, [report.id, report.findings]);
 
-  if (report.findings.length === 0) {
+  const selected = useMemo(
+    () => report.findings.find((finding) => finding.id === selectedId) ?? report.findings[0] ?? null,
+    [report.findings, selectedId]
+  );
+
+  if (!selected) {
     return (
       <p className="rounded-md border border-border/60 bg-background/40 px-4 py-6 text-sm text-muted-foreground">
         No structured findings were reported for this execution.
@@ -633,30 +558,49 @@ export function ExecutionReportFindingsView({
     );
   }
 
+  function handleSelect(id: string) {
+    setSelectedId(id);
+    if (inspectorRef.current) {
+      inspectorRef.current.scrollTop = 0;
+    }
+  }
+
   return (
-    <>
-      <div className="space-y-3">
-        <div className="flex items-baseline justify-between">
-          <p className="font-mono text-eyebrow font-medium uppercase tracking-[0.3em] text-muted-foreground">
-            Findings · {report.findings.length}
-          </p>
-          <p className="text-[0.7rem] text-muted-foreground">Click a row to inspect traceability and evidence</p>
-        </div>
-        <FindingsTable
-          findings={report.findings}
-          onSelect={(id) => setSelectedId(id)}
-          selectedId={selectedId}
-        />
+    <div className="space-y-4">
+      <div className="rounded-md border border-border/60 bg-background/40 px-3 py-3">
+        <FindingNodeGraph finding={selected} allFindings={report.findings} onSelectRelated={handleSelect} />
       </div>
-      {selected ? (
-        <FindingDrawer
-          finding={selected}
-          allFindings={report.findings}
-          onClose={() => setSelectedId(null)}
-          onSelect={(id) => setSelectedId(id)}
-          onJumpToToolActivity={onJumpToToolActivity}
-        />
-      ) : null}
-    </>
+
+      <div className="grid gap-0 overflow-hidden rounded-md border border-border/60 bg-background/40 lg:grid-cols-[300px_1fr]">
+        <div className="max-h-[640px] overflow-y-auto border-b border-border/60 lg:border-b-0 lg:border-r">
+          <div className="flex items-baseline justify-between border-b border-border/60 px-3 py-2">
+            <span className="font-mono text-[0.6rem] uppercase tracking-[0.22em] text-muted-foreground">
+              Findings · {report.findings.length}
+            </span>
+          </div>
+          <ul className="divide-y divide-border/30">
+            {report.findings.map((finding, index) => (
+              <li key={finding.id}>
+                <FindingListItem
+                  finding={finding}
+                  index={index}
+                  selected={finding.id === selected.id}
+                  onClick={() => handleSelect(finding.id)}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div ref={inspectorRef} className="max-h-[640px] overflow-y-auto px-5 py-5 lg:px-6">
+          <FindingInspector
+            finding={selected}
+            allFindings={report.findings}
+            onSelect={handleSelect}
+            onJumpToToolActivity={onJumpToToolActivity}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
