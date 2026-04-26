@@ -20,6 +20,11 @@ export const hashcatCrackTool = {
     type: "object",
     properties: {
       hash: { type: "string" },
+      hashes: {
+        type: "array",
+        items: { type: "string" }
+      },
+      hashType: { type: "string" },
       mode: { type: "number" }
     },
     required: ["hash"]

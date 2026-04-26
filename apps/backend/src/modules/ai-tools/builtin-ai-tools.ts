@@ -71,7 +71,8 @@ const lifecycleBuiltinAiTools: AiTool[] = [
         reproduction: { type: "object" },
         tags: { type: "array" }
       },
-      required: ["type", "title", "severity", "confidence", "impact", "recommendation", "target", "evidence"]
+      required: ["type", "title", "severity", "confidence", "impact", "recommendation", "target", "evidence"],
+      description: "If the finding participates in a path, include relationship fields together with explanationSummary and confidenceReason."
     },
     outputSchema: {
       type: "object",

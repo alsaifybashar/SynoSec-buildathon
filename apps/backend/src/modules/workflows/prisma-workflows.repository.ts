@@ -15,12 +15,38 @@ import { mapWorkflowLaunchRow, mapWorkflowRow, mapWorkflowRunRow } from "./workf
 import type { WorkflowRunStatePatch, WorkflowsRepository } from "./workflows.repository.js";
 import { normalizeWorkflowStageContract } from "./workflow-stage-contract.js";
 
-function computeWorkflowLaunchStatus(runs: Array<{ status: WorkflowRun["status"] }>): WorkflowLaunch["status"] {
+function hasValidTerminalTraceType(
+  run: {
+    status: WorkflowRun["status"];
+    traceEvents?: Array<{ type: string; ord: number }>;
+  }
+) {
+  const terminalEvent = run.traceEvents?.slice().sort((left, right) => right.ord - left.ord)[0];
+  if (!terminalEvent) {
+    return false;
+  }
+
+  if (run.status === "completed") {
+    return terminalEvent.type === "run_completed";
+  }
+
+  if (run.status === "failed") {
+    return terminalEvent.type === "run_failed";
+  }
+
+  return true;
+}
+
+function computeWorkflowLaunchStatus(runs: Array<{ status: WorkflowRun["status"]; traceEvents?: Array<{ type: string; ord: number }> }>): WorkflowLaunch["status"] {
   if (runs.length === 0) {
     return "pending";
   }
 
   if (runs.some((run) => run.status === "running" || run.status === "pending")) {
+    return "running";
+  }
+
+  if (runs.some((run) => !hasValidTerminalTraceType(run))) {
     return "running";
   }
 
@@ -317,6 +343,23 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
   }
 
   async appendRunEvent(runId: string, event: WorkflowTraceEvent, patch: WorkflowRunStatePatch = {}): Promise<WorkflowRun> {
+    const current = await this.prisma.workflowRun.findUnique({
+      where: { id: runId },
+      include: {
+        traceEvents: {
+          orderBy: { ord: "desc" },
+          take: 1
+        }
+      }
+    });
+    if (!current) {
+      throw new RequestError(404, "Workflow run not found.");
+    }
+    const expectedOrd = (current.traceEvents[0]?.ord ?? -1) + 1;
+    if (event.ord !== expectedOrd) {
+      throw new RequestError(500, `Workflow trace event ord ${event.ord} is out of sequence for run ${runId}.`);
+    }
+
     const updated = await this.prisma.workflowRun.update({
       where: { id: runId },
       data: {
@@ -416,7 +459,15 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
       include: {
         runs: {
           select: {
-            status: true
+            status: true,
+            traceEvents: {
+              select: {
+                type: true,
+                ord: true
+              },
+              orderBy: { ord: "desc" },
+              take: 1
+            }
           }
         }
       }

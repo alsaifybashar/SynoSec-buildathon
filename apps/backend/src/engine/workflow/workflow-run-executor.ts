@@ -1,5 +1,6 @@
 import type { RuntimeStartContext, WorkflowExecutionStrategy, WorkflowRuntimePorts, WorkflowRunWriterPort, WorkflowStageRunner } from "./workflow-runtime-types.js";
 import { WorkflowRunPreflight } from "./workflow-run-preflight.js";
+import { RequestError } from "@/shared/http/request-error.js";
 
 class DefaultWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
   constructor(
@@ -85,6 +86,7 @@ class DefaultWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
           return;
         }
 
+        assertStageResultSubmitted(currentRun, stage.id);
         currentRun = await this.writer.appendEvent(
           currentRun,
           this.writer.createEvent(
@@ -103,6 +105,11 @@ class DefaultWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
         );
 
         if (index === stages.length - 1) {
+          assertRunReadyForCompletion(currentRun, stage.id);
+          const closeoutBody = [
+            `Recommended next step: ${outcome.result.recommendedNextStep}`,
+            `Residual risk: ${outcome.result.residualRisk}`
+          ].join("\n");
           currentRun = await this.writer.appendEvent(
             currentRun,
             this.writer.createEvent(
@@ -115,13 +122,13 @@ class DefaultWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
               {
                 title: "Pipeline completed",
                 summary: outcome.result.summary,
-                body: outcome.result.residualRisk,
+                body: closeoutBody,
                 recommendedNextStep: outcome.result.recommendedNextStep,
                 residualRisk: outcome.result.residualRisk
               },
               "Pipeline completed",
               outcome.result.summary,
-              outcome.result.residualRisk
+              closeoutBody
             ),
             {
               status: "completed",
@@ -136,6 +143,43 @@ class DefaultWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
       }
     }
   }
+}
+
+function assertStageResultSubmitted(run: RuntimeStartContext["run"], stageId: string) {
+  const stageResultIndex = findLastEventIndex(run.events, (event) => event.type === "stage_result_submitted" && event.workflowStageId === stageId);
+  if (stageResultIndex < 0) {
+    throw new RequestError(500, `Stage ${stageId} completed without a persisted stage_result_submitted event.`);
+  }
+}
+
+function assertRunReadyForCompletion(run: RuntimeStartContext["run"], stageId: string) {
+  const stageResultIndex = findLastEventIndex(run.events, (event) => event.type === "stage_result_submitted" && event.workflowStageId === stageId);
+  const stageCompletedIndex = findLastEventIndex(run.events, (event) => event.type === "stage_completed" && event.workflowStageId === stageId);
+
+  if (stageResultIndex < 0 || stageCompletedIndex < 0 || stageCompletedIndex < stageResultIndex) {
+    throw new RequestError(500, `Run cannot finalize because stage ${stageId} does not have a complete success trail.`);
+  }
+
+  const trailingFailures = run.events.slice(stageResultIndex + 1).filter((event) =>
+    event.status === "failed" || event.type === "stage_failed" || event.type === "run_failed"
+  );
+  if (trailingFailures.length > 0) {
+    throw new RequestError(500, `Run cannot finalize because failed events remain after stage ${stageId} reported success.`);
+  }
+}
+
+function findLastEventIndex(
+  events: RuntimeStartContext["run"]["events"],
+  predicate: (event: RuntimeStartContext["run"]["events"][number]) => boolean
+) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event && predicate(event)) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 export class WorkflowRunExecutor {

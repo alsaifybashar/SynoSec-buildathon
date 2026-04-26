@@ -2,39 +2,64 @@
 set -euo pipefail
 
 payload="$(cat)"
+SEED_PAYLOAD="$payload" node <<'NODE'
+const crypto = require("node:crypto");
 
-if ! command -v hashcat >/dev/null 2>&1; then
-  printf '%s\n' '{"output":"Hashcat Crack could not run because hashcat is not installed.","statusReason":"Missing required binary: hashcat"}'
-  exit 127
-fi
+const payload = JSON.parse(process.env.SEED_PAYLOAD || "{}");
+const toolInput = payload?.request?.parameters?.toolInput ?? {};
+const hashes = Array.isArray(toolInput.hashes)
+  ? toolInput.hashes.filter((value) => typeof value === "string" && value.trim().length > 0)
+  : [];
+const hashValue = typeof toolInput.hash === "string" && toolInput.hash.trim().length > 0
+  ? toolInput.hash.trim()
+  : hashes[0] || "";
+const hashType = String(toolInput.hashType || "").toLowerCase();
 
-hash_value="$(printf '%s' "$payload" | node -e 'let input="";process.stdin.on("data",(chunk)=>input+=chunk);process.stdin.on("end",()=>{const parsed=JSON.parse(input||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};process.stdout.write(String(toolInput.hash||""));});')"
-mode="$(printf '%s' "$payload" | node -e 'let input="";process.stdin.on("data",(chunk)=>input+=chunk);process.stdin.on("end",()=>{const parsed=JSON.parse(input||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};const value=Number(toolInput.mode ?? 0);process.stdout.write(String(Number.isInteger(value) ? value : 0));});')"
-wordlist="$(mktemp)"
-trap 'rm -f "$wordlist"' EXIT
-cat >"$wordlist" <<'EOF'
-password
-admin
-letmein
-changeme
-welcome
-123456
-qwerty
-EOF
+if (!hashValue) {
+  console.log(JSON.stringify({
+    output: "Hashcat Crack requires hash material via hash or hashes.",
+    statusReason: "Missing required hash material"
+  }));
+  process.exit(64);
+}
 
-set +e
-output="$(hashcat -m "$mode" "$hash_value" "$wordlist" --potfile-disable --quiet --force --runtime 10 2>&1)"
-exit_code=$?
-set -e
+const candidates = ["password", "admin", "letmein", "changeme", "welcome", "123456", "qwerty", "test", "admin123"];
+const modeName = hashType || (/^[a-f0-9]{32}$/i.test(hashValue) ? "md5" : /^[a-f0-9]{40}$/i.test(hashValue) ? "sha1" : /^[a-f0-9]{64}$/i.test(hashValue) ? "sha256" : "");
+const digestAlgorithm = modeName === "md5" ? "md5" : modeName === "sha1" ? "sha1" : modeName === "sha256" ? "sha256" : null;
 
-if [ "$exit_code" -ne 0 ] && [ "$exit_code" -ne 1 ]; then
-  escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-  printf '{"output":%s,"statusReason":"hashcat crack failed","commandPreview":"hashcat -m %s <hash> <temp-wordlist> --potfile-disable --quiet --force --runtime 10"}\n' "$escaped_output" "$mode"
-  exit 64
-fi
+if (!digestAlgorithm) {
+  console.log(JSON.stringify({
+    output: `Unsupported or unknown hash type for ${hashValue}.`,
+    statusReason: "Unsupported hash type",
+    commandPreview: `seed-hashcat-crack hash=${hashValue}`
+  }));
+  process.exit(64);
+}
 
-summary="Hashcat completed an offline cracking attempt for the supplied hash."
-escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-escaped_summary="$(node -p "JSON.stringify(process.argv[1])" "$summary")"
-escaped_evidence="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-printf '{"output":%s,"observations":[{"key":"hashcat:%s","title":"Hashcat run completed","summary":%s,"severity":"info","confidence":0.74,"evidence":%s,"technique":"hashcat offline cracking"}],"commandPreview":"hashcat -m %s <hash> <temp-wordlist> --potfile-disable --quiet --force --runtime 10"}\n' "$escaped_output" "$mode" "$escaped_summary" "$escaped_evidence" "$mode"
+const cracked = candidates.find((candidate) => crypto.createHash(digestAlgorithm).update(candidate).digest("hex") === hashValue.toLowerCase()) || null;
+const observations = cracked ? [{
+  key: `hashcat:cracked:${modeName}`,
+  title: "Offline password crack succeeded",
+  summary: `Recovered plaintext for the supplied ${modeName.toUpperCase()} hash from the built-in demo wordlist.`,
+  severity: "high",
+  confidence: 0.96,
+  evidence: `Hash: ${hashValue}\nPlaintext: ${cracked}`,
+  technique: "seeded offline cracking"
+}] : [{
+  key: `hashcat:attempted:${modeName}`,
+  title: "Offline password crack completed without a match",
+  summary: `Attempted offline cracking against the supplied ${modeName.toUpperCase()} hash, but the built-in demo wordlist found no match.`,
+  severity: "info",
+  confidence: 0.74,
+  evidence: `Hash: ${hashValue}\nWordlist size: ${candidates.length}`,
+  technique: "seeded offline cracking"
+}];
+
+console.log(JSON.stringify({
+  output: cracked
+    ? `Recovered ${modeName.toUpperCase()} hash ${hashValue} => ${cracked}`
+    : `No password recovered for ${hashValue}.`,
+  observations,
+  commandPreview: `seed-hashcat-crack hash=${hashValue} type=${modeName || "unknown"}`
+}));
+NODE

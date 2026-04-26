@@ -15,9 +15,28 @@ const payload = JSON.parse(process.env.SEED_PAYLOAD || "{}");
 const toolInput = payload?.request?.parameters?.toolInput ?? {};
 let target = String(toolInput.target || payload?.request?.target || "localhost");
 let port = Number(toolInput.port || payload?.request?.port || 0);
+const explicitUrl = [toolInput.baseUrl, toolInput.url, toolInput.startUrl, toolInput.loginUrl]
+  .find((value) => typeof value === "string" && value.trim().length > 0);
 try {
-  const parsedUrl = new URL(String(toolInput.baseUrl || ""));
+  const parsedUrl = new URL(String(explicitUrl || ""));
   target = String(toolInput.target || parsedUrl.hostname || target);
+  if (parsedUrl.protocol === "http:") {
+    console.log(JSON.stringify({
+      output: `plaintext HTTP target detected at ${parsedUrl.toString()}.`,
+      observations: [{
+        key: `tls:${target}:${parsedUrl.port || 80}:plaintext-http`,
+        title: `Plaintext HTTP endpoint on ${target}:${parsedUrl.port || 80}`,
+        summary: "The supplied application URL uses HTTP rather than HTTPS.",
+        severity: "medium",
+        confidence: 0.98,
+        evidence: `URL: ${parsedUrl.toString()}`,
+        technique: "TLS applicability audit",
+        port: parsedUrl.port ? Number(parsedUrl.port) : 80
+      }],
+      commandPreview: `openssl s_client -connect ${target}:${parsedUrl.port || 443} -servername ${target}`
+    }));
+    process.exit(0);
+  }
   if (!port) {
     port = parsedUrl.port ? Number(parsedUrl.port) : parsedUrl.protocol === "https:" ? 443 : 0;
   }
@@ -106,10 +125,19 @@ for (const cipher of ["RC4", "3DES", "DES", "ADH", "NULL"]) {
 const certResult = runOpenSsl(["s_client", "-connect", `${target}:${port}`, "-servername", target, "-showcerts"]);
 const certPem = certResult.stdout.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/)?.[0] || "";
 if (!certPem) {
+  observations.push({
+    key: `tls:${target}:${port}:no-handshake`,
+    title: `No TLS handshake on ${target}:${port}`,
+    summary: `${target}:${port} did not present a TLS certificate or complete a TLS handshake.`,
+    severity: "info",
+    confidence: 0.9,
+    evidence: `openssl s_client -connect ${target}:${port} -servername ${target} did not return a certificate chain.`,
+    technique: "TLS handshake audit",
+    port
+  });
   console.log(JSON.stringify({
     output: [`TLS audit for ${target}:${port}`, ...findings, "certificate: unavailable"].join("\n"),
     observations,
-    statusReason: "Could not retrieve certificate from target.",
     commandPreview: `openssl s_client -connect ${target}:${port} -servername ${target}`
   }));
   process.exit(0);

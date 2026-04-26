@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { enrichWorkflowFindingDetails, parseExecutionTarget, parseTarget, verifyFindingEvidence } from "./workflow-execution.utils.js";
+import {
+  attachEvidenceReferences,
+  enrichWorkflowFindingDetails,
+  parseExecutionTarget,
+  parseTarget,
+  validateFindingEvidenceReferences,
+  verifyFindingEvidence
+} from "./workflow-execution.utils.js";
 
 const fallbackTarget = {
   baseUrl: "http://localhost:8888/",
@@ -12,13 +19,14 @@ const mockResult = {
   toolName: "nikto",
   toolInput: {},
   toolRequest: {} as any,
-  toolRun: {} as any,
+  toolRun: { id: "tool-run-nikto-1" } as any,
   status: "completed" as const,
   observations: [],
   observationKeys: [],
   observationSummaries: [],
   outputPreview: "",
   fullOutput: "HTTP/1.1 200 OK\nServer: Apache\n[+] /admin/ found via nikto",
+  commandPreview: "nikto http://localhost:8888/admin",
   usedToolId: "seed-nikto",
   usedToolName: "nikto",
   fallbackUsed: false,
@@ -27,7 +35,7 @@ const mockResult = {
 
 describe("verifyFindingEvidence", () => {
   it("accepts tool-grounded evidence as single_source", () => {
-    const finding = {
+    const finding = attachEvidenceReferences({
       title: "Admin Panel Found",
       severity: "medium" as const,
       confidence: 0.7,
@@ -41,15 +49,15 @@ describe("verifyFindingEvidence", () => {
         sourceTool: "nikto",
         quote: "[+] /admin/ found via nikto"
       }]
-    };
+    }, [mockResult]);
 
     const result = verifyFindingEvidence(finding, [mockResult]);
     expect(result.validationStatus).toBe("single_source");
     expect(result.confidence).toBeGreaterThanOrEqual(0.8);
   });
 
-  it("demotes vague evidence to suspected", () => {
-    const finding = {
+  it("demotes grounded but weakly specific evidence to suspected", () => {
+    const finding = attachEvidenceReferences({
       title: "Speculative Finding",
       severity: "low" as const,
       confidence: 0.5,
@@ -60,18 +68,41 @@ describe("verifyFindingEvidence", () => {
       validationStatus: "unverified" as const,
       tags: [],
       evidence: [{
-        sourceTool: "manual",
-        quote: "I think there is an IP 10.0.0.1 here"
+        sourceTool: "nikto",
+        quote: "Apache"
+      }]
+    }, [mockResult]);
+
+    const result = verifyFindingEvidence(finding, [mockResult]);
+    expect(result.validationStatus).toBe("suspected");
+    expect(result.confidence).toBeLessThanOrEqual(0.74);
+  });
+
+  it("rejects evidence that is not grounded to a persisted tool result", () => {
+    const finding = {
+      title: "Ungrounded Bug",
+      severity: "high" as const,
+      confidence: 0.9,
+      type: "other" as const,
+      target: { host: "localhost" },
+      impact: "Doom",
+      recommendation: "Panic",
+      validationStatus: "unverified" as const,
+      tags: [],
+      evidence: [{
+        sourceTool: "nikto",
+        toolRunRef: "missing-run",
+        quote: "This feels like a security hole"
       }]
     };
 
     const result = verifyFindingEvidence(finding, [mockResult]);
-    expect(result.validationStatus).toBe("suspected");
-    expect(result.confidence).toBeLessThan(0.5);
+    expect(result.validationStatus).toBe("rejected");
+    expect(result.confidence).toBe(0.1);
   });
 
-  it("rejects pure speculation", () => {
-    const finding = {
+  it("rejects pure speculation even when it references a real tool run", () => {
+    const finding = attachEvidenceReferences({
       title: "Imaginary Bug",
       severity: "high" as const,
       confidence: 0.9,
@@ -82,14 +113,43 @@ describe("verifyFindingEvidence", () => {
       validationStatus: "unverified" as const,
       tags: [],
       evidence: [{
-        sourceTool: "brain",
+        sourceTool: "nikto",
         quote: "This feels like a security hole"
       }]
-    };
+    }, [mockResult]);
 
     const result = verifyFindingEvidence(finding, [mockResult]);
     expect(result.validationStatus).toBe("rejected");
     expect(result.confidence).toBe(0.1);
+  });
+});
+
+describe("validateFindingEvidenceReferences", () => {
+  it("fills an unambiguous toolRunRef automatically", () => {
+    const finding = attachEvidenceReferences({
+      title: "Admin Panel Found",
+      severity: "medium" as const,
+      confidence: 0.7,
+      type: "content_discovery" as const,
+      target: { host: "localhost" },
+      impact: "Exposure",
+      recommendation: "Fix it",
+      validationStatus: "unverified" as const,
+      tags: [],
+      evidence: [{
+        sourceTool: "nikto",
+        quote: "[+] /admin/ found via nikto"
+      }]
+    }, [{
+      ...mockResult,
+      toolRun: { id: "tool-run-1" } as any
+    }]);
+
+    expect(finding.evidence[0]?.toolRunRef).toBe("tool-run-1");
+    expect(validateFindingEvidenceReferences(finding, [{
+      ...mockResult,
+      toolRun: { id: "tool-run-1" } as any
+    }])).toBeNull();
   });
 });
 
@@ -119,7 +179,8 @@ describe("parseExecutionTarget", () => {
 
     expect(result).toEqual({
       target: "localhost",
-      port: 8888
+      port: 8888,
+      url: "http://localhost/"
     });
   });
 
@@ -130,7 +191,8 @@ describe("parseExecutionTarget", () => {
 
     expect(result).toEqual({
       target: "localhost",
-      port: 8888
+      port: 8888,
+      url: "http://localhost/"
     });
   });
 
@@ -141,7 +203,20 @@ describe("parseExecutionTarget", () => {
 
     expect(result).toEqual({
       target: "localhost",
-      port: 9999
+      port: 9999,
+      url: "http://localhost:9999/"
+    });
+  });
+
+  it("preserves full path and query when the model provides a URL input", () => {
+    const result = parseExecutionTarget({
+      url: "http://localhost:9999/search?q=test"
+    }, fallbackTarget);
+
+    expect(result).toEqual({
+      target: "localhost",
+      port: 9999,
+      url: "http://localhost:9999/search?q=test"
     });
   });
 

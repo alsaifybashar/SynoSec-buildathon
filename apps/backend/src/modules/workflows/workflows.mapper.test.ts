@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { workflowRunSchema, workflowSchema } from "@synosec/contracts";
+import { workflowSchema } from "@synosec/contracts";
 import { mapWorkflowRow, mapWorkflowRunRow } from "./workflows.mapper.js";
 
 describe("mapWorkflowRow", () => {
@@ -62,8 +62,8 @@ describe("mapWorkflowRow", () => {
 });
 
 describe("mapWorkflowRunRow", () => {
-  it("normalizes blank persisted event text so workflow runs remain readable", () => {
-    const mapped = mapWorkflowRunRow({
+  it("fails loudly when persisted workflow trace events are malformed", () => {
+    expect(() => mapWorkflowRunRow({
       id: "10000000-0000-0000-0000-000000000001",
       workflowId: "20000000-0000-0000-0000-000000000001",
       workflowLaunchId: "40000000-0000-0000-0000-000000000001",
@@ -90,14 +90,7 @@ describe("mapWorkflowRunRow", () => {
         payload: {},
         createdAt: new Date("2026-04-26T02:03:30.000Z")
       }]
-    } as never);
-
-    expect(() => workflowRunSchema.parse(mapped)).not.toThrow();
-    expect(mapped.events[0]).toMatchObject({
-      title: "Workflow event",
-      summary: "Workflow event",
-      detail: null
-    });
+    } as never)).toThrow();
   });
 
   it("fails loudly for unsupported attack-map workflow runs", () => {

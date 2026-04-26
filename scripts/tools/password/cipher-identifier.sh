@@ -2,22 +2,41 @@
 set -euo pipefail
 
 payload="$(cat)"
+SEED_PAYLOAD="$payload" node <<'NODE'
+const payload = JSON.parse(process.env.SEED_PAYLOAD || "{}");
+const toolInput = payload?.request?.parameters?.toolInput ?? {};
+const hashes = Array.isArray(toolInput.hashes)
+  ? toolInput.hashes.filter((value) => typeof value === "string" && value.trim().length > 0)
+  : [];
+const hashValue = typeof toolInput.hash === "string" && toolInput.hash.trim().length > 0
+  ? toolInput.hash.trim()
+  : hashes[0] || "";
 
-if ! command -v cipher-identifier >/dev/null 2>&1; then
-  printf '%s\n' '{"output":"Cipher-Identifier could not run because cipher-identifier is not installed.","statusReason":"Missing required binary: cipher-identifier"}'
-  exit 127
-fi
+if (!hashValue) {
+  console.log(JSON.stringify({
+    output: "Cipher-Identifier requires hash material via hash or hashes.",
+    statusReason: "Missing required hash material"
+  }));
+  process.exit(64);
+}
 
-target="$(printf '%s' "$payload" | node -e 'let input="";process.stdin.on("data",(chunk)=>input+=chunk);process.stdin.on("end",()=>{const parsed=JSON.parse(input||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};process.stdout.write(String(toolInput.baseUrl || toolInput.target || parsed?.request?.target || "localhost"));});')"
+const detected = /^[a-f0-9]+$/i.test(hashValue)
+  ? { name: "hex-like", key: "hex-like", confidence: 0.8 }
+  : /^[A-Za-z0-9+/=]+$/.test(hashValue) && hashValue.includes("=")
+    ? { name: "base64-like", key: "base64-like", confidence: 0.8 }
+    : { name: "unknown", key: "unknown", confidence: 0.35 };
 
-if ! output="$(cipher-identifier  "$target" 2>&1)"; then
-  escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-  printf '{"output":%s,"statusReason":"Cipher-Identifier failed","commandPreview":"cipher-identifier  %s"}\n' "$escaped_output" "$target"
-  exit 64
-fi
-
-summary="Cipher-Identifier completed assessment against $target."
-escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-escaped_summary="$(node -p "JSON.stringify(process.argv[1])" "$summary")"
-escaped_evidence="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-printf '{"output":%s,"observations":[{"key":"cipher-identifier:%s","title":"Cipher-Identifier completed","summary":%s,"severity":"info","confidence":0.7,"evidence":%s,"technique":"Cipher-Identifier assessment"}],"commandPreview":"cipher-identifier  %s"}\n' "$escaped_output" "$target" "$escaped_summary" "$escaped_evidence" "$target"
+console.log(JSON.stringify({
+  output: detected.name,
+  observations: [{
+    key: `cipher-format:${detected.key}`,
+    title: `Identified ciphertext format: ${detected.name}`,
+    summary: `The supplied material most closely matches a ${detected.name} encoding pattern.`,
+    severity: "info",
+    confidence: detected.confidence,
+    evidence: `Value: ${hashValue}`,
+    technique: "seeded ciphertext format identification"
+  }],
+  commandPreview: `seed-cipher-identifier value=${hashValue}`
+}));
+NODE

@@ -19,6 +19,22 @@ export interface CompileInput {
 
 const MAX_TOOL_TIMEOUT_MS = 10_000;
 
+function firstExplicitUrl(toolInput?: Record<string, string | number | boolean | string[]>) {
+  for (const key of ["baseUrl", "startUrl", "url", "loginUrl"] as const) {
+    const value = toolInput?.[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+
+  const target = toolInput?.["target"];
+  if (typeof target === "string" && /^https?:\/\//.test(target)) {
+    return target;
+  }
+
+  return null;
+}
+
 function interpolateArgument(template: string, input: CompileInput): string {
   const configuredBaseUrl = input.toolInput?.["baseUrl"];
   const baseUrl = typeof configuredBaseUrl === "string" && configuredBaseUrl.trim().length > 0
@@ -51,10 +67,11 @@ export function compileToolRequestFromDefinition(tool: CompilableTool, input: Co
     });
   }
 
+  const explicitUrl = firstExplicitUrl(input.toolInput);
   const toolInput = {
     target: input.target,
     ...(input.port == null ? {} : { port: input.port }),
-    baseUrl: `http://${input.target}${input.port ? `:${input.port}` : ""}`,
+    baseUrl: explicitUrl ?? `http://${input.target}${input.port ? `:${input.port}` : ""}`,
     ...(input.toolInput ?? {})
   };
   const timeoutMs = Math.max(1_000, Math.min(tool.timeoutMs, MAX_TOOL_TIMEOUT_MS));

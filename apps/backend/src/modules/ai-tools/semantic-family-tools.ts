@@ -5,10 +5,15 @@ const builtinTimestamp = "2026-04-26T00:00:00.000Z";
 type FamilyInputField =
   | "target"
   | "baseUrl"
+  | "url"
+  | "startUrl"
   | "port"
   | "loginUrl"
   | "token"
   | "hash"
+  | "hashes"
+  | "hashType"
+  | "method"
   | "mode"
   | "filePath"
   | "passphrase"
@@ -70,10 +75,18 @@ const commonFamilyOutputSchema = {
 const commonFamilyInputProperties = {
   target: { type: "string" },
   baseUrl: { type: "string" },
+  url: { type: "string" },
+  startUrl: { type: "string" },
   port: { type: "number" },
   loginUrl: { type: "string" },
   token: { type: "string" },
   hash: { type: "string" },
+  hashes: {
+    type: "array",
+    items: { type: "string" }
+  },
+  hashType: { type: "string" },
+  method: { type: "string" },
   mode: { type: "number" },
   filePath: { type: "string" },
   passphrase: { type: "string" },

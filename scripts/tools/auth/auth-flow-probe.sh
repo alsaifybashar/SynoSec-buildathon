@@ -9,8 +9,17 @@ const https = require("node:https");
 const payload = JSON.parse(process.env.SEED_PAYLOAD || "{}");
 const toolInput = payload?.request?.parameters?.toolInput ?? {};
 const target = String(toolInput.target || payload?.request?.target || "localhost");
-const baseUrl = String(toolInput.baseUrl || `http://${target}`);
-const loginUrl = String(toolInput.loginUrl || new URL("/login", baseUrl).toString());
+const explicitUrl = [toolInput.loginUrl, toolInput.url, toolInput.baseUrl, toolInput.startUrl]
+  .find((value) => typeof value === "string" && value.trim().length > 0);
+const baseUrl = String(explicitUrl || `http://${target}`);
+const parsedBaseUrl = new URL(baseUrl);
+const loginUrl = String(
+  typeof toolInput.loginUrl === "string" && toolInput.loginUrl.trim().length > 0
+    ? toolInput.loginUrl
+    : parsedBaseUrl.pathname === "/login"
+      ? parsedBaseUrl.toString()
+      : new URL("/login", parsedBaseUrl).toString()
+);
 const usernameField = String(toolInput.usernameField || "username");
 const passwordField = String(toolInput.passwordField || "password");
 const knownUser = String(toolInput.knownUser || "admin");
@@ -65,6 +74,11 @@ function average(values) {
   return values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
 }
 
+function summarizeAttempt(attempt, index) {
+  const marker = String(attempt.body || "").replace(/\s+/g, " ").slice(0, 140);
+  return `attempt ${index + 1}: status=${attempt.statusCode} durationMs=${attempt.durationMs.toFixed(1)} bodyMarker=${JSON.stringify(marker)}`;
+}
+
 (async () => {
   const observations = [];
   const invalidAttempts = [];
@@ -90,7 +104,7 @@ function average(values) {
       summary: "Six consecutive invalid login attempts completed without a rate-limit signal.",
       severity: "medium",
       confidence: 0.82,
-      evidence: invalidAttempts.map((attempt, index) => `attempt ${index + 1}: status=${attempt.statusCode} durationMs=${attempt.durationMs.toFixed(1)}`).join("\n"),
+      evidence: [`URL: ${loginUrl}`, ...invalidAttempts.map(summarizeAttempt)].join("\n"),
       technique: "authentication rate-limit probe"
     });
   }
@@ -109,6 +123,8 @@ function average(values) {
   const bodyLengthDelta = Math.abs(average(knownSamples.map((item) => item.body.length)) - average(unknownSamples.map((item) => item.body.length)));
 
   if (statusDiffers || bodyLengthDelta > 80 || timingDelta > 150) {
+    const knownMarkers = knownSamples.map((item, index) => `known ${summarizeAttempt(item, index)}`);
+    const unknownMarkers = unknownSamples.map((item, index) => `unknown ${summarizeAttempt(item, index)}`);
     observations.push({
       key: `auth-flow:${loginUrl}:oracle`,
       title: "Login flow leaks user validity signals",
@@ -116,12 +132,15 @@ function average(values) {
       severity: "medium",
       confidence: timingDelta > 150 ? 0.78 : 0.84,
       evidence: [
+        `URL: ${loginUrl}`,
         `knownAvgMs=${knownAvg.toFixed(1)}`,
         `unknownAvgMs=${unknownAvg.toFixed(1)}`,
         `timingDeltaMs=${timingDelta.toFixed(1)}`,
         `bodyLengthDelta=${bodyLengthDelta.toFixed(1)}`,
         `knownStatuses=${knownSamples.map((item) => item.statusCode).join(",")}`,
-        `unknownStatuses=${unknownSamples.map((item) => item.statusCode).join(",")}`
+        `unknownStatuses=${unknownSamples.map((item) => item.statusCode).join(",")}`,
+        ...knownMarkers,
+        ...unknownMarkers
       ].join("\n"),
       technique: "authentication user-enumeration timing oracle probe"
     });
@@ -135,7 +154,7 @@ function average(values) {
       summary: "The login endpoint returned an authentication success signal for password=password.",
       severity: "high",
       confidence: 0.88,
-      evidence: `status=${weakPasswordAttempt.statusCode}\nbody=${weakPasswordAttempt.body.slice(0, 400)}`,
+      evidence: `URL: ${loginUrl}\nStatus: ${weakPasswordAttempt.statusCode}\nSnippet: ${String(weakPasswordAttempt.body).slice(0, 400)}`,
       technique: "authentication weak password policy probe"
     });
   }

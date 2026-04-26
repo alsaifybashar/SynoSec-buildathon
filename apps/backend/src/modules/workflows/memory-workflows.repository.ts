@@ -16,6 +16,23 @@ import type { TargetsRepository } from "@/modules/targets/index.js";
 import type { WorkflowRunStatePatch, WorkflowsRepository } from "./workflows.repository.js";
 import { normalizeWorkflowStageContract } from "./workflow-stage-contract.js";
 
+function hasValidTerminalEvent(run: WorkflowRun) {
+  const terminalEvent = run.events.at(-1);
+  if (!terminalEvent) {
+    return false;
+  }
+
+  if (run.status === "completed") {
+    return terminalEvent.type === "run_completed";
+  }
+
+  if (run.status === "failed") {
+    return terminalEvent.type === "run_failed";
+  }
+
+  return true;
+}
+
 function compareStartedAtDescending(left: { startedAt: string }, right: { startedAt: string }) {
   return Date.parse(right.startedAt) - Date.parse(left.startedAt);
 }
@@ -269,6 +286,9 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     if (!current) {
       throw new RequestError(404, "Workflow run not found.");
     }
+    if (event.ord !== current.events.length) {
+      throw new RequestError(500, `Workflow trace event ord ${event.ord} is out of sequence for run ${runId}.`);
+    }
 
     const updated: WorkflowRun = {
       ...current,
@@ -356,6 +376,15 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     }
 
     if (statuses.some((status) => status === "running" || status === "pending")) {
+      launch.status = "running";
+      launch.completedAt = null;
+      return;
+    }
+
+    const hydratedRuns = launch.runs
+      .map((entry) => this.runs.get(entry.runId))
+      .filter((candidate): candidate is WorkflowRun => Boolean(candidate));
+    if (hydratedRuns.some((candidate) => !hasValidTerminalEvent(candidate))) {
       launch.status = "running";
       launch.completedAt = null;
       return;

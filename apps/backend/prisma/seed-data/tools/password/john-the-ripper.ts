@@ -19,9 +19,14 @@ export const johntheRipperTool = {
   inputSchema: {
     type: "object",
     properties: {
-      target: { type: "string" },
-      baseUrl: { type: "string" }
-    }
+      hash: { type: "string" },
+      hashes: {
+        type: "array",
+        items: { type: "string" }
+      },
+      hashType: { type: "string" }
+    },
+    required: ["hash"]
   },
   outputSchema: {
     type: "object",

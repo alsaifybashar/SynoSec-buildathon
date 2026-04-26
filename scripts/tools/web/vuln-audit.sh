@@ -46,7 +46,7 @@ function request(targetUrl, options = {}) {
       summary: "/admin was reachable without authentication and exposed administrative content.",
       severity: "high",
       confidence: 0.96,
-      evidence: `URL: ${admin.url}\nStatus: ${admin.statusCode}\nSnippet: ${admin.body.slice(0, 240)}`,
+      evidence: `URL: ${admin.url}\nStatus: ${admin.statusCode}\nSnippet: ${admin.body.slice(0, 320)}`,
       technique: "seeded vulnerability audit"
     });
   }
@@ -57,31 +57,20 @@ function request(targetUrl, options = {}) {
       summary: "/api/users returned sensitive records including credential or PII fields.",
       severity: "high",
       confidence: 0.95,
-      evidence: `URL: ${users.url}\nStatus: ${users.statusCode}\nSnippet: ${users.body.slice(0, 240)}`,
+      evidence: `URL: ${users.url}\nStatus: ${users.statusCode}\nSnippet: ${users.body.slice(0, 320)}`,
       technique: "seeded vulnerability audit"
     });
   }
-  if (files.statusCode === 200 && /Index of \/files|id_rsa|\.env/i.test(files.body)) {
+  if (files.statusCode === 200 && /Index of \/files|id_rsa|\.env|backup_.*\.sql|passwords\.txt/i.test(files.body)) {
+    const exposedNames = ["backup_2019.sql", "passwords.txt", "db_config.php", "id_rsa", ".env.production"]
+      .filter((name) => files.body.includes(name));
     findings.push({
       key: "audit:/files",
-      title: "Directory listing exposes sensitive filenames",
-      summary: "/files returned an index containing backup or secret-bearing filenames.",
-      severity: "medium",
-      confidence: 0.9,
-      evidence: `URL: ${files.url}\nStatus: ${files.statusCode}\nSnippet: ${files.body.slice(0, 240)}`,
-      technique: "seeded vulnerability audit"
-    });
-  }
-  const headerNames = Object.keys(root.headers).map((header) => header.toLowerCase());
-  const missing = ["content-security-policy", "x-frame-options", "x-content-type-options"].filter((header) => !headerNames.includes(header));
-  if (missing.length > 0) {
-    findings.push({
-      key: "audit:headers",
-      title: "Security headers are missing from the application response",
-      summary: `The root response was missing: ${missing.join(", ")}.`,
-      severity: "medium",
-      confidence: 0.87,
-      evidence: `URL: ${root.url}\nStatus: ${root.statusCode}\nMissing: ${missing.join(", ")}`,
+      title: "Public file index exposes secret-bearing artifacts",
+      summary: "/files returned a public index containing backup, key, or environment filenames that are sensitive on their own.",
+      severity: "high",
+      confidence: 0.93,
+      evidence: `URL: ${files.url}\nStatus: ${files.statusCode}\nExposed names: ${exposedNames.join(", ")}\nSnippet: ${files.body.slice(0, 320)}`,
       technique: "seeded vulnerability audit"
     });
   }

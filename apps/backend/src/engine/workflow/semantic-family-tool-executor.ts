@@ -21,6 +21,32 @@ export type SemanticFamilyExecutionContext = {
 
 function missingRequiredFields(requiredInputFields: readonly string[], toolInput: Record<string, string | number | boolean | string[]>) {
   return requiredInputFields.filter((field) => {
+    if (field === "hash") {
+      const singleHash = toolInput[field];
+      const multipleHashes = toolInput["hashes"];
+      if (typeof singleHash === "string" && singleHash.trim().length > 0) {
+        return false;
+      }
+      if (Array.isArray(multipleHashes) && multipleHashes.some((entry) => entry.trim().length > 0)) {
+        return false;
+      }
+      return true;
+    }
+
+    if (field === "baseUrl") {
+      const explicitUrl = ["baseUrl", "url", "startUrl", "loginUrl"]
+        .map((key) => toolInput[key])
+        .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+      if (explicitUrl) {
+        return false;
+      }
+
+      const candidateTarget = toolInput["target"];
+      if (typeof candidateTarget === "string" && /^https?:\/\//.test(candidateTarget)) {
+        return false;
+      }
+    }
+
     const value = toolInput[field];
     if (value == null) {
       return true;
@@ -171,6 +197,8 @@ export async function executeSemanticFamilyTool(
           ?? `${context.familyTool.name} completed.`
       ),
       fullOutput: toolRun.output ?? toolRun.statusReason ?? "",
+      commandPreview: toolRun.commandPreview,
+      ...(toolRun.exitCode === undefined ? {} : { exitCode: toolRun.exitCode }),
       usedToolId: resolvedCandidate.tool.id,
       usedToolName: resolvedCandidate.tool.name,
       fallbackUsed: attempts.length > 0,

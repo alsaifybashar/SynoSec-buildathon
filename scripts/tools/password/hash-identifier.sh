@@ -2,22 +2,44 @@
 set -euo pipefail
 
 payload="$(cat)"
+SEED_PAYLOAD="$payload" node <<'NODE'
+const payload = JSON.parse(process.env.SEED_PAYLOAD || "{}");
+const toolInput = payload?.request?.parameters?.toolInput ?? {};
+const hashes = Array.isArray(toolInput.hashes)
+  ? toolInput.hashes.filter((value) => typeof value === "string" && value.trim().length > 0)
+  : [];
+const hashValue = typeof toolInput.hash === "string" && toolInput.hash.trim().length > 0
+  ? toolInput.hash
+  : hashes[0] || "";
 
-if ! command -v hash-identifier >/dev/null 2>&1; then
-  printf '%s\n' '{"output":"Hash-Identifier could not run because hash-identifier is not installed.","statusReason":"Missing required binary: hash-identifier"}'
-  exit 127
-fi
+if (!hashValue) {
+  console.log(JSON.stringify({
+    output: "Hash-Identifier requires hash material via hash or hashes.",
+    statusReason: "Missing required hash material"
+  }));
+  process.exit(64);
+}
 
-target="$(printf '%s' "$payload" | node -e 'let input="";process.stdin.on("data",(chunk)=>input+=chunk);process.stdin.on("end",()=>{const parsed=JSON.parse(input||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};process.stdout.write(String(toolInput.baseUrl || toolInput.target || parsed?.request?.target || "localhost"));});')"
+const normalized = hashValue.trim().toLowerCase();
+const detected = /^[a-f0-9]{32}$/.test(normalized)
+  ? { name: "MD5", key: "md5", confidence: 0.98 }
+  : /^[a-f0-9]{40}$/.test(normalized)
+    ? { name: "SHA1", key: "sha1", confidence: 0.94 }
+    : /^[a-f0-9]{64}$/.test(normalized)
+      ? { name: "SHA256", key: "sha256", confidence: 0.94 }
+      : null;
 
-if ! output="$(hash-identifier  "$target" 2>&1)"; then
-  escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-  printf '{"output":%s,"statusReason":"Hash-Identifier failed","commandPreview":"hash-identifier  %s"}\n' "$escaped_output" "$target"
-  exit 64
-fi
-
-summary="Hash-Identifier completed assessment against $target."
-escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-escaped_summary="$(node -p "JSON.stringify(process.argv[1])" "$summary")"
-escaped_evidence="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-printf '{"output":%s,"observations":[{"key":"hash-identifier:%s","title":"Hash-Identifier completed","summary":%s,"severity":"info","confidence":0.7,"evidence":%s,"technique":"Hash-Identifier assessment"}],"commandPreview":"hash-identifier  %s"}\n' "$escaped_output" "$target" "$escaped_summary" "$escaped_evidence" "$target"
+console.log(JSON.stringify({
+  output: detected ? detected.name : "Unknown hash format",
+  observations: detected ? [{
+    key: `hash-type:${detected.key}`,
+    title: `Identified hash format: ${detected.name}`,
+    summary: `The supplied hash matches the expected ${detected.name} length and alphabet.`,
+    severity: "info",
+    confidence: detected.confidence,
+    evidence: `Hash: ${hashValue}`,
+    technique: "seeded hash format identification"
+  }] : [],
+  commandPreview: `seed-hash-identifier hash=${hashValue}`
+}));
+NODE

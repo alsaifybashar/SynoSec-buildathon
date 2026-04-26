@@ -2,22 +2,75 @@
 set -euo pipefail
 
 payload="$(cat)"
+SEED_PAYLOAD="$payload" node <<'NODE'
+const http = require("node:http");
+const https = require("node:https");
 
-if ! command -v paramspider >/dev/null 2>&1; then
-  printf '%s\n' '{"output":"ParamSpider could not run because paramspider is not installed.","statusReason":"Missing required binary: paramspider"}'
-  exit 127
-fi
+const payload = JSON.parse(process.env.SEED_PAYLOAD || "{}");
+const toolInput = payload?.request?.parameters?.toolInput ?? {};
+const targetUrl = String(
+  [toolInput.url, toolInput.baseUrl, toolInput.startUrl, toolInput.loginUrl]
+    .find((value) => typeof value === "string" && value.trim().length > 0)
+    || `http://${toolInput.target || payload?.request?.target || "localhost"}`
+);
+const candidateParams = Array.isArray(toolInput.parameters) && toolInput.parameters.length > 0
+  ? toolInput.parameters.filter((value) => typeof value === "string" && value.trim().length > 0)
+  : ["q", "query", "search", "id"];
 
-target="$(printf '%s' "$payload" | node -e 'let input="";process.stdin.on("data",(chunk)=>input+=chunk);process.stdin.on("end",()=>{const parsed=JSON.parse(input||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};process.stdout.write(String(toolInput.baseUrl || toolInput.target || parsed?.request?.target || "localhost"));});')"
+function request(urlString) {
+  return new Promise((resolve) => {
+    const url = new URL(urlString);
+    const transport = url.protocol === "https:" ? https : http;
+    const req = transport.request(url, { method: "GET", timeout: 2000 }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => {
+        if (body.length < 4096) {
+          body += chunk;
+        }
+      });
+      res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, body, url: url.toString() }));
+    });
+    req.on("timeout", () => req.destroy(new Error("request timed out")));
+    req.on("error", (error) => resolve({ statusCode: 0, body: error.message, url: url.toString() }));
+    req.end();
+  });
+}
 
-if ! output="$(paramspider -d "$target" 2>&1)"; then
-  escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-  printf '{"output":%s,"statusReason":"ParamSpider failed","commandPreview":"paramspider -d %s"}\n' "$escaped_output" "$target"
-  exit 64
-fi
+(async () => {
+  const findings = [];
+  for (const parameter of candidateParams) {
+    const url = new URL(targetUrl);
+    const marker = `synosec-paramspider-${parameter}`;
+    url.searchParams.set(parameter, marker);
+    const result = await request(url.toString());
+    if (result.statusCode > 0 && result.body.includes(marker)) {
+      findings.push({
+        key: `parameter:${parameter}`,
+        title: `Likely parameter discovered: ${parameter}`,
+        summary: `${parameter} was reflected by ${new URL(result.url).pathname}.`,
+        severity: "info",
+        confidence: 0.82,
+        evidence: `URL: ${result.url}\nStatus: ${result.statusCode}\nMarker: ${marker}`,
+        technique: "seeded parameter reflection probe"
+      });
+    }
+  }
 
-summary="ParamSpider completed assessment against $target."
-escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-escaped_summary="$(node -p "JSON.stringify(process.argv[1])" "$summary")"
-escaped_evidence="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-printf '{"output":%s,"observations":[{"key":"paramspider:%s","title":"ParamSpider completed","summary":%s,"severity":"info","confidence":0.7,"evidence":%s,"technique":"ParamSpider assessment"}],"commandPreview":"paramspider -d %s"}\n' "$escaped_output" "$target" "$escaped_summary" "$escaped_evidence" "$target"
+  const output = findings.length > 0
+    ? findings.map((finding) => finding.key.replace("parameter:", "")).join("\n")
+    : `No likely parameters were confirmed at ${targetUrl}.`;
+
+  console.log(JSON.stringify({
+    output,
+    observations: findings,
+    commandPreview: `seed-paramspider url=${targetUrl}`
+  }));
+})().catch((error) => {
+  console.log(JSON.stringify({
+    output: `ParamSpider heuristic failed: ${error.message}`,
+    statusReason: error.message
+  }));
+  process.exit(1);
+});
+NODE

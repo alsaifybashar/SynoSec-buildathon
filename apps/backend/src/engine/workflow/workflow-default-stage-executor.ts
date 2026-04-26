@@ -10,7 +10,16 @@ import type { FixedAiRuntime } from "@/shared/config/fixed-ai-runtime.js";
 import { getSemanticFamilyDefinition } from "@/modules/ai-tools/index.js";
 import { ToolBroker } from "./broker/tool-broker.js";
 import { executeSemanticFamilyTool } from "./semantic-family-tool-executor.js";
-import { inferLayer, normalizeToolInput, parseExecutionTarget, truncate } from "./workflow-execution.utils.js";
+import {
+  attachEvidenceReferences,
+  enrichWorkflowFindingDetails,
+  inferLayer,
+  normalizeToolInput,
+  parseExecutionTarget,
+  truncate,
+  validateFindingEvidenceReferences,
+  verifyFindingEvidence
+} from "./workflow-execution.utils.js";
 import { createWorkflowReportedFinding } from "./workflow-finding-factory.js";
 import type {
   ExecutedToolResult,
@@ -35,6 +44,8 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     "Workflow execution contract:",
     "Use only the approved tools and built-in workflow actions exposed for this run.",
     "Report concrete evidence-backed findings with report_finding.",
+    "Do not report a finding unless the quote is traceable to a persisted tool result and contains concrete proof details.",
+    "Prefer at most four strong findings. Stop once the main compromise path is proven.",
     "End every run explicitly with complete_run."
   ].join("\n");
 
@@ -51,7 +62,6 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     const { agent, runtime, target, tools, excludedTools } = await this.preflight.loadStageDependencies(stage, targetRecord, constraintSet, workflow.executionKind);
 
     let currentRun = run;
-    let ord = currentRun.events.length;
     const appendEvent = async (
       type: WorkflowTraceEvent["type"],
       status: WorkflowTraceEvent["status"],
@@ -67,7 +77,19 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     ) => {
       currentRun = await this.writer.appendEvent(
         currentRun,
-        this.writer.createEvent(currentRun, workflow.id, stage.id, ord++, type, status, payload, title, summary, detail, options?.rawStreamPartType),
+        this.writer.createEvent(
+          currentRun,
+          workflow.id,
+          stage.id,
+          currentRun.events.length,
+          type,
+          status,
+          payload,
+          title,
+          summary,
+          detail,
+          options?.rawStreamPartType
+        ),
         patch,
         options?.liveModelOutput
       );
@@ -146,6 +168,8 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
                   ?? `${tool.name} ${toolRun.status}.`
               ),
               fullOutput: toolRun.output ?? toolRun.statusReason ?? "",
+              commandPreview: toolRun.commandPreview,
+              ...(toolRun.exitCode === undefined ? {} : { exitCode: toolRun.exitCode }),
               usedToolId: tool.id,
               usedToolName: tool.name,
               fallbackUsed: false,
@@ -210,6 +234,11 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       }];
     });
     const evidenceToolByName = new Map(evidenceToolEntries.map((entry) => [entry.exposedName, entry.tool] as const));
+    const toolCallsById = new Map<string, {
+      toolName: string;
+      toolId: string | null;
+    }>();
+    const persistedToolResultIds = new Set<string>();
 
     const toolContext = this.formatToolContextSections([
       {
@@ -313,6 +342,25 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       return liveModelOutput;
     };
 
+    const formatFindingResult = (rawOutput: unknown) => {
+      if (!rawOutput || typeof rawOutput !== "object" || Array.isArray(rawOutput)) {
+        return null;
+      }
+
+      const output = rawOutput as Record<string, unknown>;
+      const title = typeof output["title"] === "string" ? output["title"].trim() : "";
+      const host = typeof output["host"] === "string" ? output["host"].trim() : "";
+      const severity = typeof output["severity"] === "string" ? output["severity"].trim().toUpperCase() : "UNKNOWN";
+      if (!title || !host) {
+        return null;
+      }
+
+      return {
+        summary: `Recorded ${severity} finding: ${title} on ${host}.`,
+        detail: JSON.stringify(output, null, 2)
+      };
+    };
+
     const finalizeLiveModelOutput = () => {
       if (!liveModelOutput) {
         return null;
@@ -357,7 +405,15 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         description: "Persist one evidence-backed workflow finding.",
         inputSchema: workflowFindingSubmissionSchema,
         execute: async (rawInput) => {
-          const findingInput = workflowFindingSubmissionSchema.parse(rawInput);
+          const findingInput = attachEvidenceReferences(
+            workflowFindingSubmissionSchema.parse(rawInput),
+            executedResults
+          );
+          validateRelatedFindingSubmission(findingInput);
+          const referenceError = validateFindingEvidenceReferences(findingInput, executedResults);
+          if (referenceError) {
+            throw new RequestError(400, referenceError);
+          }
           for (const evidence of findingInput.evidence) {
             if (evidence.traceEventId && !hasTraceEvent(evidence.traceEventId)) {
               throw new RequestError(400, `Unknown trace event reference: ${evidence.traceEventId}`);
@@ -383,9 +439,31 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             }
           }
 
+          const enrichedDetails = enrichWorkflowFindingDetails({
+            title: findingInput.title,
+            target: findingInput.target,
+            evidence: findingInput.evidence,
+            reproduction: findingInput.reproduction
+          }, executedResults, target);
+          const verifiedInput = {
+            ...findingInput,
+            ...enrichedDetails
+          };
+          const verification = verifyFindingEvidence(verifiedInput, executedResults);
+          if (verification.validationStatus === "rejected") {
+            throw new RequestError(400, verification.reason);
+          }
+
           const finding: WorkflowReportedFinding = createWorkflowReportedFinding({
             runId: currentRun.id,
-            submission: findingInput
+            submission: {
+              ...verifiedInput,
+              validationStatus: verification.validationStatus,
+              confidence: verification.confidence,
+              confidenceReason: findingInput.confidenceReason
+                ? `${findingInput.confidenceReason} ${verification.reason}`.trim()
+                : verification.reason
+            }
           });
           reportedFindings.set(finding.id, finding);
           await appendEvent("finding_reported", "completed", {
@@ -414,6 +492,17 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             residualRisk: z.string().min(1),
             handoff: z.record(z.string(), z.unknown()).nullable().optional()
           }).parse(rawInput);
+          const completionDetail = [
+            `Agent summary: ${completion.summary}`,
+            `Recommended next step: ${completion.recommendedNextStep}`,
+            `Residual risk: ${completion.residualRisk}`
+          ].join("\n");
+          await appendEvent("verification", "completed", {
+            messageKind: "accept",
+            action: "complete_run",
+            summary: "The agent finished pen testing.",
+            detail: completionDetail
+          }, "Run completion accepted", "The agent finished pen testing.", completionDetail);
           terminalState = {
             status: "completed",
             summary: completion.summary,
@@ -450,14 +539,52 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         switch (part.type) {
           case "start":
             break;
-          case "start-step":
+          case "start-step": {
+            const requestBody = part.request?.body;
+            const messages = Array.isArray(requestBody?.messages) ? requestBody.messages : [];
+            for (const message of messages) {
+              const content = Array.isArray(message?.content) ? message.content : [];
+              for (const item of content) {
+                if (item?.type !== "tool_result" || typeof item?.tool_use_id !== "string" || persistedToolResultIds.has(item.tool_use_id)) {
+                  continue;
+                }
+                const toolCall = toolCallsById.get(item.tool_use_id);
+                if (!toolCall || toolCall.toolName === "log_progress") {
+                  continue;
+                }
+                const rawContent = typeof item.content === "string"
+                  ? item.content
+                  : JSON.stringify(item.content, null, 2);
+                await appendEvent("tool_result", item.is_error ? "failed" : "completed", {
+                  toolCallId: item.tool_use_id,
+                  toolName: toolCall.toolName,
+                  toolId: toolCall.toolId,
+                  output: item.content,
+                  summary: rawContent,
+                  outputPreview: rawContent,
+                  fullOutput: rawContent,
+                  commandPreview: null,
+                  exitCode: null,
+                  observations: [],
+                  observationRecords: [],
+                  usedToolId: null,
+                  usedToolName: null,
+                  fallbackUsed: false,
+                  attempts: []
+                }, `${toolCall.toolName} returned`, rawContent, rawContent, undefined, {
+                  rawStreamPartType: "tool-result"
+                });
+                persistedToolResultIds.add(item.tool_use_id);
+              }
+            }
             await appendEvent("system_message", "completed", {
-              request: part.request.body,
+              request: requestBody,
               warnings: part.warnings
             }, "Model step started", "Started a new model step.", null, undefined, {
               rawStreamPartType: part.type
             });
             break;
+          }
           case "text": {
             const nextLiveModelOutput = appendLiveText(part.text);
             await appendEvent("model_decision", "running", {
@@ -505,6 +632,10 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             if (part.toolName === "log_progress") {
               break;
             }
+            toolCallsById.set(part.toolCallId, {
+              toolName: part.toolName,
+              toolId: evidenceToolByName.get(part.toolName)?.id ?? null
+            });
             await appendEvent("tool_call", "running", {
               toolCallId: part.toolCallId,
               toolName: part.toolName,
@@ -523,24 +654,34 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               : null;
             const matchingResult = (toolRunId ? executedResults.find((candidate) => candidate.toolRun.id === toolRunId) : null)
               ?? executedResults.find((candidate) => candidate.toolName === part.toolName);
+            const findingResult = part.toolName === "report_finding" ? formatFindingResult(part.output) : null;
             const resultStatus = matchingResult?.status === "failed"
               ? "failed"
               : "completed";
+            const outputPreview = matchingResult?.outputPreview
+              ?? findingResult?.summary
+              ?? `${part.toolName} completed.`;
+            const fullOutput = matchingResult?.fullOutput
+              ?? findingResult?.detail
+              ?? null;
+            persistedToolResultIds.add(part.toolCallId);
             await appendEvent("tool_result", resultStatus, {
               toolCallId: part.toolCallId,
               toolName: part.toolName,
               toolId: matchingResult?.toolId ?? null,
               output: part.output,
-              summary: matchingResult?.outputPreview ?? `${part.toolName} completed.`,
-              outputPreview: matchingResult?.outputPreview ?? `${part.toolName} completed.`,
-              fullOutput: matchingResult?.fullOutput ?? null,
+              summary: outputPreview,
+              outputPreview,
+              fullOutput,
+              commandPreview: matchingResult?.commandPreview ?? null,
+              exitCode: matchingResult?.exitCode ?? null,
               observations: matchingResult?.observationSummaries ?? [],
               observationRecords: matchingResult?.observations ?? [],
               usedToolId: matchingResult?.usedToolId ?? null,
               usedToolName: matchingResult?.usedToolName ?? null,
               fallbackUsed: matchingResult?.fallbackUsed ?? false,
               attempts: matchingResult?.attempts ?? []
-            }, `${part.toolName} returned`, matchingResult?.outputPreview ?? `${part.toolName} completed.`, matchingResult?.fullOutput ?? null, undefined, {
+            }, `${part.toolName} returned`, outputPreview, fullOutput, undefined, {
               rawStreamPartType: part.type
             });
             break;
@@ -708,5 +849,36 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     });
 
     return scan;
+  }
+}
+
+function validateRelatedFindingSubmission(findingInput: z.infer<typeof workflowFindingSubmissionSchema>) {
+  const hasRelationshipIds = findingInput.derivedFromFindingIds.length > 0
+    || findingInput.relatedFindingIds.length > 0
+    || findingInput.enablesFindingIds.length > 0;
+  const hasChain = Boolean(findingInput.chain);
+  const participatesInPath = hasRelationshipIds || hasChain;
+  if (!participatesInPath) {
+    return;
+  }
+
+  if (!findingInput.explanationSummary?.trim()) {
+    throw new RequestError(400, "Path-linked findings must include explanationSummary.");
+  }
+
+  if (!findingInput.confidenceReason?.trim()) {
+    throw new RequestError(400, "Path-linked findings must include confidenceReason.");
+  }
+
+  if (hasRelationshipIds) {
+    const explanations = findingInput.relationshipExplanations;
+    const hasRelationshipExplanation = Boolean(
+      explanations?.derivedFrom?.trim()
+      || explanations?.relatedTo?.trim()
+      || explanations?.enables?.trim()
+    );
+    if (!hasRelationshipExplanation) {
+      throw new RequestError(400, "Path-linked findings must explain at least one reported relationship.");
+    }
   }
 }

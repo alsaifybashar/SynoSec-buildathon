@@ -24,7 +24,34 @@ describe("compileToolRequestFromDefinition", () => {
     expect(request.parameters["toolInput"]).toMatchObject({
       target: "http://localhost:8888/",
       port: 8888,
-      baseUrl: "http://localhost:8888"
+      baseUrl: "http://localhost:8888/"
+    });
+  });
+
+  it("uses explicit url input as the compiled baseUrl when baseUrl is absent", () => {
+    const request = compileToolRequestFromDefinition({
+      id: "seed-dalfox",
+      name: "Dalfox",
+      executorType: "bash",
+      bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
+      capabilities: ["xss"],
+      riskTier: "active",
+      timeoutMs: 30000
+    }, {
+      target: "localhost",
+      port: 8888,
+      layer: "L7",
+      justification: "test",
+      toolInput: {
+        url: "http://localhost:8888/search?q=1"
+      }
+    });
+
+    expect(request.parameters["toolInput"]).toMatchObject({
+      target: "localhost",
+      port: 8888,
+      url: "http://localhost:8888/search?q=1",
+      baseUrl: "http://localhost:8888/search?q=1"
     });
   });
 });

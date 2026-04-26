@@ -47,6 +47,7 @@ beforeAll(async () => {
             <a href="/admin">Admin</a>
             <a href="/api/users">Users</a>
             <a href="/files">Files</a>
+            <a href="/search">Search</a>
           </body>
         </html>
       `);
@@ -71,9 +72,23 @@ beforeAll(async () => {
       return;
     }
 
-    if (req.url === "/login" && req.method === "GET") {
+    if (req.url?.startsWith("/search") && req.method === "GET") {
+      const url = new URL(req.url, baseUrl || "http://127.0.0.1");
+      const q = url.searchParams.get("q") || "";
+      if (q.includes("'")) {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(`<html><body><p>query error near SELECT * FROM users: ${q}</p></body></html>`);
+        return;
+      }
+
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end("<html><body>login</body></html>");
+      res.end(`<html><body>search ${q}</body></html>`);
+      return;
+    }
+
+    if (req.url === "/login" && req.method === "GET") {
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("not found");
       return;
     }
 
@@ -203,8 +218,10 @@ describe("seeded bash tool implementations", () => {
     expect(result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "audit:/admin" }),
       expect.objectContaining({ key: "audit:/api/users" }),
-      expect.objectContaining({ key: "audit:/files" }),
-      expect.objectContaining({ key: "audit:headers" })
+      expect.objectContaining({
+        key: "audit:/files",
+        title: "Public file index exposes secret-bearing artifacts"
+      })
     ]));
   });
 
@@ -217,9 +234,183 @@ describe("seeded bash tool implementations", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.statusReason).toBeNull();
-    expect(result.output).toContain("Login endpoint appears injectable");
+    expect(result.output).toContain("/login appears injectable");
     expect(result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "sqli:/login" })
+    ]));
+  });
+
+  it("sql injection check respects an explicit path instead of pivoting to /login", async () => {
+    const tool = createSeededTool("seed-sql-injection-check");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      target: "127.0.0.1",
+      url: `${baseUrl}search`,
+      method: "GET",
+      parameters: ["q"]
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.output).toContain("/search?q=%27+OR+%271%27%3D%271 appears injectable");
+    expect(result.output).not.toContain("/login");
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "sqli:/search?q=%27+OR+%271%27%3D%271" })
+    ]));
+  });
+
+  it("auth flow probe derives /login from a non-login page and tolerates GET /login returning 404", async () => {
+    const tool = createSeededTool("seed-auth-flow-probe");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      target: "127.0.0.1",
+      url: `${baseUrl}admin`
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.output).toContain("Login flow did not rate-limit repeated failures");
+  });
+
+  it("parameter discovery identifies reflected search parameters without external binaries", async () => {
+    const tool = createSeededTool("seed-arjun");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      target: "127.0.0.1",
+      url: `${baseUrl}search`,
+      parameters: ["q", "query", "search"]
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.output).toContain("q");
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: "parameter:q",
+        title: "Likely parameter discovered: q"
+      })
+    ]));
+  });
+
+  it("paramspider identifies reflected search parameters without external binaries", async () => {
+    const tool = createSeededTool("seed-paramspider");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      target: "127.0.0.1",
+      url: `${baseUrl}search`,
+      parameters: ["q", "query", "search"]
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.output).toContain("q");
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: "parameter:q",
+        title: "Likely parameter discovered: q"
+      })
+    ]));
+  });
+
+  it("xss validation confirms reflected payloads without external binaries", async () => {
+    const tool = createSeededTool("seed-dalfox");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      target: "127.0.0.1",
+      url: `${baseUrl}search`,
+      parameters: ["q"]
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.output).toContain("reflected");
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: expect.stringContaining("xss:/search"),
+        title: expect.stringContaining("Reflected input")
+      })
+    ]));
+  });
+
+  it("hash identification classifies MD5 hashes without external binaries", async () => {
+    const tool = createSeededTool("seed-hash-identifier");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      hash: "5f4dcc3b5aa765d61d8327deb882cf99"
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.output).toContain("MD5");
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: "hash-type:md5",
+        title: "Identified hash format: MD5"
+      })
+    ]));
+  });
+
+  it("cipher identification classifies hex-like material without external binaries", async () => {
+    const tool = createSeededTool("seed-cipher-identifier");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      hash: "5f4dcc3b5aa765d61d8327deb882cf99"
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.output.toLowerCase()).toContain("hex");
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: "cipher-format:hex-like"
+      })
+    ]));
+  });
+
+  it("offline password cracking recovers known demo hashes without external binaries", async () => {
+    const tool = createSeededTool("seed-hashcat-crack");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      hash: "5f4dcc3b5aa765d61d8327deb882cf99",
+      hashType: "md5"
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.output).toContain("password");
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: "hashcat:cracked:md5",
+        title: "Offline password crack succeeded"
+      })
+    ]));
+  });
+
+  it("john the ripper recovers known demo hashes without external binaries", async () => {
+    const tool = createSeededTool("seed-john-the-ripper");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      hash: "5f4dcc3b5aa765d61d8327deb882cf99",
+      hashType: "md5"
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.output).toContain("password");
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: "john:cracked:md5",
+        title: "Offline password crack succeeded"
+      })
+    ]));
+  });
+
+  it("tls audit records plaintext HTTP endpoints instead of failing without evidence", async () => {
+    const tool = createSeededTool("seed-tls-audit");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      target: "127.0.0.1",
+      baseUrl
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.output).toContain("plaintext HTTP target");
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: expect.stringContaining("tls:127.0.0.1"),
+        title: expect.stringContaining("Plaintext HTTP endpoint")
+      })
     ]));
   });
 });

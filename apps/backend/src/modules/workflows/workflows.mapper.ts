@@ -1,4 +1,4 @@
-import { getWorkflowRunTokenUsage, type Workflow, type WorkflowLaunch, type WorkflowRun, type WorkflowTraceEvent } from "@synosec/contracts";
+import { getWorkflowRunTokenUsage, workflowTraceEventSchema, type Workflow, type WorkflowLaunch, type WorkflowRun, type WorkflowTraceEvent } from "@synosec/contracts";
 import type {
   WorkflowLaunch as WorkflowLaunchRow,
   Workflow as WorkflowRow,
@@ -7,15 +7,6 @@ import type {
   WorkflowTraceEvent as WorkflowTraceEventRow
 } from "@prisma/client";
 import { normalizeWorkflowStageContract } from "./workflow-stage-contract.js";
-
-function normalizeRequiredText(value: string | null, fallback: string) {
-  if (typeof value !== "string") {
-    return fallback;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : fallback;
-}
 
 function normalizeOptionalText(value: string | null) {
   if (typeof value !== "string") {
@@ -102,7 +93,7 @@ export function mapWorkflowRow(
 }
 
 export function mapWorkflowTraceEventRow(row: WorkflowTraceEventRow): WorkflowTraceEvent {
-  return {
+  return workflowTraceEventSchema.parse({
     id: row.id,
     workflowRunId: row.workflowRunId,
     workflowId: row.workflowId,
@@ -111,12 +102,12 @@ export function mapWorkflowTraceEventRow(row: WorkflowTraceEventRow): WorkflowTr
     ord: row.ord,
     type: row.type,
     status: row.status,
-    title: normalizeRequiredText(row.title, "Workflow event"),
-    summary: normalizeRequiredText(row.summary, "Workflow event"),
+    title: row.title,
+    summary: row.summary,
     detail: normalizeOptionalText(row.detail),
     payload: (row.payload ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt.toISOString()
-  };
+  });
 }
 
 export function mapWorkflowRunRow(

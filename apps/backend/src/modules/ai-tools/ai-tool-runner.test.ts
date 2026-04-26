@@ -70,6 +70,28 @@ describe("runAiTool", () => {
     expect(result.commandPreview).toContain("baseUrl=http://scanner.test:8080/path?q=1");
   });
 
+  it("derives the execution target from a URL-shaped target while preserving the exact path in tool input", async () => {
+    const tool = createTool({
+      bashSource: [
+        "#!/usr/bin/env bash",
+        "payload=\"$(cat)\"",
+        "printf '%s' \"$payload\" | node -e 'let input=\"\";process.stdin.on(\"data\",(chunk)=>input+=chunk);process.stdin.on(\"end\",()=>{const parsed=JSON.parse(input||\"{}\");const toolInput=parsed.request.parameters.toolInput;process.stdout.write(JSON.stringify({output:JSON.stringify({target:parsed.request.target,baseUrl:toolInput.baseUrl,url:toolInput.url})}));});'"
+      ].join("\n")
+    });
+
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      target: "http://scanner.test:8080/search?q=1"
+    });
+
+    expect(result.target).toBe("scanner.test");
+    expect(result.port).toBe(8080);
+    expect(result.output).toBe(JSON.stringify({
+      target: "scanner.test",
+      baseUrl: "http://scanner.test:8080/search?q=1"
+    }));
+    expect(result.commandPreview).toContain("baseUrl=http://scanner.test:8080/search?q=1");
+  });
+
   it("rejects tool runs that omit an execution target", async () => {
     const tool = createTool({
       inputSchema: {

@@ -26,6 +26,7 @@ vi.mock("ai", async (importOriginal) => {
 
 vi.mock("@/engine/scans/index.js", () => ({
   createScan: vi.fn(async () => undefined),
+  createAuditEntry: vi.fn(async () => undefined),
   getEnvironmentGraphForScan: vi.fn(async () => null),
   getScan: vi.fn(async () => null)
 }));
@@ -118,8 +119,10 @@ function createService(overrides: {
     }
   };
   const fixedRuntime = overrides.fixedRuntime ?? {
+    provider: "anthropic",
     providerName: "Anthropic",
-    model: "claude-sonnet-4-6",
+    model: "claude-haiku-4-5",
+    label: "Anthropic · claude-haiku-4-5",
     apiKey: "test-key"
   };
   const workflowRunStream = overrides.workflowRunStream ?? new WorkflowRunStream();
@@ -245,7 +248,7 @@ function createService(overrides: {
     toolRuntime: createToolRuntime(aiToolsRepository),
     workflowRunStream,
     executionReportsService: executionReportsService as any,
-    fixedAnthropicRuntime: fixedRuntime as any
+    fixedAiRuntime: fixedRuntime as any
   });
 
   return { service, createdRuns, createdLaunch, workflowRunStream, executionReportsService };
@@ -707,6 +710,10 @@ describe("WorkflowExecutionService", () => {
     expect(createdRuns[0]!.events.some((event) => event.type === "tool_call" && event.payload?.["toolName"] === "log_progress")).toBe(false);
     expect(createdRuns[0]!.events.some((event) => event.type === "tool_result" && event.payload?.["toolName"] === "log_progress")).toBe(false);
     expect(createdRuns[0]!.events.some((event) => event.type === "run_completed")).toBe(true);
+    expect(createdRuns[0]!.events.some((event) => event.title === "Run completion accepted" && event.summary === "The agent finished pen testing.")).toBe(true);
+    const closeoutEvent = createdRuns[0]!.events.find((event) => event.type === "run_completed");
+    expect(closeoutEvent?.detail).toContain("Recommended next step: Review the evidence.");
+    expect(closeoutEvent?.detail).toContain("Residual risk: Residual risk remains low.");
 
     const liveMessages = messages.filter((message) => message["type"] === "run_event" && message["liveModelOutput"]) as Array<{
       liveModelOutput: { text: string; reasoning: string | null; final: boolean };
@@ -718,6 +725,254 @@ describe("WorkflowExecutionService", () => {
       system: expect.any(String),
       prompt: "Proceed."
     }));
+  });
+
+  it("emits a dedicated report_finding tool result summary", async () => {
+    const workflow = makeWorkflow({
+      stages: [{
+        ...makeWorkflow().stages[0]!,
+        allowedToolIds: ["custom-http-proof"]
+      }]
+    });
+
+    streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<any> }> }) => ({
+      fullStream: (async function* () {
+        const toolOutput = await options.tools["custom-http-proof"].execute({
+          baseUrl: "http://localhost:3000/admin"
+        });
+        yield {
+          type: "tool-call",
+          toolCallId: "call-report-finding",
+          toolName: "report_finding",
+          input: {
+            type: "other",
+            title: "SQL Injection Authentication Bypass",
+            severity: "high",
+            confidence: 0.98,
+            target: { host: "demo.local" },
+            evidence: [{
+              sourceTool: "custom-http-proof",
+              quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
+              toolRunRef: toolOutput.toolRunId
+            }],
+            impact: "Authentication bypass is possible.",
+            recommendation: "Parameterize the query."
+          }
+        };
+        const output = await options.tools.report_finding.execute({
+          type: "other",
+          title: "SQL Injection Authentication Bypass",
+          severity: "high",
+          confidence: 0.98,
+          target: { host: "demo.local" },
+          evidence: [{
+            sourceTool: "custom-http-proof",
+            quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
+            toolRunRef: toolOutput.toolRunId
+          }],
+          impact: "Authentication bypass is possible.",
+          recommendation: "Parameterize the query."
+        });
+        yield {
+          type: "tool-result",
+          toolCallId: "call-report-finding",
+          toolName: "report_finding",
+          output
+        };
+        await options.tools.complete_run.execute({
+          summary: "Finding recorded.",
+          recommendedNextStep: "Review the SQLi evidence.",
+          residualRisk: "Residual risk remains high."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({
+      workflow,
+      aiToolById: {
+        "custom-http-proof": {
+          id: "custom-http-proof",
+          name: "Custom HTTP Proof",
+          status: "active",
+          source: "system",
+          description: "Return a deterministic proof snippet.",
+          executorType: "bash",
+          builtinActionKey: null,
+          bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"URL: http://localhost:3000/admin\\nStatus: 200\\nSnippet: Administrator Control Panel\",\"observations\":[{\"key\":\"http-proof:admin\",\"title\":\"Admin proof\",\"summary\":\"Admin panel responded with 200.\",\"severity\":\"high\",\"confidence\":0.96,\"evidence\":\"URL: http://localhost:3000/admin\\nStatus: 200\\nSnippet: Administrator Control Panel\",\"technique\":\"deterministic http proof\"}],\"commandPreview\":\"custom-http-proof http://localhost:3000/admin\"}'",
+          capabilities: ["http", "proof"],
+          category: "web",
+          riskTier: "passive",
+          timeoutMs: 30000,
+          constraintProfile: {
+            enforced: true,
+            targetKinds: ["host", "domain", "url"],
+            networkBehavior: "outbound-read",
+            mutationClass: "none",
+            supportsHostAllowlist: true,
+            supportsPathExclusions: true,
+            supportsRateLimit: false
+          },
+          inputSchema: {
+            type: "object",
+            properties: {
+              baseUrl: { type: "string" }
+            },
+            required: ["baseUrl"]
+          },
+          outputSchema: {
+            type: "object",
+            properties: {
+              output: { type: "string" }
+            },
+            required: ["output"]
+          },
+          createdAt: "2026-04-25T00:00:00.000Z",
+          updatedAt: "2026-04-25T00:00:00.000Z"
+        }
+      }
+    });
+    await service.startRun("10000000-0000-0000-0000-000000000001");
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    const toolResult = createdRuns[0]!.events.find((event) => event.type === "tool_result" && event.payload["toolName"] === "report_finding");
+    expect(toolResult?.summary).toBe("Recorded HIGH finding: SQL Injection Authentication Bypass on demo.local.");
+    expect(toolResult?.detail).toContain("\"title\": \"SQL Injection Authentication Bypass\"");
+    expect(toolResult?.detail).toContain("\"host\": \"demo.local\"");
+  });
+
+  it("persists failed tool results that only appear in the next model step transcript", async () => {
+    streamTextMock.mockImplementationOnce((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
+      fullStream: (async function* () {
+        yield {
+          type: "start-step",
+          request: {
+            body: {
+              messages: []
+            }
+          },
+          warnings: []
+        };
+        yield {
+          type: "tool-call",
+          toolCallId: "call-parameter-discovery",
+          toolName: "parameter_discovery",
+          input: {
+            target_url: "http://localhost:3000/"
+          }
+        };
+        yield {
+          type: "start-step",
+          request: {
+            body: {
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "tool_result",
+                      tool_use_id: "call-parameter-discovery",
+                      is_error: true,
+                      content: "Parameter Discovery failed across all seeded candidates. Arjun returned no usable evidence."
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          warnings: []
+        };
+        await options.tools.complete_run.execute({
+          summary: "Completed after recording the tool failure.",
+          recommendedNextStep: "Inspect the failed tool output.",
+          residualRisk: "Residual risk remains because parameter discovery failed."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const baseWorkflow = makeWorkflow();
+    const workflow = {
+      ...baseWorkflow,
+      stages: [
+        {
+          ...baseWorkflow.stages[0]!,
+          allowedToolIds: ["builtin-parameter-discovery"]
+        }
+      ]
+    };
+    const { service, createdRuns } = createService({
+      workflow,
+      aiToolById: {
+        "builtin-parameter-discovery": {
+          id: "builtin-parameter-discovery",
+          name: "Parameter Discovery",
+          status: "active",
+          source: "system",
+          description: "Discover likely parameters.",
+          builtinActionKey: "parameter_discovery",
+          category: "web",
+          riskTier: "active",
+          executorType: "builtin",
+          bashSource: null,
+          capabilities: ["semantic-family", "parameter-discovery"],
+          timeoutMs: 120000,
+          constraintProfile: {
+            enforced: true,
+            targetKinds: ["host", "domain", "url"],
+            networkBehavior: "outbound-read",
+            mutationClass: "content-enumeration",
+            supportsHostAllowlist: true,
+            supportsPathExclusions: true,
+            supportsRateLimit: true
+          },
+          inputSchema: {
+            type: "object",
+            properties: {
+              baseUrl: { type: "string" }
+            }
+          },
+          outputSchema: {
+            type: "object",
+            properties: {
+              output: { type: "string" }
+            },
+            required: ["output"]
+          },
+          createdAt: "2026-04-25T00:00:00.000Z",
+          updatedAt: "2026-04-25T00:00:00.000Z"
+        }
+      }
+    });
+
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    const failedResult = createdRuns[0]!.events.find((event) =>
+      event.type === "tool_result" && event.payload["toolCallId"] === "call-parameter-discovery"
+    );
+    expect(failedResult).toMatchObject({
+      status: "failed",
+      title: "parameter_discovery returned"
+    });
+    expect(failedResult?.summary).toContain("Parameter Discovery failed across all seeded candidates.");
+    expect(failedResult?.payload["toolId"]).toBe("builtin-parameter-discovery");
   });
 
   it("fails loudly when a persisted workflow prompt template contains an unsupported token", async () => {

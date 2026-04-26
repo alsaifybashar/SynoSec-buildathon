@@ -21,6 +21,7 @@ export type ExecutedToolResult = {
   observationSummaries: string[];
   outputPreview: string;
   fullOutput: string;
+  commandPreview: string;
   usedToolId: string;
   usedToolName: string;
   fallbackUsed: boolean;
@@ -33,6 +34,12 @@ export type ExecutedToolResult = {
     outputExcerpt: string;
     selected: boolean;
   }>;
+};
+
+type EvidenceMatch = {
+  evidenceIndex: number;
+  result: ExecutedToolResult | null;
+  quote: string;
 };
 
 type FindingDetailContext = {
@@ -129,7 +136,8 @@ export function parseExecutionTarget(
       const parsed = new URL(candidateUrl);
       return {
         target: parsed.hostname,
-        port: parsed.port ? Number(parsed.port) : fallbackTarget.port
+        port: parsed.port ? Number(parsed.port) : fallbackTarget.port,
+        url: parsed.toString()
       };
     } catch (error) {
       throw new RequestError(400, `Invalid execution URL: ${candidateUrl}.`, {
@@ -142,6 +150,23 @@ export function parseExecutionTarget(
 
   const candidateTarget = toolInput["target"];
   if (typeof candidateTarget === "string" && candidateTarget.length > 0) {
+    if (/^https?:\/\//.test(candidateTarget)) {
+      try {
+        const parsed = new URL(candidateTarget);
+        return {
+          target: parsed.hostname,
+          port: parsed.port ? Number(parsed.port) : fallbackTarget.port,
+          url: parsed.toString()
+        };
+      } catch (error) {
+        throw new RequestError(400, `Invalid execution URL: ${candidateTarget}.`, {
+          code: "WORKFLOW_TOOL_TARGET_INVALID",
+          userFriendlyMessage: "The workflow tool target URL is invalid.",
+          cause: error
+        });
+      }
+    }
+
     if (candidateTarget.startsWith("/")) {
       return {
         target: fallbackTarget.host,
@@ -188,56 +213,78 @@ export function verifyFindingEvidence(
     return { validationStatus: "unverified", confidence: finding.confidence * 0.5, reason: "No evidence provided." };
   }
 
-  const indicators = {
-    ip: /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/,
-    httpStatus: /\b[1-5]\d{2}\b/,
-    header: /\b[A-Za-z0-9-]+:\s/,
-    sql: /\b(SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|UNION|JOIN|INTO)\b/i,
-    port: /\b\d{1,5}\/(tcp|udp)\b/,
-    path: /\/[\w\.-]+\//
-  };
+  const matches = evidence.map((item, evidenceIndex) => ({
+    evidenceIndex,
+    result: resolveEvidenceResult(item, executedResults),
+    quote: item.quote.trim()
+  }));
 
-  let totalMatches = 0;
-  let groundedMatches = 0;
-
-  for (const item of evidence) {
-    const quote = item.quote.trim();
-    if (!quote) continue;
-
-    const hasIndicator = Object.values(indicators).some(regex => regex.test(quote));
-    if (hasIndicator) {
-      totalMatches++;
-      
-      // Cross-reference with tool output
-      const matchingTool = executedResults.find(r => r.toolName === item.sourceTool || r.toolId === item.sourceTool);
-      if (matchingTool && matchingTool.fullOutput.includes(quote)) {
-        groundedMatches++;
-      }
-    }
-  }
-
-  if (groundedMatches > 0) {
-    const status: SecurityValidationStatus = groundedMatches === evidence.length ? "single_source" : "suspected";
+  const ungrounded = matches.filter((match) => !match.result || !quoteAppearsInResult(match.quote, match.result));
+  if (ungrounded.length > 0) {
     return {
-      validationStatus: status,
-      confidence: status === "single_source" ? Math.max(finding.confidence, 0.8) : finding.confidence,
-      reason: `Evidence cross-referenced against ${groundedMatches} tool outputs.`
+      validationStatus: "rejected",
+      confidence: 0.1,
+      reason: `Evidence grounding failed for item ${ungrounded[0]!.evidenceIndex + 1}; the quote was not traceable to a persisted tool result.`
     };
   }
 
-  if (totalMatches > 0) {
+  const nonSpecific = matches.filter((match) => !isConcreteEvidenceQuote(match.quote));
+  if (nonSpecific.length > 0) {
     return {
       validationStatus: "suspected",
-      confidence: finding.confidence * 0.7,
-      reason: "Evidence contains technical indicators but could not be cross-referenced against tool output."
+      confidence: Math.min(finding.confidence, 0.74),
+      reason: `Evidence item ${nonSpecific[0]!.evidenceIndex + 1} was grounded but not specific enough to prove the claim on its own.`
     };
   }
 
   return {
-    validationStatus: "rejected",
-    confidence: 0.1,
-    reason: "Evidence appears to be pure speculation without technical indicators or tool grounding."
+    validationStatus: "single_source",
+    confidence: Math.max(finding.confidence, 0.8),
+    reason: `Evidence was grounded to ${matches.length} persisted tool result${matches.length === 1 ? "" : "s"} with concrete proof strings.`
   };
+}
+
+export function attachEvidenceReferences(
+  finding: WorkflowFindingSubmission,
+  executedResults: ExecutedToolResult[]
+): WorkflowFindingSubmission {
+  return {
+    ...finding,
+    evidence: finding.evidence.map((item) => {
+      if (item.toolRunRef || item.observationRef || item.artifactRef || item.traceEventId) {
+        return item;
+      }
+
+      const candidates = executedResults.filter((result) => result.toolName === item.sourceTool || result.toolId === item.sourceTool);
+      if (candidates.length !== 1) {
+        return item;
+      }
+
+      return {
+        ...item,
+        toolRunRef: candidates[0]!.toolRun.id
+      };
+    })
+  };
+}
+
+export function validateFindingEvidenceReferences(
+  finding: WorkflowFindingSubmission,
+  executedResults: ExecutedToolResult[]
+): string | null {
+  for (const [index, item] of finding.evidence.entries()) {
+    const hasPersistedReference = Boolean(item.toolRunRef || item.observationRef || item.artifactRef || item.traceEventId);
+    if (!hasPersistedReference) {
+      return `Evidence item ${index + 1} is missing a persisted evidence reference.`;
+    }
+
+    const result = resolveEvidenceResult(item, executedResults);
+    if (!result) {
+      return `Evidence item ${index + 1} does not map to an executed tool result.`;
+    }
+  }
+
+  return null;
 }
 
 export function enrichWorkflowFindingDetails(
@@ -384,4 +431,58 @@ function buildManualReproduction(
     ...(commandPreview ? { commandPreview } : {}),
     steps
   };
+}
+
+function resolveEvidenceResult(
+  item: WorkflowFindingSubmission["evidence"][number],
+  executedResults: ExecutedToolResult[]
+): ExecutedToolResult | null {
+  if (item.toolRunRef) {
+    return executedResults.find((result) => result.toolRun.id === item.toolRunRef) ?? null;
+  }
+
+  if (item.observationRef) {
+    return executedResults.find((result) => result.observationKeys.includes(item.observationRef!)) ?? null;
+  }
+
+  const candidates = executedResults.filter((result) => result.toolName === item.sourceTool || result.toolId === item.sourceTool);
+  return candidates.length === 1 ? candidates[0]! : null;
+}
+
+function quoteAppearsInResult(quote: string, result: ExecutedToolResult) {
+  if (!quote) {
+    return false;
+  }
+
+  const haystacks = [
+    result.fullOutput,
+    result.outputPreview,
+    result.commandPreview,
+    ...result.observations.map((observation) => observation.evidence),
+    ...result.observationSummaries
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  return haystacks.some((value) => value.includes(quote));
+}
+
+function isConcreteEvidenceQuote(quote: string) {
+  const trimmed = quote.trim();
+  if (trimmed.length < 12) {
+    return false;
+  }
+
+  const proofPatterns = [
+    /^URL:\s+\S+/im,
+    /^Status:\s+\d{3}/im,
+    /^Snippet:\s+\S+/im,
+    /^Payload:\s+\S+/im,
+    /^attempt\s+\d+:\s+status=\d{3}/im,
+    /^[a-z0-9-]+:\s+\S+/im,
+    /https?:\/\//i,
+    /\b(?:status|payload|query|token|secret|password|durationMs|timingDeltaMs|knownAvgMs|unknownAvgMs)=/i,
+    /\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+/,
+    /\b\d{3}\b/
+  ];
+
+  return proofPatterns.some((pattern) => pattern.test(trimmed));
 }

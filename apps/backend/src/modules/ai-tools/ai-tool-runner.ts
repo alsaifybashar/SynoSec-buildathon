@@ -55,7 +55,8 @@ function parseExecutionTarget(toolInput: Record<string, string | number | boolea
       const parsed = new URL(candidateUrl);
       return {
         target: parsed.hostname,
-        port: parsed.port ? Number(parsed.port) : undefined
+        port: parsed.port ? Number(parsed.port) : undefined,
+        url: parsed.toString()
       };
     } catch (error) {
       throw new RequestError(400, `Invalid execution URL: ${candidateUrl}.`, {
@@ -68,6 +69,23 @@ function parseExecutionTarget(toolInput: Record<string, string | number | boolea
 
   const candidateTarget = toolInput["target"];
   if (typeof candidateTarget === "string" && candidateTarget.length > 0) {
+    if (/^https?:\/\//.test(candidateTarget)) {
+      try {
+        const parsed = new URL(candidateTarget);
+        return {
+          target: parsed.hostname,
+          port: parsed.port ? Number(parsed.port) : undefined,
+          url: parsed.toString()
+        };
+      } catch (error) {
+        throw new RequestError(400, `Invalid execution URL: ${candidateTarget}.`, {
+          code: "AI_TOOL_TARGET_INVALID",
+          userFriendlyMessage: "The AI tool target URL is invalid.",
+          cause: error
+        });
+      }
+    }
+
     const normalizedTarget = candidateTarget.replace(/^https?:\/\//, "");
     const [host, rawPort] = normalizedTarget.split(":");
     return {
@@ -91,6 +109,16 @@ function parseExecutionTarget(toolInput: Record<string, string | number | boolea
     };
   }
 
+  if (
+    (typeof toolInput["hash"] === "string" && toolInput["hash"].length > 0)
+    || (Array.isArray(toolInput["hashes"]) && toolInput["hashes"].length > 0)
+  ) {
+    return {
+      target: "offline-artifact",
+      port: undefined
+    };
+  }
+
   throw new RequestError(400, "AI tool execution requires a target host or URL.", {
     code: "AI_TOOL_TARGET_MISSING",
     userFriendlyMessage: "The AI tool target host is required."
@@ -106,6 +134,32 @@ function validateRequiredFields(
     : [];
 
   const missing = requiredFields.filter((field) => {
+    if (field === "hash") {
+      const singleHash = toolInput[field];
+      const multipleHashes = toolInput["hashes"];
+      if (typeof singleHash === "string" && singleHash.trim().length > 0) {
+        return false;
+      }
+      if (Array.isArray(multipleHashes) && multipleHashes.some((entry) => entry.trim().length > 0)) {
+        return false;
+      }
+      return true;
+    }
+
+    if (field === "baseUrl") {
+      const explicitUrl = ["baseUrl", "url", "startUrl", "loginUrl"]
+        .map((key) => toolInput[key])
+        .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+      if (explicitUrl) {
+        return false;
+      }
+
+      const candidateTarget = toolInput["target"];
+      if (typeof candidateTarget === "string" && /^https?:\/\//.test(candidateTarget)) {
+        return false;
+      }
+    }
+
     if (!(field in toolInput)) {
       return true;
     }

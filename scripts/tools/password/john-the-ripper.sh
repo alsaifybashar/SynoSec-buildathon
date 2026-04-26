@@ -2,22 +2,64 @@
 set -euo pipefail
 
 payload="$(cat)"
+SEED_PAYLOAD="$payload" node <<'NODE'
+const crypto = require("node:crypto");
 
-if ! command -v john >/dev/null 2>&1; then
-  printf '%s\n' '{"output":"John the Ripper could not run because john is not installed.","statusReason":"Missing required binary: john"}'
-  exit 127
-fi
+const payload = JSON.parse(process.env.SEED_PAYLOAD || "{}");
+const toolInput = payload?.request?.parameters?.toolInput ?? {};
+const hashes = Array.isArray(toolInput.hashes)
+  ? toolInput.hashes.filter((value) => typeof value === "string" && value.trim().length > 0)
+  : [];
+const hashValue = typeof toolInput.hash === "string" && toolInput.hash.trim().length > 0
+  ? toolInput.hash.trim()
+  : hashes[0] || "";
+const hashType = String(toolInput.hashType || "").toLowerCase();
 
-target="$(printf '%s' "$payload" | node -e 'let input="";process.stdin.on("data",(chunk)=>input+=chunk);process.stdin.on("end",()=>{const parsed=JSON.parse(input||"{}");const toolInput=parsed?.request?.parameters?.toolInput??{};process.stdout.write(String(toolInput.baseUrl || toolInput.target || parsed?.request?.target || "localhost"));});')"
+if (!hashValue) {
+  console.log(JSON.stringify({
+    output: "John the Ripper requires hash material via hash or hashes.",
+    statusReason: "Missing required hash material"
+  }));
+  process.exit(64);
+}
 
-if ! output="$(john  "$target" 2>&1)"; then
-  escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-  printf '{"output":%s,"statusReason":"John the Ripper failed","commandPreview":"john  %s"}\n' "$escaped_output" "$target"
-  exit 64
-fi
+const candidates = ["password", "admin", "letmein", "changeme", "welcome", "123456", "qwerty", "test", "admin123"];
+const modeName = hashType || (/^[a-f0-9]{32}$/i.test(hashValue) ? "md5" : /^[a-f0-9]{40}$/i.test(hashValue) ? "sha1" : /^[a-f0-9]{64}$/i.test(hashValue) ? "sha256" : "");
+const digestAlgorithm = modeName === "md5" ? "md5" : modeName === "sha1" ? "sha1" : modeName === "sha256" ? "sha256" : null;
 
-summary="John the Ripper completed assessment against $target."
-escaped_output="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-escaped_summary="$(node -p "JSON.stringify(process.argv[1])" "$summary")"
-escaped_evidence="$(node -p "JSON.stringify(process.argv[1])" "$output")"
-printf '{"output":%s,"observations":[{"key":"john-the-ripper:%s","title":"John the Ripper completed","summary":%s,"severity":"info","confidence":0.7,"evidence":%s,"technique":"John the Ripper assessment"}],"commandPreview":"john  %s"}\n' "$escaped_output" "$target" "$escaped_summary" "$escaped_evidence" "$target"
+if (!digestAlgorithm) {
+  console.log(JSON.stringify({
+    output: `Unsupported or unknown hash type for ${hashValue}.`,
+    statusReason: "Unsupported hash type",
+    commandPreview: `seed-john-the-ripper hash=${hashValue}`
+  }));
+  process.exit(64);
+}
+
+const cracked = candidates.find((candidate) => crypto.createHash(digestAlgorithm).update(candidate).digest("hex") === hashValue.toLowerCase()) || null;
+const observations = cracked ? [{
+  key: `john:cracked:${modeName}`,
+  title: "Offline password crack succeeded",
+  summary: `Recovered plaintext for the supplied ${modeName.toUpperCase()} hash from the built-in demo wordlist.`,
+  severity: "high",
+  confidence: 0.95,
+  evidence: `Hash: ${hashValue}\nPlaintext: ${cracked}`,
+  technique: "seeded offline cracking"
+}] : [{
+  key: `john:attempted:${modeName}`,
+  title: "Offline password crack completed without a match",
+  summary: `Attempted offline cracking against the supplied ${modeName.toUpperCase()} hash, but the built-in demo wordlist found no match.`,
+  severity: "info",
+  confidence: 0.72,
+  evidence: `Hash: ${hashValue}\nWordlist size: ${candidates.length}`,
+  technique: "seeded offline cracking"
+}];
+
+console.log(JSON.stringify({
+  output: cracked
+    ? `Recovered ${modeName.toUpperCase()} hash ${hashValue} => ${cracked}`
+    : `No password recovered for ${hashValue}.`,
+  observations,
+  commandPreview: `seed-john-the-ripper hash=${hashValue} type=${modeName || "unknown"}`
+}));
+NODE
