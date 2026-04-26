@@ -12,8 +12,9 @@ function normalizeHost(value: string) {
   }
 }
 
-function nodeId(type: AssetNode["type"], host: string) {
-  return `${type}:${host}`.toLowerCase().replace(/[^a-z0-9:._/-]+/g, "-");
+function nodeId(scanId: string, type: AssetNode["type"], host: string) {
+  const normalizedHost = `${type}:${host}`.toLowerCase().replace(/[^a-z0-9:._/-]+/g, "-");
+  return `${scanId}:${normalizedHost}`;
 }
 
 export function buildEnvironmentGraphFromScope(scanId: string, scope: ScanScope, discoveredAt = new Date().toISOString()): EnvironmentGraph {
@@ -22,7 +23,7 @@ export function buildEnvironmentGraphFromScope(scanId: string, scope: ScanScope,
 
   const addNode = (type: AssetNode["type"], rawHost: string, metadata: Record<string, unknown> = {}) => {
     const host = normalizeHost(rawHost);
-    const id = nodeId(type, host);
+    const id = nodeId(scanId, type, host);
     const current = nodes.get(id);
     nodes.set(id, {
       id,
