@@ -277,6 +277,8 @@ model WorkflowStage {
   label                 String
   ord                   Int
   objective             String?
+  stageSystemPrompt     String?              @map("stage_system_prompt")
+  taskPromptTemplate    String?              @map("task_prompt_template")
   allowedToolIds        Json?                @map("allowed_tool_ids")
   requiredEvidenceTypes Json?                @map("required_evidence_types")
   findingPolicy         Json?                @map("finding_policy")

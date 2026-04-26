@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import type { AiAgent, AiTool, Target as WorkflowTarget, Workflow, WorkflowRun } from "@synosec/contracts";
 import { AlertTriangle, ChevronRight, LoaderCircle, Radio, Target } from "lucide-react";
 import { DetailHintTrigger } from "@/shared/components/detail-page";
@@ -192,6 +192,18 @@ const WORKFLOW_METADATA_HINTS = {
   updated: "Last time the workflow definition record changed."
 } as const;
 
+const PAGE_BOTTOM_THRESHOLD_PX = 24;
+
+function isWindowNearPageBottom() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const documentHeight = document.documentElement.scrollHeight;
+  const viewportBottom = window.scrollY + window.innerHeight;
+  return documentHeight - viewportBottom <= PAGE_BOTTOM_THRESHOLD_PX;
+}
+
 function compactDate(value: string | null | undefined) {
   if (!value) {
     return "Not started";
@@ -291,6 +303,10 @@ function createWorkflowBuiltinToolSegment(): StructuredToolSegment["tools"] {
           impact: { type: "string" },
           recommendation: { type: "string" },
           confidence: { type: "number" },
+          validationStatus: { type: "string" },
+          explanationSummary: { type: "string" },
+          confidenceReason: { type: "string" },
+          relationshipExplanations: { type: "object" },
           reproduction: {
             type: "object"
           },
@@ -447,7 +463,7 @@ function buildDuplexAtoms(input: {
         }
 
         if (detail.kind === "tool_result") {
-          const existingToolAtom = [...toolAtoms].reverse().find((atom) =>
+          const matchingToolAtoms = [...toolAtoms].filter((atom) =>
             atom.kind === "tool-call"
               && atom.status === undefined
               && (
@@ -455,13 +471,16 @@ function buildDuplexAtoms(input: {
                 || (!detail.toolCallId && atom.label === detail.toolName)
               )
           );
+          const existingToolAtom = matchingToolAtoms[matchingToolAtoms.length - 1];
 
           if (existingToolAtom) {
-            existingToolAtom.summaryText = detail.summary;
-            existingToolAtom.body = detail.body ?? detail.summary;
-            existingToolAtom.observations = detail.observations;
-            existingToolAtom.status = detail.status;
-            existingToolAtom.meta = detail.status;
+            for (const atom of matchingToolAtoms) {
+              atom.summaryText = detail.summary;
+              atom.body = detail.body ?? detail.summary;
+              atom.observations = detail.observations;
+              atom.status = detail.status;
+              atom.meta = detail.status;
+            }
           } else {
             toolAtoms.push({
               key: detail.id,
@@ -1095,6 +1114,10 @@ export function WorkflowTraceSection({
   transcriptError?: string | null;
   streamError?: string | null;
 }) {
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const shouldFollowRef = useRef(false);
+  const hasMeasuredScrollStateRef = useRef(false);
+  const previousStreamEventCountRef = useRef<number | null>(null);
   const errorMessages = [latestRunError, transcriptError, streamError].filter((value): value is string => Boolean(value));
   const toolLookup = useMemo(() => getToolLookup(tools), [tools]);
   const derivedTranscript = useMemo<TranscriptProjection>(() => {
@@ -1159,6 +1182,63 @@ export function WorkflowTraceSection({
     () => atoms.slice().reverse().find((atom) => atom.kind === "tool-call" && !atom.status) ?? null,
     [atoms]
   );
+  const streamEventCount = run?.events.length ?? 0;
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const updateFollowState = () => {
+      shouldFollowRef.current = isWindowNearPageBottom();
+      hasMeasuredScrollStateRef.current = true;
+    };
+
+    updateFollowState();
+    window.addEventListener("scroll", updateFollowState, { passive: true });
+    window.addEventListener("resize", updateFollowState);
+
+    return () => {
+      window.removeEventListener("scroll", updateFollowState);
+      window.removeEventListener("resize", updateFollowState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (run?.status !== "running") {
+      previousStreamEventCountRef.current = null;
+    }
+  }, [run?.status]);
+
+  useLayoutEffect(() => {
+    if (typeof window === "undefined" || run?.status !== "running") {
+      return;
+    }
+
+    const previousEventCount = previousStreamEventCountRef.current;
+    previousStreamEventCountRef.current = streamEventCount;
+
+    if (previousEventCount === null) {
+      return;
+    }
+
+    if (streamEventCount <= previousEventCount || !hasMeasuredScrollStateRef.current || !shouldFollowRef.current) {
+      return;
+    }
+
+    const transcriptBottom = transcriptRef.current?.getBoundingClientRect().bottom ?? document.documentElement.getBoundingClientRect().bottom;
+    const targetTop = window.scrollY + transcriptBottom - window.innerHeight + PAGE_BOTTOM_THRESHOLD_PX;
+
+    try {
+      window.scrollTo({
+        top: Math.max(0, targetTop),
+        behavior: "auto"
+      });
+    } catch {
+      return;
+    }
+    shouldFollowRef.current = true;
+  }, [run?.status, streamEventCount]);
 
   if (!workflow) {
     return null;
@@ -1168,7 +1248,7 @@ export function WorkflowTraceSection({
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.75fr)]">
       <div className="min-w-0">
         <div className="space-y-4">
-          <div className="relative min-h-[38rem]">
+          <div ref={transcriptRef} className="relative min-h-[38rem]">
             <div className="mx-auto w-full max-w-[56rem] px-6 py-8">
               <div className="space-y-5">
                 {atoms.map((atom) => (

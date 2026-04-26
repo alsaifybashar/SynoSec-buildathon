@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExecutionConstraint, Target, Workflow, WorkflowRun, WorkflowTraceEvent } from "@synosec/contracts";
+import {
+  defaultWorkflowStageSystemPrompt,
+  defaultWorkflowTaskPromptTemplate,
+  type ExecutionConstraint,
+  type Target,
+  type Workflow,
+  type WorkflowRun,
+  type WorkflowTraceEvent
+} from "@synosec/contracts";
 import { createToolRuntime } from "@/modules/ai-tools/tool-runtime.js";
 import { WorkflowExecutionService } from "./workflow-execution.service.js";
 import { WorkflowRunStream } from "./workflow-run-stream.js";
@@ -29,6 +37,8 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
     agentId: "30000000-0000-0000-0000-000000000001",
     ord: 0,
     objective: "Collect evidence and stop through system tools.",
+    stageSystemPrompt: defaultWorkflowStageSystemPrompt,
+    taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
     allowedToolIds: [],
     requiredEvidenceTypes: [],
     findingPolicy: { taxonomy: "typed-core-v1" as const, allowedTypes: ["other" as const] },
@@ -51,6 +61,8 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
     targetId: "20000000-0000-0000-0000-000000000001",
     agentId: stage.agentId,
     objective: stage.objective,
+    stageSystemPrompt: stage.stageSystemPrompt,
+    taskPromptTemplate: stage.taskPromptTemplate,
     allowedToolIds: stage.allowedToolIds,
     requiredEvidenceTypes: stage.requiredEvidenceTypes,
     findingPolicy: stage.findingPolicy,
@@ -650,6 +662,133 @@ describe("WorkflowExecutionService", () => {
     expect(events.find((event) => event.type === "run_completed")?.summary).toContain("4 phases executed, 0 phases skipped");
   });
 
+  it("completes attack-map workflows when optional orchestrator transcript fields are missing", async () => {
+    const workflow = makeWorkflow({
+      executionKind: "attack-map",
+      name: "Attack Map Workflow",
+      stages: [{
+        ...makeWorkflow().stages[0]!,
+        allowedToolIds: ["tool-nuclei"]
+      }]
+    });
+
+    const { service, createdRuns } = createService({
+      workflow,
+      provider: {
+        id: "40000000-0000-0000-0000-000000000001",
+        name: "Local",
+        kind: "local",
+        status: "active",
+        description: null,
+        baseUrl: "http://localhost:11434",
+        model: "qwen",
+        apiKey: null,
+        apiKeyConfigured: false,
+        createdAt: "2026-04-24T10:00:00.000Z",
+        updatedAt: "2026-04-24T10:00:00.000Z"
+      },
+      orchestrator: {
+        runRecon: async () => ({
+          openPorts: [{ port: 443, protocol: "tcp", service: "https", version: "nginx" }],
+          technologies: ["nginx"],
+          httpHeaders: { Server: "nginx" },
+          serverInfo: { webServer: "nginx" },
+          interestingPaths: [],
+          probes: [],
+          rawNmap: "443/tcp open https nginx",
+          rawCurl: undefined
+        }),
+        createPlan: async () => ({
+          phases: [{
+            id: "phase-1",
+            name: "Initial Web Probe",
+            priority: "high" as const,
+            rationale: "HTTPS service discovered.",
+            targetService: "https",
+            tools: ["Nuclei"],
+            status: "pending" as const
+          }],
+          overallRisk: "medium" as const,
+          summary: "Initial plan."
+        }),
+        adaptAttackPlan: async (
+          _targetUrl: string,
+          plan: { phases: Array<Record<string, unknown>>; overallRisk: string; summary: string }
+        ) => plan,
+        executePhase: async () => ({
+          findings: [{
+            title: "Exposed admin surface",
+            severity: "high",
+            description: "Admin route is reachable without gating.",
+            vector: "/admin",
+            rawEvidence: undefined
+          }],
+          probeCommand: "nuclei -u https://localhost:3000",
+          probeOutput: undefined,
+          toolAttempts: [{
+            toolRunId: "tool-run-1",
+            toolName: "Nuclei",
+            output: undefined
+          }]
+        }),
+        deepDiveFinding: async () => [],
+        correlateAttackChains: async () => []
+      },
+      aiToolById: {
+        "tool-nuclei": {
+          id: "tool-nuclei",
+          name: "Nuclei",
+          status: "active",
+          source: "system",
+          description: "Template-driven web validation.",
+          builtinActionKey: null,
+          executorType: "bash",
+          bashSource: "nuclei -u {{baseUrl}}",
+          category: "web",
+          riskTier: "passive",
+          capabilities: ["semantic-family", "http-surface", "passive"],
+          timeoutMs: 60_000,
+          constraintProfile: {
+            enforced: true,
+            targetKinds: ["host", "domain", "url"],
+            networkBehavior: "outbound-read",
+            mutationClass: "none",
+            supportsHostAllowlist: true,
+            supportsPathExclusions: true,
+            supportsRateLimit: true
+          },
+          inputSchema: {
+            type: "object",
+            properties: {
+              baseUrl: { type: "string" }
+            },
+            required: ["baseUrl"]
+          },
+          outputSchema: {
+            type: "object",
+            properties: {
+              output: { type: "string" }
+            },
+            required: ["output"]
+          },
+          createdAt: "2026-04-24T10:00:00.000Z",
+          updatedAt: "2026-04-24T10:00:00.000Z"
+        }
+      }
+    });
+
+    await expect(service.startRun(workflow.id)).resolves.toMatchObject({
+      workflowId: workflow.id,
+      status: "running"
+    });
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    expect(createdRuns[0]!.events.some((event) => event.type === "run_completed")).toBe(true);
+  });
+
   it("executes workflow stages in order and stops when a later stage fails", async () => {
     streamTextMock
       .mockImplementationOnce((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
@@ -779,6 +918,11 @@ describe("WorkflowExecutionService", () => {
     expect(toolContextBody).toContain("Built-in actions");
     expect(toolContextBody).toContain("complete_run: Submit the current workflow stage result.");
 
+    const systemPromptEvent = createdRuns[0]!.events.find((event) => event.title === "Rendered system prompt");
+    expect(systemPromptEvent?.detail).toContain("Workflow-owned editable prompt.");
+    expect(systemPromptEvent?.payload["promptSourceLabel"]).toBe("Workflow-owned editable system prompt plus runtime contract.");
+    expect(createdRuns[0]!.events.find((event) => event.title === "Rendered task prompt")).toBeUndefined();
+
     expect(createdRuns[0]!.events.some((event) => event.type === "tool_call" && event.payload?.["toolName"] === "log_progress")).toBe(false);
     expect(createdRuns[0]!.events.some((event) => event.type === "tool_result" && event.payload?.["toolName"] === "log_progress")).toBe(false);
     expect(createdRuns[0]!.events.some((event) => event.type === "run_completed")).toBe(true);
@@ -789,5 +933,33 @@ describe("WorkflowExecutionService", () => {
     expect(liveMessages.some((message) => message.liveModelOutput.text === "Hello world")).toBe(true);
     expect(liveMessages.some((message) => message.liveModelOutput.reasoning === "Think carefully")).toBe(true);
     expect(liveMessages.some((message) => message.liveModelOutput.final)).toBe(true);
+    expect(streamTextMock).toHaveBeenCalledWith(expect.objectContaining({
+      system: expect.any(String),
+      prompt: ""
+    }));
+  });
+
+  it("fails loudly when a persisted workflow prompt template contains an unsupported token", async () => {
+    const baseWorkflow = makeWorkflow();
+    const invalidStage = {
+      ...baseWorkflow.stages[0]!,
+      stageSystemPrompt: "Unsupported token {{target.baseUrl}}"
+    };
+    const workflow = {
+      ...baseWorkflow,
+      stageSystemPrompt: invalidStage.stageSystemPrompt,
+      stages: [invalidStage]
+    };
+    const { service, createdRuns } = createService({ workflow });
+
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("failed");
+    });
+
+    expect(createdRuns[0]!.events.some((event) => event.type === "run_failed")).toBe(true);
+    const failureEvent = createdRuns[0]!.events.find((event) => event.type === "run_failed");
+    expect(failureEvent?.summary ?? failureEvent?.detail).toContain("Unsupported workflow prompt token");
   });
 });

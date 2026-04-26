@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Download, ExternalLink, Pencil, Workflow as WorkflowIcon } from "lucide-react";
 import { toast } from "sonner";
-import { apiRoutes, type AiAgent, type UpdateAiAgentBody, type UpdateWorkflowBody, type Workflow } from "@synosec/contracts";
+import { apiRoutes, defaultWorkflowTaskPromptTemplate, type AiAgent, type UpdateWorkflowBody, type Workflow } from "@synosec/contracts";
 import { workflowsResource } from "@/features/workflows/resource";
 import { workflowTransfer } from "@/features/workflows/transfer";
 import { useWorkflowDefinitionContext } from "@/features/workflows/context";
@@ -29,7 +29,9 @@ export function WorkflowDetailPage({
 }) {
   const [showFullDetails, setShowFullDetails] = useState(false);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
-  const [promptDraft, setPromptDraft] = useState<PromptEditDraft>({ objective: "", systemPrompt: "" });
+  const [promptDraft, setPromptDraft] = useState<PromptEditDraft>({
+    systemPrompt: ""
+  });
   const [promptSavePending, setPromptSavePending] = useState(false);
   const [promptSaveError, setPromptSaveError] = useState<string | null>(null);
   const [detailReloadToken, setDetailReloadToken] = useState(0);
@@ -99,39 +101,32 @@ export function WorkflowDetailPage({
   }
 
   function openPromptEditor() {
-    if (!workflow || !workflowAgent) {
+    if (!workflow) {
       return;
     }
 
     setPromptDraft({
-      objective: workflow.objective,
-      systemPrompt: workflowAgent.systemPrompt
+      systemPrompt: workflow.stageSystemPrompt
     });
     setPromptSaveError(null);
     setShowPromptEditor(true);
   }
 
   async function persistPromptEdits(runAfterSave: boolean) {
-    if (!workflow || !workflowAgent) {
+    if (!workflow) {
       return;
     }
 
-    const nextObjective = promptDraft.objective.trim();
     const nextSystemPrompt = promptDraft.systemPrompt.trim();
-
-    if (!nextObjective) {
-      setPromptSaveError("Workflow objective is required.");
-      return;
-    }
     if (!nextSystemPrompt) {
-      setPromptSaveError("Agent system prompt is required.");
+      setPromptSaveError("Workflow system prompt is required.");
       return;
     }
 
-    const workflowChanged = nextObjective !== workflow.objective;
-    const agentChanged = nextSystemPrompt !== workflowAgent.systemPrompt;
+    const workflowChanged =
+      nextSystemPrompt !== workflow.stageSystemPrompt;
 
-    if (!workflowChanged && !agentChanged) {
+    if (!workflowChanged) {
       setShowPromptEditor(false);
       setPromptSaveError(null);
       if (runAfterSave) {
@@ -144,29 +139,20 @@ export function WorkflowDetailPage({
     setPromptSaveError(null);
 
     let savedWorkflow = workflow;
-    let savedAgent = workflowAgent;
     let workflowSaved = false;
-    let agentSaved = false;
 
     try {
       if (workflowChanged) {
         savedWorkflow = await fetchJson<typeof workflow>(`${apiRoutes.workflows}/${workflow.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ objective: nextObjective } satisfies UpdateWorkflowBody)
+          body: JSON.stringify({
+            stageSystemPrompt: nextSystemPrompt,
+            taskPromptTemplate: defaultWorkflowTaskPromptTemplate
+          } satisfies UpdateWorkflowBody)
         });
         workflowSaved = true;
         setWorkflowOverride(savedWorkflow);
-      }
-
-      if (agentChanged) {
-        savedAgent = await fetchJson<AiAgent>(`${apiRoutes.aiAgents}/${workflowAgent.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ systemPrompt: nextSystemPrompt } satisfies UpdateAiAgentBody)
-        });
-        agentSaved = true;
-        setAgentOverride(savedAgent);
       }
 
       setDetailReloadToken((value) => value + 1);
@@ -177,18 +163,12 @@ export function WorkflowDetailPage({
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to save prompt edits.";
-      const partialMessage =
-        workflowSaved && !agentSaved
-          ? `Workflow prompt saved, but the linked agent update failed: ${message}`
-          : agentSaved && !workflowSaved
-            ? `Linked agent prompt saved, but the workflow update failed: ${message}`
-            : message;
+      const partialMessage = workflowSaved ? `Workflow prompt saved, but follow-up actions failed: ${message}` : message;
       setPromptSaveError(partialMessage);
       toast.error("Failed to save prompt edits", {
         description: partialMessage
       });
       setWorkflowOverride(savedWorkflow);
-      setAgentOverride(savedAgent);
     } finally {
       setPromptSavePending(false);
     }
@@ -234,7 +214,7 @@ export function WorkflowDetailPage({
               <WorkflowIcon className="h-4 w-4" />
               Start Run
             </Button>
-            <Button type="button" variant="outline" onClick={openPromptEditor} disabled={!workflowAgent}>
+            <Button type="button" variant="outline" onClick={openPromptEditor}>
               <Pencil className="h-4 w-4" />
               Edit Prompts
             </Button>

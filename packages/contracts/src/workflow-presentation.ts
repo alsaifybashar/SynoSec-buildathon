@@ -289,7 +289,9 @@ function mergePromptMessages(events: WorkflowTraceEvent[]): WorkflowTranscriptSy
         ?? getPayloadString(payload, "fullPrompt")
         ?? event.detail
         ?? "";
-      return `${label}\n\n${body}`.trimEnd();
+      const sourceLabel = getPayloadString(payload, "promptSourceLabel");
+      const decoratedBody = sourceLabel ? `${body}\n\nSource: ${sourceLabel}`.trimEnd() : body;
+      return `${label}\n\n${decoratedBody}`.trimEnd();
     })
     .filter((part) => part.trim().length > 0);
 

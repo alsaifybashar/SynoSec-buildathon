@@ -1,4 +1,11 @@
-import type { CreateWorkflowBody, ExecutionKind, Workflow, WorkflowStatus } from "@synosec/contracts";
+import {
+  defaultWorkflowStageSystemPrompt,
+  defaultWorkflowTaskPromptTemplate,
+  type CreateWorkflowBody,
+  type ExecutionKind,
+  type Workflow,
+  type WorkflowStatus
+} from "@synosec/contracts";
 
 export type WorkflowFormValues = {
   name: string;
@@ -7,7 +14,7 @@ export type WorkflowFormValues = {
   description: string;
   targetId: string;
   agentId: string;
-  objective: string;
+  systemPrompt: string;
   allowedToolIds: string[];
 };
 
@@ -19,7 +26,7 @@ export function createEmptyFormValues(defaultTargetId = "", defaultAgentId = "")
     description: "",
     targetId: defaultTargetId,
     agentId: defaultAgentId,
-    objective: "",
+    systemPrompt: defaultWorkflowStageSystemPrompt,
     allowedToolIds: []
   };
 }
@@ -32,7 +39,7 @@ export function toWorkflowFormValues(workflow: Workflow): WorkflowFormValues {
     description: workflow.description ?? "",
     targetId: workflow.targetId,
     agentId: workflow.agentId,
-    objective: workflow.objective,
+    systemPrompt: workflow.stageSystemPrompt,
     allowedToolIds: workflow.allowedToolIds
   };
 }
@@ -45,7 +52,9 @@ export function toWorkflowRequestBody(values: WorkflowFormValues): CreateWorkflo
     description: values.description.trim() || null,
     targetId: values.targetId,
     agentId: values.agentId,
-    objective: values.objective.trim() || "Run the configured workflow using the linked agent, allowed tools, and structured reporting.",
+    objective: "Run the configured workflow using the linked agent, allowed tools, and structured reporting.",
+    stageSystemPrompt: values.systemPrompt.trim(),
+    taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
     allowedToolIds: values.allowedToolIds,
     requiredEvidenceTypes: [],
     findingPolicy: {
@@ -85,8 +94,8 @@ export function validateWorkflowForm(values: WorkflowFormValues) {
   if (!values.agentId) {
     errors["agentId"] = "Agent is required.";
   }
-  if (!values.objective.trim()) {
-    errors["objective"] = "Objective is required.";
+  if (!values.systemPrompt.trim()) {
+    errors["systemPrompt"] = "System prompt is required.";
   }
 
   return errors;

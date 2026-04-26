@@ -1,7 +1,15 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiAgent, AiTool, Target, Workflow, WorkflowRun } from "@synosec/contracts";
+import {
+  defaultWorkflowStageSystemPrompt,
+  defaultWorkflowTaskPromptTemplate,
+  type AiAgent,
+  type AiTool,
+  type Target,
+  type Workflow,
+  type WorkflowRun
+} from "@synosec/contracts";
 import { WorkflowDetailPage } from "@/features/workflows/detail-page";
 import { WorkflowsPage } from "@/features/workflows/page";
 
@@ -86,6 +94,8 @@ const workflow: Workflow = {
   targetId: target.id,
   agentId: agent.id,
   objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
+  stageSystemPrompt: defaultWorkflowStageSystemPrompt,
+  taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
   allowedToolIds: [tool.id],
   requiredEvidenceTypes: [],
   findingPolicy: {
@@ -117,6 +127,8 @@ const workflow: Workflow = {
       agentId: agent.id,
       ord: 0,
       objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
+      stageSystemPrompt: defaultWorkflowStageSystemPrompt,
+      taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
       allowedToolIds: [tool.id],
       requiredEvidenceTypes: [],
       findingPolicy: {
@@ -407,7 +419,7 @@ describe("WorkflowDetailPage", () => {
     expect(eventSourceInstances[0]?.onmessage).toBeTypeOf("function");
   });
 
-  it("saves workflow and agent prompts from the modal before starting a run", async () => {
+  it("saves the workflow prompt from the modal before starting a run", async () => {
     const fetchMock = createFetchMock();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -417,29 +429,24 @@ describe("WorkflowDetailPage", () => {
 
     expect(await screen.findByRole("dialog", { name: "Edit Prompts" })).toBeInTheDocument();
     expect(screen.getByText("Workflow context")).toBeInTheDocument();
+    expect(screen.getByText("Completion contract")).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/Before the run stops, call complete_run/)).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Workflow objective"), {
-      target: { value: "Collect high-signal HTTP evidence and complete the workflow cleanly." }
-    });
-    fireEvent.change(screen.getByLabelText("Agent system prompt"), {
+    fireEvent.change(screen.getByLabelText("Workflow system prompt"), {
       target: { value: "Drive the workflow decisively and report evidence-backed findings." }
     });
     fireEvent.click(screen.getByRole("button", { name: "Save and Run" }));
 
     await waitFor(() => {
       expect(fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}` && init?.method === "PATCH")).toBeDefined();
-      expect(fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/ai-agents/${agent.id}` && init?.method === "PATCH")).toBeDefined();
       expect(fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST")).toBeDefined();
     });
 
     const workflowPatchCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}` && init?.method === "PATCH");
-    const agentPatchCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/ai-agents/${agent.id}` && init?.method === "PATCH");
 
     expect(JSON.parse(String(workflowPatchCall?.[1]?.body))).toEqual({
-      objective: "Collect high-signal HTTP evidence and complete the workflow cleanly."
-    });
-    expect(JSON.parse(String(agentPatchCall?.[1]?.body))).toEqual({
-      systemPrompt: "Drive the workflow decisively and report evidence-backed findings."
+      stageSystemPrompt: "Drive the workflow decisively and report evidence-backed findings.",
+      taskPromptTemplate: defaultWorkflowTaskPromptTemplate
     });
   });
 });
@@ -458,7 +465,7 @@ describe("WorkflowsPage", () => {
 
     expect(await screen.findByText("Workflow Configuration")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New Workflow" } });
-    fireEvent.change(screen.getByLabelText("Objective"), { target: { value: "Map the target using the configured workflow." } });
+    fireEvent.change(screen.getByLabelText("System prompt"), { target: { value: "Map the target using the configured workflow." } });
     fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0]!);
 
     const postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === "/api/workflows" && init?.method === "POST");
@@ -481,8 +488,8 @@ describe("WorkflowsPage", () => {
     expect(screen.getByRole("button", { name: "Show guidance for Execution kind" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show guidance for Target" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show guidance for Agent" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Show guidance for Objective" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Show guidance for Agent prompt" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for System prompt" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Linked agent" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show guidance for Allowed tools" })).toBeInTheDocument();
   });
 

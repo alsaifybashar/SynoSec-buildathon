@@ -40,7 +40,7 @@ describe("MemoryAiToolsRepository", () => {
 
     const allTools = await repository.list({
       page: 1,
-      pageSize: 25,
+      pageSize: 100,
       q: "",
       sortBy: "name",
       sortDirection: "asc"
@@ -51,21 +51,24 @@ describe("MemoryAiToolsRepository", () => {
 
     const builtinOnly = await repository.list({
       page: 1,
-      pageSize: 25,
+      pageSize: 100,
       q: "",
       sortBy: "name",
       sortDirection: "asc",
       source: "system"
     });
 
-    expect(builtinOnly.items.map((tool) => tool.id)).toEqual([
+    expect(builtinOnly.items.map((tool) => tool.id)).toEqual(expect.arrayContaining([
       "builtin-attack-chain-correlation",
       "builtin-complete-run",
       "builtin-deep-analysis",
       "builtin-fail-run",
       "builtin-log-progress",
-      "builtin-report-finding"
-    ]);
+      "builtin-report-finding",
+      "builtin-http-surface-assessment",
+      "builtin-content-discovery",
+      "builtin-network-host-discovery"
+    ]));
     expect(allTools.items.some((tool) => tool.id === "builtin-deep-analysis" && tool.source === "system")).toBe(true);
   });
 

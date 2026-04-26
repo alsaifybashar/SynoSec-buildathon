@@ -238,7 +238,39 @@ export const toolBuiltinActionKeySchema = z.enum([
   "complete_run",
   "fail_run",
   "deep_analysis",
-  "attack_chain_correlation"
+  "attack_chain_correlation",
+  "http_surface_assessment",
+  "web_crawl_mapping",
+  "content_discovery",
+  "parameter_discovery",
+  "web_vulnerability_audit",
+  "sql_injection_validation",
+  "xss_validation",
+  "wordpress_assessment",
+  "auth_flow_assessment",
+  "token_analysis",
+  "network_host_discovery",
+  "network_service_enumeration",
+  "tls_posture_audit",
+  "network_topology_mapping",
+  "subdomain_discovery",
+  "dns_enumeration",
+  "credential_format_identification",
+  "online_credential_attack",
+  "offline_password_cracking",
+  "windows_enumeration",
+  "windows_remote_access_validation",
+  "windows_poisoning_and_capture",
+  "controlled_exploitation",
+  "cloud_posture_audit",
+  "kubernetes_posture_audit",
+  "binary_triage",
+  "interactive_reverse_engineering",
+  "artifact_metadata_extraction",
+  "file_carving_and_bulk_extraction",
+  "memory_forensics",
+  "steganography_analysis",
+  "local_shell_probe"
 ]);
 export type ToolBuiltinActionKey = z.infer<typeof toolBuiltinActionKeySchema>;
 
@@ -517,6 +549,39 @@ export type WorkflowFindingTarget = z.infer<typeof workflowFindingTargetSchema>;
 export const workflowGraphRelationshipKindSchema = z.enum(["supports", "derived_from", "correlates_with", "enables"]);
 export type WorkflowGraphRelationshipKind = z.infer<typeof workflowGraphRelationshipKindSchema>;
 
+export const workflowFindingValidationStatusSchema = z.enum([
+  "unverified",
+  "suspected",
+  "single_source",
+  "cross_validated",
+  "reproduced",
+  "blocked",
+  "rejected"
+]);
+export type WorkflowFindingValidationStatus = z.infer<typeof workflowFindingValidationStatusSchema>;
+
+export const workflowFindingReproductionSchema = z.object({
+  commandPreview: z.string().min(1).optional(),
+  steps: z.array(z.string().min(1)).min(1)
+});
+export type WorkflowFindingReproduction = z.infer<typeof workflowFindingReproductionSchema>;
+
+export const workflowFindingChainSchema = z.object({
+  id: z.string().min(1).optional(),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  severity: z.enum(["info", "low", "medium", "high", "critical"]).optional()
+});
+export type WorkflowFindingChain = z.infer<typeof workflowFindingChainSchema>;
+
+export const workflowFindingRelationshipExplanationsSchema = z.object({
+  derivedFrom: z.string().min(1).max(240).optional(),
+  relatedTo: z.string().min(1).max(240).optional(),
+  enables: z.string().min(1).max(240).optional(),
+  chainRole: z.string().min(1).max(80).optional()
+});
+export type WorkflowFindingRelationshipExplanations = z.infer<typeof workflowFindingRelationshipExplanationsSchema>;
+
 export const workflowFindingSubmissionSchema = z.object({
   type: workflowFindingTypeSchema,
   title: z.string().min(1),
@@ -526,31 +591,18 @@ export const workflowFindingSubmissionSchema = z.object({
   evidence: z.array(workflowFindingEvidenceSchema).min(1),
   impact: z.string().min(1),
   recommendation: z.string().min(1),
-  validationStatus: z.enum([
-    "unverified",
-    "suspected",
-    "single_source",
-    "cross_validated",
-    "reproduced",
-    "blocked",
-    "rejected"
-  ]).default("unverified"),
+  validationStatus: workflowFindingValidationStatusSchema.default("unverified"),
   cwe: z.string().min(1).optional(),
   mitreId: z.string().min(1).optional(),
   owasp: z.string().min(1).optional(),
-  reproduction: z.object({
-    commandPreview: z.string().min(1).optional(),
-    steps: z.array(z.string().min(1)).min(1)
-  }).optional(),
+  reproduction: workflowFindingReproductionSchema.optional(),
   derivedFromFindingIds: z.array(z.string().uuid()).default([]),
   relatedFindingIds: z.array(z.string().uuid()).default([]),
   enablesFindingIds: z.array(z.string().uuid()).default([]),
-  chain: z.object({
-    id: z.string().min(1).optional(),
-    title: z.string().min(1),
-    summary: z.string().min(1),
-    severity: z.enum(["info", "low", "medium", "high", "critical"]).optional()
-  }).optional(),
+  chain: workflowFindingChainSchema.optional(),
+  explanationSummary: z.string().min(1).max(400).optional(),
+  confidenceReason: z.string().min(1).max(240).optional(),
+  relationshipExplanations: workflowFindingRelationshipExplanationsSchema.optional(),
   tags: z.array(z.string().min(1)).default([])
 });
 export type WorkflowFindingSubmission = z.infer<typeof workflowFindingSubmissionSchema>;
@@ -562,6 +614,23 @@ export const workflowReportedFindingSchema = workflowFindingSubmissionSchema.ext
   createdAt: z.string().datetime()
 });
 export type WorkflowReportedFinding = z.infer<typeof workflowReportedFindingSchema>;
+
+export const defaultWorkflowStageSystemPrompt = [
+  "You are executing the \"{{stage.label}}\" stage of the workflow \"{{workflow.name}}\".",
+  "",
+  "Target: {{target.name}}",
+  "Target URL: {{target.url}}",
+  "",
+  "Report concrete findings with report_finding.",
+  "Use complete_run to submit the current stage result or fail_run to stop with an explicit failure."
+].join("\n");
+
+export const defaultWorkflowTaskPromptTemplate = [
+  "Workflow: {{workflow.name}}",
+  "Stage: {{stage.label}}",
+  "Target: {{target.name}}",
+  "Target URL: {{target.url}}"
+].join("\n");
 
 const allWorkflowFindingTypes = workflowFindingTypeSchema.options;
 
@@ -604,6 +673,8 @@ export const workflowStageSchema = z.object({
   agentId: z.string().uuid(),
   ord: z.number().int().min(0),
   objective: z.string().min(1),
+  stageSystemPrompt: z.string().min(1),
+  taskPromptTemplate: z.string().min(1),
   allowedToolIds: z.array(z.string().min(1)).default([]),
   requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
   findingPolicy: workflowStageFindingPolicySchema.default({
@@ -630,6 +701,8 @@ export const workflowSchema = z.object({
   targetId: z.string().uuid(),
   agentId: z.string().uuid(),
   objective: z.string().min(1),
+  stageSystemPrompt: z.string().min(1),
+  taskPromptTemplate: z.string().min(1),
   allowedToolIds: z.array(z.string().min(1)).default([]),
   requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
   findingPolicy: workflowStageFindingPolicySchema.default({
@@ -665,6 +738,8 @@ const workflowStageBodySchema = z.object({
   label: z.string().trim().min(1),
   agentId: z.string().uuid(),
   objective: z.string().trim().min(1),
+  stageSystemPrompt: z.string().trim().min(1),
+  taskPromptTemplate: z.string().trim().min(1),
   allowedToolIds: z.array(z.string().min(1)).default([]),
   requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
   findingPolicy: workflowStageFindingPolicySchema.default({
@@ -690,6 +765,8 @@ const workflowBodyBaseSchema = z.object({
   targetId: z.string().uuid(),
   agentId: z.string().uuid(),
   objective: z.string().trim().min(1),
+  stageSystemPrompt: z.string().trim().min(1),
+  taskPromptTemplate: z.string().trim().min(1),
   allowedToolIds: z.array(z.string().min(1)).default([]),
   requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
   findingPolicy: workflowStageFindingPolicySchema.default({

@@ -7,10 +7,32 @@ import type {
 } from "@prisma/client";
 import { normalizeWorkflowStageContract } from "./workflow-stage-contract.js";
 
+function normalizeRequiredText(value: string | null, fallback: string) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+}
+
+function normalizeOptionalText(value: string | null) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function mapWorkflowStageRow(row: WorkflowStageRow) {
+  const persistedStageSystemPrompt = (row as WorkflowStageRow & { stageSystemPrompt?: string | null }).stageSystemPrompt;
+  const persistedTaskPromptTemplate = (row as WorkflowStageRow & { taskPromptTemplate?: string | null }).taskPromptTemplate;
   const contract = normalizeWorkflowStageContract({
     label: row.label,
     ...(row.objective ? { objective: row.objective } : {}),
+    ...(persistedStageSystemPrompt ? { stageSystemPrompt: persistedStageSystemPrompt } : {}),
+    ...(persistedTaskPromptTemplate ? { taskPromptTemplate: persistedTaskPromptTemplate } : {}),
     ...(Array.isArray(row.allowedToolIds) ? { allowedToolIds: row.allowedToolIds.map(String) } : {}),
     ...(Array.isArray(row.requiredEvidenceTypes) ? { requiredEvidenceTypes: row.requiredEvidenceTypes.map(String) } : {}),
     ...(row.findingPolicy && typeof row.findingPolicy === "object" && !Array.isArray(row.findingPolicy)
@@ -56,6 +78,8 @@ export function mapWorkflowRow(
     targetId: row.applicationId,
     agentId: primaryContract.agentId,
     objective: primaryContract.objective,
+    stageSystemPrompt: primaryContract.stageSystemPrompt,
+    taskPromptTemplate: primaryContract.taskPromptTemplate,
     allowedToolIds: primaryContract.allowedToolIds,
     requiredEvidenceTypes: primaryContract.requiredEvidenceTypes,
     findingPolicy: primaryContract.findingPolicy,
@@ -78,9 +102,9 @@ export function mapWorkflowTraceEventRow(row: WorkflowTraceEventRow): WorkflowTr
     ord: row.ord,
     type: row.type,
     status: row.status,
-    title: row.title,
-    summary: row.summary,
-    detail: row.detail,
+    title: normalizeRequiredText(row.title, "Workflow event"),
+    summary: normalizeRequiredText(row.summary, "Workflow event"),
+    detail: normalizeOptionalText(row.detail),
     payload: (row.payload ?? {}) as Record<string, unknown>,
     createdAt: row.createdAt.toISOString()
   };

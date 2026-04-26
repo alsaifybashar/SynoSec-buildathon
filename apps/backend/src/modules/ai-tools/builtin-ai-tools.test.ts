@@ -2,17 +2,24 @@ import { describe, expect, it } from "vitest";
 import { getBuiltinAiTool, getBuiltinAiTools } from "./builtin-ai-tools.js";
 
 describe("builtin ai tools", () => {
-  it("defines the system builtin tools for reporting and orchestrator analysis", () => {
+  it("defines the system builtin tools for reporting, orchestration, and semantic family execution", () => {
     const ids = getBuiltinAiTools().map((tool) => tool.id);
 
-    expect(ids).toEqual([
+    expect(ids).toEqual(expect.arrayContaining([
       "builtin-log-progress",
       "builtin-report-finding",
       "builtin-complete-run",
       "builtin-fail-run",
       "builtin-deep-analysis",
-      "builtin-attack-chain-correlation"
-    ]);
+      "builtin-attack-chain-correlation",
+      "builtin-http-surface-assessment",
+      "builtin-content-discovery",
+      "builtin-auth-flow-assessment",
+      "builtin-network-host-discovery",
+      "builtin-controlled-exploitation",
+      "builtin-cloud-posture-audit",
+      "builtin-memory-forensics"
+    ]));
     expect(getBuiltinAiTool("builtin-log-progress")).toMatchObject({
       source: "system",
       executorType: "builtin",
@@ -37,6 +44,11 @@ describe("builtin ai tools", () => {
       source: "system",
       executorType: "builtin",
       builtinActionKey: "deep_analysis"
+    });
+    expect(getBuiltinAiTool("builtin-http-surface-assessment")).toMatchObject({
+      source: "system",
+      executorType: "builtin",
+      builtinActionKey: "http_surface_assessment"
     });
   });
 });

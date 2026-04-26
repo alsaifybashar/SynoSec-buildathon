@@ -1,10 +1,11 @@
 import type { AiTool, AiToolsListQuery, ToolBuiltinActionKey } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
 import { paginateItems, type PaginatedResult } from "@/shared/pagination/paginated-result.js";
+import { getSemanticFamilyBuiltinAiTools } from "./semantic-family-tools.js";
 
 const builtinTimestamp = "2026-04-25T00:00:00.000Z";
 
-const builtinAiTools: AiTool[] = [
+const lifecycleBuiltinAiTools: AiTool[] = [
   {
     id: "builtin-log-progress",
     name: "Log Progress",
@@ -62,7 +63,13 @@ const builtinAiTools: AiTool[] = [
         derivedFromFindingIds: { type: "array" },
         relatedFindingIds: { type: "array" },
         enablesFindingIds: { type: "array" },
-        chain: { type: "object" }
+        chain: { type: "object" },
+        explanationSummary: { type: "string" },
+        confidenceReason: { type: "string" },
+        relationshipExplanations: { type: "object" },
+        validationStatus: { type: "string" },
+        reproduction: { type: "object" },
+        tags: { type: "array" }
       },
       required: ["type", "title", "severity", "confidence", "impact", "recommendation", "target", "evidence"]
     },
@@ -221,6 +228,11 @@ const builtinAiTools: AiTool[] = [
     createdAt: builtinTimestamp,
     updatedAt: builtinTimestamp
   }
+];
+
+const builtinAiTools: AiTool[] = [
+  ...lifecycleBuiltinAiTools,
+  ...getSemanticFamilyBuiltinAiTools()
 ];
 
 const builtinAiToolsById = new Map(builtinAiTools.map((tool) => [tool.id, tool]));

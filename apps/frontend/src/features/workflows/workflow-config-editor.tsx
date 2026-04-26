@@ -20,9 +20,8 @@ export const workflowExecutionKindLabels: Record<ExecutionKind, string> = {
 
 const workflowFieldHints = {
   executionKind: "Choose whether this run executes a standard workflow or produces an attack-map oriented output.",
-  agent: "The linked AI agent owns the base prompt, provider, and default tool grants used by this workflow.",
-  objective: "This is the mission brief sent with the run. It should tell the agent what outcome to achieve for the selected target.",
-  agentPrompt: "This prompt is inherited from the linked AI agent. Update it from the AI Agents page when the workflow needs different standing instructions.",
+  agent: "The linked AI agent provides the model, provider, and default tool grants used by this workflow.",
+  systemPrompt: "This workflow-owned system prompt is sent on every run and should contain the instructions specific to this workflow.",
   allowedTools: "Select a narrower tool set for this workflow. If nothing is selected, the workflow inherits every tool granted to the linked agent."
 } as const;
 
@@ -96,14 +95,25 @@ export function WorkflowConfigEditor({
             </SelectContent>
           </Select>
         </DetailField>
-        <DetailField label="Objective" required hint={workflowFieldHints.objective} className="md:col-span-2" {...definedFieldError(errors["objective"])}>
-          <Textarea value={formValues.objective} onChange={(event) => onFieldChange("objective", event.target.value)} aria-label="Objective" rows={4} />
+        <DetailField
+          label="System prompt"
+          required
+          hint={workflowFieldHints.systemPrompt}
+          className="md:col-span-2"
+          {...definedFieldError(errors["systemPrompt"])}
+        >
+          <Textarea
+            value={formValues.systemPrompt}
+            onChange={(event) => onFieldChange("systemPrompt", event.target.value)}
+            aria-label="System prompt"
+            rows={12}
+          />
         </DetailField>
-        <DetailField label="Agent prompt" hint={workflowFieldHints.agentPrompt} className="md:col-span-2">
+        <DetailField label="Linked agent" hint="The linked agent still controls the provider/model and default tool grants for the workflow." className="md:col-span-2">
           <div className="space-y-2 rounded-xl border border-border bg-background/40 p-4">
-            <p className="text-xs leading-6 text-foreground">{selectedAgent?.systemPrompt ?? "Select an agent to inspect its prompt."}</p>
+            <p className="text-xs leading-6 text-foreground">{selectedAgent?.name ?? "Select an agent to inspect its execution settings."}</p>
             <p className="text-xs text-muted-foreground">
-              Prompt and base tool grants are owned by the linked agent and edited from the AI Agents page.
+              Workflow runs no longer inherit prompt text from the agent.
             </p>
           </div>
         </DetailField>

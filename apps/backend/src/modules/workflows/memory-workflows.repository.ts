@@ -72,6 +72,8 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     const normalizedContract = normalizeWorkflowStageContract({
       label: "Pipeline",
       objective: input.objective,
+      stageSystemPrompt: input.stageSystemPrompt,
+      taskPromptTemplate: input.taskPromptTemplate,
       allowedToolIds: input.allowedToolIds
     });
     const workflow: Workflow = {
@@ -83,6 +85,8 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       targetId: input.targetId,
       agentId,
       objective: normalizedContract.objective,
+      stageSystemPrompt: normalizedContract.stageSystemPrompt,
+      taskPromptTemplate: normalizedContract.taskPromptTemplate,
       allowedToolIds: normalizedContract.allowedToolIds,
       requiredEvidenceTypes: [],
       findingPolicy: normalizedContract.findingPolicy,
@@ -118,6 +122,8 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     const nextStageContract = normalizeWorkflowStageContract({
       label: "Pipeline",
       objective: input.objective ?? current.objective,
+      stageSystemPrompt: input.stageSystemPrompt ?? current.stageSystemPrompt,
+      taskPromptTemplate: input.taskPromptTemplate ?? current.taskPromptTemplate,
       allowedToolIds: input.allowedToolIds ?? current.allowedToolIds
     });
 
@@ -130,6 +136,8 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       targetId: input.targetId ?? current.targetId,
       agentId: input.agentId ?? current.agentId,
       objective: nextStageContract.objective,
+      stageSystemPrompt: nextStageContract.stageSystemPrompt,
+      taskPromptTemplate: nextStageContract.taskPromptTemplate,
       allowedToolIds: nextStageContract.allowedToolIds,
       requiredEvidenceTypes: current.requiredEvidenceTypes ?? [],
       findingPolicy: current.findingPolicy ?? nextStageContract.findingPolicy,
@@ -163,8 +171,28 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     const updated: Workflow = {
       ...current,
       objective: current.objective,
+      stageSystemPrompt: current.stageSystemPrompt,
+      taskPromptTemplate: current.taskPromptTemplate,
       allowedToolIds: fallbackToolIdsByAgentId[current.agentId] ?? current.allowedToolIds,
-      stages: current.stages,
+      stages: current.stages.map((stage) => {
+        const contract = normalizeWorkflowStageContract({
+          label: stage.label,
+          objective: stage.objective,
+          stageSystemPrompt: stage.stageSystemPrompt,
+          taskPromptTemplate: stage.taskPromptTemplate,
+          allowedToolIds: fallbackToolIdsByAgentId[stage.agentId] ?? stage.allowedToolIds,
+          requiredEvidenceTypes: stage.requiredEvidenceTypes,
+          findingPolicy: stage.findingPolicy,
+          completionRule: stage.completionRule,
+          resultSchemaVersion: stage.resultSchemaVersion,
+          handoffSchema: stage.handoffSchema
+        });
+
+        return {
+          ...stage,
+          ...contract
+        };
+      }),
       updatedAt: new Date().toISOString()
     };
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultWorkflowStageContract,
+  defaultStageSystemPromptTemplate,
+  defaultTaskPromptTemplate,
   normalizeWorkflowStageContract
 } from "./workflow-stage-contract.js";
 
@@ -13,6 +15,8 @@ describe("workflow stage contracts", () => {
 
     expect(contract).toEqual({
       objective: "Complete the Recon stage using allowed tools and structured reporting.",
+      stageSystemPrompt: defaultStageSystemPromptTemplate,
+      taskPromptTemplate: defaultTaskPromptTemplate,
       allowedToolIds: ["tool-a", "tool-b"],
       requiredEvidenceTypes: [],
       findingPolicy: expect.objectContaining({ taxonomy: "typed-core-v1" }),
@@ -38,6 +42,8 @@ describe("workflow stage contracts", () => {
     });
 
     expect(contract.objective).toBe("Complete the Validate stage using allowed tools and structured reporting.");
+    expect(contract.stageSystemPrompt).toBe(defaultStageSystemPromptTemplate);
+    expect(contract.taskPromptTemplate).toBe(defaultTaskPromptTemplate);
     expect(contract.allowedToolIds).toEqual(["tool-x", "tool-y"]);
     expect(contract.requiredEvidenceTypes).toEqual(["http", "headers"]);
     expect(contract.resultSchemaVersion).toBe(1);

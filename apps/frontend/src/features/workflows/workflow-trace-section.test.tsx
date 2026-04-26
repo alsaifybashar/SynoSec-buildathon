@@ -1,6 +1,14 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import type { AiAgent, AiTool, Target, Workflow, WorkflowRun } from "@synosec/contracts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  defaultWorkflowStageSystemPrompt,
+  defaultWorkflowTaskPromptTemplate,
+  type AiAgent,
+  type AiTool,
+  type Target,
+  type Workflow,
+  type WorkflowRun
+} from "@synosec/contracts";
 import { WorkflowTraceSection } from "@/features/workflows/workflow-trace-section";
 
 const workflow: Workflow = {
@@ -11,6 +19,8 @@ const workflow: Workflow = {
   targetId: "20000000-0000-0000-0000-000000000001",
   agentId: "50000000-0000-0000-0000-000000000001",
   objective: "Run one evidence-backed workflow pass.",
+  stageSystemPrompt: defaultWorkflowStageSystemPrompt,
+  taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
   allowedToolIds: ["tool-1"],
   requiredEvidenceTypes: [],
   findingPolicy: {
@@ -32,6 +42,8 @@ const workflow: Workflow = {
       agentId: "50000000-0000-0000-0000-000000000001",
       ord: 0,
       objective: "Run one evidence-backed workflow pass.",
+      stageSystemPrompt: defaultWorkflowStageSystemPrompt,
+      taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
       allowedToolIds: ["tool-1"],
       requiredEvidenceTypes: [],
       findingPolicy: {
@@ -518,6 +530,97 @@ const streamedNarrationRun: WorkflowRun = {
   ]
 };
 
+const streamedToolLifecycleRun: WorkflowRun = {
+  id: "60000000-0000-0000-0000-000000000020",
+  workflowId: workflow.id,
+  status: "running",
+  currentStepIndex: 0,
+  startedAt: "2026-04-21T00:00:00.000Z",
+  completedAt: null,
+  trace: [],
+  events: [
+    {
+      id: "tool-life-1",
+      workflowRunId: "60000000-0000-0000-0000-000000000020",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 0,
+      type: "system_message",
+      status: "completed",
+      title: "Model step started",
+      summary: "Started a new model step.",
+      detail: null,
+      payload: {
+        rawStreamPartType: "start-step"
+      },
+      createdAt: "2026-04-21T00:00:00.100Z"
+    },
+    {
+      id: "tool-life-2",
+      workflowRunId: "60000000-0000-0000-0000-000000000020",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 1,
+      type: "tool_call",
+      status: "running",
+      title: "Calling report_finding",
+      summary: "Started streaming arguments for report_finding.",
+      detail: null,
+      payload: {
+        rawStreamPartType: "tool-call-streaming-start",
+        toolCallId: "tool-call-1",
+        toolName: "report_finding"
+      },
+      createdAt: "2026-04-21T00:00:00.200Z"
+    },
+    {
+      id: "tool-life-3",
+      workflowRunId: "60000000-0000-0000-0000-000000000020",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 2,
+      type: "tool_call",
+      status: "running",
+      title: "Calling report_finding",
+      summary: "Invoked report_finding.",
+      detail: "{\n  \"title\": \"Example\"\n}",
+      payload: {
+        rawStreamPartType: "tool-call",
+        toolCallId: "tool-call-1",
+        toolName: "report_finding",
+        input: "{\n  \"title\": \"Example\"\n}"
+      },
+      createdAt: "2026-04-21T00:00:00.300Z"
+    },
+    {
+      id: "tool-life-4",
+      workflowRunId: "60000000-0000-0000-0000-000000000020",
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 3,
+      type: "tool_result",
+      status: "completed",
+      title: "report_finding returned",
+      summary: "report_finding completed.",
+      detail: "{\"accepted\":true}",
+      payload: {
+        rawStreamPartType: "tool-result",
+        toolCallId: "tool-call-1",
+        toolName: "report_finding",
+        summary: "report_finding completed.",
+        output: {
+          accepted: true
+        }
+      },
+      createdAt: "2026-04-21T00:00:00.400Z"
+    }
+  ]
+};
+
 const rejectedModelRun: WorkflowRun = {
   id: "60000000-0000-0000-0000-000000000099",
   workflowId: workflow.id,
@@ -705,7 +808,52 @@ const summaryOnlyToolRun: WorkflowRun = {
   })
 };
 
+const streamedNarrationRunExtended: WorkflowRun = {
+  ...streamedNarrationRun,
+  events: [
+    ...streamedNarrationRun.events,
+    {
+      id: "stream-6",
+      workflowRunId: streamedNarrationRun.id,
+      workflowId: workflow.id,
+      workflowStageId: workflow.stages[0]!.id,
+      stepIndex: 0,
+      ord: 5,
+      type: "model_decision",
+      status: "running",
+      title: "Model streamed text",
+      summary: "Header validation is now in progress.",
+      detail: "Header validation is now in progress.",
+      payload: {
+        rawStreamPartType: "text",
+        text: "Header validation is now in progress."
+      },
+      createdAt: "2026-04-21T00:00:00.600Z"
+    }
+  ]
+};
+
 describe("WorkflowTraceSection", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "scrollTo", {
+      configurable: true,
+      value: vi.fn()
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 800
+    });
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 0,
+      writable: true
+    });
+    Object.defineProperty(document.documentElement, "scrollHeight", {
+      configurable: true,
+      value: 2000
+    });
+  });
+
   it("renders the Duplex workflow thread as inline reading flow with compact tool subtitles", () => {
     const { container } = render(
       <WorkflowTraceSection
@@ -866,6 +1014,27 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getByText("HTTP service responded with 200 OK.")).toBeInTheDocument();
   });
 
+  it("does not keep a tool marked as running after a matching streaming-start and tool result pair", () => {
+    render(
+      <WorkflowTraceSection
+        workflow={workflow}
+        targets={targets}
+        agents={agents}
+        tools={tools}
+        run={streamedToolLifecycleRun}
+        running={true}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails={false}
+      />
+    );
+
+    expect(screen.getByText("Agent typing")).toBeInTheDocument();
+    expect(screen.queryByText("Tool running · report_finding")).not.toBeInTheDocument();
+  });
+
   it("renders standardized model and tool error atoms with retry guidance", () => {
     const { rerender } = render(
       <WorkflowTraceSection
@@ -926,5 +1095,193 @@ describe("WorkflowTraceSection", () => {
 
     expect(screen.getByText("No run yet")).toBeInTheDocument();
     expect(screen.getByText("Start the first Duplex session")).toBeInTheDocument();
+  });
+
+  it("auto-follows live transcript growth when the operator is already at the page bottom", () => {
+    const scrollToSpy = vi.fn();
+    Object.defineProperty(window, "scrollTo", {
+      configurable: true,
+      value: scrollToSpy
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 800
+    });
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 1178
+    });
+    Object.defineProperty(document.documentElement, "scrollHeight", {
+      configurable: true,
+      value: 2000
+    });
+
+    const { rerender } = render(
+      <WorkflowTraceSection
+        workflow={workflow}
+        targets={targets}
+        agents={agents}
+        tools={tools}
+        run={streamedNarrationRun}
+        running={true}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails={false}
+      />
+    );
+
+    rerender(
+      <WorkflowTraceSection
+        workflow={workflow}
+        targets={targets}
+        agents={agents}
+        tools={tools}
+        run={streamedNarrationRunExtended}
+        running={true}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails={false}
+      />
+    );
+
+    expect(scrollToSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not auto-follow live transcript growth when the operator has scrolled away from the bottom", () => {
+    const scrollToSpy = vi.fn();
+    Object.defineProperty(window, "scrollTo", {
+      configurable: true,
+      value: scrollToSpy
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 800
+    });
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 900,
+      writable: true
+    });
+    Object.defineProperty(document.documentElement, "scrollHeight", {
+      configurable: true,
+      value: 2200
+    });
+
+    const { rerender } = render(
+      <WorkflowTraceSection
+        workflow={workflow}
+        targets={targets}
+        agents={agents}
+        tools={tools}
+        run={streamedNarrationRun}
+        running={true}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails={false}
+      />
+    );
+
+    window.scrollY = 900;
+    fireEvent.scroll(window);
+
+    rerender(
+      <WorkflowTraceSection
+        workflow={workflow}
+        targets={targets}
+        agents={agents}
+        tools={tools}
+        run={streamedNarrationRunExtended}
+        running={true}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails={false}
+      />
+    );
+
+    expect(scrollToSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-follow when non-running transcript content changes", () => {
+    const scrollToSpy = vi.fn();
+    Object.defineProperty(window, "scrollTo", {
+      configurable: true,
+      value: scrollToSpy
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 800
+    });
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 1178
+    });
+    Object.defineProperty(document.documentElement, "scrollHeight", {
+      configurable: true,
+      value: 2000
+    });
+
+    const completedRunExtended: WorkflowRun = {
+      ...run,
+      events: [
+        ...run.events,
+        {
+          id: "70000000-0000-0000-0000-000000000009",
+          workflowRunId: run.id,
+          workflowId: workflow.id,
+          workflowStageId: workflow.stages[0]!.id,
+          stepIndex: 0,
+          ord: 12,
+          type: "agent_summary",
+          status: "completed",
+          title: "Additional persisted summary",
+          summary: "A finalized summary update arrived after completion.",
+          detail: "A finalized summary update arrived after completion.",
+          payload: {},
+          createdAt: "2026-04-21T00:00:04.100Z"
+        }
+      ]
+    };
+
+    const { rerender } = render(
+      <WorkflowTraceSection
+        workflow={workflow}
+        targets={targets}
+        agents={agents}
+        tools={tools}
+        run={run}
+        running={false}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails={false}
+      />
+    );
+
+    rerender(
+      <WorkflowTraceSection
+        workflow={workflow}
+        targets={targets}
+        agents={agents}
+        tools={tools}
+        run={completedRunExtended}
+        running={false}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        showFullDetails={false}
+      />
+    );
+
+    expect(scrollToSpy).not.toHaveBeenCalled();
   });
 });

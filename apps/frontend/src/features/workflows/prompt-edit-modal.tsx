@@ -1,12 +1,16 @@
 import { X } from "lucide-react";
-import type { Workflow, AiAgent, Target } from "@synosec/contracts";
+import { type Workflow, type AiAgent, type Target } from "@synosec/contracts";
 import { Button } from "@/shared/ui/button";
 import { Textarea } from "@/shared/ui/textarea";
 
 export type PromptEditDraft = {
-  objective: string;
   systemPrompt: string;
 };
+
+const workflowCompletionContract = [
+  "Required end state:",
+  "Before the run stops, call complete_run to submit the current stage result or fail_run to stop with an explicit failure."
+].join("\n");
 
 export function PromptEditModal({
   open,
@@ -33,7 +37,7 @@ export function PromptEditModal({
   onSave: () => void;
   onSaveAndRun: () => void;
 }) {
-  if (!open || !workflow || !agent) {
+  if (!open || !workflow) {
     return null;
   }
 
@@ -70,29 +74,31 @@ export function PromptEditModal({
 
             <section className="space-y-3 rounded-2xl border border-border/70 bg-card/55 p-4">
               <div className="space-y-1">
-                <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Agent prompt</p>
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Workflow prompt</p>
                 <h3 className="text-base text-foreground">System prompt</h3>
               </div>
               <Textarea
                 value={draft.systemPrompt}
                 onChange={(event) => onDraftChange("systemPrompt", event.target.value)}
-                aria-label="Agent system prompt"
-                rows={12}
+                aria-label="Workflow system prompt"
+                rows={14}
                 disabled={saving}
               />
             </section>
 
-            <section className="space-y-3 rounded-2xl border border-border/70 bg-card/55 p-4">
+            <section className="space-y-3 rounded-2xl border border-border/70 bg-card/40 p-4">
               <div className="space-y-1">
-                <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Workflow prompt</p>
-                <h3 className="text-base text-foreground">Objective</h3>
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Engine-generated</p>
+                <h3 className="text-base text-foreground">Completion contract</h3>
+                <p className="text-xs text-muted-foreground">
+                  Source: built-in workflow runtime safety and lifecycle contract.
+                </p>
               </div>
               <Textarea
-                value={draft.objective}
-                onChange={(event) => onDraftChange("objective", event.target.value)}
-                aria-label="Workflow objective"
-                rows={8}
-                disabled={saving}
+                value={workflowCompletionContract}
+                aria-label="Generated completion contract"
+                rows={4}
+                disabled
               />
             </section>
           </div>
@@ -115,7 +121,7 @@ export function PromptEditModal({
                 </div>
                 <div>
                   <dt className="font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">Linked agent</dt>
-                  <dd className="mt-1 text-foreground">{agent.name}</dd>
+                  <dd className="mt-1 text-foreground">{agent?.name ?? "Unknown agent"}</dd>
                 </div>
               </dl>
             </section>

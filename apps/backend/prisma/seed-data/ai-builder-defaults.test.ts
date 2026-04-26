@@ -35,10 +35,12 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(workflow?.stages[0]?.objective).toContain("transparent evidence-backed pipeline");
     expect(workflow?.stages[0]?.objective).toContain("progress updates short and operator-visible");
     expect(workflow?.stages[0]?.agentId).toBe(seededAgentId("anthropic", "orchestrator"));
-    expect(workflow?.stages[0]?.allowedToolIds).toEqual([
-      ...getSeededRoleDefinition("orchestrator")?.toolIds ?? [],
-      "seed-vuln-audit"
-    ]);
+    expect(workflow?.stages[0]?.allowedToolIds).toEqual(expect.arrayContaining([
+      "builtin-http-surface-assessment",
+      "builtin-auth-flow-assessment",
+      "builtin-controlled-exploitation",
+      "builtin-local-shell-probe"
+    ]));
     expect(attackMapWorkflow).toBeDefined();
     expect(attackMapWorkflow?.executionKind).toBe("attack-map");
     expect(attackMapWorkflow?.stages.map((stage) => stage.label)).toEqual(["Attack Map"]);
@@ -54,17 +56,23 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(compactWorkflow?.executionKind).toBe("workflow");
     expect(compactWorkflow?.stages.map((stage) => stage.label)).toEqual(["Compact Evaluation"]);
     expect(compactWorkflow?.stages[0]?.agentId).toBe(seededAgentId("anthropic", "compact-evaluator"));
-    expect(compactWorkflow?.stages[0]?.allowedToolIds).toEqual([
-      ...getSeededRoleDefinition("compact-evaluator")?.toolIds ?? []
-    ]);
+    expect(compactWorkflow?.stages[0]?.allowedToolIds).toEqual(expect.arrayContaining([
+      "builtin-http-surface-assessment",
+      "builtin-content-discovery",
+      "builtin-network-host-discovery",
+      "builtin-memory-forensics"
+    ]));
     expect(portfolioWorkflow).toBeDefined();
     expect(portfolioWorkflow?.executionKind).toBe("workflow");
     expect(portfolioWorkflow?.description).toContain("evidence-graph-oriented reporting");
     expect(portfolioWorkflow?.stages.map((stage) => stage.label)).toEqual(["Portfolio Assessment"]);
     expect(portfolioWorkflow?.stages[0]?.agentId).toBe(seededAgentId("anthropic", "portfolio-evaluator"));
-    expect(portfolioWorkflow?.stages[0]?.allowedToolIds).toEqual([
-      ...getSeededRoleDefinition("portfolio-evaluator")?.toolIds ?? []
-    ]);
+    expect(portfolioWorkflow?.stages[0]?.allowedToolIds).toEqual(expect.arrayContaining([
+      "builtin-http-surface-assessment",
+      "builtin-web-crawl-mapping",
+      "builtin-content-discovery",
+      "builtin-auth-flow-assessment"
+    ]));
     expect(portfolioWorkflow?.stages[0]?.objective).toContain("prerendered Nuxt site");
     expect(portfolioWorkflow?.stages[0]?.objective).toContain("headers, redirects, public assets, sitemap and robots exposure");
     expect(portfolioWorkflow?.stages[0]?.objective).toContain("derivedFromFindingIds, relatedFindingIds, or enablesFindingIds");

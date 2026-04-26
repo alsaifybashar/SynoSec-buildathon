@@ -7,3 +7,10 @@ export { compileToolRequestFromDefinition } from "./tool-definition.compiler.js"
 export type { CompileInput } from "./tool-definition.compiler.js";
 export { createToolRuntime, ToolRuntime } from "./tool-runtime.js";
 export type { ResolvedAiTool } from "./tool-runtime.js";
+export {
+  getSemanticFamilyBuiltinAiTools,
+  getSemanticFamilyDefinition,
+  getSemanticFamilyDefinitions,
+  semanticFamilyDefinitions,
+  type SemanticFamilyDefinition
+} from "./semantic-family-tools.js";

@@ -81,7 +81,11 @@ import { enum4linuxTool } from "./tools/windows/enum4linux.js";
 import { evilWinRMTool } from "./tools/windows/evil-winrm.js";
 import { netExecTool } from "./tools/windows/netexec.js";
 import { responderTool } from "./tools/windows/responder.js";
-import type { AiTool } from "@synosec/contracts";
+import {
+  defaultWorkflowStageSystemPrompt,
+  defaultWorkflowTaskPromptTemplate,
+  type AiTool
+} from "@synosec/contracts";
 
 export const localApplicationId = "5ecf4a8e-df5f-4945-a7e1-230ef43eac80";
 export const portfolioApplicationId = "1f92a3d7-4f70-4950-b750-9bf74c6f3591";
@@ -93,6 +97,64 @@ export const orchestrationAttackMapWorkflowId = "97fa61fd-8ae7-41d8-b267-d472413
 export const adaptivePlanningAttackMapWorkflowId = "69e1718f-7d2e-4507-a698-523752373809";
 export const osiCompactFamilyWorkflowId = "0e8e3912-c48f-4c34-9ac0-c54ec70df3f6";
 export const portfolioEvidenceGraphWorkflowId = "5edb1601-27cf-4a87-b7d4-a50873f5d985";
+
+const defaultWorkflowStagePrompts = {
+  stageSystemPrompt: defaultWorkflowStageSystemPrompt,
+  taskPromptTemplate: defaultWorkflowTaskPromptTemplate
+} as const;
+
+const fullSemanticFamilyToolIds = [
+  "builtin-http-surface-assessment",
+  "builtin-web-crawl-mapping",
+  "builtin-content-discovery",
+  "builtin-parameter-discovery",
+  "builtin-web-vulnerability-audit",
+  "builtin-sql-injection-validation",
+  "builtin-xss-validation",
+  "builtin-wordpress-assessment",
+  "builtin-auth-flow-assessment",
+  "builtin-token-analysis",
+  "builtin-network-host-discovery",
+  "builtin-network-service-enumeration",
+  "builtin-tls-posture-audit",
+  "builtin-network-topology-mapping",
+  "builtin-subdomain-discovery",
+  "builtin-dns-enumeration",
+  "builtin-credential-format-identification",
+  "builtin-online-credential-attack",
+  "builtin-offline-password-cracking",
+  "builtin-windows-enumeration",
+  "builtin-windows-remote-access-validation",
+  "builtin-windows-poisoning-and-capture",
+  "builtin-controlled-exploitation",
+  "builtin-cloud-posture-audit",
+  "builtin-kubernetes-posture-audit",
+  "builtin-binary-triage",
+  "builtin-interactive-reverse-engineering",
+  "builtin-artifact-metadata-extraction",
+  "builtin-file-carving-and-bulk-extraction",
+  "builtin-memory-forensics",
+  "builtin-steganography-analysis",
+  "builtin-local-shell-probe"
+] as const;
+
+const webSemanticFamilyToolIds = [
+  "builtin-http-surface-assessment",
+  "builtin-web-crawl-mapping",
+  "builtin-content-discovery",
+  "builtin-parameter-discovery",
+  "builtin-web-vulnerability-audit",
+  "builtin-sql-injection-validation",
+  "builtin-xss-validation",
+  "builtin-wordpress-assessment",
+  "builtin-auth-flow-assessment",
+  "builtin-token-analysis",
+  "builtin-network-host-discovery",
+  "builtin-network-service-enumeration",
+  "builtin-tls-posture-audit",
+  "builtin-subdomain-discovery",
+  "builtin-dns-enumeration"
+] as const;
 
 export type SeededProviderKey = "anthropic";
 export type SeededRoleKey = "orchestrator" | "compact-evaluator" | "portfolio-evaluator";
@@ -468,9 +530,9 @@ export function getSeededWorkflowDefinitions() {
           agentId: seededAgentId("anthropic", "orchestrator"),
           objective:
             "Run one transparent evidence-backed pipeline across the configured target. Use the approved tools to collect concrete evidence, choose the next useful step based on what the evidence currently supports, keep progress updates short and operator-visible, register concrete findings through report_finding, and end only through complete_run or fail_run.",
+          ...defaultWorkflowStagePrompts,
           allowedToolIds: [
-            ...getSeededRoleDefinition("orchestrator")?.toolIds ?? [],
-            vulnAuditTool.id
+            ...fullSemanticFamilyToolIds
           ],
           requiredEvidenceTypes: [],
           findingPolicy: {
@@ -512,6 +574,7 @@ export function getSeededWorkflowDefinitions() {
           agentId: seededAgentId("anthropic", "orchestrator"),
           objective:
             "Run a workflow-native attack-map orchestration pass across the configured target. Prioritize realistic attack paths, execute approved tools to validate the strongest path candidates, report normalized evidence-backed workflow findings, and use complete_run to summarize the strongest supported path, the main residual blockers, and the next evidence needed to strengthen or reject the remaining paths.",
+          ...defaultWorkflowStagePrompts,
           allowedToolIds: [
             ...getSeededRoleDefinition("orchestrator")?.toolIds ?? [],
             vulnAuditTool.id,
@@ -557,6 +620,7 @@ export function getSeededWorkflowDefinitions() {
           agentId: seededAgentId("anthropic", "orchestrator"),
           objective:
             "Run a workflow-native attack-map orchestration pass across the configured target using adaptive planning. Build an initial plan from recon, execute the highest-value pending phase, update the plan after each completed phase based on the confirmed evidence, skip stale paths, add tightly targeted new validation phases when warranted, report normalized evidence-backed workflow findings, and use complete_run to summarize which attack paths strengthened, which were deprioritized, and the minimum next evidence needed to reduce uncertainty.",
+          ...defaultWorkflowStagePrompts,
           allowedToolIds: [
             ...getSeededRoleDefinition("orchestrator")?.toolIds ?? [],
             vulnAuditTool.id,
@@ -602,8 +666,9 @@ export function getSeededWorkflowDefinitions() {
           agentId: seededAgentId("anthropic", "compact-evaluator"),
           objective:
             "Run one evidence-backed compact-family evaluation across the configured target. Use only the semantic family tools for collection and validation, think in terms of family capabilities rather than tool brands, register concrete findings through report_finding, and end only through complete_run or fail_run.",
+          ...defaultWorkflowStagePrompts,
           allowedToolIds: [
-            ...getSeededRoleDefinition("compact-evaluator")?.toolIds ?? []
+            ...fullSemanticFamilyToolIds
           ],
           requiredEvidenceTypes: [],
           findingPolicy: {
@@ -645,8 +710,9 @@ export function getSeededWorkflowDefinitions() {
           agentId: seededAgentId("anthropic", "portfolio-evaluator"),
           objective:
             "Assess the configured portfolio target as a prerendered Nuxt site using only the compact semantic family tools. Focus on realistic portfolio surfaces such as headers, redirects, public assets, sitemap and robots exposure, content discovery, web crawl findings, and deployment or CDN assumptions. Register concrete findings through report_finding with evidence-backed URLs or assets, explicit preconditions, and plain-language remediation. When one finding depends on, correlates with, or enables another, populate derivedFromFindingIds, relatedFindingIds, or enablesFindingIds. Do not present speculative exploit chains as confirmed; keep weaker links as hypotheses in the final summary. Use complete_run to summarize the highest-confidence connected findings, the strongest remaining hypothesis chain, and the minimum-cut remediation that breaks the most paths.",
+          ...defaultWorkflowStagePrompts,
           allowedToolIds: [
-            ...getSeededRoleDefinition("portfolio-evaluator")?.toolIds ?? []
+            ...webSemanticFamilyToolIds
           ],
           requiredEvidenceTypes: [],
           findingPolicy: {

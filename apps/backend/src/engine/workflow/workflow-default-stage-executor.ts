@@ -5,7 +5,9 @@ import { getWorkflowReportedFindings, workflowFindingSubmissionSchema } from "@s
 import { z } from "zod";
 import { createScan, getScan } from "@/engine/scans/index.js";
 import { RequestError } from "@/shared/http/request-error.js";
+import { getSemanticFamilyDefinition } from "@/modules/ai-tools/index.js";
 import { ToolBroker } from "./broker/tool-broker.js";
+import { executeSemanticFamilyTool } from "./semantic-family-tool-executor.js";
 import { inferLayer, normalizeToolInput, parseExecutionTarget, truncate } from "./workflow-execution.utils.js";
 import { createWorkflowReportedFinding } from "./workflow-finding-factory.js";
 import type {
@@ -22,6 +24,22 @@ import { WorkflowRunPreflight } from "./workflow-run-preflight.js";
 
 export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
   private readonly broker: ToolBroker;
+  private static readonly SYSTEM_PROTOCOL_SUFFIX = [
+    "Workflow execution contract:",
+    "Use only the approved tools and built-in workflow actions exposed for this run.",
+    "Report concrete evidence-backed findings with report_finding.",
+    "End every run explicitly with complete_run or fail_run."
+  ].join("\n");
+
+  private describePromptSource(input: {
+    kind: "system";
+    value: string;
+  }) {
+    return {
+      sourceLabel: "Workflow-owned editable system prompt plus runtime contract.",
+      compactBody: `System prompt\n\nWorkflow-owned editable prompt. ${input.value.length} chars. Inspect or edit it from Edit Prompts.`
+    };
+  }
 
   constructor(
     private readonly ports: WorkflowRuntimePorts,
@@ -59,16 +77,125 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       return currentRun;
     };
 
-    const systemPrompt = this.buildSystemPrompt(agent.systemPrompt, workflow, stage);
-    const taskPrompt = this.buildTaskPrompt(workflow, stage, targetRecord, target.baseUrl);
+    const renderedStageSystemPrompt = this.renderPromptTemplate(stage.stageSystemPrompt, {
+      workflowName: workflow.name,
+      stageLabel: stage.label,
+      stageObjective: stage.objective,
+      targetName: targetRecord.name,
+      targetUrl: target.baseUrl
+    });
+    const systemPrompt = [
+      renderedStageSystemPrompt,
+      DefaultWorkflowStageExecutor.SYSTEM_PROTOCOL_SUFFIX
+    ].join("\n\n");
+    const builtinLifecycleToolNames = new Set([
+      "log_progress",
+      "report_finding",
+      "complete_run",
+      "fail_run",
+      "deep_analysis",
+      "attack_chain_correlation"
+    ]);
+    const evidenceToolEntries = tools.flatMap((tool) => {
+      if (tool.executorType === "bash" && tool.bashSource) {
+        return [{
+          exposedName: tool.id,
+          tool,
+          description: tool.description ?? tool.name,
+          execute: async (rawInput: unknown) => {
+            const toolInput = normalizeToolInput(rawInput);
+            const executionTarget = parseExecutionTarget(toolInput, target);
+            const request = await this.ports.toolRuntime.compile(tool.id, {
+              target: executionTarget.target,
+              ...(executionTarget.port === undefined ? {} : { port: executionTarget.port }),
+              layer: inferLayer(tool.category),
+              justification: `Evidence collection for workflow ${workflow.name}.`,
+              toolInput
+            });
+            const brokerResult = await this.broker.executeRequests({
+              scan,
+              tacticId: workflow.id,
+              agentId: agent.id,
+              requests: [request],
+              constraintSet,
+              toolLookup: {
+                [tool.id]: tool
+              }
+            });
+            const toolRun = brokerResult.toolRuns[0];
+            if (!toolRun) {
+              throw new Error(`Workflow tool execution did not create a tool run for ${tool.name}.`);
+            }
+
+            const result: ExecutedToolResult = {
+              toolId: tool.id,
+              toolName: tool.id,
+              toolInput,
+              toolRequest: request,
+              toolRun,
+              status: toolRun.status,
+              observations: brokerResult.observations.map((observation) => observation.summary),
+              observationKeys: brokerResult.observations.map((observation) => observation.key),
+              outputPreview: truncate(
+                brokerResult.observations[0]?.summary
+                  ?? toolRun.statusReason
+                  ?? toolRun.output
+                  ?? `${tool.name} ${toolRun.status}.`
+              ),
+              fullOutput: toolRun.output ?? toolRun.statusReason ?? ""
+            };
+            executedResults.push(result);
+
+            return {
+              toolRunId: toolRun.id,
+              toolId: tool.id,
+              toolName: tool.id,
+              status: toolRun.status,
+              outputPreview: result.outputPreview,
+              observations: result.observations
+            };
+          }
+        }];
+      }
+
+      if (tool.executorType !== "builtin" || !tool.builtinActionKey || builtinLifecycleToolNames.has(tool.builtinActionKey)) {
+        return [];
+      }
+
+      const familyDefinition = getSemanticFamilyDefinition(tool.builtinActionKey);
+      if (!familyDefinition) {
+        throw new RequestError(500, `Workflow builtin tool ${tool.name} is missing its semantic family definition.`);
+      }
+
+      return [{
+        exposedName: tool.builtinActionKey,
+        tool,
+        description: tool.description ?? tool.name,
+        execute: async (rawInput: unknown) => {
+          const familyExecution = await executeSemanticFamilyTool({
+            broker: this.broker,
+            toolRuntime: this.ports.toolRuntime,
+            familyTool: tool,
+            familyDefinition,
+            target,
+            scan,
+            tacticId: workflow.id,
+            agentId: agent.id,
+            constraintSet
+          }, rawInput);
+          executedResults.push(familyExecution.result);
+          return familyExecution.response;
+        }
+      }];
+    });
+    const evidenceToolByName = new Map(evidenceToolEntries.map((entry) => [entry.exposedName, entry.tool] as const));
+
     const toolContext = this.formatToolContextSections([
       {
         title: "Evidence tools",
-        tools: tools
-          .filter((tool) => tool.executorType === "bash")
-          .map((tool) => ({
-            name: tool.name,
-            description: tool.description
+        tools: evidenceToolEntries.map((entry) => ({
+            name: entry.exposedName,
+            description: entry.description
           }))
       },
       {
@@ -82,21 +209,19 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       }
     ]);
 
+    const systemPromptDescriptor = this.describePromptSource({
+      kind: "system",
+      value: systemPrompt
+    });
     await appendEvent("system_message", "completed", {
       title: "Rendered system prompt",
       summary: "Persisted the workflow pipeline system prompt.",
-      body: systemPrompt,
+      body: systemPromptDescriptor.compactBody,
       messageKind: "prompt",
-      promptKind: "system"
-    }, "Rendered system prompt", "Persisted the workflow pipeline system prompt.", systemPrompt);
-
-    await appendEvent("system_message", "completed", {
-      title: "Rendered task prompt",
-      summary: "Persisted the workflow pipeline task prompt.",
-      body: taskPrompt,
-      messageKind: "prompt",
-      promptKind: "task"
-    }, "Rendered task prompt", "Persisted the workflow pipeline task prompt.", taskPrompt);
+      promptKind: "system",
+      promptSourceLabel: systemPromptDescriptor.sourceLabel,
+      promptCharCount: systemPrompt.length
+    }, "Rendered system prompt", "Persisted the workflow pipeline system prompt.", systemPromptDescriptor.compactBody);
 
     if (toolContext) {
       await appendEvent("system_message", "completed", {
@@ -175,65 +300,12 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       return finalOutput;
     };
 
-    const bashTools = tools.filter((tool) => tool.executorType === "bash" && Boolean(tool.bashSource));
-    const evidenceTools = Object.fromEntries(bashTools.map((tool) => [
-      tool.id,
+    const evidenceTools = Object.fromEntries(evidenceToolEntries.map((entry) => [
+      entry.exposedName,
       createSdkTool({
-        description: tool.description ?? tool.name,
+        description: entry.description,
         inputSchema: z.object({}).catchall(z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])),
-        execute: async (rawInput) => {
-          const toolInput = normalizeToolInput(rawInput);
-          const executionTarget = parseExecutionTarget(toolInput, target);
-          const request = await this.ports.toolRuntime.compile(tool.id, {
-            target: executionTarget.target,
-            ...(executionTarget.port === undefined ? {} : { port: executionTarget.port }),
-            layer: inferLayer(tool.category),
-            justification: `Evidence collection for workflow ${workflow.name}.`,
-            toolInput
-          });
-          const brokerResult = await this.broker.executeRequests({
-            scan,
-            tacticId: workflow.id,
-            agentId: agent.id,
-            requests: [request],
-            constraintSet,
-            toolLookup: {
-              [tool.id]: tool
-            }
-          });
-          const toolRun = brokerResult.toolRuns[0];
-          if (!toolRun) {
-            throw new Error(`Workflow tool execution did not create a tool run for ${tool.name}.`);
-          }
-
-          const result: ExecutedToolResult = {
-            toolId: tool.id,
-            toolName: tool.name,
-            toolInput,
-            toolRequest: request,
-            toolRun,
-            status: toolRun.status,
-            observations: brokerResult.observations.map((observation) => observation.summary),
-            observationKeys: brokerResult.observations.map((observation) => observation.key),
-            outputPreview: truncate(
-              brokerResult.observations[0]?.summary
-                ?? toolRun.statusReason
-                ?? toolRun.output
-                ?? `${tool.name} ${toolRun.status}.`
-            ),
-            fullOutput: toolRun.output ?? toolRun.statusReason ?? ""
-          };
-          executedResults.push(result);
-
-          return {
-            toolRunId: toolRun.id,
-            toolId: tool.id,
-            toolName: tool.name,
-            status: toolRun.status,
-            outputPreview: result.outputPreview,
-            observations: result.observations
-          };
-        }
+        execute: entry.execute
       })
     ]));
 
@@ -352,7 +424,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     const result = streamText({
       model: this.createAnthropicLanguageModel(provider, agent.modelOverride ?? provider.model),
       system: systemPrompt,
-      prompt: taskPrompt,
+      prompt: "",
       tools: {
         ...evidenceTools,
         ...systemTools
@@ -430,7 +502,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             await appendEvent("tool_call", "running", {
               toolCallId: part.toolCallId,
               toolName: part.toolName,
-              toolId: part.toolName in evidenceTools ? part.toolName : null,
+              toolId: evidenceToolByName.get(part.toolName)?.id ?? null,
               input: JSON.stringify(part.input, null, 2)
             }, `Calling ${part.toolName}`, `Invoked ${part.toolName}.`, JSON.stringify(part.input, null, 2), undefined, {
               rawStreamPartType: part.type
@@ -563,34 +635,32 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     };
   }
 
-  private buildSystemPrompt(baseSystemPrompt: string, workflow: Workflow, stage: WorkflowStage) {
-    return [
-      baseSystemPrompt,
-      `You are executing the "${stage.label}" stage of the workflow "${workflow.name}".`,
-      `Stage objective: ${stage.objective}`,
-      "Report concrete findings with report_finding.",
-      "Every report_finding must include concrete evidence references so execution reports can build the evidence graph automatically.",
-      "Use derivedFromFindingIds, relatedFindingIds, and enablesFindingIds inside report_finding when findings depend on or connect to earlier findings.",
-      "Call log_progress before any evidence tool call or tool burst, and again after any meaningful result before deciding the next step.",
-      "Use complete_run to submit the current stage result or fail_run to stop with an explicit failure.",
-      "Each log_progress update must be concise, operator-visible, and action-oriented.",
-      "Keep each log_progress message to 1-2 short sentences describing the next check, what changed, or what you will do next.",
-      "Do not expose hidden chain-of-thought or private reasoning. Provide concise action-oriented progress notes only."
-    ].join("\n\n");
-  }
-
-  private buildTaskPrompt(
-    workflow: Workflow,
-    stage: WorkflowStage,
-    targetRecord: WorkflowStageExecutionContext["targetRecord"],
-    targetUrl: string
+  private renderPromptTemplate(
+    template: string,
+    values: {
+      workflowName: string;
+      stageLabel: string;
+      stageObjective: string;
+      targetName: string;
+      targetUrl: string;
+    }
   ) {
-    return [
-      `Workflow: ${workflow.name}`,
-      `Stage: ${stage.label}`,
-      `Target: ${targetRecord.name}`,
-      `Target URL: ${targetUrl}`
-    ].filter(Boolean).join("\n");
+    const supportedTokens = new Map<string, string>([
+      ["workflow.name", values.workflowName],
+      ["stage.label", values.stageLabel],
+      ["stage.objective", values.stageObjective],
+      ["target.name", values.targetName],
+      ["target.url", values.targetUrl]
+    ]);
+
+    return template.replace(/{{\s*([^}]+?)\s*}}/g, (match, tokenName: string) => {
+      const normalizedToken = tokenName.trim();
+      const replacement = supportedTokens.get(normalizedToken);
+      if (replacement === undefined) {
+        throw new RequestError(500, `Unsupported workflow prompt token: ${match}`);
+      }
+      return replacement;
+    });
   }
 
   private formatToolContextSections(sections: Array<{ title: string; tools: Array<{ name: string; description: string | null | undefined }> }>) {

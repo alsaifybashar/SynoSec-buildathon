@@ -1,3 +1,4 @@
+import { defaultWorkflowStageSystemPrompt, defaultWorkflowTaskPromptTemplate } from "@synosec/contracts";
 import { describe, expect, it } from "vitest";
 import { MemoryWorkflowsRepository } from "./memory-workflows.repository.js";
 
@@ -42,6 +43,8 @@ describe("MemoryWorkflowsRepository", () => {
       targetId: "10000000-0000-0000-0000-000000000001",
       agentId: "20000000-0000-0000-0000-000000000001",
       objective: "Collect evidence and stop through system tools.",
+      stageSystemPrompt: defaultWorkflowStageSystemPrompt,
+      taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
       allowedToolIds: ["tool:http-recon"],
       requiredEvidenceTypes: [],
       findingPolicy: {
@@ -104,6 +107,8 @@ describe("MemoryWorkflowsRepository", () => {
         targetId: "10000000-0000-0000-0000-000000000001",
         agentId: "20000000-0000-0000-0000-000000000001",
         objective: "Collect evidence and stop through system tools.",
+        stageSystemPrompt: defaultWorkflowStageSystemPrompt,
+        taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
         allowedToolIds: [],
         requiredEvidenceTypes: [],
         findingPolicy: {

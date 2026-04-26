@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { AiAgent, Workflow, WorkflowRun } from "./resources.js";
+import {
+  defaultWorkflowStageSystemPrompt,
+  defaultWorkflowTaskPromptTemplate,
+  type AiAgent,
+  type Workflow,
+  type WorkflowRun
+} from "./resources.js";
 import { buildWorkflowTranscript } from "./workflow-presentation.js";
 
 const workflow: Workflow = {
@@ -10,6 +16,8 @@ const workflow: Workflow = {
   targetId: "20000000-0000-0000-0000-000000000001",
   agentId: "30000000-0000-0000-0000-000000000001",
   objective: "Preserve streamed text and tools.",
+  stageSystemPrompt: defaultWorkflowStageSystemPrompt,
+  taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
   allowedToolIds: ["tool-1"],
   requiredEvidenceTypes: [],
   findingPolicy: {
