@@ -28,6 +28,7 @@ vi.mock("@/modules/auth/google-id-token.js", () => ({
 
 function setAuthEnv(enabled: boolean) {
   process.env["BACKEND_ENV"] = "development";
+  process.env["ANTHROPIC_API_KEY"] = "test-anthropic-key";
   process.env["AUTH_ENABLED"] = enabled ? "true" : "false";
   process.env["AUTH_GOOGLE_ENABLED"] = "true";
   process.env["AUTH_GOOGLE_CLIENT_ID"] = "google-client-id";

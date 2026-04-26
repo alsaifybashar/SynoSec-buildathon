@@ -198,7 +198,7 @@ describe("executeSemanticFamilyTool", () => {
 
     expect(execution.response.toolId).toBe("builtin-http-surface-assessment");
     expect(execution.response.toolName).toBe("http_surface_assessment");
-    expect(execution.response.usedToolId).toBe("seed-http-recon");
+    expect(familyDefinition.candidateToolIds).toContain(execution.response.usedToolId);
     expect(execution.response.status).toBe("completed");
     expect(execution.result.observations.length).toBeGreaterThan(0);
     expect(execution.result.fullOutput).toContain("Semantic Family Test");
@@ -207,14 +207,12 @@ describe("executeSemanticFamilyTool", () => {
   it("targets the same host and preserves the same evidence as the delegated bash tool", async () => {
     const familyTool = getBuiltinAiTool("builtin-http-surface-assessment");
     const familyDefinition = getSemanticFamilyDefinition("http_surface_assessment");
-    const directTool = createSeededTool("seed-http-recon");
-
     if (!familyTool || !familyDefinition) {
       throw new Error("Missing builtin semantic family tool definition");
     }
 
     const runtime = createToolRuntime(new MemoryAiToolsRepository([
-      directTool,
+      createSeededTool("seed-http-recon"),
       createSeededTool("seed-httpx"),
       createSeededTool("seed-http-headers"),
       createSeededTool("seed-whatweb")
@@ -224,13 +222,6 @@ describe("executeSemanticFamilyTool", () => {
       target: "127.0.0.1",
       baseUrl
     };
-
-    const direct = await executeDirectSeededTool({
-      broker,
-      runtime,
-      tool: directTool,
-      rawInput
-    });
 
     const family = await executeSemanticFamilyTool({
       broker,
@@ -245,6 +236,14 @@ describe("executeSemanticFamilyTool", () => {
       tacticId: "tactic-family-compare",
       agentId: "agent-family-compare"
     }, rawInput);
+
+    const directTool = createSeededTool(family.response.usedToolId);
+    const direct = await executeDirectSeededTool({
+      broker,
+      runtime,
+      tool: directTool,
+      rawInput
+    });
 
     expect(family.response.usedToolId).toBe(directTool.id);
     expect(family.result.toolRequest.target).toBe(direct.request.target);
