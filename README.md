@@ -263,6 +263,8 @@ cp .env.example .env
 make docker-up
 ```
 
+`make docker-up` now follows the same destructive local database bootstrap as `make dev`: it starts the required Docker-backed services, resets persisted app data, and re-seeds the Prisma database before the full stack comes up.
+
 ### Local Development
 
 ```bash
@@ -286,7 +288,7 @@ To use local inference, configure the local provider settings in `.env` and ensu
 ### Common Commands
 
 ```bash
-make docker-up                # Start the Docker Compose stack
+make docker-up                # Start the Docker Compose stack and reseed the local database
 make docker-down              # Stop and remove Docker services
 make dev                      # Start host-mode development
 make smoke-seeded-sandbox     # Run the seeded connector sandbox smoke validation

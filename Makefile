@@ -13,7 +13,7 @@ help:
 	@printf "\033[1;32m╔══════════════════════════════════╗\033[0m\n"
 	@printf "\033[1;32m║     SynoSec AI PenTest Tool      ║\033[0m\n"
 	@printf "\033[1;32m╚══════════════════════════════════╝\033[0m\n"
-	@printf "\033[33m  make docker-up\033[0m   Start full stack (Docker Compose)\n"
+	@printf "\033[33m  make docker-up\033[0m   Start full stack (Docker Compose), reset persisted app data, and reseed the database\n"
 	@printf "\033[33m  make docker-down\033[0m Stop and remove containers\n"
 	@printf "\033[33m  make docker-logs\033[0m Follow all container logs\n"
 	@printf "\033[35m  make database\033[0m    Start Postgres, reset persisted app data, then generate Prisma client, push schema, and seed app data\n"
@@ -42,7 +42,8 @@ check-docker-compose:
 	fi
 
 docker-up:
-	@$(MAKE) check-docker-compose
+	@$(MAKE) dev-services
+	@$(MAKE) database
 	@set -e; \
 	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-FALSE}}" | tr '[:upper:]' '[:lower:]'); \
 	if [ "$$local_enabled" = "true" ]; then \
