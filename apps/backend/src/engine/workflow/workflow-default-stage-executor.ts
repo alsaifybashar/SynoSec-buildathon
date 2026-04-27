@@ -25,6 +25,7 @@ import {
   workflowExecutionContractHeading,
   workflowFindingTypeSchema,
   workflowReportedResourceKindSchema,
+  workflowReportedResourceRelationshipKindSchema,
   workflowAttackVectorSubmissionSchema,
   workflowFindingSubmissionSchema,
   workflowReportAttackVectorsSubmissionSchema,
@@ -714,22 +715,36 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       }).strict().optional(),
       tags: z.array(z.string().min(1)).optional(),
     }).strict();
+    const resourceEvidenceToolInputSchema = relaxedFindingEvidenceToolInputSchema.refine((value) => Boolean(
+      value.artifactRef
+      || value.observationRef
+      || value.toolRunRef
+      || value.traceEventId
+      || value.externalUrl
+    ), {
+      message: "Workflow finding evidence requires at least one evidence reference."
+    });
     const reportAttackVectorsToolInputSchema = z.object({
       attackVectors: z.array(relaxedAttackVectorSubmissionToolInputSchema).min(1)
     }).strict();
+    const reportSystemGraphFindingSubmissionSchema = workflowFindingSubmissionSchema
+      .omit({ evidence: true })
+      .extend({
+        evidence: z.array(relaxedFindingEvidenceToolInputSchema).min(1)
+      });
     const reportSystemGraphBatchToolInputSchema = z.object({
       resources: z.array(z.object({
         id: z.string().min(1),
-        kind: z.string().min(1).optional(),
+        kind: workflowReportedResourceKindSchema.optional(),
         customKind: z.string().min(1).optional(),
         name: z.string().min(1).optional(),
         summary: z.string().min(1).optional(),
-        evidence: z.array(relaxedFindingEvidenceToolInputSchema).optional(),
+        evidence: z.array(resourceEvidenceToolInputSchema).optional(),
         tags: z.array(z.string().min(1)).optional()
       }).strict()).optional(),
       resourceRelationships: z.array(z.object({
         id: z.string().min(1),
-        kind: z.string().min(1).optional(),
+        kind: workflowReportedResourceRelationshipKindSchema.optional(),
         customKind: z.string().min(1).optional(),
         sourceResourceId: z.string().min(1).optional(),
         targetResourceId: z.string().min(1).optional(),
@@ -938,7 +953,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         const mergedEvidence = finding.evidence
           ? hydrateEvidenceRefs(finding.evidence)
           : existing?.evidence;
-        const findingSubmission = parseWorkflowToolInput(workflowFindingSubmissionSchema, {
+        const findingSubmission = parseWorkflowToolInput(reportSystemGraphFindingSubmissionSchema, {
           type: finding.type ?? existing?.type ?? "other",
           title: finding.title ?? existing?.title,
           severity: finding.severity ?? existing?.severity ?? "medium",
@@ -1484,6 +1499,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
                   summary: outputPreview
                 }
               : part.output;
+            const outputDetail = findingResult?.detail ?? JSON.stringify(publicOutput, null, 2);
             persistedToolResultIds.add(part.toolCallId);
             await appendEvent("tool_result", resultStatus, {
               toolCallId: part.toolCallId,
@@ -1497,7 +1513,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               truncated: matchingResult?.truncated ?? false,
               commandPreview: matchingResult?.commandPreview ?? null,
               exitCode: matchingResult?.exitCode ?? null
-            }, `${part.toolName} returned`, outputPreview, JSON.stringify(publicOutput, null, 2), undefined, {
+            }, `${part.toolName} returned`, outputPreview, outputDetail, undefined, {
               rawStreamPartType: part.type
             });
             break;
