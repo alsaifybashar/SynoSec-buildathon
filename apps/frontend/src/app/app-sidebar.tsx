@@ -228,8 +228,6 @@ function SidebarNav({
   onNavigate
 }: Pick<AppSidebarProps, "pathname"> & { onNavigate?: () => void }) {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
-  const topEntries = useMemo(() => navigationTree.filter((entry) => entry.kind !== "group" || entry.group.id !== "designs"), []);
-  const bottomEntries = useMemo(() => navigationTree.filter((entry) => entry.kind === "group" && entry.group.id === "designs"), []);
   const groupActiveMap = useMemo(() => {
     const map: Record<string, boolean> = {};
     for (const entry of navigationTree) {
@@ -338,25 +336,10 @@ function SidebarNav({
     );
   }
 
-  function renderBottomEntry(entry: (typeof navigationTree)[number]) {
-    if (entry.kind === "item") {
-      return renderEntry(entry);
-    }
-
-    return (
-      <SidebarGroup key={entry.group.id}>
-        <SidebarMenu>{renderEntry(entry)}</SidebarMenu>
-      </SidebarGroup>
-    );
-  }
-
   return (
     <SidebarContent className="mt-4 flex-1 justify-between">
       <SidebarGroup>
-        <SidebarMenu>{topEntries.map(renderEntry)}</SidebarMenu>
-      </SidebarGroup>
-      <SidebarGroup>
-        {bottomEntries.map(renderBottomEntry)}
+        <SidebarMenu>{navigationTree.map(renderEntry)}</SidebarMenu>
       </SidebarGroup>
     </SidebarContent>
   );

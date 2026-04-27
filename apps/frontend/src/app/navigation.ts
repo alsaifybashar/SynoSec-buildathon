@@ -1,18 +1,9 @@
 import {
   AppWindow,
   Bot,
-  Compass,
   FileSearch,
-  Film,
-  Layers,
-  Orbit,
-  Pin,
   Route,
   ScrollText,
-  Shapes,
-  Grid3x3,
-  GitBranch,
-  Terminal,
   Wrench,
   type LucideIcon
 } from "lucide-react";
@@ -23,15 +14,7 @@ export type NavigationId =
   | "ai-tools"
   | "execution-constraints"
   | "workflows"
-  | "execution-reports"
-  | "design-report-finding-split-canvas-vectors"
-  | "design-report-finding-split-canvas-vectors-radial"
-  | "design-report-finding-split-canvas-vectors-cinema"
-  | "design-report-finding-vectors-pillars"
-  | "design-report-finding-vectors-matrix"
-  | "design-report-finding-vectors-tape"
-  | "design-report-finding-vectors-compass"
-  | "design-report-finding-vectors-strata";
+  | "execution-reports";
 
 export type NavigationState = {
   detailLabel?: string;
@@ -168,64 +151,6 @@ export const navigationTree: NavigationTreeEntry[] = [
           label: "Execution Constraints",
           path: crudRouteConfigs["execution-constraints"].listPath,
           icon: ScrollText
-        })
-      ]
-    }
-  },
-  {
-    kind: "group",
-    group: {
-      id: "designs",
-      label: "Designs",
-      icon: Shapes,
-      items: [
-        createNavigationItem({
-          id: "design-report-finding-split-canvas-vectors",
-          label: "Finding · canvas vectors",
-          path: "/designs/report-finding-split-canvas-vectors",
-          icon: GitBranch
-        }),
-        createNavigationItem({
-          id: "design-report-finding-split-canvas-vectors-radial",
-          label: "Finding · vectors radial",
-          path: "/designs/report-finding-split-canvas-vectors-radial",
-          icon: Orbit
-        }),
-        createNavigationItem({
-          id: "design-report-finding-split-canvas-vectors-cinema",
-          label: "Finding · vectors cinema",
-          path: "/designs/report-finding-split-canvas-vectors-cinema",
-          icon: Film
-        }),
-        createNavigationItem({
-          id: "design-report-finding-vectors-pillars",
-          label: "Vectors · phase",
-          path: "/designs/report-finding-vectors-pillars",
-          icon: Pin
-        }),
-        createNavigationItem({
-          id: "design-report-finding-vectors-matrix",
-          label: "Vectors · method",
-          path: "/designs/report-finding-vectors-matrix",
-          icon: Grid3x3
-        }),
-        createNavigationItem({
-          id: "design-report-finding-vectors-tape",
-          label: "Vectors · lifecycle",
-          path: "/designs/report-finding-vectors-tape",
-          icon: Terminal
-        }),
-        createNavigationItem({
-          id: "design-report-finding-vectors-compass",
-          label: "Vectors · validation",
-          path: "/designs/report-finding-vectors-compass",
-          icon: Compass
-        }),
-        createNavigationItem({
-          id: "design-report-finding-vectors-strata",
-          label: "Vectors · target-first",
-          path: "/designs/report-finding-vectors-strata",
-          icon: Layers
         })
       ]
     }

@@ -2,7 +2,6 @@ import { useState } from "react";
 import { ArrowLeft, Download, Trash2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { MARKDOWN_COMPONENTS_COMPACT } from "@/features/designs/finding-shared";
 import {
   apiRoutes,
   type ExecutionReportDetail,
@@ -18,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shar
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Button } from "@/shared/ui/button";
 import { ExecutionReportFindingsView } from "@/features/execution-reports/findings-table-view";
+import { MARKDOWN_COMPONENTS_COMPACT } from "@/features/execution-reports/markdown-components";
 import { executionReportsResource } from "@/features/execution-reports/resource";
 import { fetchJson } from "@/shared/lib/api";
 
