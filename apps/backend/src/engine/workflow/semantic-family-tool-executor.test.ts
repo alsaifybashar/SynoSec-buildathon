@@ -87,9 +87,10 @@ async function executeDirectSeededTool(input: {
 }
 
 function comparableToolRunShape(toolRun: ToolRun) {
+  const normalizedOutput = (toolRun.output ?? null)?.replace(/^Date:\s+.+$/gmi, "Date: <redacted>");
   return {
     status: toolRun.status,
-    output: toolRun.output ?? null,
+    output: normalizedOutput,
     exitCode: toolRun.exitCode ?? null,
     statusReason: toolRun.statusReason ?? null,
     target: toolRun.target,
