@@ -665,6 +665,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       resources: z.array(z.object({
         id: z.string().min(1),
         kind: z.string().min(1).optional(),
+        customKind: z.string().min(1).optional(),
         name: z.string().min(1).optional(),
         summary: z.string().min(1).optional(),
         evidence: z.array(relaxedFindingEvidenceToolInputSchema).optional(),
@@ -673,6 +674,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       resourceRelationships: z.array(z.object({
         id: z.string().min(1),
         kind: z.string().min(1).optional(),
+        customKind: z.string().min(1).optional(),
         sourceResourceId: z.string().min(1).optional(),
         targetResourceId: z.string().min(1).optional(),
         summary: z.string().min(1).optional(),
@@ -748,6 +750,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       ...withDefinedValues({
         id: patch.id.trim(),
         kind: patch.kind?.trim(),
+        customKind: patch.customKind?.trim(),
         name: patch.name?.trim(),
         summary: patch.summary,
         evidence: patch.evidence ? hydrateEvidenceRefs(patch.evidence) : undefined,
@@ -763,6 +766,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       ...withDefinedValues({
         id: patch.id.trim(),
         kind: patch.kind?.trim(),
+        customKind: patch.customKind?.trim(),
         sourceResourceId: patch.sourceResourceId?.trim(),
         targetResourceId: patch.targetResourceId?.trim(),
         summary: patch.summary,
@@ -927,6 +931,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       const canonicalResources = mergedResources.map((resource) => ({
         id: resource.id,
         kind: requireField(resource.kind, `Resource ${resource.id} requires kind on first submission.`),
+        ...(resource.customKind ? { customKind: resource.customKind } : {}),
         name: requireField(resource.name, `Resource ${resource.id} requires name on first submission.`),
         ...(resource.summary ? { summary: resource.summary } : {}),
         evidence: resource.evidence ?? [],
@@ -935,6 +940,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       const canonicalResourceRelationships = mergedResourceRelationships.map((relationship) => ({
         id: relationship.id,
         kind: requireField(relationship.kind, `Resource relationship ${relationship.id} requires kind on first submission.`),
+        ...(relationship.customKind ? { customKind: relationship.customKind } : {}),
         sourceResourceId: requireField(relationship.sourceResourceId, `Resource relationship ${relationship.id} requires sourceResourceId on first submission.`),
         targetResourceId: requireField(relationship.targetResourceId, `Resource relationship ${relationship.id} requires targetResourceId on first submission.`),
         summary: requireField(relationship.summary, `Resource relationship ${relationship.id} requires summary on first submission.`),

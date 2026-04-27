@@ -12,6 +12,7 @@ import {
   executionReportFindingSchema,
   getWorkflowReportedAttackVectors,
   getWorkflowReportedFindings,
+  getWorkflowReportedSystemGraph,
   normalizeExecutionReportStatus,
   summarizeHighestSeverity,
   type ExecutionReportDetail,
@@ -20,7 +21,10 @@ import {
   type ExecutionReportSummary,
   type ExecutionReportsListQuery,
   type WorkflowReportedAttackVector,
-  type WorkflowReportedFinding
+  type WorkflowReportedFinding,
+  type WorkflowReportedPath,
+  type WorkflowReportedResource,
+  type WorkflowReportedResourceRelationship
 } from "@synosec/contracts";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/shared/database/prisma-client.js";
@@ -90,7 +94,57 @@ function createWorkflowFindingTargetLabel(finding: WorkflowReportedFinding) {
   ].join("");
 }
 
-function buildWorkflowExecutionGraph(findings: WorkflowReportedFinding[], attackVectors: WorkflowReportedAttackVector[] = []) {
+function createResourceSummary(resource: WorkflowReportedResource) {
+  if (resource.summary?.trim().length) {
+    return resource.summary;
+  }
+  return resource.tags.length > 0
+    ? `Tagged as ${resource.tags.join(", ")}.`
+    : `Reported ${resource.kind} resource.`;
+}
+
+function createPathSummary(path: WorkflowReportedPath) {
+  if (path.summary?.trim().length) {
+    return path.summary;
+  }
+  const parts = [];
+  if (path.resourceIds.length > 0) {
+    parts.push(`${path.resourceIds.length} resources`);
+  }
+  if (path.findingIds.length > 0) {
+    parts.push(`${path.findingIds.length} findings`);
+  }
+  return parts.length > 0
+    ? `Grouped path covering ${parts.join(" and ")}.`
+    : "Reported attack path grouping.";
+}
+
+function createResourceCreatedAt(
+  resource: WorkflowReportedResource,
+  resourceRelationships: WorkflowReportedResourceRelationship[],
+  findings: WorkflowReportedFinding[],
+  fallbackCreatedAt: string
+) {
+  return resource.createdAt
+    ?? resourceRelationships.find((relationship) => relationship.sourceResourceId === resource.id || relationship.targetResourceId === resource.id)?.createdAt
+    ?? findings.find((finding) => (finding.resourceIds ?? []).includes(resource.id) || finding.resourceId === resource.id)?.createdAt
+    ?? fallbackCreatedAt;
+}
+
+function buildWorkflowExecutionGraph(input: {
+  findings: WorkflowReportedFinding[];
+  attackVectors?: WorkflowReportedAttackVector[];
+  resources?: WorkflowReportedResource[];
+  resourceRelationships?: WorkflowReportedResourceRelationship[];
+  paths?: WorkflowReportedPath[];
+  defaultCreatedAt?: string;
+}) {
+  const findings = input.findings;
+  const attackVectors = input.attackVectors ?? [];
+  const resources = input.resources ?? [];
+  const resourceRelationships = input.resourceRelationships ?? [];
+  const paths = input.paths ?? [];
+  const defaultCreatedAt = input.defaultCreatedAt ?? new Date().toISOString();
   const nodes: unknown[] = [];
   const edges: unknown[] = [];
   const chainNodes = new Map<string, {
@@ -102,6 +156,31 @@ function buildWorkflowExecutionGraph(findings: WorkflowReportedFinding[], attack
     findingIds: string[];
     createdAt: string;
   }>();
+
+  for (const resource of resources) {
+    const createdAt = createResourceCreatedAt(resource, resourceRelationships, findings, defaultCreatedAt);
+    nodes.push({
+      id: resource.id,
+      kind: "resource",
+      title: resource.name,
+      summary: createResourceSummary(resource),
+      resourceKind: resource.kind,
+      customKind: resource.customKind ?? null,
+      tags: resource.tags ?? [],
+      createdAt
+    });
+  }
+
+  for (const relationship of resourceRelationships) {
+    edges.push({
+      id: relationship.id,
+      kind: "topology",
+      source: relationship.sourceResourceId,
+      target: relationship.targetResourceId,
+      label: relationship.kind === "custom" ? relationship.customKind : relationship.kind,
+      createdAt: relationship.createdAt ?? defaultCreatedAt
+    });
+  }
 
   for (const finding of findings) {
     nodes.push({
@@ -168,6 +247,47 @@ function buildWorkflowExecutionGraph(findings: WorkflowReportedFinding[], attack
         source: finding.id,
         target: chainNodeId,
         createdAt: finding.createdAt
+      });
+    }
+
+    for (const resourceId of new Set([...(finding.resourceId ? [finding.resourceId] : []), ...(finding.resourceIds ?? [])])) {
+      edges.push({
+        id: `${resourceId}:affects:${finding.id}`,
+        kind: "affects",
+        source: resourceId,
+        target: finding.id,
+        createdAt: finding.createdAt
+      });
+    }
+  }
+
+  for (const path of paths) {
+    nodes.push({
+      id: path.id,
+      kind: "path",
+      title: path.title,
+      summary: createPathSummary(path),
+      ...(path.severity ? { severity: path.severity } : {}),
+      resourceIds: path.resourceIds ?? [],
+      findingIds: path.findingIds ?? [],
+      createdAt: defaultCreatedAt
+    });
+    for (const resourceId of path.resourceIds ?? []) {
+      edges.push({
+        id: `${resourceId}:member_of:${path.id}`,
+        kind: "member_of",
+        source: resourceId,
+        target: path.id,
+        createdAt: defaultCreatedAt
+      });
+    }
+    for (const findingId of path.findingIds ?? []) {
+      edges.push({
+        id: `${findingId}:member_of:${path.id}`,
+        kind: "member_of",
+        source: findingId,
+        target: path.id,
+        createdAt: defaultCreatedAt
       });
     }
   }
@@ -523,6 +643,7 @@ export class ExecutionReportsService {
 
     const workflowFindings = getWorkflowReportedFindings(workflowRun);
     const workflowAttackVectors = getWorkflowReportedAttackVectors(workflowRun);
+    const workflowSystemGraph = getWorkflowReportedSystemGraph(workflowRun);
     const findings = workflowFindings.map((finding) => executionReportFindingFromWorkflowFinding(finding));
     const toolActivity = workflowRun.events
       .filter((event) => event.type === "tool_result")
@@ -550,7 +671,14 @@ export class ExecutionReportsService {
     const executionKind = normalizeExecutionKind(workflowRun.executionKind)
       ?? normalizeExecutionKind(run.workflow.executionKind)
       ?? "workflow";
-    const graph = buildWorkflowExecutionGraph(workflowFindings, workflowAttackVectors);
+    const graph = buildWorkflowExecutionGraph({
+      findings: workflowFindings,
+      attackVectors: workflowAttackVectors,
+      resources: workflowSystemGraph.resources,
+      resourceRelationships: workflowSystemGraph.resourceRelationships,
+      paths: workflowSystemGraph.paths,
+      defaultCreatedAt: run.completedAt.toISOString()
+    });
     const attackPaths = report.attackPaths;
 
     return {

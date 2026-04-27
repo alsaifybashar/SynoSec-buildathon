@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { attackPathSummarySchema } from "./attack-paths.js";
 import {
+  workflowReportedResourceKindSchema,
   workflowFindingReproductionSchema,
   workflowFindingValidationStatusSchema,
   workflowReportedFindingSchema
@@ -59,10 +60,18 @@ export const executionReportToolActivitySchema = z.object({
 });
 export type ExecutionReportToolActivity = z.infer<typeof executionReportToolActivitySchema>;
 
-export const executionReportGraphNodeKindSchema = z.enum(["evidence", "finding", "chain"]);
+export const executionReportGraphNodeKindSchema = z.enum(["evidence", "resource", "finding", "path", "chain"]);
 export type ExecutionReportGraphNodeKind = z.infer<typeof executionReportGraphNodeKindSchema>;
 
-export const executionReportGraphEdgeKindSchema = z.enum(["supports", "derived_from", "correlates_with", "enables"]);
+export const executionReportGraphEdgeKindSchema = z.enum([
+  "supports",
+  "topology",
+  "affects",
+  "member_of",
+  "derived_from",
+  "correlates_with",
+  "enables"
+]);
 export type ExecutionReportGraphEdgeKind = z.infer<typeof executionReportGraphEdgeKindSchema>;
 
 export const executionReportGraphArtifactRefSchema = z.object({
@@ -89,6 +98,18 @@ export const executionReportGraphEvidenceNodeSchema = z.object({
 });
 export type ExecutionReportGraphEvidenceNode = z.infer<typeof executionReportGraphEvidenceNodeSchema>;
 
+export const executionReportGraphResourceNodeSchema = z.object({
+  id: z.string().min(1),
+  kind: z.literal("resource"),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  resourceKind: workflowReportedResourceKindSchema,
+  customKind: z.string().min(1).nullable().default(null),
+  tags: z.array(z.string().min(1)).default([]),
+  createdAt: z.string().datetime()
+});
+export type ExecutionReportGraphResourceNode = z.infer<typeof executionReportGraphResourceNodeSchema>;
+
 export const executionReportGraphFindingNodeSchema = z.object({
   id: z.string().min(1),
   kind: z.literal("finding"),
@@ -101,6 +122,18 @@ export const executionReportGraphFindingNodeSchema = z.object({
   createdAt: z.string().datetime()
 });
 export type ExecutionReportGraphFindingNode = z.infer<typeof executionReportGraphFindingNodeSchema>;
+
+export const executionReportGraphPathNodeSchema = z.object({
+  id: z.string().min(1),
+  kind: z.literal("path"),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  severity: severitySchema.optional(),
+  resourceIds: z.array(z.string().min(1)).default([]),
+  findingIds: z.array(z.string().min(1)).default([]),
+  createdAt: z.string().datetime()
+});
+export type ExecutionReportGraphPathNode = z.infer<typeof executionReportGraphPathNodeSchema>;
 
 export const executionReportGraphChainNodeSchema = z.object({
   id: z.string().min(1),
@@ -115,7 +148,9 @@ export type ExecutionReportGraphChainNode = z.infer<typeof executionReportGraphC
 
 export const executionReportGraphNodeSchema = z.discriminatedUnion("kind", [
   executionReportGraphEvidenceNodeSchema,
+  executionReportGraphResourceNodeSchema,
   executionReportGraphFindingNodeSchema,
+  executionReportGraphPathNodeSchema,
   executionReportGraphChainNodeSchema
 ]);
 export type ExecutionReportGraphNode = z.infer<typeof executionReportGraphNodeSchema>;

@@ -2061,7 +2061,7 @@ describe("WorkflowExecutionService", () => {
           baseUrl: "http://localhost:3000/admin"
         });
         const result = await options.tools.report_system_graph_batch.execute({
-          resources: [{ id: "res_admin", kind: "web_endpoint", name: "/admin" }],
+          resources: [{ id: "res_admin", kind: "endpoint", name: "/admin" }],
           findings: [{
             id: "find_admin_authbypass",
             title: "Admin auth bypass",
@@ -2128,7 +2128,8 @@ describe("WorkflowExecutionService", () => {
         const result = await options.tools.report_system_graph_batch.execute({
           resources: [{
             id: "res_target_portal",
-            kind: "web_application",
+            kind: "custom",
+            customKind: "web_application",
             name: "CorpNet Internal Portal",
             evidence: [{
               quote: "URL: http://localhost:3000/admin\nStatus: 200",
@@ -2222,7 +2223,8 @@ describe("WorkflowExecutionService", () => {
         await expect(options.tools.report_system_graph_batch.execute({
           resources: [{
             id: "res_target_portal",
-            kind: "web_application",
+            kind: "custom",
+            customKind: "web_application",
             name: "CorpNet Internal Portal"
           }],
           findings: [{

@@ -458,6 +458,16 @@ describe("contracts", () => {
       graph: {
         nodes: [
           {
+            id: "resource-1",
+            kind: "resource",
+            title: "admin.demo.local",
+            summary: "Primary admin host.",
+            resourceKind: "host",
+            customKind: null,
+            tags: ["edge"],
+            createdAt: "2026-04-25T12:01:30.000Z"
+          },
+          {
             id: "evidence-1",
             kind: "evidence",
             title: "Admin panel response",
@@ -467,6 +477,16 @@ describe("contracts", () => {
             severity: "high",
             refs: [{ toolRunRef: "tool-run-1" }],
             createdAt: "2026-04-25T12:02:00.000Z"
+          },
+          {
+            id: "path-1",
+            kind: "path",
+            title: "Admin exposure path",
+            summary: "This path groups the exposed host and finding.",
+            severity: "high",
+            resourceIds: ["resource-1"],
+            findingIds: ["finding-1"],
+            createdAt: "2026-04-25T12:03:10.000Z"
           },
           {
             id: "finding-1",
@@ -482,11 +502,25 @@ describe("contracts", () => {
         ],
         edges: [
           {
+            id: "edge-0",
+            kind: "affects",
+            source: "resource-1",
+            target: "finding-1",
+            createdAt: "2026-04-25T12:03:05.000Z"
+          },
+          {
             id: "edge-1",
             kind: "supports",
             source: "evidence-1",
             target: "finding-1",
             createdAt: "2026-04-25T12:03:30.000Z"
+          },
+          {
+            id: "edge-2",
+            kind: "member_of",
+            source: "finding-1",
+            target: "path-1",
+            createdAt: "2026-04-25T12:03:40.000Z"
           }
         ]
       },
@@ -729,6 +763,39 @@ describe("contracts", () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it("accepts custom resource and relationship kinds when customKind is supplied", () => {
+    const result = workflowReportSystemGraphBatchSubmissionSchema.safeParse({
+      resources: [{
+        id: "resource-admin-host",
+        kind: "custom",
+        customKind: "web_application",
+        name: "admin.demo.local"
+      }],
+      resourceRelationships: [{
+        id: "relationship-admin-http",
+        kind: "custom",
+        customKind: "fronts",
+        sourceResourceId: "resource-admin-host",
+        targetResourceId: "resource-admin-host",
+        summary: "Front-end and origin are currently modeled as one node in this fixture."
+      }]
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects custom resource kinds without customKind", () => {
+    const result = workflowReportSystemGraphBatchSubmissionSchema.safeParse({
+      resources: [{
+        id: "resource-admin-host",
+        kind: "custom",
+        name: "admin.demo.local"
+      }]
+    });
+
+    expect(result.success).toBe(false);
   });
 
   it("rejects duplicate stable ids inside one system graph batch", () => {

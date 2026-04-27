@@ -588,7 +588,6 @@ export type WorkflowAttackVectorSubmission = z.infer<typeof workflowAttackVector
 
 const workflowStableIdSchema = z.string().trim().min(1);
 const workflowStableIdListSchema = z.array(workflowStableIdSchema).default([]).transform((items) => [...new Set(items)]);
-const workflowFreeformKindSchema = z.string().trim().min(1);
 const duplicateWorkflowIdsIssue = (ctx: z.RefinementCtx, collection: string, ids: string[]) => {
   const seen = new Set<string>();
   for (const [index, id] of ids.entries()) {
@@ -604,9 +603,52 @@ const duplicateWorkflowIdsIssue = (ctx: z.RefinementCtx, collection: string, ids
   }
 };
 
-export const workflowReportedResourceSchema = z.object({
+export const workflowReportedResourceKindSchema = z.enum([
+  "host",
+  "service",
+  "application",
+  "endpoint",
+  "database",
+  "queue",
+  "storage",
+  "identity",
+  "network",
+  "external",
+  "custom"
+]);
+export type WorkflowReportedResourceKind = z.infer<typeof workflowReportedResourceKindSchema>;
+
+export const workflowReportedResourceRelationshipKindSchema = z.enum([
+  "hosts",
+  "exposes",
+  "connects_to",
+  "depends_on",
+  "contains",
+  "trusts",
+  "routes_to",
+  "authenticates_to",
+  "custom"
+]);
+export type WorkflowReportedResourceRelationshipKind = z.infer<typeof workflowReportedResourceRelationshipKindSchema>;
+
+function requireCustomKindWhenNeeded(
+  value: { kind?: string | undefined; customKind?: string | undefined },
+  ctx: z.RefinementCtx,
+  path: string[] = ["customKind"]
+) {
+  if (value.kind === "custom" && (!value.customKind || value.customKind.trim().length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "customKind is required when kind is custom.",
+      path
+    });
+  }
+}
+
+const workflowReportedResourceBaseSchema = z.object({
   id: workflowStableIdSchema,
-  kind: workflowFreeformKindSchema,
+  kind: workflowReportedResourceKindSchema,
+  customKind: z.string().trim().min(1).optional(),
   name: z.string().trim().min(1),
   summary: z.string().trim().min(1).optional(),
   evidence: z.array(workflowFindingEvidenceSchema).default([]),
@@ -615,18 +657,27 @@ export const workflowReportedResourceSchema = z.object({
   workflowStageId: z.string().uuid().nullable().optional(),
   createdAt: z.string().datetime().optional()
 });
+
+export const workflowReportedResourceSchema = workflowReportedResourceBaseSchema.superRefine((value: z.infer<typeof workflowReportedResourceBaseSchema>, ctx) => {
+  requireCustomKindWhenNeeded(value, ctx);
+});
 export type WorkflowReportedResource = z.infer<typeof workflowReportedResourceSchema>;
 
-export const workflowReportedResourceBatchItemSchema = workflowReportedResourceSchema.partial().extend({
+const workflowReportedResourceBatchItemBaseSchema = workflowReportedResourceBaseSchema.partial().extend({
   id: workflowStableIdSchema,
   evidence: z.array(workflowFindingEvidenceSchema).optional(),
   tags: z.array(z.string().trim().min(1)).optional()
 });
+
+export const workflowReportedResourceBatchItemSchema = workflowReportedResourceBatchItemBaseSchema.superRefine((value: z.infer<typeof workflowReportedResourceBatchItemBaseSchema>, ctx) => {
+  requireCustomKindWhenNeeded(value, ctx);
+});
 export type WorkflowReportedResourceBatchItem = z.infer<typeof workflowReportedResourceBatchItemSchema>;
 
-export const workflowReportedResourceRelationshipSchema = z.object({
+const workflowReportedResourceRelationshipBaseSchema = z.object({
   id: workflowStableIdSchema,
-  kind: workflowFreeformKindSchema,
+  kind: workflowReportedResourceRelationshipKindSchema,
+  customKind: z.string().trim().min(1).optional(),
   sourceResourceId: workflowStableIdSchema,
   targetResourceId: workflowStableIdSchema,
   summary: z.string().trim().min(1),
@@ -635,11 +686,19 @@ export const workflowReportedResourceRelationshipSchema = z.object({
   workflowStageId: z.string().uuid().nullable().optional(),
   createdAt: z.string().datetime().optional()
 });
+
+export const workflowReportedResourceRelationshipSchema = workflowReportedResourceRelationshipBaseSchema.superRefine((value: z.infer<typeof workflowReportedResourceRelationshipBaseSchema>, ctx) => {
+  requireCustomKindWhenNeeded(value, ctx);
+});
 export type WorkflowReportedResourceRelationship = z.infer<typeof workflowReportedResourceRelationshipSchema>;
 
-export const workflowReportedResourceRelationshipBatchItemSchema = workflowReportedResourceRelationshipSchema.partial().extend({
+const workflowReportedResourceRelationshipBatchItemBaseSchema = workflowReportedResourceRelationshipBaseSchema.partial().extend({
   id: workflowStableIdSchema,
   evidence: z.array(workflowFindingEvidenceSchema).optional()
+});
+
+export const workflowReportedResourceRelationshipBatchItemSchema = workflowReportedResourceRelationshipBatchItemBaseSchema.superRefine((value: z.infer<typeof workflowReportedResourceRelationshipBatchItemBaseSchema>, ctx) => {
+  requireCustomKindWhenNeeded(value, ctx);
 });
 export type WorkflowReportedResourceRelationshipBatchItem = z.infer<typeof workflowReportedResourceRelationshipBatchItemSchema>;
 

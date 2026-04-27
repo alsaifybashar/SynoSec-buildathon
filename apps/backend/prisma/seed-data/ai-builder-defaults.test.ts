@@ -85,7 +85,7 @@ describe("getSeededWorkflowDefinitions", () => {
         items: {
           additionalProperties: false,
           properties: {
-            findingIds: { items: { format: "uuid" } }
+            findingIds: { items: { type: "string", minLength: 1 } }
           }
         }
       },

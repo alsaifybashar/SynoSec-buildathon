@@ -90,7 +90,8 @@ const lifecycleBuiltinAiTools: AiTool[] = [
             additionalProperties: false,
             properties: {
               id: { type: "string", description: "Stable model-chosen id for this resource. Reuse it to refine the same resource later." },
-              kind: { type: "string", description: "Normalized resource kind such as host, service, application, datastore, subnet, endpoint, or secret-store." },
+              kind: { type: "string", enum: ["host", "service", "application", "endpoint", "database", "queue", "storage", "identity", "network", "external", "custom"], description: "Canonical resource kind. Use `custom` only when no canonical kind fits." },
+              customKind: { type: "string", description: "Required when `kind` is `custom`. Short specific subtype such as web_application or trust_zone." },
               name: { type: "string", description: "Human-readable label for the resource." },
               summary: { type: "string", description: "Optional concise description of why this resource matters." },
               evidence: {
@@ -110,7 +111,8 @@ const lifecycleBuiltinAiTools: AiTool[] = [
             additionalProperties: false,
             properties: {
               id: { type: "string", description: "Stable model-chosen id for this relationship." },
-              kind: { type: "string", description: "Relationship kind such as reaches, hosts, depends_on, trusts, exposes, contains, routes_to, or lateral_movement." },
+              kind: { type: "string", enum: ["hosts", "exposes", "connects_to", "depends_on", "contains", "trusts", "routes_to", "authenticates_to", "custom"], description: "Canonical resource relationship kind. Use `custom` only when no canonical kind fits." },
+              customKind: { type: "string", description: "Required when `kind` is `custom`. Short specific subtype for renderer and inspectors." },
               sourceResourceId: { type: "string", description: "Stable id of the source resource." },
               targetResourceId: { type: "string", description: "Stable id of the target resource." },
               summary: { type: "string", description: "Short explanation of the relationship." },
