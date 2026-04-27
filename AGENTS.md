@@ -12,3 +12,4 @@ Prefer these rules:
 - Preserve the original error context so callers and operators can see what actually failed.
 - Only use a fallback when it is an intentional product requirement and the degraded state is reported explicitly.
 - Do not present synthesized summaries, inferred assistant messages, or other derived output as if the model actually produced them.
+- Deployment must not bootstrap, reset, migrate, or seed the production database unless the user explicitly requests it.
