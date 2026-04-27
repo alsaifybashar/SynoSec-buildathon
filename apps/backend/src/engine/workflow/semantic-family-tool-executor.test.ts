@@ -112,7 +112,7 @@ function comparableObservationShape(observation: Awaited<ReturnType<typeof execu
     summary: observation.summary,
     severity: observation.severity,
     confidence: observation.confidence,
-    evidence: observation.evidence,
+    evidence: normalizeVolatileHttpOutput(observation.evidence) ?? observation.evidence,
     technique: observation.technique,
     relatedKeys: observation.relatedKeys
   };

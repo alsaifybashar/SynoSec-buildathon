@@ -35,7 +35,7 @@ function createExecutionContext(bashSource: string) {
       privilegeProfile: "read-only-network" as const,
       parameters: {
         bashSource,
-        timeoutMs: 1000,
+        timeoutMs: 5000,
         commandPreview: "HTTP Surface Assessment target=localhost",
         toolInput: {
           target: "localhost",
