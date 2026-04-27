@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Download, Eye, EyeOff, GitBranch, Pencil, Square, Workflow as WorkflowIcon } from "lucide-react";
 import { toast } from "sonner";
-import { apiRoutes, type AiAgent, type UpdateWorkflowBody, type Workflow } from "@synosec/contracts";
+import {
+  apiRoutes,
+  type AiAgent,
+  type ExecutionReportDetail,
+  type ListExecutionReportsResponse,
+  type UpdateWorkflowBody,
+  type Workflow
+} from "@synosec/contracts";
 import { workflowsResource } from "@/features/workflows/resource";
 import { workflowTransfer } from "@/features/workflows/transfer";
 import { useWorkflowDefinitionContext } from "@/features/workflows/context";
@@ -66,6 +73,7 @@ export function WorkflowDetailPage({
       : context.agents,
     [agentOverride, context.agents]
   );
+  const [executionReport, setExecutionReport] = useState<ExecutionReportDetail | null>(null);
   const {
     currentLaunch,
     currentRun,
@@ -83,6 +91,43 @@ export function WorkflowDetailPage({
     targets: context.targets,
     selectedTargetId
   });
+
+  const completedRunId = currentRun?.status === "completed" ? currentRun.id : null;
+  useEffect(() => {
+    if (!completedRunId) {
+      setExecutionReport(null);
+      return;
+    }
+
+    let active = true;
+    void (async () => {
+      try {
+        const reportList = await fetchJson<ListExecutionReportsResponse>(
+          `${apiRoutes.executionReports}?page=1&pageSize=100&executionKind=workflow&archived=include&sortBy=generatedAt&sortDirection=desc`
+        );
+        const summaries = reportList["reports"] ?? [];
+        const matching = summaries.find((report) => report.executionId === completedRunId) ?? null;
+        if (!matching) {
+          if (active) {
+            setExecutionReport(null);
+          }
+          return;
+        }
+        const detail = await fetchJson<ExecutionReportDetail>(`${apiRoutes.executionReports}/${matching.id}`);
+        if (active) {
+          setExecutionReport(detail);
+        }
+      } catch {
+        if (active) {
+          setExecutionReport(null);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [completedRunId]);
 
   const workflowAgent = workflow
     ? (agentOverride?.id === workflow.agentId ? agentOverride : context.agentLookup[workflow.agentId] ?? null)
@@ -343,6 +388,7 @@ export function WorkflowDetailPage({
           latestRunError={latestRunError}
           transcriptError={transcriptError}
           streamError={streamError}
+          executionReport={executionReport}
         />
       </DetailPage>
       <PromptEditModal

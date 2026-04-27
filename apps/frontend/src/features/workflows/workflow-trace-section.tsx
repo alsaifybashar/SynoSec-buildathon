@@ -1,7 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
-import { getWorkflowRunContextTokenEstimate, getWorkflowRunModelStepCount, type AiAgent, type AiTool, type AttackPathSummary, type Observation, type Target as WorkflowTarget, type Workflow, type WorkflowRun } from "@synosec/contracts";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { getWorkflowRunContextTokenEstimate, getWorkflowRunModelStepCount, type AiAgent, type AiTool, type AttackPathSummary, type ExecutionReportDetail, type Observation, type Target as WorkflowTarget, type Workflow, type WorkflowRun } from "@synosec/contracts";
 import { AlertTriangle, ChevronRight, LoaderCircle, Radio, Target } from "lucide-react";
 import { AttackPathsSection } from "@/features/attack-paths/attack-paths-section";
+import { ExecutionReportFindingsView } from "@/features/execution-reports/findings-table-view";
+import { ExecutionReportGraphMap } from "@/features/execution-reports/execution-report-graph";
 import { DetailHintTrigger } from "@/shared/components/detail-page";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/shared/lib/utils";
@@ -1017,12 +1019,27 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
   );
 }
 
+type WorkflowDetailView = "run" | "graph" | "findings" | "attacks";
+
+const VIEW_OPTIONS: Array<{ id: WorkflowDetailView; label: string }> = [
+  { id: "run", label: "Workflow run" },
+  { id: "graph", label: "Workflow graph" },
+  { id: "findings", label: "Findings list" },
+  { id: "attacks", label: "Attack list" }
+];
+
 function FindingsRail({
-  metadata
+  metadata,
+  selectedView,
+  onSelectView,
+  showViewSelector
 }: {
   metadata: MetadataItem[];
+  selectedView: WorkflowDetailView;
+  onSelectView: (view: WorkflowDetailView) => void;
+  showViewSelector: boolean;
 }) {
-  if (metadata.length === 0) {
+  if (metadata.length === 0 && !showViewSelector) {
     return null;
   }
 
@@ -1044,6 +1061,33 @@ function FindingsRail({
           </div>
         </DetailMetadataPanel>
       ) : null}
+      {showViewSelector ? (
+        <div className="rounded-xl border border-border/80 bg-card px-4 py-4">
+          <div className="mb-2 px-3 font-mono text-eyebrow font-medium uppercase tracking-[0.3em] text-muted-foreground">
+            Artifacts
+          </div>
+          <div className="grid gap-1">
+            {VIEW_OPTIONS.map((option) => {
+              const active = option.id === selectedView;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => onSelectView(option.id)}
+                  className={cn(
+                    "relative flex w-full items-center rounded-none px-3 py-2 text-left text-sm font-medium leading-none transition-colors",
+                    active
+                      ? "bg-muted text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))] before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-primary before:content-['']"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
     </aside>
   );
 }
@@ -1062,7 +1106,8 @@ export function WorkflowTraceSection({
   showFullDetails = false,
   latestRunError,
   transcriptError,
-  streamError
+  streamError,
+  executionReport
 }: {
   workflow: Workflow | null;
   activeTarget: WorkflowTarget | null;
@@ -1078,7 +1123,15 @@ export function WorkflowTraceSection({
   latestRunError?: string | null;
   transcriptError?: string | null;
   streamError?: string | null;
+  executionReport?: ExecutionReportDetail | null;
 }) {
+  const [selectedView, setSelectedView] = useState<WorkflowDetailView>("run");
+  const reportAvailable = Boolean(executionReport);
+  useEffect(() => {
+    if (!reportAvailable && selectedView !== "run") {
+      setSelectedView("run");
+    }
+  }, [reportAvailable, selectedView]);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const shouldFollowRef = useRef(false);
   const hasMeasuredScrollStateRef = useRef(false);
@@ -1219,20 +1272,18 @@ export function WorkflowTraceSection({
     return null;
   }
 
-  return (
-    <section className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.75fr)]">
-      <div className="min-w-0">
-        <div className="space-y-4">
-          {effectiveAttackPaths.paths.length > 0 ? (
-            <AttackPathsSection
-              attackPaths={effectiveAttackPaths}
-              findingTitles={new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding.title]))}
-              findingSeverities={new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding.severity]))}
-              summary="Ranked attack paths are the primary outcome of the run. The transcript below is the evidence trail that supports each path and finding."
-              emptyMessage="No linked attack paths were derived from this run yet."
-            />
-          ) : null}
-          <div ref={transcriptRef} className="relative min-h-[38rem]">
+  const runView = (
+    <div className="space-y-4">
+      {effectiveAttackPaths.paths.length > 0 ? (
+        <AttackPathsSection
+          attackPaths={effectiveAttackPaths}
+          findingTitles={new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding.title]))}
+          findingSeverities={new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding.severity]))}
+          summary="Ranked attack paths are the primary outcome of the run. The transcript below is the evidence trail that supports each path and finding."
+          emptyMessage="No linked attack paths were derived from this run yet."
+        />
+      ) : null}
+      <div ref={transcriptRef} className="relative min-h-[38rem]">
             <div className="mx-auto w-full max-w-[56rem] px-6 py-8">
               <div className="space-y-5">
                 {atoms.map((atom) => (
@@ -1269,18 +1320,49 @@ export function WorkflowTraceSection({
             </div>
           </div>
 
-          {errorMessages.length > 0 ? (
-            <div className="px-4 pb-4 md:px-6">
-              <div className="mt-3 flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{errorMessages[errorMessages.length - 1]}</span>
-              </div>
-            </div>
-          ) : null}
+      {errorMessages.length > 0 ? (
+        <div className="px-4 pb-4 md:px-6">
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{errorMessages[errorMessages.length - 1]}</span>
+          </div>
         </div>
-      </div>
+      ) : null}
+    </div>
+  );
 
-      <FindingsRail metadata={metadataItems} />
+  let mainContent: ReactNode = runView;
+  if (executionReport && selectedView === "graph") {
+    mainContent = <ExecutionReportGraphMap graph={executionReport.graph} />;
+  } else if (executionReport && selectedView === "findings") {
+    mainContent = (
+      <ExecutionReportFindingsView
+        report={executionReport}
+        onJumpToToolActivity={() => undefined}
+      />
+    );
+  } else if (executionReport && selectedView === "attacks") {
+    mainContent = (
+      <AttackPathsSection
+        attackPaths={executionReport.attackPaths}
+        findingTitles={new Map(executionReport.findings.map((finding) => [finding.id, finding.title]))}
+        findingSeverities={new Map(executionReport.findings.map((finding) => [finding.id, finding.severity]))}
+        summary={executionReport.attackPathExecutiveSummary}
+        emptyMessage="No linked attack paths were derived for this report."
+      />
+    );
+  }
+
+  return (
+    <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="min-w-0">{mainContent}</div>
+
+      <FindingsRail
+        metadata={metadataItems}
+        selectedView={selectedView}
+        onSelectView={setSelectedView}
+        showViewSelector={reportAvailable}
+      />
 
       <style>{`
         @keyframes duplex-in {

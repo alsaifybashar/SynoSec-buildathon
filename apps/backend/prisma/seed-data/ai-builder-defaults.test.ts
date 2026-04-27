@@ -170,7 +170,7 @@ describe("getSeededWorkflowDefinitions", () => {
     const genericPentester = getSeededRoleDefinition("generic-pentester");
 
     expect(genericPentester).toBeDefined();
-    expect(genericPentester?.name).toBe("Generic Pentester");
+    expect(genericPentester?.name).toBe("Wrapped Tool Family");
     expect(genericPentester?.systemPrompt).toContain("Map how weaknesses may connect");
     expect(genericPentester?.systemPrompt).toContain("Focus on linking potential vulnerabilities");
     expect(genericPentester?.systemPrompt).toContain("lower confidence and validationStatus such as suspected or unverified");
@@ -188,7 +188,7 @@ describe("getSeededWorkflowDefinitions", () => {
     const bashAgent = getSeededRoleDefinition("bash-poc-agent");
 
     expect(bashAgent).toBeDefined();
-    expect(bashAgent?.name).toBe("Bash PoC Agent");
+    expect(bashAgent?.name).toBe("Just Bash");
     expect(bashAgent?.systemPrompt).toContain("Evaluate the target’s cybersecurity with an attack-path-first approach.");
     expect(bashAgent?.systemPrompt).toContain("multiple lower-severity weaknesses can be chained");
     expect(bashAgent?.systemPrompt).toContain("invoke installed binaries available in the execution environment");
@@ -217,7 +217,7 @@ describe("getSeededWorkflowDefinitions", () => {
     const broadScriptAgent = getSeededRoleDefinition("broad-script-agent");
 
     expect(broadScriptAgent).toBeDefined();
-    expect(broadScriptAgent?.name).toBe("Broad Script Tool Agent");
+    expect(broadScriptAgent?.name).toBe("Individual Tools");
     expect(broadScriptAgent?.systemPrompt).toContain("approved direct script-backed tools exposed in this workflow");
     expect(broadScriptAgent?.systemPrompt).toContain("invoke installed binaries available in the execution environment");
     expect(broadScriptAgent?.systemPrompt).toContain("derive the exact next request");

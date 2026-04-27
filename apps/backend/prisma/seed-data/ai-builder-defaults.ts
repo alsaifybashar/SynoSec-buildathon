@@ -492,7 +492,7 @@ export function validateSeededToolDefinitions() {
 export const seededRoleDefinitions = [
   {
     key: "generic-pentester" as const,
-    name: "Generic Pentester",
+    name: "Wrapped Tool Family",
     description: "Default pentesting agent for capability-level workflow execution and attack-path reasoning.",
     systemPrompt: buildCanonicalPrompt({
       roleAndGoal: [
@@ -526,7 +526,7 @@ export const seededRoleDefinitions = [
   },
   {
     key: "bash-poc-agent" as const,
-    name: "Bash PoC Agent",
+    name: "Just Bash",
     description: "Proof-of-concept agent with a single seeded bash execution tool.",
     systemPrompt: buildCanonicalPrompt({
       roleAndGoal: [
@@ -562,7 +562,7 @@ export const seededRoleDefinitions = [
   },
   {
     key: "broad-script-agent" as const,
-    name: "Broad Script Tool Agent",
+    name: "Individual Tools",
     description: "Broad seeded bash-tool agent for workflows that need direct script-backed tool coverage.",
     systemPrompt: buildCanonicalPrompt({
       roleAndGoal: [
