@@ -1044,7 +1044,7 @@ function FindingsRail({
   }
 
   return (
-    <aside className="space-y-3 lg:sticky lg:top-6">
+    <aside className="grid gap-3 md:grid-cols-2 xl:sticky xl:top-6 xl:grid-cols-1">
       {metadata.length > 0 ? (
         <DetailMetadataPanel
           title="Metadata"
@@ -1354,7 +1354,7 @@ export function WorkflowTraceSection({
   }
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+    <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
       <div className="min-w-0">{mainContent}</div>
 
       <FindingsRail

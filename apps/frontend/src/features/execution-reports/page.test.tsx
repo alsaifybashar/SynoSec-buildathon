@@ -336,7 +336,7 @@ describe("ExecutionReportsPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the attack-path section ahead of the split findings view and executive summary", () => {
+  it("renders the executive summary below the graph-driven attack-path and findings sections", () => {
     render(
       <ExecutionReportsPage
         reportId="report-1"
@@ -345,10 +345,13 @@ describe("ExecutionReportsPage", () => {
       />
     );
 
-    expect(screen.getByRole("img", { name: "Finding traceability graph" })).toBeInTheDocument();
+    const attackPathGraph = screen.getByRole("img", { name: "Attack path graph" });
+    const findingsGraph = screen.getByRole("img", { name: "Finding traceability graph" });
+    const executiveSummaryHeading = screen.getByText("Executive Summary");
+
     expect(screen.getAllByText("Admin surface to privileged pivot").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Findings").length).toBeGreaterThan(0);
-    expect(screen.getByText("Executive Summary")).toBeInTheDocument();
+    expect(attackPathGraph.compareDocumentPosition(executiveSummaryHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(findingsGraph.compareDocumentPosition(executiveSummaryHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText("Ordered findings")).toBeInTheDocument();
     expect(screen.getByText("single source findings")).toBeInTheDocument();
     expect(screen.getByText("Verification")).toBeInTheDocument();

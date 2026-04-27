@@ -23,6 +23,8 @@ import {
   getWorkflowReportedAttackVectors,
   getWorkflowReportedFindings,
   workflowExecutionContractHeading,
+  workflowFindingTypeSchema,
+  workflowReportedResourceKindSchema,
   workflowAttackVectorSubmissionSchema,
   workflowFindingSubmissionSchema,
   workflowReportAttackVectorsSubmissionSchema,
@@ -287,6 +289,10 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       toolId: string | null;
     }>();
     const persistedToolResultIds = new Set<string>();
+    const failedReportedFindingClaims = new Map<string, {
+      title: string;
+      lastError: string;
+    }>();
 
     const toolContext = this.formatToolContextSections([
       {
@@ -428,6 +434,32 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         detail: JSON.stringify(output, null, 2)
       };
     };
+    const formatSystemGraphBatchResult = (rawOutput: unknown) => {
+      if (!rawOutput || typeof rawOutput !== "object" || Array.isArray(rawOutput)) {
+        return null;
+      }
+      const output = rawOutput as Record<string, unknown>;
+      const findingIds = Array.isArray(output["findingIds"])
+        ? output["findingIds"].filter((entry): entry is string => typeof entry === "string")
+        : [];
+      if (findingIds.length !== 1) {
+        return null;
+      }
+      const finding = reportedFindings.get(findingIds[0]!);
+      if (!finding) {
+        return null;
+      }
+      return {
+        summary: `Recorded ${finding.severity.toUpperCase()} finding: ${finding.title} on ${finding.target.host}.`,
+        detail: JSON.stringify({
+          accepted: true,
+          findingId: finding.id,
+          title: finding.title,
+          severity: finding.severity,
+          host: finding.target.host
+        }, null, 2)
+      };
+    };
 
     const appendAcceptedCompleteRunToolResult = async (toolCallId: string, rawStreamPartType: string) => {
       if (!terminalState || persistedToolResultIds.has(toolCallId)) {
@@ -474,6 +506,24 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         execute: entry.execute
       })
     ]));
+    const collectFailedFindingClaims = (rawInput: unknown, error: unknown) => {
+      const claims = extractFindingClaims(rawInput);
+      if (claims.length === 0) {
+        return;
+      }
+      const lastError = error instanceof Error ? error.message : String(error);
+      for (const title of claims) {
+        failedReportedFindingClaims.set(title.toLowerCase(), {
+          title,
+          lastError
+        });
+      }
+    };
+    const clearAcceptedFindingClaims = (findingTitles: string[]) => {
+      for (const title of findingTitles) {
+        failedReportedFindingClaims.delete(title.toLowerCase());
+      }
+    };
 
     const submitAttackVector = async (
       rawInput: unknown,
@@ -591,7 +641,13 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           : "";
         throw new RequestError(
           400,
-          `${entityLabel} evidence[${index}] could not be grounded to persisted evidence.${groundingHint} Provide toolRunRef, observationRef, artifactRef, traceEventId, or externalUrl.`
+          `${entityLabel} evidence[${index}] could not be grounded to persisted evidence.${groundingHint} Provide toolRunRef, observationRef, artifactRef, traceEventId, or externalUrl.`,
+          {
+            userFriendlyMessage: summarizeWorkflowEvidenceRepair(
+              "report_system_graph_batch",
+              `${entityLabel} evidence[${index}] could not be grounded to persisted evidence.${groundingHint}`
+            )
+          }
         );
       }
     };
@@ -909,12 +965,16 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         }, "Finding submission");
         const referenceError = validateFindingEvidenceReferences(findingSubmission, executedResults);
         if (referenceError) {
-          throw new RequestError(400, referenceError);
+          throw new RequestError(400, referenceError, {
+            userFriendlyMessage: summarizeWorkflowEvidenceRepair("report_system_graph_batch", referenceError)
+          });
         }
         validateEvidenceRefs(findingSubmission.evidence);
         const verification = verifyFindingEvidence(findingSubmission, executedResults);
         if (verification.validationStatus === "rejected") {
-          throw new RequestError(400, verification.reason);
+          throw new RequestError(400, verification.reason, {
+            userFriendlyMessage: summarizeWorkflowEvidenceRepair("report_system_graph_batch", verification.reason)
+          });
         }
         return {
           ...findingSubmission,
@@ -1165,40 +1225,18 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       report_system_graph_batch: createSdkTool({
         description: buildReportSystemGraphBatchDescription(stage),
         inputSchema: reportSystemGraphBatchToolInputSchema,
-        execute: async (rawInput) => submitSystemGraphBatch(rawInput)
-      }),
-      report_finding: createSdkTool({
-        description: "Compatibility alias for report_system_graph_batch. Prefer report_system_graph_batch in new workflows.",
-        inputSchema: reportFindingToolInputSchema,
         execute: async (rawInput) => {
-          const normalizedInput = normalizeWorkflowToolInput(rawInput, "Finding submission");
-          rejectUnsupportedFindingFields(normalizedInput);
-          const reportInput = parseWorkflowToolInput(reportFindingToolInputSchema, normalizedInput, "Finding submission");
-          const resourceId = reportInput.target?.host?.trim()?.length
-            ? `resource:${reportInput.target.host.trim()}`
-            : `resource:${target.host}`;
-          const output = await submitSystemGraphBatch({
-            resources: [{
-              id: resourceId,
-              kind: "host",
-              name: reportInput.target?.host?.trim() || target.host
-            }],
-            findings: [{
-              id: randomUUID(),
-              ...reportInput,
-              resourceId,
-              resourceIds: [resourceId]
-            }]
-          });
-          const findingId = output.findingIds[0] ?? "";
-          const finding = reportedFindings.get(findingId);
-          return {
-            accepted: true,
-            findingId,
-            title: finding?.title ?? reportInput.title ?? "Finding",
-            severity: finding?.severity ?? reportInput.severity ?? "medium",
-            host: finding?.target.host ?? reportInput.target?.host ?? target.host
-          };
+          try {
+            const output = await submitSystemGraphBatch(rawInput);
+            const acceptedTitles = output.findingIds
+              .map((findingId) => reportedFindings.get(findingId)?.title)
+              .filter((title): title is string => Boolean(title));
+            clearAcceptedFindingClaims(acceptedTitles);
+            return output;
+          } catch (error) {
+            collectFailedFindingClaims(rawInput, error);
+            throw error;
+          }
         }
       }),
       report_attack_vectors: createSdkTool({
@@ -1241,6 +1279,22 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           const completion = z.object({
             summary: z.string().min(1)
           }).strict().parse(rawInput);
+          const unsupportedClaims = findUnsupportedSummaryClaims(completion.summary, reportedFindings, failedReportedFindingClaims);
+          if (unsupportedClaims.length > 0) {
+            const detail = [
+              "The completion summary referenced findings that were not successfully persisted.",
+              "",
+              ...unsupportedClaims.map((claim, index) => `${index + 1}. ${claim.title} - ${claim.lastError}`),
+              "",
+              "The run will still complete, but execution reports and persisted findings only include successfully accepted graph submissions."
+            ].join("\n");
+            await appendEvent("verification", "completed", {
+              messageKind: "challenge",
+              action: "complete_run_summary_warning",
+              summary: "Completion summary included unsupported finding claims.",
+              unsupportedClaims
+            }, "Completion summary warning", "Completion summary included unsupported finding claims.", detail);
+          }
           const completionDetail = [
             `Agent summary: ${completion.summary}`
           ].join("\n");
@@ -1404,7 +1458,11 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               : null;
             const matchingResult = (toolRunId ? executedResults.find((candidate) => candidate.toolRun.id === toolRunId) : null)
               ?? executedResults.find((candidate) => candidate.toolName === part.toolName);
-            const findingResult = part.toolName === "report_finding" ? formatFindingResult(part.output) : null;
+            const findingResult = part.toolName === "report_finding"
+              ? formatFindingResult(part.output)
+              : part.toolName === "report_system_graph_batch"
+                ? formatSystemGraphBatchResult(part.output)
+                : null;
             const partIsError = typeof part.isError === "boolean" && part.isError;
             const completeRunRejected = part.toolName === "complete_run"
               && typeof part.output === "object"
@@ -1953,10 +2011,82 @@ function formatZodIssues(error: z.ZodError, rootPathLabel = "input") {
     .join("; ");
 }
 
+function formatAllowedValues(values: readonly string[]) {
+  return values.map((value) => `\`${value}\``).join(", ");
+}
+
+function summarizeWorkflowValidationIssues(
+  toolName: "report_finding" | "report_attack_vectors" | "report_system_graph_batch",
+  error: z.ZodError,
+  rootPathLabel: string
+) {
+  const actionLabel = toolName === "report_finding"
+    ? "Finding submission"
+    : toolName === "report_attack_vectors"
+      ? "Attack vector submission"
+      : "System graph batch submission";
+  const evidenceReferenceFields = formatAllowedValues([
+    "toolRunRef",
+    "observationRef",
+    "artifactRef",
+    "traceEventId",
+    "externalUrl"
+  ]);
+  const findingTypeValues = formatAllowedValues(workflowFindingTypeSchema.options);
+  const resourceKindValues = formatAllowedValues(workflowReportedResourceKindSchema.options);
+  const hints = error.issues.map((issue) => {
+    const path = issue.path.length > 0 ? issue.path.join(".") : rootPathLabel;
+    if (issue.message === "Workflow finding evidence requires at least one evidence reference."
+      || issue.message === "Evidence records require sourceTool or another persisted evidence reference.") {
+      return `${path}: add one persisted evidence reference (${evidenceReferenceFields}). \`sourceTool\` alone is not enough unless it resolves to exactly one executed tool result in this run.`;
+    }
+
+    if (issue.message === "customKind is required when kind is custom.") {
+      return `${path}: when \`kind\` is \`custom\`, add \`customKind\` with the concrete subtype.`;
+    }
+
+    if (issue.code === z.ZodIssueCode.invalid_enum_value) {
+      if (path.endsWith("kind") && path.startsWith("resources.")) {
+        return `${path}: use one of ${resourceKindValues}. For nonstandard resources, use \`kind: "custom"\` with \`customKind\`.`;
+      }
+
+      if (path.endsWith("type") && path.startsWith("findings.")) {
+        return `${path}: use one of ${findingTypeValues}.`;
+      }
+    }
+
+    return `${path}: ${issue.message}`;
+  });
+
+  return `${actionLabel} was rejected. Fix these fields and retry: ${[...new Set(hints)].join(" ")}`;
+}
+
+function summarizeWorkflowEvidenceRepair(
+  toolName: "report_finding" | "report_attack_vectors" | "report_system_graph_batch",
+  message: string
+) {
+  const actionLabel = toolName === "report_finding"
+    ? "Finding submission"
+    : toolName === "report_attack_vectors"
+      ? "Attack vector submission"
+      : "System graph batch submission";
+  if (message.includes("missing a persisted evidence reference")
+    || message.includes("could not be grounded to persisted evidence")) {
+    return `${actionLabel} was rejected. Add a persisted evidence reference (\`toolRunRef\`, \`observationRef\`, \`artifactRef\`, \`traceEventId\`, or \`externalUrl\`) for the failing evidence item and retry. \`sourceTool\` alone is only valid when it resolves to exactly one executed tool result in this run.`;
+  }
+
+  if (message.includes("does not map to an executed tool result")
+    || message.includes("did not map to a persisted tool result")) {
+    return `${actionLabel} was rejected. The failing evidence item points at a tool result that was not persisted for this workflow run. Use a \`toolRunRef\` or other evidence reference from a tool that actually ran in this run, then retry.`;
+  }
+
+  return `${actionLabel} was rejected. Repair the failing evidence reference and retry.`;
+}
+
 function workflowToolValidationError(
   toolName: "report_finding" | "report_attack_vectors" | "report_system_graph_batch",
   message: string,
-  options?: { cause?: unknown }
+  options?: { cause?: unknown; userFriendlyMessage?: string }
 ) {
   const actionLabel = toolName === "report_finding"
     ? "Finding submission"
@@ -1970,7 +2100,8 @@ function workflowToolValidationError(
       : toolName === "report_attack_vectors"
         ? "WORKFLOW_REPORT_ATTACK_VECTORS_INVALID"
         : "WORKFLOW_REPORT_SYSTEM_GRAPH_BATCH_INVALID",
-    userFriendlyMessage: `${actionLabel} was rejected. Check the reported fields and evidence references, then try again.`
+    userFriendlyMessage: options?.userFriendlyMessage
+      ?? `${actionLabel} was rejected. Check the reported fields and evidence references, then try again.`
   });
 }
 
@@ -1993,7 +2124,10 @@ function parseWorkflowToolInput<TSchema extends z.ZodTypeAny>(
       throw workflowToolValidationError(
         toolName,
         `${label} validation failed: ${formatZodIssues(error, rootPathLabel)}`,
-        { cause: error }
+        {
+          cause: error,
+          userFriendlyMessage: summarizeWorkflowValidationIssues(toolName, error, rootPathLabel)
+        }
       );
     }
     throw error;
@@ -2182,7 +2316,11 @@ function buildReportSystemGraphBatchDescription(stage: WorkflowStage) {
     "Persist one incremental workflow system-graph batch.",
     "Gather evidence first, then submit resources, resourceRelationships, findings, findingRelationships, and optional paths in one normalized payload.",
     "Use stable ids across batches so later submissions refine prior entities instead of duplicating them.",
-    "Attach every finding to concrete resource ids and avoid prose-only topology claims."
+    "Attach every finding to concrete resource ids and avoid prose-only topology claims.",
+    "Every finding must include grounded evidence. Prefer toolRunRef or observationRef from a persisted tool result; sourceTool alone is only safe when it resolves to exactly one executed result in this run.",
+    "Use workflow enums for resource kinds and finding types instead of free-form labels. For nonstandard resources, use kind `custom` with customKind.",
+    "Do not mention a finding in the final summary unless this tool accepted it.",
+    "Minimal example: {\"resources\":[{\"id\":\"resource:target\",\"kind\":\"host\",\"name\":\"target\"}],\"findings\":[{\"id\":\"finding:http\",\"type\":\"tls_weakness\",\"title\":\"Plain HTTP exposed\",\"severity\":\"high\",\"resourceIds\":[\"resource:target\"],\"evidence\":[{\"quote\":\"The supplied application URL uses HTTP rather than HTTPS.\",\"toolRunRef\":\"<tool-run-id>\"}]}]}"
   ];
 
   if (stage.completionRule.requireChainedFindings) {
@@ -2198,4 +2336,33 @@ function buildReportSystemGraphBatchDescription(stage: WorkflowStage) {
 
 function buildCompleteRunDescription(_stage: WorkflowStage) {
   return "Finish the workflow run last. Provide only `summary`. This action closes the workflow run and does not create findings.";
+}
+
+function extractFindingClaims(rawInput: unknown): string[] {
+  const normalized = normalizeWorkflowToolInput(rawInput, "System graph batch submission");
+  if (!normalized || typeof normalized !== "object" || Array.isArray(normalized)) {
+    return [];
+  }
+  const findings = Array.isArray((normalized as Record<string, unknown>)["findings"])
+    ? (normalized as Record<string, unknown>)["findings"] as Array<Record<string, unknown>>
+    : [];
+  return findings
+    .map((finding) => typeof finding["title"] === "string" ? finding["title"].trim() : "")
+    .filter((title) => title.length > 0);
+}
+
+function findUnsupportedSummaryClaims(
+  summary: string,
+  reportedFindings: Map<string, WorkflowReportedFinding>,
+  failedClaims: Map<string, { title: string; lastError: string }>
+) {
+  const acceptedTitles = new Set(
+    [...reportedFindings.values()]
+      .map((finding) => finding.title.trim().toLowerCase())
+      .filter((title) => title.length > 0)
+  );
+  const normalizedSummary = summary.toLowerCase();
+  return [...failedClaims.values()].filter((claim) => (
+    !acceptedTitles.has(claim.title.toLowerCase()) && normalizedSummary.includes(claim.title.toLowerCase())
+  ));
 }
