@@ -79,26 +79,11 @@ describe("semantic family tools", () => {
     for (const definition of getSemanticFamilyDefinitions()) {
       expect(definition.tool.outputSchema).toMatchObject({
         type: "object",
-        required: [
-          "toolRunId",
-          "toolId",
-          "toolName",
-          "status",
-          "outputPreview",
-          "observations",
-          "totalObservations",
-          "truncated"
-        ]
+        required: ["id", "summary"]
       });
       expect(definition.tool.outputSchema.properties).toMatchObject({
-        toolRunId: { type: "string" },
-        toolId: { type: "string" },
-        toolName: { type: "string" },
-        status: { type: "string" },
-        outputPreview: { type: "string" },
-        observations: { type: "array" },
-        totalObservations: { type: "number" },
-        truncated: { type: "boolean" }
+        id: { type: "string" },
+        summary: { type: "string" }
       });
       expect(definition.tool.outputSchema.properties).not.toHaveProperty("rawOutput");
       expect(definition.tool.outputSchema.properties).not.toHaveProperty("observationSummaries");
@@ -106,6 +91,14 @@ describe("semantic family tools", () => {
       expect(definition.tool.outputSchema.properties).not.toHaveProperty("usedToolName");
       expect(definition.tool.outputSchema.properties).not.toHaveProperty("fallbackUsed");
       expect(definition.tool.outputSchema.properties).not.toHaveProperty("attempts");
+      expect(definition.tool.outputSchema.properties).not.toHaveProperty("toolRunId");
+      expect(definition.tool.outputSchema.properties).not.toHaveProperty("toolId");
+      expect(definition.tool.outputSchema.properties).not.toHaveProperty("toolName");
+      expect(definition.tool.outputSchema.properties).not.toHaveProperty("status");
+      expect(definition.tool.outputSchema.properties).not.toHaveProperty("outputPreview");
+      expect(definition.tool.outputSchema.properties).not.toHaveProperty("observations");
+      expect(definition.tool.outputSchema.properties).not.toHaveProperty("totalObservations");
+      expect(definition.tool.outputSchema.properties).not.toHaveProperty("truncated");
     }
   });
 });

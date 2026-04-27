@@ -1,11 +1,32 @@
 import { stepCountIs, streamText, tool as createSdkTool, type LanguageModel } from "ai";
-import type { Scan, Workflow, WorkflowAttackVectorSubmission, WorkflowLiveModelOutput, WorkflowReportedAttackVector, WorkflowReportedFinding, WorkflowRun, WorkflowStage, WorkflowStageResult, WorkflowTraceEvent } from "@synosec/contracts";
+import { randomUUID } from "node:crypto";
+import type {
+  Scan,
+  Workflow,
+  WorkflowAttackVectorSubmission,
+  WorkflowLiveModelOutput,
+  WorkflowReportedAttackVector,
+  WorkflowReportedFinding,
+  WorkflowReportedFindingBatchItem,
+  WorkflowReportedFindingRelationship,
+  WorkflowReportedPath,
+  WorkflowReportedResource,
+  WorkflowReportedResourceRelationship,
+  WorkflowRun,
+  WorkflowStage,
+  WorkflowStageResult,
+  WorkflowTraceEvent
+} from "@synosec/contracts";
 import {
+  defaultWorkflowExecutionContract,
+  getWorkflowReportedSystemGraph,
   getWorkflowReportedAttackVectors,
   getWorkflowReportedFindings,
+  workflowExecutionContractHeading,
   workflowAttackVectorSubmissionSchema,
   workflowFindingSubmissionSchema,
-  workflowReportAttackVectorsSubmissionSchema
+  workflowReportAttackVectorsSubmissionSchema,
+  workflowReportSystemGraphBatchSubmissionSchema
 } from "@synosec/contracts";
 import { z } from "zod";
 import { createScan, getScan } from "@/engine/scans/index.js";
@@ -17,7 +38,6 @@ import { executeSemanticFamilyTool } from "./semantic-family-tool-executor.js";
 import {
   applyWorkflowRuntimeTarget,
   compactToolExecutionResult,
-  enrichWorkflowFindingDetails,
   firstNonBlankString,
   inferLayer,
   normalizeToolInput,
@@ -49,13 +69,6 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     "Target: {{target.name}}",
     "Operator URL: {{target.displayUrl}}",
     "Execution URL: {{target.url}}"
-  ].join("\n");
-  private static readonly SYSTEM_PROTOCOL_SUFFIX = [
-    "Workflow execution contract:",
-    "Run evidence tools first, use report_finding for supported weaknesses, use report_attack_vectors for cross-finding transitions, and call complete_run last.",
-    "complete_run accepts only `summary`.",
-    "complete_run closes the workflow run and does not create findings.",
-    "End every run explicitly with complete_run."
   ].join("\n");
 
   constructor(
@@ -121,15 +134,15 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       targetUrl: target.baseUrl,
       targetDisplayUrl: target.displayBaseUrl ?? target.baseUrl
     });
+    const workflowOwnsExecutionContract = renderedStageSystemPrompt.includes(workflowExecutionContractHeading);
     const systemPrompt = [
       renderedStageSystemPrompt,
       targetContextPrompt,
-      DefaultWorkflowStageExecutor.SYSTEM_PROTOCOL_SUFFIX
-    ].join("\n\n");
+      workflowOwnsExecutionContract ? null : defaultWorkflowExecutionContract
+    ].filter((part): part is string => typeof part === "string" && part.trim().length > 0).join("\n\n");
     const builtinLifecycleToolNames = new Set([
       "log_progress",
-      "report_finding",
-      "report_attack_vectors",
+      "report_system_graph_batch",
       "complete_run"
     ]);
     const exposedToolName = (tool: { id: string; executorType: string }) => {
@@ -138,10 +151,16 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       }
       return tool.id;
     };
-    const evidenceToolEntries = tools.flatMap((tool) => {
+    const evidenceToolEntries: Array<{
+      exposedName: string;
+      tool: typeof tools[number];
+      description: string;
+      execute: (rawInput: unknown) => Promise<unknown>;
+    }> = [];
+    for (const tool of tools) {
       if (tool.executorType === "bash" && tool.bashSource) {
         const exposedName = exposedToolName(tool);
-        return [{
+        evidenceToolEntries.push({
           exposedName,
           tool,
           description: tool.description ?? tool.name,
@@ -216,21 +235,24 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             executedResults.push(result);
 
             return {
+              id: toolRun.id,
               toolRunId: toolRun.id,
               toolId: tool.id,
               toolName: exposedName,
               status: toolRun.status,
+              summary: result.outputPreview,
               outputPreview: result.outputPreview,
               observations: result.publicObservations,
               totalObservations: result.totalObservations,
               truncated: result.truncated
             };
           }
-        }];
+        });
+        continue;
       }
 
       if (tool.executorType !== "builtin" || !tool.builtinActionKey || builtinLifecycleToolNames.has(tool.builtinActionKey)) {
-        return [];
+        continue;
       }
 
       const familyDefinition = getSemanticFamilyDefinition(tool.builtinActionKey);
@@ -238,7 +260,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         throw new RequestError(500, `Workflow capability tool ${tool.name} is missing its execution definition.`);
       }
 
-      return [{
+      evidenceToolEntries.push({
         exposedName: tool.builtinActionKey,
         tool,
         description: tool.description ?? tool.name,
@@ -257,8 +279,8 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           executedResults.push(familyExecution.result);
           return familyExecution.response;
         }
-      }];
-    });
+      });
+    }
     const evidenceToolByName = new Map(evidenceToolEntries.map((entry) => [entry.exposedName, entry.tool] as const));
     const toolCallsById = new Map<string, {
       toolName: string;
@@ -278,8 +300,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         title: "Built-in actions",
         tools: [
           { name: "log_progress", description: "Persist a short operator-visible progress update in the workflow transcript. Use this before or after meaningful tool calls to explain the current action or decision in one concise sentence. Provide `message`. Returns acceptance only; it does not create evidence, findings, or attack-path links." },
-          { name: "report_finding", description: buildReportFindingDescription(stage) },
-          { name: "report_attack_vectors", description: buildReportAttackVectorsDescription(stage) },
+          { name: "report_system_graph_batch", description: buildReportSystemGraphBatchDescription(stage) },
           { name: "complete_run", description: buildCompleteRunDescription(stage) }
         ]
       }
@@ -287,11 +308,15 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
 
     await appendEvent("system_message", "completed", {
       title: "Rendered system prompt",
-      summary: "Persisted the exact system prompt delivered to the workflow model, including engine-generated target and runtime contract context.",
+      summary: workflowOwnsExecutionContract
+        ? "Persisted the exact system prompt delivered to the workflow model, including workflow-owned execution contract text and engine-generated target context."
+        : "Persisted the exact system prompt delivered to the workflow model, including engine-generated target and runtime contract context.",
       body: systemPrompt,
       messageKind: "prompt",
       promptKind: "system",
-      promptSourceLabel: "Workflow-owned editable system prompt plus engine-generated target context and runtime contract.",
+      promptSourceLabel: workflowOwnsExecutionContract
+        ? "Workflow-owned editable system prompt including the workflow execution contract, plus engine-generated target context."
+        : "Workflow-owned editable system prompt plus engine-generated target context and runtime contract.",
       promptCharCount: systemPrompt.length,
       fullPrompt: systemPrompt
     }, "Rendered system prompt", "Persisted the exact system prompt delivered to the workflow model.", systemPrompt);
@@ -316,7 +341,12 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     const scan = createWorkflowScan(currentRun, constraintSet, target);
     await this.ensureWorkflowScan(scan, targetRecord.id, agent.id);
     const executedResults: ExecutedToolResult[] = [];
+    const reportedSystemGraph = getWorkflowReportedSystemGraph(currentRun);
+    const reportedResources = new Map(reportedSystemGraph.resources.map((resource) => [resource.id, resource]));
+    const reportedResourceRelationships = new Map(reportedSystemGraph.resourceRelationships.map((relationship) => [relationship.id, relationship]));
     const reportedFindings = new Map(getWorkflowReportedFindings(currentRun).map((finding) => [finding.id, finding]));
+    const reportedFindingRelationships = new Map(reportedSystemGraph.findingRelationships.map((relationship) => [relationship.id, relationship]));
+    const reportedPaths = new Map(reportedSystemGraph.paths.map((path) => [path.id, path]));
     const reportedAttackVectors = new Map(getWorkflowReportedAttackVectors(currentRun).map((vector) => [vector.id, vector]));
     let terminalState: PipelineTerminalState | null = null;
     let liveModelOutput: WorkflowLiveModelOutput | null = null;
@@ -329,7 +359,16 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     const hasArtifactRef = (artifactRef: string) =>
       executedResults.some((result) => result.toolRun.id === artifactRef)
       || [...reportedFindings.values()].some((finding) => finding.evidence.some((entry) => entry.artifactRef === artifactRef))
-      || [...reportedAttackVectors.values()].some((vector) => vector.transitionEvidence.some((entry) => entry.artifactRef === artifactRef));
+      || [...reportedAttackVectors.values()].some((vector) => vector.transitionEvidence.some((entry) => entry.artifactRef === artifactRef))
+      || [...reportedResources.values()].some((resource) => (resource.evidence ?? []).some((entry) => entry.artifactRef === artifactRef))
+      || [...reportedResourceRelationships.values()].some((relationship) => (relationship.evidence ?? []).some((entry) => entry.artifactRef === artifactRef))
+      || [...reportedFindingRelationships.values()].some((relationship) => (relationship.evidence ?? []).some((entry) => entry.artifactRef === artifactRef));
+    const findExecutedResultByToolRunRef = (toolRunRef: string) => executedResults.find((result) => result.toolRun.id === toolRunRef) ?? null;
+    const findExecutedResultBySourceTool = (sourceTool: string) => {
+      const candidates = executedResults.filter((result) => result.toolName === sourceTool || result.toolId === sourceTool);
+      return candidates.length === 1 ? candidates[0]! : null;
+    };
+    const normalizeJsonRecord = <TValue extends Record<string, unknown>>(value: TValue) => JSON.parse(JSON.stringify(value)) as TValue;
 
     const appendLiveText = (delta: string) => {
       if (!liveModelOutput) {
@@ -500,39 +539,85 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     };
     const hydrateEvidenceRefs = <TEvidence extends Record<string, unknown>>(evidence: TEvidence[]) => evidence.map((item) => {
       const sourceTool = typeof item["sourceTool"] === "string" ? item["sourceTool"] : null;
-      if (!sourceTool) {
-        return item;
-      }
       const toolRunRef = typeof item["toolRunRef"] === "string" ? item["toolRunRef"] : null;
       const observationRef = typeof item["observationRef"] === "string" ? item["observationRef"] : null;
       const artifactRef = typeof item["artifactRef"] === "string" ? item["artifactRef"] : null;
       const traceEventId = typeof item["traceEventId"] === "string" ? item["traceEventId"] : null;
       if (toolRunRef || observationRef || artifactRef || traceEventId) {
+        if (sourceTool) {
+          return item;
+        }
+        const matchingResult = toolRunRef ? findExecutedResultByToolRunRef(toolRunRef) : null;
+        if (!matchingResult) {
+          return item;
+        }
+        return {
+          ...item,
+          sourceTool: matchingResult.toolName
+        };
+      }
+      if (!sourceTool) {
         return item;
       }
-      const candidates = executedResults.filter((result) => result.toolName === sourceTool || result.toolId === sourceTool);
-      if (candidates.length !== 1) {
+      const candidate = findExecutedResultBySourceTool(sourceTool);
+      if (!candidate) {
         return item;
       }
       return {
         ...item,
-        toolRunRef: candidates[0]!.toolRun.id
+        toolRunRef: candidate.toolRun.id
       };
     });
 
+    const hasGroundedEvidenceReference = (item: Record<string, unknown>) => Boolean(
+      typeof item["artifactRef"] === "string"
+      || typeof item["observationRef"] === "string"
+      || typeof item["toolRunRef"] === "string"
+      || typeof item["traceEventId"] === "string"
+      || typeof item["externalUrl"] === "string"
+    );
+
+    const assertGroundedEvidenceRecords = (
+      evidence: Array<Record<string, unknown>>,
+      entityLabel: string
+    ) => {
+      for (const [index, item] of evidence.entries()) {
+        if (hasGroundedEvidenceReference(item)) {
+          continue;
+        }
+        const sourceTool = typeof item["sourceTool"] === "string" ? item["sourceTool"].trim() : "";
+        const groundingHint = sourceTool
+          ? ` Source tool \`${sourceTool}\` did not resolve to exactly one executed result in this run.`
+          : "";
+        throw new RequestError(
+          400,
+          `${entityLabel} evidence[${index}] could not be grounded to persisted evidence.${groundingHint} Provide toolRunRef, observationRef, artifactRef, traceEventId, or externalUrl.`
+        );
+      }
+    };
+
     const relaxedFindingEvidenceToolInputSchema = z.object({
-      sourceTool: z.string().min(1),
+      sourceTool: z.string().min(1).optional(),
       quote: z.string().min(1),
       artifactRef: z.string().min(1).optional(),
       observationRef: z.string().min(1).optional(),
       toolRunRef: z.string().min(1).optional(),
       traceEventId: z.string().uuid().optional(),
       externalUrl: z.string().url().optional()
+    }).strict().refine((value) => Boolean(
+      value.sourceTool
+      || value.artifactRef
+      || value.observationRef
+      || value.toolRunRef
+      || value.traceEventId
+      || value.externalUrl
+    ), {
+      message: "Evidence records require sourceTool or another persisted evidence reference."
     });
     const relaxedAttackVectorSubmissionToolInputSchema = z.object({
       kind: z.enum(["enables", "derived_from", "related", "lateral_movement"]),
-      sourceFindingId: z.string().uuid(),
-      destinationFindingId: z.string().uuid(),
+      sourceFindingId: z.string().min(1),
+      destinationFindingId: z.string().min(1),
       summary: z.string().min(1),
       preconditions: z.array(z.string().min(1)).optional(),
       impact: z.string().min(1),
@@ -551,7 +636,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         port: coerceNumericString(z.number().int()).optional(),
         url: z.string().url().optional(),
         path: z.string().min(1).optional()
-      }).optional(),
+      }).strict().optional(),
       evidence: z.array(relaxedFindingEvidenceToolInputSchema).optional(),
       impact: z.string().min(1).optional(),
       recommendation: z.string().min(1).optional(),
@@ -562,7 +647,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       reproduction: z.object({
         commandPreview: z.string().min(1).optional(),
         steps: z.array(z.string().min(1)).min(1)
-      }).optional(),
+      }).strict().optional(),
       explanationSummary: z.string().min(1).optional(),
       confidenceReason: z.string().min(1).optional(),
       relationshipExplanations: z.object({
@@ -570,12 +655,488 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         relatedTo: z.string().min(1).optional(),
         enables: z.string().min(1).optional(),
         chainRole: z.string().min(1).optional()
-      }).optional(),
+      }).strict().optional(),
       tags: z.array(z.string().min(1)).optional(),
-    }).passthrough();
+    }).strict();
     const reportAttackVectorsToolInputSchema = z.object({
       attackVectors: z.array(relaxedAttackVectorSubmissionToolInputSchema).min(1)
     }).strict();
+    const reportSystemGraphBatchToolInputSchema = z.object({
+      resources: z.array(z.object({
+        id: z.string().min(1),
+        kind: z.string().min(1).optional(),
+        name: z.string().min(1).optional(),
+        summary: z.string().min(1).optional(),
+        evidence: z.array(relaxedFindingEvidenceToolInputSchema).optional(),
+        tags: z.array(z.string().min(1)).optional()
+      }).strict()).optional(),
+      resourceRelationships: z.array(z.object({
+        id: z.string().min(1),
+        kind: z.string().min(1).optional(),
+        sourceResourceId: z.string().min(1).optional(),
+        targetResourceId: z.string().min(1).optional(),
+        summary: z.string().min(1).optional(),
+        evidence: z.array(relaxedFindingEvidenceToolInputSchema).optional()
+      }).strict()).optional(),
+      findings: z.array(reportFindingToolInputSchema.extend({
+        id: z.string().min(1),
+        resourceId: z.string().min(1).optional(),
+        resourceIds: z.array(z.string().min(1)).optional()
+      }).strict()).optional(),
+      findingRelationships: z.array(z.object({
+        id: z.string().min(1),
+        kind: z.enum(["enables", "derived_from", "related", "lateral_movement"]).optional(),
+        sourceFindingId: z.string().min(1).optional(),
+        targetFindingId: z.string().min(1).optional(),
+        summary: z.string().min(1).optional(),
+        impact: z.string().min(1).optional(),
+        confidence: coerceNumericString(z.number().min(0).max(1)).optional(),
+        validationStatus: z.enum(["unverified", "suspected", "single_source", "cross_validated", "reproduced", "blocked", "rejected"]).optional(),
+        evidence: z.array(relaxedFindingEvidenceToolInputSchema).optional()
+      }).strict()).optional(),
+      paths: z.array(z.object({
+        id: z.string().min(1),
+        title: z.string().min(1).optional(),
+        summary: z.string().min(1).optional(),
+        severity: z.enum(["info", "low", "medium", "high", "critical"]).optional(),
+        resourceIds: z.array(z.string().min(1)).optional(),
+        findingIds: z.array(z.string().min(1)).optional()
+      }).strict()).optional()
+    }).strict();
+
+    const validateEvidenceRefs = (evidence: Array<{
+      traceEventId?: string | undefined;
+      toolRunRef?: string | undefined;
+      observationRef?: string | undefined;
+      artifactRef?: string | undefined;
+    }>) => {
+      for (const entry of evidence) {
+        if (entry.traceEventId && !hasTraceEvent(entry.traceEventId)) {
+          throw new RequestError(400, `Unknown trace event reference: ${entry.traceEventId}`);
+        }
+        if (entry.toolRunRef && !hasToolRunRef(entry.toolRunRef)) {
+          throw new RequestError(400, `Unknown tool run reference: ${entry.toolRunRef}`);
+        }
+        if (entry.observationRef && !hasObservationRef(entry.observationRef)) {
+          throw new RequestError(400, `Unknown observation reference: ${entry.observationRef}`);
+        }
+        if (entry.artifactRef && !hasArtifactRef(entry.artifactRef)) {
+          throw new RequestError(400, `Unknown artifact reference: ${entry.artifactRef}`);
+        }
+      }
+    };
+
+    const assertUniqueStableIds = (collectionName: string, ids: string[]) => {
+      const seen = new Set<string>();
+      for (const id of ids) {
+        if (seen.has(id)) {
+          throw new RequestError(400, `Duplicate id in ${collectionName}: ${id}`);
+        }
+        seen.add(id);
+      }
+    };
+
+    const withDefinedValues = <TRecord extends Record<string, unknown>>(value: TRecord) => Object.fromEntries(
+      Object.entries(value).filter(([, entry]) => entry !== undefined)
+    ) as Partial<TRecord>;
+
+    const mergeResource = (
+      existing: Record<string, unknown> | undefined,
+      patch: NonNullable<z.infer<typeof reportSystemGraphBatchToolInputSchema>["resources"]>[number]
+    ): WorkflowReportedResource => ({
+      ...(existing ?? {}),
+      ...withDefinedValues({
+        id: patch.id.trim(),
+        kind: patch.kind?.trim(),
+        name: patch.name?.trim(),
+        summary: patch.summary,
+        evidence: patch.evidence ? hydrateEvidenceRefs(patch.evidence) : undefined,
+        tags: patch.tags
+      })
+    } as WorkflowReportedResource);
+
+    const mergeResourceRelationship = (
+      existing: Record<string, unknown> | undefined,
+      patch: NonNullable<z.infer<typeof reportSystemGraphBatchToolInputSchema>["resourceRelationships"]>[number]
+    ): WorkflowReportedResourceRelationship => ({
+      ...(existing ?? {}),
+      ...withDefinedValues({
+        id: patch.id.trim(),
+        kind: patch.kind?.trim(),
+        sourceResourceId: patch.sourceResourceId?.trim(),
+        targetResourceId: patch.targetResourceId?.trim(),
+        summary: patch.summary,
+        evidence: patch.evidence ? hydrateEvidenceRefs(patch.evidence) : undefined
+      })
+    } as WorkflowReportedResourceRelationship);
+
+    const mergePath = (
+      existing: Record<string, unknown> | undefined,
+      patch: NonNullable<z.infer<typeof reportSystemGraphBatchToolInputSchema>["paths"]>[number]
+    ): WorkflowReportedPath => ({
+      ...(existing ?? {}),
+      ...withDefinedValues({
+        id: patch.id.trim(),
+        title: patch.title?.trim(),
+        summary: patch.summary,
+        severity: patch.severity,
+        resourceIds: patch.resourceIds,
+        findingIds: patch.findingIds
+      })
+    } as WorkflowReportedPath);
+
+    const mergeFindingRelationship = (
+      existing: Record<string, unknown> | undefined,
+      patch: NonNullable<z.infer<typeof reportSystemGraphBatchToolInputSchema>["findingRelationships"]>[number]
+    ): WorkflowReportedFindingRelationship => ({
+      ...(existing ?? {}),
+      ...withDefinedValues({
+        id: patch.id.trim(),
+        kind: patch.kind,
+        sourceFindingId: patch.sourceFindingId?.trim(),
+        targetFindingId: patch.targetFindingId?.trim(),
+        summary: patch.summary,
+        impact: patch.impact,
+        confidence: patch.confidence,
+        validationStatus: patch.validationStatus,
+        evidence: patch.evidence ? hydrateEvidenceRefs(patch.evidence) : undefined
+      })
+    } as WorkflowReportedFindingRelationship);
+
+    const requireField = <TValue extends string>(value: TValue | undefined, message: string): TValue => {
+      if (!value || value.trim().length === 0) {
+        throw new RequestError(400, message);
+      }
+      return value;
+    };
+
+    const submitSystemGraphBatch = async (rawInput: unknown) => {
+      const reportInput = parseWorkflowToolInput(reportSystemGraphBatchToolInputSchema, rawInput, "System graph batch submission");
+      assertUniqueStableIds("resources", (reportInput.resources ?? []).map((item) => item.id.trim()));
+      assertUniqueStableIds("resourceRelationships", (reportInput.resourceRelationships ?? []).map((item) => item.id.trim()));
+      assertUniqueStableIds("findings", (reportInput.findings ?? []).map((item) => item.id.trim()));
+      assertUniqueStableIds("findingRelationships", (reportInput.findingRelationships ?? []).map((item) => item.id.trim()));
+      assertUniqueStableIds("paths", (reportInput.paths ?? []).map((item) => item.id.trim()));
+
+      const mergedResources = (reportInput.resources ?? []).map((resource) => mergeResource(reportedResources.get(resource.id.trim()), resource));
+      const mergedResourceRelationships = (reportInput.resourceRelationships ?? []).map((relationship) => {
+        const merged = mergeResourceRelationship(reportedResourceRelationships.get(relationship.id.trim()), relationship);
+        if (merged.evidence) {
+          assertGroundedEvidenceRecords(merged.evidence as Array<Record<string, unknown>>, `Resource relationship ${merged.id}`);
+        }
+        return merged;
+      });
+      const mergedFindingRelationships = (reportInput.findingRelationships ?? []).map((relationship) => {
+        const merged = mergeFindingRelationship(reportedFindingRelationships.get(relationship.id.trim()), relationship);
+        if (merged.evidence) {
+          assertGroundedEvidenceRecords(merged.evidence as Array<Record<string, unknown>>, `Finding relationship ${merged.id}`);
+        }
+        return merged;
+      });
+      const mergedPaths = (reportInput.paths ?? []).map((path) => mergePath(reportedPaths.get(path.id.trim()), path));
+
+      for (const [index, resource] of mergedResources.entries()) {
+        requireField(resource.kind, `Resource ${reportInput.resources?.[index]?.id ?? resource.id} requires kind on first submission.`);
+        requireField(resource.name, `Resource ${reportInput.resources?.[index]?.id ?? resource.id} requires name on first submission.`);
+      }
+      for (const [index, relationship] of mergedResourceRelationships.entries()) {
+        requireField(relationship.kind, `Resource relationship ${reportInput.resourceRelationships?.[index]?.id ?? relationship.id} requires kind on first submission.`);
+        requireField(relationship.sourceResourceId, `Resource relationship ${reportInput.resourceRelationships?.[index]?.id ?? relationship.id} requires sourceResourceId on first submission.`);
+        requireField(relationship.targetResourceId, `Resource relationship ${reportInput.resourceRelationships?.[index]?.id ?? relationship.id} requires targetResourceId on first submission.`);
+        requireField(relationship.summary, `Resource relationship ${reportInput.resourceRelationships?.[index]?.id ?? relationship.id} requires summary on first submission.`);
+      }
+      for (const [index, relationship] of mergedFindingRelationships.entries()) {
+        requireField(relationship.kind, `Finding relationship ${reportInput.findingRelationships?.[index]?.id ?? relationship.id} requires kind on first submission.`);
+        requireField(relationship.sourceFindingId, `Finding relationship ${reportInput.findingRelationships?.[index]?.id ?? relationship.id} requires sourceFindingId on first submission.`);
+        requireField(relationship.targetFindingId, `Finding relationship ${reportInput.findingRelationships?.[index]?.id ?? relationship.id} requires targetFindingId on first submission.`);
+        requireField(relationship.summary, `Finding relationship ${reportInput.findingRelationships?.[index]?.id ?? relationship.id} requires summary on first submission.`);
+      }
+      for (const [index, path] of mergedPaths.entries()) {
+        requireField(path.title, `Path ${reportInput.paths?.[index]?.id ?? path.id} requires title on first submission.`);
+      }
+
+      const canonicalFindings = await Promise.all((reportInput.findings ?? []).map(async (finding) => {
+        const existing = reportedFindings.get(finding.id.trim());
+        const mergedTarget = {
+          host: finding.target?.host?.trim() ?? existing?.target.host ?? target.host,
+          ...(finding.target?.port !== undefined
+            ? { port: finding.target.port }
+            : existing?.target.port !== undefined
+              ? { port: existing.target.port }
+              : {}),
+          ...(finding.target?.url
+            ? { url: finding.target.url }
+            : existing?.target.url
+              ? { url: existing.target.url }
+              : {}),
+          ...(finding.target?.path
+            ? { path: finding.target.path }
+            : existing?.target.path
+              ? { path: existing.target.path }
+              : {})
+        };
+        const mergedEvidence = finding.evidence
+          ? hydrateEvidenceRefs(finding.evidence)
+          : existing?.evidence;
+        const findingSubmission = parseWorkflowToolInput(workflowFindingSubmissionSchema, {
+          type: finding.type ?? existing?.type ?? "other",
+          title: finding.title ?? existing?.title,
+          severity: finding.severity ?? existing?.severity ?? "medium",
+          confidence: finding.confidence ?? existing?.confidence ?? 0.8,
+          target: mergedTarget,
+          evidence: mergedEvidence,
+          impact: finding.impact ?? existing?.impact ?? `Evidence indicates: ${finding.title ?? existing?.title ?? finding.id}`,
+          recommendation: finding.recommendation ?? existing?.recommendation ?? "Review and remediate the reported issue based on the supporting evidence.",
+          validationStatus: finding.validationStatus ?? existing?.validationStatus ?? "unverified",
+          cwe: finding.cwe ?? existing?.cwe,
+          mitreId: finding.mitreId ?? existing?.mitreId,
+          owasp: finding.owasp ?? existing?.owasp,
+          reproduction: finding.reproduction ?? existing?.reproduction,
+          resourceId: finding.resourceId ?? existing?.resourceId,
+          resourceIds: finding.resourceIds ?? existing?.resourceIds ?? [],
+          derivedFromFindingIds: existing?.derivedFromFindingIds ?? [],
+          relatedFindingIds: existing?.relatedFindingIds ?? [],
+          enablesFindingIds: existing?.enablesFindingIds ?? [],
+          chain: existing?.chain,
+          explanationSummary: finding.explanationSummary ?? existing?.explanationSummary,
+          confidenceReason: finding.confidenceReason ?? existing?.confidenceReason,
+          relationshipExplanations: finding.relationshipExplanations ?? existing?.relationshipExplanations,
+          tags: finding.tags ?? existing?.tags ?? []
+        }, "Finding submission");
+        const referenceError = validateFindingEvidenceReferences(findingSubmission, executedResults);
+        if (referenceError) {
+          throw new RequestError(400, referenceError);
+        }
+        validateEvidenceRefs(findingSubmission.evidence);
+        const verification = verifyFindingEvidence(findingSubmission, executedResults);
+        if (verification.validationStatus === "rejected") {
+          throw new RequestError(400, verification.reason);
+        }
+        return {
+          ...findingSubmission,
+          id: finding.id.trim(),
+          confidence: verification.confidence,
+          validationStatus: verification.validationStatus,
+          resourceIds: findingSubmission.resourceIds ?? [],
+          confidenceReason: findingSubmission.confidenceReason
+            ? `${findingSubmission.confidenceReason} ${verification.reason}`.trim()
+            : verification.reason
+        };
+      }));
+
+      const canonicalResources = mergedResources.map((resource) => ({
+        id: resource.id,
+        kind: requireField(resource.kind, `Resource ${resource.id} requires kind on first submission.`),
+        name: requireField(resource.name, `Resource ${resource.id} requires name on first submission.`),
+        ...(resource.summary ? { summary: resource.summary } : {}),
+        evidence: resource.evidence ?? [],
+        tags: resource.tags ?? []
+      }));
+      const canonicalResourceRelationships = mergedResourceRelationships.map((relationship) => ({
+        id: relationship.id,
+        kind: requireField(relationship.kind, `Resource relationship ${relationship.id} requires kind on first submission.`),
+        sourceResourceId: requireField(relationship.sourceResourceId, `Resource relationship ${relationship.id} requires sourceResourceId on first submission.`),
+        targetResourceId: requireField(relationship.targetResourceId, `Resource relationship ${relationship.id} requires targetResourceId on first submission.`),
+        summary: requireField(relationship.summary, `Resource relationship ${relationship.id} requires summary on first submission.`),
+        evidence: relationship.evidence ?? []
+      }));
+      const canonicalFindingRelationships = mergedFindingRelationships.map((relationship) => ({
+        id: relationship.id,
+        kind: requireField(relationship.kind, `Finding relationship ${relationship.id} requires kind on first submission.`),
+        sourceFindingId: requireField(relationship.sourceFindingId, `Finding relationship ${relationship.id} requires sourceFindingId on first submission.`),
+        targetFindingId: requireField(relationship.targetFindingId, `Finding relationship ${relationship.id} requires targetFindingId on first submission.`),
+        summary: requireField(relationship.summary, `Finding relationship ${relationship.id} requires summary on first submission.`),
+        ...(relationship.impact ? { impact: relationship.impact } : {}),
+        confidence: relationship.confidence ?? 0.8,
+        validationStatus: relationship.validationStatus ?? "unverified",
+        evidence: relationship.evidence ?? []
+      }));
+      const canonicalPaths = mergedPaths.map((path) => ({
+        id: path.id,
+        title: requireField(path.title, `Path ${path.id} requires title on first submission.`),
+        ...(path.summary ? { summary: path.summary } : {}),
+        ...(path.severity ? { severity: path.severity } : {}),
+        resourceIds: path.resourceIds ?? [],
+        findingIds: path.findingIds ?? []
+      }));
+
+      const batchInput = {
+        resources: canonicalResources,
+        resourceRelationships: canonicalResourceRelationships,
+        findings: canonicalFindings,
+        findingRelationships: canonicalFindingRelationships,
+        paths: canonicalPaths
+      };
+      parseWorkflowToolInput(workflowReportSystemGraphBatchSubmissionSchema, batchInput, "System graph batch submission");
+      const persistedBatch: {
+        resources: WorkflowReportedResource[];
+        resourceRelationships: WorkflowReportedResourceRelationship[];
+        findings: WorkflowReportedFindingBatchItem[];
+        findingRelationships: WorkflowReportedFindingRelationship[];
+        paths: WorkflowReportedPath[];
+      } = normalizeJsonRecord({
+        resources: batchInput.resources.map((resource) => ({
+          ...resource,
+          evidence: resource.evidence ?? [],
+          tags: resource.tags ?? []
+        })),
+        resourceRelationships: batchInput.resourceRelationships.map((relationship) => ({
+          ...relationship,
+          evidence: relationship.evidence ?? []
+        })),
+        findings: batchInput.findings.map((finding) => ({
+          ...finding,
+          resourceIds: finding.resourceIds ?? [],
+          derivedFromFindingIds: finding.derivedFromFindingIds ?? [],
+          relatedFindingIds: finding.relatedFindingIds ?? [],
+          enablesFindingIds: finding.enablesFindingIds ?? [],
+          tags: finding.tags ?? []
+        })),
+        findingRelationships: batchInput.findingRelationships.map((relationship) => ({
+          ...relationship,
+          evidence: relationship.evidence ?? []
+        })),
+        paths: batchInput.paths.map((path) => ({
+          ...path,
+          resourceIds: path.resourceIds ?? [],
+          findingIds: path.findingIds ?? []
+        }))
+      });
+
+      for (const resource of persistedBatch.resources) {
+        validateEvidenceRefs(resource.evidence ?? []);
+      }
+      for (const relationship of persistedBatch.resourceRelationships) {
+        validateEvidenceRefs(relationship.evidence ?? []);
+      }
+      for (const relationship of persistedBatch.findingRelationships) {
+        validateEvidenceRefs(relationship.evidence ?? []);
+      }
+
+      const knownResourceIds = new Set([...reportedResources.keys(), ...persistedBatch.resources.map((item) => item.id)]);
+      const knownFindingIds = new Set([...reportedFindings.keys(), ...persistedBatch.findings.map((item) => item.id)]);
+
+      for (const relationship of persistedBatch.resourceRelationships) {
+        if (!knownResourceIds.has(relationship.sourceResourceId)) {
+          throw new RequestError(400, `Unknown source resource reference: ${relationship.sourceResourceId}`);
+        }
+        if (!knownResourceIds.has(relationship.targetResourceId)) {
+          throw new RequestError(400, `Unknown target resource reference: ${relationship.targetResourceId}`);
+        }
+      }
+      for (const finding of persistedBatch.findings) {
+        const referencedResourceIds = new Set([...(finding.resourceId ? [finding.resourceId] : []), ...finding.resourceIds]);
+        if (referencedResourceIds.size === 0) {
+          throw new RequestError(400, `Finding ${finding.id} must reference at least one resource id.`);
+        }
+        for (const resourceId of referencedResourceIds) {
+          if (!knownResourceIds.has(resourceId)) {
+            throw new RequestError(400, `Unknown finding resource reference: ${resourceId}`);
+          }
+        }
+      }
+      for (const relationship of persistedBatch.findingRelationships) {
+        if (!knownFindingIds.has(relationship.sourceFindingId)) {
+          throw new RequestError(400, `Unknown source finding reference: ${relationship.sourceFindingId}`);
+        }
+        if (!knownFindingIds.has(relationship.targetFindingId)) {
+          throw new RequestError(400, `Unknown target finding reference: ${relationship.targetFindingId}`);
+        }
+      }
+      for (const path of persistedBatch.paths) {
+        for (const resourceId of path.resourceIds ?? []) {
+          if (!knownResourceIds.has(resourceId)) {
+            throw new RequestError(400, `Unknown path resource reference: ${resourceId}`);
+          }
+        }
+        for (const findingId of path.findingIds ?? []) {
+          if (!knownFindingIds.has(findingId)) {
+            throw new RequestError(400, `Unknown path finding reference: ${findingId}`);
+          }
+        }
+      }
+
+      for (const resource of persistedBatch.resources) {
+        reportedResources.set(resource.id, resource as WorkflowReportedResource);
+      }
+      for (const relationship of persistedBatch.resourceRelationships) {
+        reportedResourceRelationships.set(relationship.id, relationship as WorkflowReportedResourceRelationship);
+      }
+
+      const persistedFindings = persistedBatch.findings.map((finding) => createWorkflowReportedFinding({
+        runId: currentRun.id,
+        id: finding.id,
+        submission: {
+          ...finding,
+          target: {
+            host: finding.target?.host ?? target.host,
+            ...(finding.target?.port === undefined ? {} : { port: finding.target.port }),
+            ...(finding.target?.url ? { url: finding.target.url } : {}),
+            ...(finding.target?.path ? { path: finding.target.path } : {})
+          },
+          resourceIds: finding.resourceIds ?? []
+        },
+        createdAt: reportedFindings.get(finding.id)?.createdAt ?? new Date().toISOString()
+      })).map((finding) => normalizeJsonRecord(finding));
+      for (const finding of persistedFindings) {
+        reportedFindings.set(finding.id, finding);
+      }
+
+      const persistedFindingRelationships = persistedBatch.findingRelationships
+        .map((relationship) => normalizeJsonRecord(relationship as WorkflowReportedFindingRelationship));
+      for (const relationship of persistedFindingRelationships) {
+        reportedFindingRelationships.set(relationship.id, relationship);
+        reportedAttackVectors.set(relationship.id, normalizeJsonRecord(createWorkflowReportedAttackVector({
+          runId: currentRun.id,
+          id: relationship.id,
+          createdAt: reportedAttackVectors.get(relationship.id)?.createdAt ?? new Date().toISOString(),
+          submission: {
+            kind: relationship.kind,
+            sourceFindingId: relationship.sourceFindingId,
+            destinationFindingId: relationship.targetFindingId,
+            summary: relationship.summary,
+            preconditions: [],
+            impact: relationship.impact ?? relationship.summary,
+            transitionEvidence: relationship.evidence,
+            confidence: relationship.confidence,
+            validationStatus: relationship.validationStatus
+          }
+        })));
+      }
+      for (const path of persistedBatch.paths) {
+        reportedPaths.set(path.id, path as WorkflowReportedPath);
+      }
+
+      await appendEvent("system_graph_reported", "completed", {
+        batch: persistedBatch
+      }, "System graph batch reported", `Merged ${persistedBatch.resources.length} resources, ${persistedBatch.findings.length} findings, and ${persistedBatch.findingRelationships.length + persistedBatch.resourceRelationships.length} relationships.`, JSON.stringify(persistedBatch, null, 2));
+
+      for (const finding of persistedFindings) {
+        await appendEvent("finding_reported", "completed", {
+          finding
+        }, `Finding reported: ${finding.title}`, `${finding.severity.toUpperCase()} ${finding.type} on ${finding.target.host}.`, finding.impact);
+      }
+
+      for (const relationship of reportedAttackVectors.values()) {
+        if (!persistedFindingRelationships.some((item) => item.id === relationship.id)) {
+          continue;
+        }
+        await appendEvent("attack_vector_reported", "completed", {
+          attackVector: relationship
+        }, `Finding relationship reported: ${relationship.kind}`, `${relationship.kind} from ${relationship.sourceFindingId} to ${relationship.destinationFindingId}.`, relationship.summary);
+      }
+
+      return {
+        accepted: true,
+        resourceIds: persistedBatch.resources.map((item) => item.id),
+        findingIds: persistedFindings.map((item) => item.id),
+        relationshipIds: [
+          ...persistedBatch.resourceRelationships.map((item) => item.id),
+          ...persistedFindingRelationships.map((item) => item.id)
+        ],
+        pathIds: persistedBatch.paths.map((item) => item.id)
+      };
+    };
 
     const systemTools = {
       log_progress: createSdkTool({
@@ -595,97 +1156,47 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           return { accepted: true };
         }
       }),
+      report_system_graph_batch: createSdkTool({
+        description: buildReportSystemGraphBatchDescription(stage),
+        inputSchema: reportSystemGraphBatchToolInputSchema,
+        execute: async (rawInput) => submitSystemGraphBatch(rawInput)
+      }),
       report_finding: createSdkTool({
-        description: "Persist one finding-only workflow report. Provide `title` and at least one grounded `evidence` item, then let the server infer or default missing fields such as type, severity, confidence, target details, impact, recommendation, and reproduction details. Prefer canonical object inputs, but finding-compatible legacy inputs such as JSON-string payloads, numeric-string confidence, string `target`, and omitted `mode` values are still accepted. Returns the canonical finding result with `accepted`, `findingId`, `title`, `severity`, and `host`.",
+        description: "Compatibility alias for report_system_graph_batch. Prefer report_system_graph_batch in new workflows.",
         inputSchema: reportFindingToolInputSchema,
         execute: async (rawInput) => {
           const normalizedInput = normalizeWorkflowToolInput(rawInput, "Finding submission");
           rejectUnsupportedFindingFields(normalizedInput);
           const reportInput = parseWorkflowToolInput(reportFindingToolInputSchema, normalizedInput, "Finding submission");
-
-          const parsedFindingInput = parseWorkflowToolInput(workflowFindingSubmissionSchema, {
-            ...reportInput,
-            mode: "finding",
-            type: reportInput.type ?? "other",
-            severity: reportInput.severity ?? "medium",
-            confidence: reportInput.confidence ?? 0.8,
-            target: {
-              host: reportInput.target?.host?.trim() || target.host,
-              ...(reportInput.target?.port === undefined ? {} : { port: reportInput.target.port }),
-              ...(reportInput.target?.url ? { url: reportInput.target.url } : {}),
-              ...(reportInput.target?.path ? { path: reportInput.target.path } : {})
-            },
-            evidence: hydrateEvidenceRefs(reportInput.evidence ?? []),
-            impact: reportInput.impact ?? `Evidence indicates: ${reportInput.title}`,
-            recommendation: reportInput.recommendation ?? "Review and remediate the reported issue based on the supporting evidence.",
-            ...(reportInput.validationStatus ? { validationStatus: reportInput.validationStatus } : {}),
-            derivedFromFindingIds: [],
-            relatedFindingIds: [],
-            enablesFindingIds: [],
-            tags: reportInput.tags ?? []
-          }, "Finding submission");
-          const findingInput = parsedFindingInput;
-          const referenceError = validateFindingEvidenceReferences(findingInput, executedResults);
-          if (referenceError) {
-            throw new RequestError(400, referenceError);
-          }
-          for (const evidence of findingInput.evidence) {
-            if (evidence.traceEventId && !hasTraceEvent(evidence.traceEventId)) {
-              throw new RequestError(400, `Unknown trace event reference: ${evidence.traceEventId}`);
-            }
-            if (evidence.toolRunRef && !hasToolRunRef(evidence.toolRunRef)) {
-              throw new RequestError(400, `Unknown tool run reference: ${evidence.toolRunRef}`);
-            }
-            if (evidence.observationRef && !hasObservationRef(evidence.observationRef)) {
-              throw new RequestError(400, `Unknown observation reference: ${evidence.observationRef}`);
-            }
-            if (evidence.artifactRef && !hasArtifactRef(evidence.artifactRef)) {
-              throw new RequestError(400, `Unknown artifact reference: ${evidence.artifactRef}`);
-            }
-          }
-
-          const enrichedDetails = enrichWorkflowFindingDetails({
-            title: findingInput.title,
-            target: findingInput.target,
-            evidence: findingInput.evidence,
-            reproduction: findingInput.reproduction
-          }, executedResults, target);
-          const verifiedInput = {
-            ...findingInput,
-            ...enrichedDetails
-          };
-          const verification = verifyFindingEvidence(verifiedInput, executedResults);
-          if (verification.validationStatus === "rejected") {
-            throw new RequestError(400, verification.reason);
-          }
-
-          const finding: WorkflowReportedFinding = createWorkflowReportedFinding({
-            runId: currentRun.id,
-            submission: {
-              ...verifiedInput,
-              validationStatus: verification.validationStatus,
-              confidence: verification.confidence,
-              confidenceReason: findingInput.confidenceReason
-                ? `${findingInput.confidenceReason} ${verification.reason}`.trim()
-                : verification.reason
-            }
+          const resourceId = reportInput.target?.host?.trim()?.length
+            ? `resource:${reportInput.target.host.trim()}`
+            : `resource:${target.host}`;
+          const output = await submitSystemGraphBatch({
+            resources: [{
+              id: resourceId,
+              kind: "host",
+              name: reportInput.target?.host?.trim() || target.host
+            }],
+            findings: [{
+              id: randomUUID(),
+              ...reportInput,
+              resourceId,
+              resourceIds: [resourceId]
+            }]
           });
-          reportedFindings.set(finding.id, finding);
-          await appendEvent("finding_reported", "completed", {
-            finding
-          }, `Finding reported: ${finding.title}`, `${finding.severity.toUpperCase()} ${finding.type} on ${finding.target.host}.`, finding.impact);
-
+          const findingId = output.findingIds[0] ?? "";
+          const finding = reportedFindings.get(findingId);
           return {
             accepted: true,
-            findingId: finding.id,
-            title: finding.title,
-            severity: finding.severity,
-            host: finding.target.host
+            findingId,
+            title: finding?.title ?? reportInput.title ?? "Finding",
+            severity: finding?.severity ?? reportInput.severity ?? "medium",
+            host: finding?.target.host ?? reportInput.target?.host ?? target.host
           };
         }
       }),
       report_attack_vectors: createSdkTool({
-        description: "Persist one or more explicit attack-vector links between existing findings. Use this only after `report_finding` has returned the `findingId` values you want to connect. Provide `attackVectors` as an array; every non-`related` vector must include grounded `transitionEvidence`. Returns the canonical batch result with `accepted` and `attackVectorIds`.",
+        description: "Compatibility alias for report_system_graph_batch. Prefer report_system_graph_batch in new workflows.",
         inputSchema: reportAttackVectorsToolInputSchema,
         execute: async (rawInput) => {
           const reportInput = parseWorkflowToolInput(reportAttackVectorsToolInputSchema, rawInput, "Attack vector submission");
@@ -696,27 +1207,22 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               transitionEvidence: hydrateEvidenceRefs(vector.transitionEvidence ?? [])
             }))
           }, "Attack vector submission");
-          const attackVectorIds: string[] = [];
-          for (const vector of parsedVectors.attackVectors) {
-            let attackVector: WorkflowReportedAttackVector;
-            try {
-              attackVector = await submitAttackVector(vector, {
-                requireExistingFindingIdsOnly: true
-              });
-            } catch (error) {
-              if (error instanceof RequestError) {
-                const message = error.message.startsWith("Attack vector submission validation failed:")
-                  ? error.message
-                  : `Attack vector submission validation failed: ${error.message}`;
-                throw workflowToolValidationError("report_attack_vectors", message, { cause: error });
-              }
-              throw error;
-            }
-            attackVectorIds.push(attackVector.id);
-          }
+          const output = await submitSystemGraphBatch({
+            findingRelationships: parsedVectors.attackVectors.map((vector) => ({
+              id: randomUUID(),
+              kind: vector.kind,
+              sourceFindingId: vector.sourceFindingId,
+              targetFindingId: vector.destinationFindingId,
+              summary: vector.summary,
+              impact: vector.impact,
+              confidence: vector.confidence,
+              validationStatus: vector.validationStatus,
+              evidence: vector.transitionEvidence
+            }))
+          });
           return {
             accepted: true,
-            attackVectorIds
+            attackVectorIds: output.relationshipIds
           };
         }
       }),
@@ -885,8 +1391,10 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             if (part.toolName === "log_progress") {
               break;
             }
-            const toolRunId = typeof part.output === "object" && part.output !== null && "toolRunId" in part.output && typeof part.output.toolRunId === "string"
-              ? part.output.toolRunId
+            const toolRunId = typeof part.output === "object" && part.output !== null
+              && (("toolRunId" in part.output && typeof part.output.toolRunId === "string")
+                || ("id" in part.output && typeof part.output.id === "string"))
+              ? ("toolRunId" in part.output && typeof part.output.toolRunId === "string" ? part.output.toolRunId : part.output.id)
               : null;
             const matchingResult = (toolRunId ? executedResults.find((candidate) => candidate.toolRun.id === toolRunId) : null)
               ?? executedResults.find((candidate) => candidate.toolName === part.toolName);
@@ -908,14 +1416,8 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               : firstNonBlankString(findingResult?.summary, `${part.toolName} completed.`)!;
             const publicOutput = matchingResult
               ? {
-                  toolRunId: matchingResult.toolRun.id,
-                  toolId: matchingResult.toolId,
-                  toolName: matchingResult.toolName,
-                  status: matchingResult.status,
-                  outputPreview: matchingResult.outputPreview,
-                  observations: matchingResult.publicObservations,
-                  totalObservations: matchingResult.totalObservations,
-                  truncated: matchingResult.truncated
+                  id: matchingResult.toolRun.id,
+                  summary: outputPreview
                 }
               : part.output;
             persistedToolResultIds.add(part.toolCallId);
@@ -926,6 +1428,9 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               output: publicOutput,
               summary: outputPreview,
               outputPreview,
+              observations: matchingResult?.publicObservations ?? [],
+              totalObservations: matchingResult?.totalObservations ?? 0,
+              truncated: matchingResult?.truncated ?? false,
               commandPreview: matchingResult?.commandPreview ?? null,
               exitCode: matchingResult?.exitCode ?? null
             }, `${part.toolName} returned`, outputPreview, JSON.stringify(publicOutput, null, 2), undefined, {
@@ -944,28 +1449,19 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               toolName: part.toolName,
               toolId: matchingResult?.toolId ?? null,
               output: {
-                toolRunId: matchingResult?.toolRun.id ?? `${part.toolCallId}-failed`,
-                toolId: matchingResult?.toolId ?? part.toolName,
-                toolName: matchingResult?.toolName ?? part.toolName,
-                status: "failed",
-                outputPreview: rawError,
-                observations: [],
-                totalObservations: matchingResult?.totalObservations ?? 0,
-                truncated: false
+                id: matchingResult?.toolRun.id ?? `${part.toolCallId}-failed`,
+                summary: rawError
               },
               summary: rawError,
               outputPreview: rawError,
+              observations: [],
+              totalObservations: matchingResult?.totalObservations ?? 0,
+              truncated: false,
               commandPreview: matchingResult?.commandPreview ?? null,
               exitCode: matchingResult?.exitCode ?? null
             }, `${part.toolName} failed`, rawError, JSON.stringify({
-              toolRunId: matchingResult?.toolRun.id ?? `${part.toolCallId}-failed`,
-              toolId: matchingResult?.toolId ?? part.toolName,
-              toolName: matchingResult?.toolName ?? part.toolName,
-              status: "failed",
-              outputPreview: rawError,
-              observations: [],
-              totalObservations: matchingResult?.totalObservations ?? 0,
-              truncated: false
+              id: matchingResult?.toolRun.id ?? `${part.toolCallId}-failed`,
+              summary: rawError
             }, null, 2), undefined, {
               rawStreamPartType: part.type
             });
@@ -1115,14 +1611,8 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
                 : JSON.stringify(part.output, null, 2);
               const outputPreview = firstNonBlankString(rawOutput, `${part.toolName} completed.`)!;
               const publicOutput = {
-                toolRunId: part.toolCallId,
-                toolId: part.toolName,
-                toolName: part.toolName,
-                status: "completed" as const,
-                outputPreview,
-                observations: [],
-                totalObservations: 0,
-                truncated: false
+                id: part.toolCallId,
+                summary: outputPreview
               };
               persistedToolResultIds.add(part.toolCallId);
               await appendEvent("tool_result", "completed", {
@@ -1132,6 +1622,9 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
                 output: publicOutput,
                 summary: outputPreview,
                 outputPreview,
+                observations: [],
+                totalObservations: 0,
+                truncated: false,
                 commandPreview: null,
                 exitCode: null
               }, `${part.toolName} returned`, outputPreview, JSON.stringify(publicOutput, null, 2), undefined, {
@@ -1149,28 +1642,19 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
                 toolName: part.toolName,
                 toolId: null,
                 output: {
-                  toolRunId: `${part.toolCallId}-failed`,
-                  toolId: part.toolName,
-                  toolName: part.toolName,
-                  status: "failed",
-                  outputPreview: rawError,
-                  observations: [],
-                  totalObservations: 0,
-                  truncated: false
+                  id: `${part.toolCallId}-failed`,
+                  summary: rawError
                 },
                 summary: rawError,
                 outputPreview: rawError,
+                observations: [],
+                totalObservations: 0,
+                truncated: false,
                 commandPreview: null,
                 exitCode: null
               }, `${part.toolName} failed`, rawError, JSON.stringify({
-                toolRunId: `${part.toolCallId}-failed`,
-                toolId: part.toolName,
-                toolName: part.toolName,
-                status: "failed",
-                outputPreview: rawError,
-                observations: [],
-                totalObservations: 0,
-                truncated: false
+                id: `${part.toolCallId}-failed`,
+                summary: rawError
               }, null, 2), undefined, {
                 rawStreamPartType: part.type
               });
@@ -1464,14 +1948,22 @@ function formatZodIssues(error: z.ZodError, rootPathLabel = "input") {
 }
 
 function workflowToolValidationError(
-  toolName: "report_finding" | "report_attack_vectors",
+  toolName: "report_finding" | "report_attack_vectors" | "report_system_graph_batch",
   message: string,
   options?: { cause?: unknown }
 ) {
-  const actionLabel = toolName === "report_finding" ? "Finding submission" : "Attack vector submission";
+  const actionLabel = toolName === "report_finding"
+    ? "Finding submission"
+    : toolName === "report_attack_vectors"
+      ? "Attack vector submission"
+      : "System graph batch submission";
   return new RequestError(400, message, {
     cause: options?.cause,
-    code: toolName === "report_finding" ? "WORKFLOW_REPORT_FINDING_INVALID" : "WORKFLOW_REPORT_ATTACK_VECTORS_INVALID",
+    code: toolName === "report_finding"
+      ? "WORKFLOW_REPORT_FINDING_INVALID"
+      : toolName === "report_attack_vectors"
+        ? "WORKFLOW_REPORT_ATTACK_VECTORS_INVALID"
+        : "WORKFLOW_REPORT_SYSTEM_GRAPH_BATCH_INVALID",
     userFriendlyMessage: `${actionLabel} was rejected. Check the reported fields and evidence references, then try again.`
   });
 }
@@ -1487,8 +1979,13 @@ function parseWorkflowToolInput<TSchema extends z.ZodTypeAny>(
   } catch (error) {
     if (error instanceof z.ZodError) {
       const rootPathLabel = label.toLowerCase();
+      const toolName = label === "Finding submission"
+        ? "report_finding"
+        : label === "Attack vector submission"
+          ? "report_attack_vectors"
+          : "report_system_graph_batch";
       throw workflowToolValidationError(
-        label === "Finding submission" ? "report_finding" : "report_attack_vectors",
+        toolName,
         `${label} validation failed: ${formatZodIssues(error, rootPathLabel)}`,
         { cause: error }
       );
@@ -1528,8 +2025,13 @@ function normalizeWorkflowToolInput(rawInput: unknown, label: string): unknown {
       return JSON.parse(trimmed);
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown JSON parsing error.";
+      const toolName = label === "Finding submission"
+        ? "report_finding"
+        : label === "Attack vector submission"
+          ? "report_attack_vectors"
+          : "report_system_graph_batch";
       throw workflowToolValidationError(
-        label === "Finding submission" ? "report_finding" : "report_attack_vectors",
+        toolName,
         `${label} parsing failed: ${reason}`,
         { cause: error }
       );
@@ -1540,7 +2042,7 @@ function normalizeWorkflowToolInput(rawInput: unknown, label: string): unknown {
 }
 
 function coerceWorkflowToolInput(rawInput: unknown, label: string): unknown {
-  if (label !== "Finding submission" && label !== "Attack vector submission") {
+  if (label !== "Finding submission" && label !== "Attack vector submission" && label !== "System graph batch submission") {
     return rawInput;
   }
 
@@ -1573,7 +2075,7 @@ function coerceWorkflowToolInput(rawInput: unknown, label: string): unknown {
     }
   };
 
-  if (label !== "Finding submission") {
+  if (label === "Attack vector submission") {
     if (Array.isArray(normalized["attackVectors"])) {
       normalized["attackVectors"] = normalized["attackVectors"].map((entry) => {
         if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
@@ -1582,6 +2084,71 @@ function coerceWorkflowToolInput(rawInput: unknown, label: string): unknown {
         const vector = { ...(entry as Record<string, unknown>) };
         vector["transitionEvidence"] = parseEvidenceArrayString(vector["transitionEvidence"]);
         return vector;
+      });
+    }
+    return normalized;
+  }
+
+  if (label === "System graph batch submission") {
+    const normalizeEvidenceList = (value: unknown) => parseEvidenceArrayString(value);
+    if (Array.isArray(normalized["findings"])) {
+      normalized["findings"] = normalized["findings"].map((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          return entry;
+        }
+        const finding = { ...(entry as Record<string, unknown>) };
+        if (typeof finding["confidence"] === "string") {
+          const parsedConfidence = Number(finding["confidence"]);
+          if (Number.isFinite(parsedConfidence)) {
+            finding["confidence"] = parsedConfidence;
+          }
+        }
+        if (typeof finding["target"] === "string") {
+          const host = finding["target"].trim();
+          if (host.length > 0) {
+            finding["target"] = { host };
+          }
+        }
+        finding["evidence"] = normalizeEvidenceList(finding["evidence"]);
+        return finding;
+      });
+    }
+    if (Array.isArray(normalized["resourceRelationships"])) {
+      normalized["resourceRelationships"] = normalized["resourceRelationships"].map((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          return entry;
+        }
+        return {
+          ...(entry as Record<string, unknown>),
+          evidence: normalizeEvidenceList((entry as Record<string, unknown>)["evidence"])
+        };
+      });
+    }
+    if (Array.isArray(normalized["resources"])) {
+      normalized["resources"] = normalized["resources"].map((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          return entry;
+        }
+        return {
+          ...(entry as Record<string, unknown>),
+          evidence: normalizeEvidenceList((entry as Record<string, unknown>)["evidence"])
+        };
+      });
+    }
+    if (Array.isArray(normalized["findingRelationships"])) {
+      normalized["findingRelationships"] = normalized["findingRelationships"].map((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          return entry;
+        }
+        const relationship = { ...(entry as Record<string, unknown>) };
+        relationship["evidence"] = normalizeEvidenceList(relationship["evidence"]);
+        if (typeof relationship["confidence"] === "string") {
+          const parsedConfidence = Number(relationship["confidence"]);
+          if (Number.isFinite(parsedConfidence)) {
+            relationship["confidence"] = parsedConfidence;
+          }
+        }
+        return relationship;
       });
     }
     return normalized;
@@ -1604,38 +2171,20 @@ function coerceWorkflowToolInput(rawInput: unknown, label: string): unknown {
   return normalized;
 }
 
-function buildReportFindingDescription(stage: WorkflowStage) {
+function buildReportSystemGraphBatchDescription(stage: WorkflowStage) {
   const lines = [
-    "Persist one finding-only workflow report.",
-    "Provide a title and at least one evidence item with a persisted reference. Other finding fields are optional and can be inferred or defaulted.",
-    "Prefer canonical object inputs, but finding-compatible legacy inputs are still accepted, including JSON-string payloads, numeric-string confidence, string target, and omitted finding mode.",
-    "Do not attach relationship fields, chain metadata, or attack vectors to findings. Submit those separately with report_attack_vectors after you have the returned finding ids."
+    "Persist one incremental workflow system-graph batch.",
+    "Gather evidence first, then submit resources, resourceRelationships, findings, findingRelationships, and optional paths in one normalized payload.",
+    "Use stable ids across batches so later submissions refine prior entities instead of duplicating them.",
+    "Attach every finding to concrete resource ids and avoid prose-only topology claims."
   ];
 
   if (stage.completionRule.requireChainedFindings) {
-    lines.push("This stage requires chained findings, so report explicit attack vectors between findings or provide attack paths through the handoff.");
+    lines.push("This stage requires chained findings, so submit explicit findingRelationships or paths that capture the progression.");
   }
 
   if (stage.handoffSchema) {
-    lines.push("If you intend to complete with handoff, keep finding ids consistent with the final handoff references.");
-  }
-
-  return lines.join(" ");
-}
-
-function buildReportAttackVectorsDescription(stage: WorkflowStage) {
-  const lines = [
-    "Persist one or more explicit attack-vector links between existing findings.",
-    "Use this only after report_finding has returned the finding ids you want to connect.",
-    "Provide attackVectors as an array. Every non-related vector must include transitionEvidence with persisted references."
-  ];
-
-  if (stage.completionRule.requireChainedFindings) {
-    lines.push("This stage requires chained findings, so use this action to make cross-finding transitions explicit.");
-  }
-
-  if (stage.handoffSchema) {
-    lines.push("Keep finding ids aligned with any final handoff attackVectors or attackPaths.");
+    lines.push("If you intend to complete with handoff, keep resource ids and finding ids consistent with the final handoff references.");
   }
 
   return lines.join(" ");

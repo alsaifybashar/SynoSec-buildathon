@@ -23,8 +23,7 @@ describe("builtin ai tools", () => {
 
     expect(ids).toEqual(expect.arrayContaining([
       "builtin-log-progress",
-      "builtin-report-finding",
-      "builtin-report-attack-vectors",
+      "builtin-report-system-graph-batch",
       "builtin-complete-run",
       "builtin-http-surface-assessment",
       "builtin-content-discovery",
@@ -39,15 +38,10 @@ describe("builtin ai tools", () => {
       executorType: "builtin",
       builtinActionKey: "log_progress"
     });
-    expect(getBuiltinAiTool("builtin-report-finding")).toMatchObject({
+    expect(getBuiltinAiTool("builtin-report-system-graph-batch")).toMatchObject({
       source: "system",
       executorType: "builtin",
-      builtinActionKey: "report_finding"
-    });
-    expect(getBuiltinAiTool("builtin-report-attack-vectors")).toMatchObject({
-      source: "system",
-      executorType: "builtin",
-      builtinActionKey: "report_attack_vectors"
+      builtinActionKey: "report_system_graph_batch"
     });
     expect(getBuiltinAiTool("builtin-complete-run")).toMatchObject({
       source: "system",
@@ -61,50 +55,36 @@ describe("builtin ai tools", () => {
     });
   });
 
-  it("documents split finding and attack-vector reporting inputs and outputs", () => {
-    const tool = getBuiltinAiTool("builtin-report-finding");
-    const vectorTool = getBuiltinAiTool("builtin-report-attack-vectors");
+  it("documents batched system graph reporting inputs and outputs", () => {
+    const tool = getBuiltinAiTool("builtin-report-system-graph-batch");
     expect(tool).not.toBeNull();
-    expect(vectorTool).not.toBeNull();
 
     const description = tool?.description ?? "";
-    expect(description).toContain("JSON-string payloads");
-    expect(description).toContain("string `target`");
-    expect(description).toContain("finding-only");
+    expect(description).toContain("stable ids");
+    expect(description).toContain("resourceRelationships");
+    expect(description).toContain("findingRelationships");
 
-    const findingMode = tool?.inputSchema as {
+    const batchInput = tool?.inputSchema as {
+      additionalProperties?: boolean;
       properties: Record<string, unknown>;
-      required: string[];
     };
-    expect(findingMode.required).toEqual(["title", "evidence"]);
-    expect(findingMode.properties["target"]).toMatchObject({
-      oneOf: expect.arrayContaining([
-        expect.objectContaining({ type: "string" }),
-        expect.objectContaining({ type: "object" })
-      ])
+    expect(batchInput.additionalProperties).toBe(false);
+    expect(batchInput.properties["resources"]).toBeDefined();
+    expect(batchInput.properties["findings"]).toBeDefined();
+    expect(batchInput.properties["findingRelationships"]).toBeDefined();
+    const findings = batchInput.properties["findings"] as {
+      items: {
+        properties: Record<string, unknown>;
+        additionalProperties?: boolean;
+      };
+    };
+    expect(findings.items.additionalProperties).toBe(false);
+    expect(findings.items.properties["evidence"]).toMatchObject({
+      type: "array"
     });
-    expect(findingMode.properties["confidence"]).toMatchObject({
-      oneOf: expect.arrayContaining([
-        expect.objectContaining({ type: "number" }),
-        expect.objectContaining({ type: "string" })
-      ])
-    });
-    expect(findingMode.properties["attackVectors"]).toBeUndefined();
-    expect(findingMode.properties["derivedFromFindingIds"]).toBeUndefined();
-    const findingOutput = tool?.outputSchema as {
+    const batchOutput = tool?.outputSchema as {
       required: string[];
     };
-    expect(findingOutput.required).toEqual(["accepted", "findingId", "title", "severity", "host"]);
-
-    const vectorInput = vectorTool?.inputSchema as {
-      properties: Record<string, unknown>;
-      required: string[];
-    };
-    expect(vectorInput.required).toEqual(["attackVectors"]);
-    expect(vectorInput.properties["attackVectors"]).toBeDefined();
-    const vectorOutput = vectorTool?.outputSchema as {
-      required: string[];
-    };
-    expect(vectorOutput.required).toEqual(["accepted", "attackVectorIds"]);
+    expect(batchOutput.required).toEqual(["accepted", "resourceIds", "findingIds", "relationshipIds", "pathIds"]);
   });
 });

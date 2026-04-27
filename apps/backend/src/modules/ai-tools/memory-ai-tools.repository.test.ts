@@ -48,7 +48,7 @@ describe("MemoryAiToolsRepository", () => {
     });
 
     expect(allTools.items.some((tool) => tool.id === "tool-1" && tool.source === "custom")).toBe(true);
-    expect(allTools.items.some((tool) => tool.id === "builtin-report-finding" && tool.source === "system")).toBe(true);
+    expect(allTools.items.some((tool) => tool.id === "builtin-report-system-graph-batch" && tool.source === "system")).toBe(true);
 
     const primaryOnly = await repository.list({
       page: 1,
@@ -73,7 +73,7 @@ describe("MemoryAiToolsRepository", () => {
     expect(builtinOnly.items.map((tool) => tool.id)).toEqual(expect.arrayContaining([
       "builtin-complete-run",
       "builtin-log-progress",
-      "builtin-report-finding",
+      "builtin-report-system-graph-batch",
       "builtin-http-surface-assessment",
       "builtin-content-discovery",
       "builtin-network-host-discovery"
@@ -83,15 +83,15 @@ describe("MemoryAiToolsRepository", () => {
 
   it("returns builtin tools by id and rejects builtin mutation", async () => {
     const repository = new MemoryAiToolsRepository([createTool()]);
-    const builtin = await repository.getById("builtin-report-finding");
+    const builtin = await repository.getById("builtin-report-system-graph-batch");
 
     expect(builtin).toMatchObject({
       source: "system",
       executorType: "builtin",
-      builtinActionKey: "report_finding"
+      builtinActionKey: "report_system_graph_batch"
     });
 
-    await expect(repository.update("builtin-report-finding", {
+    await expect(repository.update("builtin-report-system-graph-batch", {
       name: "Mutated"
     })).rejects.toMatchObject({
       status: 400,

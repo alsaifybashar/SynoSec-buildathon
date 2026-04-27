@@ -8,48 +8,18 @@ const builtinTimestamp = "2026-04-25T00:00:00.000Z";
 
 const workflowFindingEvidenceSchema = {
   type: "object",
+  additionalProperties: false,
+  description: "One grounded evidence record. Provide `quote` plus either `sourceTool` or a persisted reference like `toolRunRef`, `observationRef`, `artifactRef`, `traceEventId`, or `externalUrl`.",
   properties: {
-    sourceTool: { type: "string" },
-    quote: { type: "string" },
-    artifactRef: { type: "string" },
-    observationRef: { type: "string" },
-    toolRunRef: { type: "string" },
-    traceEventId: { type: "string" },
-    externalUrl: { type: "string" }
+    sourceTool: { type: "string", description: "Optional tool name or tool id that produced the evidence. If omitted, the runtime will derive it from `toolRunRef` when possible." },
+    quote: { type: "string", description: "Short verbatim excerpt from the persisted tool output or observation." },
+    artifactRef: { type: "string", description: "Optional persisted artifact id that anchors this quote." },
+    observationRef: { type: "string", description: "Optional persisted observation id that anchors this quote." },
+    toolRunRef: { type: "string", description: "Optional persisted tool run id that anchors this quote." },
+    traceEventId: { type: "string", description: "Optional workflow trace event id that anchors this quote." },
+    externalUrl: { type: "string", description: "Optional external URL when the evidence comes from a fetched reference." }
   },
-  required: ["sourceTool", "quote"]
-};
-
-const workflowAttackVectorSchema = {
-  type: "object",
-  properties: {
-    kind: { type: "string", enum: ["enables", "derived_from", "related", "lateral_movement"] },
-    sourceFindingId: { type: "string" },
-    destinationFindingId: { type: "string" },
-    summary: { type: "string" },
-    preconditions: {
-      type: "array",
-      items: { type: "string" }
-    },
-    impact: { type: "string" },
-    transitionEvidence: {
-      oneOf: [
-        {
-          type: "array",
-          items: workflowFindingEvidenceSchema
-        },
-        { type: "string" }
-      ]
-    },
-    confidence: {
-      oneOf: [
-        { type: "number" },
-        { type: "string" }
-      ]
-    },
-    validationStatus: { type: "string" }
-  },
-  required: ["kind", "sourceFindingId", "destinationFindingId", "summary", "impact", "confidence"]
+  required: ["quote"]
 };
 
 const lifecycleBuiltinAiTools: AiTool[] = [
@@ -92,14 +62,14 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     updatedAt: builtinTimestamp
   },
   {
-    id: "builtin-report-finding",
-    name: "Report Finding",
+    id: "builtin-report-system-graph-batch",
+    name: "Report System Graph Batch",
     kind: "builtin-action",
     status: "active",
     source: "system",
-    description: "Persist one finding-only workflow report. Use this when you have evidence that a specific weakness exists: provide `title` plus at least one grounded `evidence` item, then let the server infer or default missing fields such as type, severity, confidence, impact, recommendation, target details, and reproduction details. Prefer canonical object inputs, but this action still accepts finding-compatible legacy shapes such as JSON-string payloads, numeric-string confidence, string `target`, and omitted `mode` values that default to `finding`. Returns the canonical normalized result with `accepted`, `findingId`, `title`, `severity`, and `host`. It does not create attack-vector links and it does not complete the run.",
+    description: "Persist one incremental batch of workflow system-graph data. Use this after collecting evidence to submit normalized `resources`, `resourceRelationships`, `findings`, `findingRelationships`, and optional `paths` in a single payload. Provide stable ids so later batches can refine earlier entities without duplication. Every finding must include grounded `evidence`, every finding must attach to concrete `resourceIds`, and non-`related` finding relationships must include grounded `evidence`. Source-tool-only evidence is accepted only when it resolves to exactly one executed result in the current run; otherwise provide `toolRunRef`, `observationRef`, `artifactRef`, `traceEventId`, or `externalUrl`. Returns acceptance plus the ids merged from the batch. It does not complete the run.",
     executorType: "builtin",
-    builtinActionKey: "report_finding",
+    builtinActionKey: "report_system_graph_batch",
     bashSource: null,
     capabilities: ["workflow-reporting"],
     category: "utility",
@@ -109,110 +79,126 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     candidateToolIds: [],
     inputSchema: {
       type: "object",
+      additionalProperties: false,
+      description: "Incremental workflow system graph batch. Use stable ids. On first submission for an id, include the required identifying fields. On later submissions, provide only the fields you want to refine.",
       properties: {
-        mode: { type: "string", enum: ["finding"] },
-        type: { type: "string" },
-        title: { type: "string" },
-        severity: { type: "string" },
-        confidence: {
-          oneOf: [
-            { type: "number" },
-            { type: "string" }
-          ]
+        resources: {
+          type: "array",
+          description: "System resources such as hosts, services, applications, datastores, endpoints, or trust zones.",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              id: { type: "string", description: "Stable model-chosen id for this resource. Reuse it to refine the same resource later." },
+              kind: { type: "string", description: "Normalized resource kind such as host, service, application, datastore, subnet, endpoint, or secret-store." },
+              name: { type: "string", description: "Human-readable label for the resource." },
+              summary: { type: "string", description: "Optional concise description of why this resource matters." },
+              evidence: {
+                type: "array",
+                description: "Optional evidence that grounds this resource in observed data.",
+                items: workflowFindingEvidenceSchema
+              },
+              tags: { type: "array", description: "Optional short labels for grouping or filtering.", items: { type: "string" } }
+            }
+          }
         },
-        impact: { type: "string" },
-        recommendation: { type: "string" },
-        target: {
-          oneOf: [
-            { type: "string" },
-            {
-              type: "object",
-              properties: {
-                host: { type: "string" },
-                port: {
-                  oneOf: [
-                    { type: "number" },
-                    { type: "string" }
-                  ]
-                },
-                url: { type: "string" },
-                path: { type: "string" }
+        resourceRelationships: {
+          type: "array",
+          description: "Directed edges between resources such as reaches, depends_on, exposes, contains, or lateral_movement.",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              id: { type: "string", description: "Stable model-chosen id for this relationship." },
+              kind: { type: "string", description: "Relationship kind such as reaches, hosts, depends_on, trusts, exposes, contains, routes_to, or lateral_movement." },
+              sourceResourceId: { type: "string", description: "Stable id of the source resource." },
+              targetResourceId: { type: "string", description: "Stable id of the target resource." },
+              summary: { type: "string", description: "Short explanation of the relationship." },
+              evidence: {
+                type: "array",
+                description: "Optional evidence that grounds this resource-to-resource relationship.",
+                items: workflowFindingEvidenceSchema
               }
             }
-          ]
+          }
         },
-        evidence: {
-          oneOf: [
-            {
-              type: "array",
-              items: workflowFindingEvidenceSchema
-            },
-            { type: "string" }
-          ]
-        },
-        explanationSummary: { type: "string" },
-        confidenceReason: { type: "string" },
-        relationshipExplanations: { type: "object" },
-        validationStatus: { type: "string" },
-        reproduction: { type: "object" },
-        tags: {
+        findings: {
           type: "array",
-          items: { type: "string" }
+          description: "Vulnerabilities or weaknesses attached to one or more resources.",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              id: { type: "string", description: "Stable model-chosen id for this finding. Reuse it to refine the same finding later." },
+              type: { type: "string", description: "Finding taxonomy type such as service_exposure, auth_weakness, misconfiguration, or other." },
+              title: { type: "string", description: "Short finding title." },
+              severity: { type: "string", description: "Severity level: info, low, medium, high, or critical." },
+              confidence: { type: "number", description: "Confidence score from 0 to 1." },
+              evidence: {
+                type: "array",
+                description: "Grounded evidence records for the finding. Required on first submission for a finding id.",
+                items: workflowFindingEvidenceSchema
+              },
+              impact: { type: "string", description: "Short statement of why the finding matters." },
+              recommendation: { type: "string", description: "Short remediation guidance." },
+              validationStatus: { type: "string", description: "Validation state such as unverified, suspected, single_source, cross_validated, or reproduced." },
+              resourceId: { type: "string", description: "Primary affected resource id." },
+              resourceIds: { type: "array", description: "All affected resource ids. Required on first submission for a finding id.", items: { type: "string" } }
+            }
+          }
+        },
+        findingRelationships: {
+          type: "array",
+          description: "Directed links between findings such as enables, derived_from, related, or lateral_movement.",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              id: { type: "string", description: "Stable model-chosen id for this finding relationship." },
+              kind: { type: "string", enum: ["enables", "derived_from", "related", "lateral_movement"], description: "Relationship kind between the two findings." },
+              sourceFindingId: { type: "string", description: "Stable id of the source finding." },
+              targetFindingId: { type: "string", description: "Stable id of the target finding." },
+              summary: { type: "string", description: "Short explanation of how the source and target findings relate." },
+              impact: { type: "string", description: "Optional statement of why this relationship matters." },
+              confidence: { type: "number", description: "Confidence score from 0 to 1." },
+              validationStatus: { type: "string", description: "Validation state for the relationship." },
+              evidence: {
+                type: "array",
+                description: "Grounded evidence supporting the relationship. Required for any non-related relationship. If you provide only `sourceTool`, it must resolve to exactly one executed result in this run.",
+                items: workflowFindingEvidenceSchema
+              }
+            }
+          }
+        },
+        paths: {
+          type: "array",
+          description: "Optional higher-level attack path or chain groupings.",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              id: { type: "string", description: "Stable model-chosen id for this path grouping." },
+              title: { type: "string", description: "Short path title." },
+              summary: { type: "string", description: "Optional path explanation." },
+              severity: { type: "string", description: "Optional severity for the path grouping." },
+              resourceIds: { type: "array", description: "Referenced resource ids in this path.", items: { type: "string" } },
+              findingIds: { type: "array", description: "Referenced finding ids in this path.", items: { type: "string" } }
+            }
+          }
         }
       },
-      required: ["title", "evidence"],
-      description: "Preferred finding submission. `title` and grounded `evidence` are required. Other fields are optional and are defaulted or inferred server-side. Compatibility inputs such as string target, JSON-string evidence array, numeric-string confidence, and omitted finding mode are also accepted."
+      required: []
     },
     outputSchema: {
       type: "object",
       properties: {
         accepted: { type: "boolean" },
-        findingId: { type: "string" },
-        title: { type: "string" },
-        severity: { type: "string" },
-        host: { type: "string" }
+        resourceIds: { type: "array", items: { type: "string" } },
+        findingIds: { type: "array", items: { type: "string" } },
+        relationshipIds: { type: "array", items: { type: "string" } },
+        pathIds: { type: "array", items: { type: "string" } }
       },
-      required: ["accepted", "findingId", "title", "severity", "host"]
-    },
-    createdAt: builtinTimestamp,
-    updatedAt: builtinTimestamp
-  },
-  {
-    id: "builtin-report-attack-vectors",
-    name: "Report Attack Vectors",
-    kind: "builtin-action",
-    status: "active",
-    source: "system",
-    description: "Persist one or more explicit attack-vector links between existing findings. Use this only after `report_finding` has returned the `findingId` values you want to connect. Provide `attackVectors` as an array of relationship records; each record must reference existing findings, and every non-`related` vector must include grounded `transitionEvidence`. Returns the canonical batch result with `accepted` and created `attackVectorIds`. It does not create findings and it does not complete the run.",
-    executorType: "builtin",
-    builtinActionKey: "report_attack_vectors",
-    bashSource: null,
-    capabilities: ["workflow-reporting"],
-    category: "utility",
-    riskTier: "passive",
-    timeoutMs: 1000,
-    coveredToolIds: [],
-    candidateToolIds: [],
-    inputSchema: {
-      type: "object",
-      properties: {
-        attackVectors: {
-          type: "array",
-          items: workflowAttackVectorSchema
-        }
-      },
-      required: ["attackVectors"]
-    },
-    outputSchema: {
-      type: "object",
-      properties: {
-        accepted: { type: "boolean" },
-        attackVectorIds: {
-          type: "array",
-          items: { type: "string" }
-        }
-      },
-      required: ["accepted", "attackVectorIds"]
+      required: ["accepted", "resourceIds", "findingIds", "relationshipIds", "pathIds"]
     },
     createdAt: builtinTimestamp,
     updatedAt: builtinTimestamp
@@ -223,7 +209,7 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     kind: "builtin-action",
     status: "active",
     source: "system",
-    description: "Use this as the final workflow action after any evidence gathering or report_finding calls you want to make. Provide only `summary`. Returns `{ accepted: true }` when the run is closed. It does not create findings or accept extra closeout fields.",
+    description: "Use this as the final workflow action after any evidence gathering or report_system_graph_batch calls you want to make. Provide only `summary`. Returns `{ accepted: true }` when the run is closed. It does not create findings or accept extra closeout fields.",
     executorType: "builtin",
     builtinActionKey: "complete_run",
     bashSource: null,

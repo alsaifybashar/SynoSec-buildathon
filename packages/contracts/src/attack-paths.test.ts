@@ -174,7 +174,7 @@ describe("buildAttackPathSummary", () => {
             additionalProperties: false,
             properties: {
               severity: { enum: ["info", "low", "medium", "high", "critical"] },
-              findingIds: { minItems: 1, items: { format: "uuid" } }
+              findingIds: { minItems: 1, items: { type: "string", minLength: 1 } }
             }
           }
         },

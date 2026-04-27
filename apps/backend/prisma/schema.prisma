@@ -66,18 +66,29 @@ enum WorkflowTraceEventType {
   system_message
   agent_input
   model_decision
+  start
+  start_step @map("start-step")
+  text
+  reasoning
   tool_call
+  tool_call_streaming_start
+  tool_call_delta
   tool_result
   verification
+  system_graph_reported
   finding_reported
   attack_vector_reported
   stage_result_submitted
   stage_contract_validation_failed
   agent_summary
+  finish_step @map("finish-step")
+  finish
   stage_completed
   stage_failed
   run_completed
   run_failed
+  error
+  abort
 }
 
 enum WorkflowTraceEventStatus {

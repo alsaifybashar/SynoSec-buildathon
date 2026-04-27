@@ -10,11 +10,17 @@ import {
   type AiAgent,
   type AiTool,
   type Workflow,
+  type WorkflowReportSystemGraphBatchSubmission,
+  type WorkflowReportedFindingRelationship,
+  type WorkflowReportedPath,
+  type WorkflowReportedResource,
+  type WorkflowReportedResourceRelationship,
   type WorkflowReportedAttackVector,
   type WorkflowReportedFinding,
   type WorkflowRun,
   type WorkflowRunTokenUsage,
   type WorkflowTraceEvent,
+  workflowReportSystemGraphBatchSubmissionSchema,
   workflowReportedAttackVectorSchema,
   workflowReportedFindingSchema
 } from "./resources.js";
@@ -258,6 +264,16 @@ function parseToolExecutionPublicResult(value: unknown) {
   return toolExecutionPublicResultSchema.safeParse(value);
 }
 
+function getPayloadInteger(payload: Record<string, unknown> | null | undefined, key: string) {
+  const value = payload?.[key];
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function getPayloadBoolean(payload: Record<string, unknown> | null | undefined, key: string) {
+  const value = payload?.[key];
+  return typeof value === "boolean" ? value : null;
+}
+
 function parseTokenCount(value: unknown) {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
 }
@@ -367,6 +383,56 @@ function parseWorkflowFinding(value: unknown): WorkflowReportedFinding | null {
 function parseWorkflowAttackVector(value: unknown): WorkflowReportedAttackVector | null {
   const parsed = workflowReportedAttackVectorSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
+}
+
+function parseWorkflowSystemGraphBatch(value: unknown): WorkflowReportSystemGraphBatchSubmission | null {
+  const parsed = workflowReportSystemGraphBatchSubmissionSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function latestPerId<T extends { id: string }>(items: T[]) {
+  const byId = new Map<string, T>();
+  for (const item of items) {
+    byId.set(item.id, item);
+  }
+  return [...byId.values()];
+}
+
+export function getWorkflowReportedSystemGraph(run: WorkflowRun | null) {
+  const empty = {
+    resources: [] as WorkflowReportedResource[],
+    resourceRelationships: [] as WorkflowReportedResourceRelationship[],
+    findings: [] as WorkflowReportedFinding[],
+    findingRelationships: [] as WorkflowReportedFindingRelationship[],
+    paths: [] as WorkflowReportedPath[]
+  };
+  if (!run) {
+    return empty;
+  }
+
+  const batches = run.events
+    .filter((event) => event.type === "system_graph_reported")
+    .map((event) => parseWorkflowSystemGraphBatch((event.payload ?? {})["batch"]))
+    .filter((batch): batch is WorkflowReportSystemGraphBatchSubmission => Boolean(batch));
+
+  return {
+    resources: latestPerId(batches.flatMap((batch) => batch.resources)),
+    resourceRelationships: latestPerId(batches.flatMap((batch) => batch.resourceRelationships)),
+    findings: latestPerId(batches.flatMap((batch) => batch.findings.map((finding) => workflowReportedFindingSchema.parse({
+      ...finding,
+      workflowRunId: run.id,
+      workflowStageId: null,
+      createdAt: run.startedAt,
+      target: {
+        host: finding.target?.host ?? "unknown",
+        ...(finding.target?.port === undefined ? {} : { port: finding.target.port }),
+        ...(finding.target?.url ? { url: finding.target.url } : {}),
+        ...(finding.target?.path ? { path: finding.target.path } : {})
+      }
+    })))),
+    findingRelationships: latestPerId(batches.flatMap((batch) => batch.findingRelationships)),
+    paths: latestPerId(batches.flatMap((batch) => batch.paths))
+  };
 }
 
 function getToolName(event: WorkflowTraceEvent, toolLookup: Record<string, string>) {
@@ -579,10 +645,13 @@ export function getWorkflowReportedFindings(run: WorkflowRun | null) {
     return [];
   }
 
-  return run.events
-    .filter((event) => event.type === "finding_reported")
-    .map((event) => parseWorkflowFinding((event.payload ?? {})["finding"]))
-    .filter((finding): finding is WorkflowReportedFinding => Boolean(finding));
+  return latestPerId([
+    ...getWorkflowReportedSystemGraph(run).findings,
+    ...run.events
+      .filter((event) => event.type === "finding_reported")
+      .map((event) => parseWorkflowFinding((event.payload ?? {})["finding"]))
+      .filter((finding): finding is WorkflowReportedFinding => Boolean(finding))
+  ]);
 }
 
 export function getWorkflowReportedAttackVectors(run: WorkflowRun | null) {
@@ -590,10 +659,29 @@ export function getWorkflowReportedAttackVectors(run: WorkflowRun | null) {
     return [];
   }
 
-  return run.events
-    .filter((event) => event.type === "attack_vector_reported")
-    .map((event) => parseWorkflowAttackVector((event.payload ?? {})["attackVector"]))
-    .filter((vector): vector is WorkflowReportedAttackVector => Boolean(vector));
+  const derivedVectors = getWorkflowReportedSystemGraph(run).findingRelationships.map((relationship) => workflowReportedAttackVectorSchema.parse({
+    id: relationship.id,
+    workflowRunId: run.id,
+    workflowStageId: null,
+    createdAt: run.startedAt,
+    kind: relationship.kind,
+    sourceFindingId: relationship.sourceFindingId,
+    destinationFindingId: relationship.targetFindingId,
+    summary: relationship.summary,
+    preconditions: [],
+    impact: relationship.impact ?? relationship.summary,
+    transitionEvidence: relationship.evidence,
+    confidence: relationship.confidence,
+    validationStatus: relationship.validationStatus
+  }));
+
+  return latestPerId([
+    ...derivedVectors,
+    ...run.events
+      .filter((event) => event.type === "attack_vector_reported")
+      .map((event) => parseWorkflowAttackVector((event.payload ?? {})["attackVector"]))
+      .filter((vector): vector is WorkflowReportedAttackVector => Boolean(vector))
+  ]);
 }
 
 export function getWorkflowRunCoverage(_run: WorkflowRun | null): WorkflowRunCoverage[] {
@@ -820,6 +908,8 @@ export function buildWorkflowTranscript(input: {
       const parsedOutput = parseToolExecutionPublicResult(payload["output"]);
       const compactOutput = parsedOutput.success ? parsedOutput.data : null;
       const serializedOutput = getSerializedToolResultBody(payload);
+      const outputObservations = getPayloadObservationList(isRecord(payload["output"]) ? payload["output"] : null, "observations");
+      const payloadObservations = getPayloadObservationList(payload, "observations");
       currentTurn?.details.push({
         kind: "tool_result",
         id: event.id,
@@ -832,9 +922,9 @@ export function buildWorkflowTranscript(input: {
         body: serializedOutput,
         rawModelOutput: serializedOutput,
         outputPreview: getPayloadString(payload, "outputPreview"),
-        observations: compactOutput?.observations ?? getPayloadObservationList(isRecord(payload["output"]) ? payload["output"] : payload, "observations"),
-        totalObservations: compactOutput?.totalObservations ?? 0,
-        truncated: compactOutput?.truncated ?? false,
+        observations: compactOutput?.observations ?? (outputObservations.length > 0 ? outputObservations : payloadObservations),
+        totalObservations: compactOutput?.totalObservations ?? getPayloadInteger(payload, "totalObservations") ?? 0,
+        truncated: compactOutput?.truncated ?? getPayloadBoolean(payload, "truncated") ?? false,
         status: event.status === "pending" ? "running" : event.status
       });
       continue;
@@ -919,6 +1009,6 @@ export function buildWorkflowTranscript(input: {
 
   return workflowTranscriptProjectionSchema.parse({
     items,
-    findings
+    findings: getWorkflowReportedFindings(input.run).map((finding, index) => toFindingsRailItem(finding, index, finding.createdAt))
   });
 }

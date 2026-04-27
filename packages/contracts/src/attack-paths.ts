@@ -9,6 +9,8 @@ import {
 } from "./resources.js";
 import { severitySchema } from "./scan-core.js";
 
+const attackPathStableIdSchema = z.string().min(1);
+
 const attackPathRouteStatusSchema = z.enum(["confirmed", "qualified", "blocked"]);
 export type AttackPathRouteStatus = z.infer<typeof attackPathRouteStatusSchema>;
 
@@ -30,7 +32,7 @@ const attackPathEvidenceLevelSchema = z.enum([
 export type AttackPathEvidenceLevel = z.infer<typeof attackPathEvidenceLevelSchema>;
 
 export const attackPathValidationEvidenceRefSchema = z.object({
-  findingId: z.string().uuid(),
+  findingId: attackPathStableIdSchema,
   sourceTool: z.string().min(1),
   quote: z.string().min(1),
   artifactRef: z.string().min(1).optional(),
@@ -62,7 +64,7 @@ export const attackPathVenueSchema = z.object({
   venueType: z.string().min(1),
   targetLabel: z.string().min(1),
   summary: z.string().min(1),
-  findingIds: z.array(z.string().uuid()).default([])
+  findingIds: z.array(attackPathStableIdSchema).default([])
 });
 export type AttackPathVenue = z.infer<typeof attackPathVenueSchema>;
 
@@ -77,24 +79,24 @@ export const attackPathVectorSchema = z.object({
   kind: attackPathLinkKindSchema,
   status: attackPathRouteStatusSchema,
   confidence: attackPathConfidenceBandSchema,
-  findingIds: z.array(z.string().uuid()).default([]),
-  supportingFindingIds: z.array(z.string().uuid()).default([]),
-  suspectedFindingIds: z.array(z.string().uuid()).default([]),
-  blockedFindingIds: z.array(z.string().uuid()).default([]),
+  findingIds: z.array(attackPathStableIdSchema).default([]),
+  supportingFindingIds: z.array(attackPathStableIdSchema).default([]),
+  suspectedFindingIds: z.array(attackPathStableIdSchema).default([]),
+  blockedFindingIds: z.array(attackPathStableIdSchema).default([]),
   validation: attackPathValidationSchema
 });
 export type AttackPathVector = z.infer<typeof attackPathVectorSchema>;
 
 export const attackPathLinkSchema = z.object({
   id: z.string().min(1),
-  sourceFindingId: z.string().uuid(),
-  targetFindingId: z.string().uuid(),
+  sourceFindingId: attackPathStableIdSchema,
+  targetFindingId: attackPathStableIdSchema,
   kind: attackPathLinkKindSchema,
   summary: z.string().min(1),
   status: attackPathRouteStatusSchema,
-  supportingFindingIds: z.array(z.string().uuid()).default([]),
-  suspectedFindingIds: z.array(z.string().uuid()).default([]),
-  blockedFindingIds: z.array(z.string().uuid()).default([]),
+  supportingFindingIds: z.array(attackPathStableIdSchema).default([]),
+  suspectedFindingIds: z.array(attackPathStableIdSchema).default([]),
+  blockedFindingIds: z.array(attackPathStableIdSchema).default([]),
   validation: attackPathValidationSchema
 });
 export type AttackPathLink = z.infer<typeof attackPathLinkSchema>;
@@ -109,10 +111,10 @@ export const derivedAttackPathSchema = z.object({
   status: attackPathRouteStatusSchema,
   venueIds: z.array(z.string().min(1)).default([]),
   vectorIds: z.array(z.string().min(1)).default([]),
-  findingIds: z.array(z.string().uuid()).default([]),
-  supportingFindingIds: z.array(z.string().uuid()).default([]),
-  suspectedFindingIds: z.array(z.string().uuid()).default([]),
-  blockedFindingIds: z.array(z.string().uuid()).default([]),
+  findingIds: z.array(attackPathStableIdSchema).default([]),
+  supportingFindingIds: z.array(attackPathStableIdSchema).default([]),
+  suspectedFindingIds: z.array(attackPathStableIdSchema).default([]),
+  blockedFindingIds: z.array(attackPathStableIdSchema).default([]),
   pathLinks: z.array(attackPathLinkSchema).default([])
 });
 export type DerivedAttackPath = z.infer<typeof derivedAttackPathSchema>;
@@ -127,7 +129,7 @@ export type AttackPathSummary = z.infer<typeof attackPathSummarySchema>;
 const uniqueNonEmptyStringArraySchema = z.array(z.string().min(1)).min(1).refine((values) => new Set(values).size === values.length, {
   message: "Expected unique string values."
 });
-const uniqueFindingIdArraySchema = z.array(z.string().uuid()).min(1).refine((values) => new Set(values).size === values.length, {
+const uniqueFindingIdArraySchema = z.array(attackPathStableIdSchema).min(1).refine((values) => new Set(values).size === values.length, {
   message: "Expected unique finding ids."
 });
 
@@ -189,7 +191,6 @@ export const attackPathHandoffSchema = z.object({
 });
 export type AttackPathHandoff = z.infer<typeof attackPathHandoffSchema>;
 
-const uuidJsonSchema = { type: "string", format: "uuid" } as const;
 const idJsonSchema = { type: "string", minLength: 1 } as const;
 const nonEmptyStringArrayJsonSchema = {
   type: "array",
@@ -201,7 +202,7 @@ const findingIdArrayJsonSchema = {
   type: "array",
   minItems: 1,
   uniqueItems: true,
-  items: uuidJsonSchema
+  items: idJsonSchema
 } as const;
 
 export const attackPathHandoffJsonSchema = {

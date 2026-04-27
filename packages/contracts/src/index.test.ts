@@ -29,6 +29,7 @@ import {
   workflowReportAttackVectorsSubmissionSchema,
   workflowReportFindingSubmissionSchema,
   workflowFindingSubmissionSchema,
+  workflowReportSystemGraphBatchSubmissionSchema,
   updateTargetBodySchema
 } from "./index.js";
 import { workflowTraceEventSchema } from "./index.js";
@@ -693,6 +694,60 @@ describe("contracts", () => {
           toolRunRef: "tool-run-1"
         }]
       }]
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts batched system graph submissions", () => {
+    const result = workflowReportSystemGraphBatchSubmissionSchema.safeParse({
+      resources: [{
+        id: "resource-admin-host",
+        kind: "host",
+        name: "admin.demo.local"
+      }],
+      findings: [{
+        id: "finding-admin-surface",
+        title: "Admin Panel Reachable",
+        severity: "medium",
+        confidence: 0.9,
+        evidence: [{
+          sourceTool: "custom-http-proof",
+          quote: "URL: http://localhost:3000/admin Status: 200",
+          toolRunRef: "tool-run-1"
+        }],
+        resourceId: "resource-admin-host",
+        resourceIds: ["resource-admin-host"]
+      }],
+      findingRelationships: [{
+        id: "relationship-1",
+        kind: "related",
+        sourceFindingId: "finding-admin-surface",
+        targetFindingId: "finding-admin-surface",
+        summary: "Self-correlation placeholder for schema acceptance."
+      }]
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects duplicate stable ids inside one system graph batch", () => {
+    const result = workflowReportSystemGraphBatchSubmissionSchema.safeParse({
+      resources: [
+        { id: "resource-admin-host", kind: "host", name: "admin.demo.local" },
+        { id: "resource-admin-host", kind: "host", name: "duplicate" }
+      ]
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts partial patch entries for non-finding graph entities", () => {
+    const result = workflowReportSystemGraphBatchSubmissionSchema.safeParse({
+      resources: [{ id: "resource-admin-host" }],
+      resourceRelationships: [{ id: "relationship-admin-http" }],
+      findingRelationships: [{ id: "relationship-finding-link" }],
+      paths: [{ id: "path-admin" }]
     });
 
     expect(result.success).toBe(true);

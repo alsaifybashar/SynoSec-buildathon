@@ -100,14 +100,8 @@ export async function executeSemanticFamilyTool(
 ): Promise<{
   result: ExecutedToolResult;
   response: {
-    toolRunId: string;
-    toolId: string;
-    toolName: string;
-    status: ToolRun["status"];
-    outputPreview: string;
-    observations: ExecutedToolResult["publicObservations"];
-    totalObservations: number;
-    truncated: boolean;
+    id: string;
+    summary: string;
   };
 }> {
   const toolInput = applyWorkflowRuntimeTarget(normalizeToolInput(rawInput), context.target);
@@ -244,14 +238,8 @@ export async function executeSemanticFamilyTool(
   return {
     result,
     response: {
-      toolRunId: selectedToolRun.id,
-      toolId: context.familyTool.id,
-      toolName: result.toolName,
-      status: selectedToolRun.status,
-      outputPreview: result.outputPreview,
-      observations: result.publicObservations,
-      totalObservations: result.totalObservations,
-      truncated: result.truncated
+      id: selectedToolRun.id,
+      summary: result.outputPreview
     }
   };
 }

@@ -69,24 +69,12 @@ export type SemanticFamilyDefinition = {
 const commonFamilyOutputSchema = {
   type: "object",
   properties: {
-    toolRunId: { type: "string" },
-    toolId: { type: "string" },
-    toolName: { type: "string" },
-    status: { type: "string" },
-    outputPreview: { type: "string" },
-    observations: { type: "array" },
-    totalObservations: { type: "number" },
-    truncated: { type: "boolean" }
+    id: { type: "string" },
+    summary: { type: "string" }
   },
   required: [
-    "toolRunId",
-    "toolId",
-    "toolName",
-    "status",
-    "outputPreview",
-    "observations",
-    "totalObservations",
-    "truncated"
+    "id",
+    "summary"
   ]
 } as const;
 

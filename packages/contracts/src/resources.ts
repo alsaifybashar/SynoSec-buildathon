@@ -173,8 +173,7 @@ export type AiToolSurface = z.infer<typeof aiToolSurfaceSchema>;
 
 export const toolBuiltinActionKeySchema = z.enum([
   "log_progress",
-  "report_finding",
-  "report_attack_vectors",
+  "report_system_graph_batch",
   "complete_run",
   "http_surface_assessment",
   "web_crawl_mapping",
@@ -540,9 +539,11 @@ export const workflowFindingSubmissionSchema = z.object({
   mitreId: z.string().min(1).optional(),
   owasp: z.string().min(1).optional(),
   reproduction: workflowFindingReproductionSchema.optional(),
-  derivedFromFindingIds: z.array(z.string().uuid()).default([]),
-  relatedFindingIds: z.array(z.string().uuid()).default([]),
-  enablesFindingIds: z.array(z.string().uuid()).default([]),
+  resourceId: z.string().trim().min(1).optional(),
+  resourceIds: z.array(z.string().trim().min(1)).optional(),
+  derivedFromFindingIds: z.array(z.string().trim().min(1)).default([]),
+  relatedFindingIds: z.array(z.string().trim().min(1)).default([]),
+  enablesFindingIds: z.array(z.string().trim().min(1)).default([]),
   chain: workflowFindingChainSchema.optional(),
   explanationSummary: z.string().min(1).optional(),
   confidenceReason: z.string().min(1).optional(),
@@ -552,7 +553,7 @@ export const workflowFindingSubmissionSchema = z.object({
 export type WorkflowFindingSubmission = z.infer<typeof workflowFindingSubmissionSchema>;
 
 export const workflowReportedFindingSchema = workflowFindingSubmissionSchema.extend({
-  id: z.string().uuid(),
+  id: z.string().trim().min(1),
   workflowRunId: z.string().uuid(),
   workflowStageId: z.string().uuid().nullable().optional(),
   createdAt: z.string().datetime()
@@ -564,8 +565,8 @@ export type WorkflowAttackVectorKind = z.infer<typeof workflowAttackVectorKindSc
 
 const workflowAttackVectorSubmissionBaseSchema = z.object({
   kind: workflowAttackVectorKindSchema,
-  sourceFindingId: z.string().uuid(),
-  destinationFindingId: z.string().uuid(),
+  sourceFindingId: z.string().trim().min(1),
+  destinationFindingId: z.string().trim().min(1),
   summary: z.string().min(1),
   preconditions: z.array(z.string().min(1)).default([]),
   impact: z.string().min(1),
@@ -584,6 +585,157 @@ export const workflowAttackVectorSubmissionSchema = workflowAttackVectorSubmissi
   }
 });
 export type WorkflowAttackVectorSubmission = z.infer<typeof workflowAttackVectorSubmissionSchema>;
+
+const workflowStableIdSchema = z.string().trim().min(1);
+const workflowStableIdListSchema = z.array(workflowStableIdSchema).default([]).transform((items) => [...new Set(items)]);
+const workflowFreeformKindSchema = z.string().trim().min(1);
+const duplicateWorkflowIdsIssue = (ctx: z.RefinementCtx, collection: string, ids: string[]) => {
+  const seen = new Set<string>();
+  for (const [index, id] of ids.entries()) {
+    if (seen.has(id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate id in ${collection}: ${id}`,
+        path: [collection, index, "id"]
+      });
+      continue;
+    }
+    seen.add(id);
+  }
+};
+
+export const workflowReportedResourceSchema = z.object({
+  id: workflowStableIdSchema,
+  kind: workflowFreeformKindSchema,
+  name: z.string().trim().min(1),
+  summary: z.string().trim().min(1).optional(),
+  evidence: z.array(workflowFindingEvidenceSchema).default([]),
+  tags: z.array(z.string().trim().min(1)).default([]),
+  workflowRunId: z.string().uuid().optional(),
+  workflowStageId: z.string().uuid().nullable().optional(),
+  createdAt: z.string().datetime().optional()
+});
+export type WorkflowReportedResource = z.infer<typeof workflowReportedResourceSchema>;
+
+export const workflowReportedResourceBatchItemSchema = workflowReportedResourceSchema.partial().extend({
+  id: workflowStableIdSchema,
+  evidence: z.array(workflowFindingEvidenceSchema).optional(),
+  tags: z.array(z.string().trim().min(1)).optional()
+});
+export type WorkflowReportedResourceBatchItem = z.infer<typeof workflowReportedResourceBatchItemSchema>;
+
+export const workflowReportedResourceRelationshipSchema = z.object({
+  id: workflowStableIdSchema,
+  kind: workflowFreeformKindSchema,
+  sourceResourceId: workflowStableIdSchema,
+  targetResourceId: workflowStableIdSchema,
+  summary: z.string().trim().min(1),
+  evidence: z.array(workflowFindingEvidenceSchema).default([]),
+  workflowRunId: z.string().uuid().optional(),
+  workflowStageId: z.string().uuid().nullable().optional(),
+  createdAt: z.string().datetime().optional()
+});
+export type WorkflowReportedResourceRelationship = z.infer<typeof workflowReportedResourceRelationshipSchema>;
+
+export const workflowReportedResourceRelationshipBatchItemSchema = workflowReportedResourceRelationshipSchema.partial().extend({
+  id: workflowStableIdSchema,
+  evidence: z.array(workflowFindingEvidenceSchema).optional()
+});
+export type WorkflowReportedResourceRelationshipBatchItem = z.infer<typeof workflowReportedResourceRelationshipBatchItemSchema>;
+
+export const workflowReportedFindingBatchItemSchema = workflowFindingSubmissionSchema.partial().extend({
+  id: workflowStableIdSchema,
+  title: z.string().trim().min(1),
+  evidence: z.array(workflowFindingEvidenceSchema).min(1),
+  type: workflowFindingTypeSchema.default("other"),
+  severity: z.enum(["info", "low", "medium", "high", "critical"]).default("medium"),
+  confidence: z.number().min(0).max(1).default(0.8),
+  target: workflowFindingTargetSchema.partial().optional(),
+  impact: z.string().trim().min(1).default("Evidence-backed workflow finding."),
+  recommendation: z.string().trim().min(1).default("Review and remediate the reported issue based on the supporting evidence."),
+  validationStatus: workflowFindingValidationStatusSchema.default("unverified"),
+  resourceId: workflowStableIdSchema.optional(),
+  resourceIds: workflowStableIdListSchema,
+  derivedFromFindingIds: workflowStableIdListSchema,
+  relatedFindingIds: workflowStableIdListSchema,
+  enablesFindingIds: workflowStableIdListSchema,
+  tags: z.array(z.string().trim().min(1)).default([])
+});
+export type WorkflowReportedFindingBatchItem = z.infer<typeof workflowReportedFindingBatchItemSchema>;
+
+export const workflowReportedFindingRelationshipSchema = z.object({
+  id: workflowStableIdSchema,
+  kind: workflowAttackVectorKindSchema,
+  sourceFindingId: workflowStableIdSchema,
+  targetFindingId: workflowStableIdSchema,
+  summary: z.string().trim().min(1),
+  impact: z.string().trim().min(1).optional(),
+  confidence: z.number().min(0).max(1).default(0.8),
+  validationStatus: workflowFindingValidationStatusSchema.default("unverified"),
+  evidence: z.array(workflowFindingEvidenceSchema).default([])
+}).superRefine((value, ctx) => {
+  if (value.kind !== "related" && value.evidence.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Non-related finding relationships require evidence.",
+      path: ["evidence"]
+    });
+  }
+});
+export type WorkflowReportedFindingRelationship = z.infer<typeof workflowReportedFindingRelationshipSchema>;
+
+export const workflowReportedFindingRelationshipBatchItemSchema = z.object({
+  id: workflowStableIdSchema,
+  kind: workflowAttackVectorKindSchema.optional(),
+  sourceFindingId: workflowStableIdSchema.optional(),
+  targetFindingId: workflowStableIdSchema.optional(),
+  summary: z.string().trim().min(1).optional(),
+  impact: z.string().trim().min(1).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  validationStatus: workflowFindingValidationStatusSchema.optional(),
+  evidence: z.array(workflowFindingEvidenceSchema).optional()
+}).superRefine((value, ctx) => {
+  if (value.kind !== undefined && value.kind !== "related" && value.evidence !== undefined && value.evidence.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Non-related finding relationships require evidence when evidence is supplied.",
+      path: ["evidence"]
+    });
+  }
+});
+export type WorkflowReportedFindingRelationshipBatchItem = z.infer<typeof workflowReportedFindingRelationshipBatchItemSchema>;
+
+export const workflowReportedPathSchema = z.object({
+  id: workflowStableIdSchema,
+  title: z.string().trim().min(1),
+  summary: z.string().trim().min(1).optional(),
+  severity: z.enum(["info", "low", "medium", "high", "critical"]).optional(),
+  resourceIds: workflowStableIdListSchema,
+  findingIds: workflowStableIdListSchema
+});
+export type WorkflowReportedPath = z.infer<typeof workflowReportedPathSchema>;
+
+export const workflowReportedPathBatchItemSchema = workflowReportedPathSchema.partial().extend({
+  id: workflowStableIdSchema,
+  resourceIds: workflowStableIdListSchema.optional(),
+  findingIds: workflowStableIdListSchema.optional()
+});
+export type WorkflowReportedPathBatchItem = z.infer<typeof workflowReportedPathBatchItemSchema>;
+
+export const workflowReportSystemGraphBatchSubmissionSchema = z.object({
+  resources: z.array(workflowReportedResourceBatchItemSchema).default([]),
+  resourceRelationships: z.array(workflowReportedResourceRelationshipBatchItemSchema).default([]),
+  findings: z.array(workflowReportedFindingBatchItemSchema).default([]),
+  findingRelationships: z.array(workflowReportedFindingRelationshipBatchItemSchema).default([]),
+  paths: z.array(workflowReportedPathBatchItemSchema).default([])
+}).superRefine((value, ctx) => {
+  duplicateWorkflowIdsIssue(ctx, "resources", value.resources.map((item) => item.id));
+  duplicateWorkflowIdsIssue(ctx, "resourceRelationships", value.resourceRelationships.map((item) => item.id));
+  duplicateWorkflowIdsIssue(ctx, "findings", value.findings.map((item) => item.id));
+  duplicateWorkflowIdsIssue(ctx, "findingRelationships", value.findingRelationships.map((item) => item.id));
+  duplicateWorkflowIdsIssue(ctx, "paths", value.paths.map((item) => item.id));
+});
+export type WorkflowReportSystemGraphBatchSubmission = z.infer<typeof workflowReportSystemGraphBatchSubmissionSchema>;
 
 export const workflowReportFindingFindingModeSubmissionSchema = z.object({
   mode: z.literal("finding"),
@@ -616,7 +768,7 @@ export const workflowReportFindingSubmissionSchema = workflowReportFindingFindin
 export type WorkflowReportFindingSubmission = z.infer<typeof workflowReportFindingSubmissionSchema>;
 
 export const workflowReportedAttackVectorSchema = workflowAttackVectorSubmissionBaseSchema.extend({
-  id: z.string().uuid(),
+  id: workflowStableIdSchema,
   workflowRunId: z.string().uuid(),
   workflowStageId: z.string().uuid().nullable().optional(),
   createdAt: z.string().datetime()
@@ -646,6 +798,16 @@ export const defaultWorkflowStageSystemPrompt = [
   "If individual findings are confirmed but the full chain lacks replay, label the path as plausible or qualified and state the missing validation explicitly.",
   "When findings combine into an attack path, keep findings focused on weaknesses and represent transitions explicitly.",
   "Do not claim a chained path across multiple findings without explicit attack vectors or handoff attack paths."
+].join("\n");
+
+export const workflowExecutionContractHeading = "Workflow execution contract:";
+
+export const defaultWorkflowExecutionContract = [
+  workflowExecutionContractHeading,
+  "Run evidence tools first, submit evidence-backed resources, findings, and relationships with report_system_graph_batch, and call complete_run last.",
+  "complete_run accepts only `summary`.",
+  "complete_run closes the workflow run and does not create findings.",
+  "End every run explicitly with complete_run."
 ].join("\n");
 
 export const defaultWorkflowTaskPromptTemplate = [
@@ -690,7 +852,7 @@ export type WorkflowBlockedCompletion = z.infer<typeof workflowBlockedCompletion
 export const workflowStageResultSubmissionSchema = z.object({
   status: workflowStageResultStatusSchema,
   summary: z.string().min(1),
-  findingIds: z.array(z.string().uuid()).default([]),
+  findingIds: z.array(z.string().trim().min(1)).default([]),
 });
 export type WorkflowStageResultSubmission = z.infer<typeof workflowStageResultSubmissionSchema>;
 
@@ -868,6 +1030,7 @@ export const workflowTraceEventTypeSchema = z.enum([
   "tool_call_delta",
   "tool_result",
   "verification",
+  "system_graph_reported",
   "finding_reported",
   "attack_vector_reported",
   "stage_result_submitted",

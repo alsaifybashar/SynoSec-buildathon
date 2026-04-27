@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   attackPathHandoffJsonSchema,
+  defaultWorkflowExecutionContract,
   defaultWorkflowStageSystemPrompt,
   defaultWorkflowTaskPromptTemplate,
   type ExecutionConstraint,
@@ -684,10 +685,10 @@ describe("WorkflowExecutionService", () => {
           stdin: "piped-input",
           env: { GREETING: "hello-from-env" },
           timeout_ms: 3000
-        }) as { outputPreview: string; status: string } | undefined;
+        }) as { id: string; summary: string } | undefined;
 
-        expect(bashResult?.status).toBe("completed");
-        bashToolRawOutput = bashResult?.outputPreview ?? "";
+        expect(typeof bashResult?.id).toBe("string");
+        bashToolRawOutput = bashResult?.summary ?? "";
 
         await options.tools.complete_run.execute({
           summary: "Bash-only workflow completed."
@@ -1087,7 +1088,7 @@ describe("WorkflowExecutionService", () => {
     expect(toolContextBody).toContain("Built-in actions");
     expect(toolContextBody).toContain("complete_run: Finish the workflow run last");
     expect(toolContextBody).toContain("Provide only `summary`.");
-    expect(toolContextBody).toContain("report_attack_vectors:");
+    expect(toolContextBody).toContain("report_system_graph_batch:");
     expect(toolContextBody).not.toContain("report_attack_vector:");
     expect(toolContextBody).not.toContain("deep_analysis");
 
@@ -1098,7 +1099,7 @@ describe("WorkflowExecutionService", () => {
     expect(systemPromptEvent?.detail).toContain("Operator URL: http://localhost:3000");
     expect(systemPromptEvent?.detail).toContain("Execution URL: http://localhost:3000/");
     expect(systemPromptEvent?.detail).toContain("Workflow execution contract:");
-    expect(systemPromptEvent?.detail).toContain("Run evidence tools first, use report_finding for supported weaknesses, use report_attack_vectors for cross-finding transitions, and call complete_run last.");
+    expect(systemPromptEvent?.detail).toContain("Run evidence tools first, submit evidence-backed resources, findings, and relationships with report_system_graph_batch, and call complete_run last.");
     expect(systemPromptEvent?.detail).not.toContain("call report_attack_vector");
     expect(systemPromptEvent?.detail).toContain("complete_run accepts only `summary`.");
     expect(systemPromptEvent?.detail).toContain("complete_run closes the workflow run and does not create findings.");
@@ -1123,6 +1124,42 @@ describe("WorkflowExecutionService", () => {
       system: expect.any(String),
       prompt: "Proceed."
     }));
+  });
+
+  it("does not append a duplicate execution contract when the workflow prompt already contains one", async () => {
+    streamTextMock.mockImplementationOnce((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
+      fullStream: (async function* () {
+        await options.tools.complete_run.execute({
+          summary: "Pipeline complete."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const stageSystemPrompt = `${defaultWorkflowStageSystemPrompt}\n\n${defaultWorkflowExecutionContract}`;
+    const workflowWithOwnedContract = makeWorkflow({
+      stageSystemPrompt,
+      stages: [{
+        ...makeWorkflow().stages[0]!,
+        stageSystemPrompt
+      }]
+    });
+
+    const { service, createdRuns } = createService({ workflow: workflowWithOwnedContract });
+    await service.startRun("10000000-0000-0000-0000-000000000001");
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    const systemPromptEvent = createdRuns[0]!.events.find((event) => event.title === "Rendered system prompt");
+    expect(systemPromptEvent?.detail?.match(/Workflow execution contract:/g)).toHaveLength(1);
+    expect(systemPromptEvent?.payload["promptSourceLabel"]).toBe("Workflow-owned editable system prompt including the workflow execution contract, plus engine-generated target context.");
   });
 
   it("accepts summary-only completion even when prior strict completion requirements are unmet", async () => {
@@ -1299,7 +1336,7 @@ describe("WorkflowExecutionService", () => {
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+            toolRunRef: toolOutput.id
           }],
           impact: "The admin panel is reachable from the assessed surface.",
           recommendation: "Restrict access to trusted operators."
@@ -1396,7 +1433,7 @@ describe("WorkflowExecutionService", () => {
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+            toolRunRef: toolOutput.id
           }],
           impact: "The admin panel is reachable from the assessed surface.",
           recommendation: "Restrict access to trusted operators."
@@ -1411,7 +1448,7 @@ describe("WorkflowExecutionService", () => {
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+            toolRunRef: toolOutput.id
           }],
           impact: "The exposed admin panel can be chained with weak authentication checks.",
           recommendation: "Add authentication and network restrictions."
@@ -1476,7 +1513,7 @@ describe("WorkflowExecutionService", () => {
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+            toolRunRef: toolOutput.id
           }],
           impact: "The admin panel is reachable from the assessed surface.",
           recommendation: "Restrict access to trusted operators."
@@ -1491,7 +1528,7 @@ describe("WorkflowExecutionService", () => {
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+            toolRunRef: toolOutput.id
           }],
           impact: "Weak authentication can be exploited once the admin surface is reachable.",
           recommendation: "Harden authentication and protect the admin entry point."
@@ -1507,7 +1544,7 @@ describe("WorkflowExecutionService", () => {
             transitionEvidence: [{
               sourceTool: "custom-http-proof",
               quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-              toolRunRef: toolOutput.toolRunId
+              toolRunRef: toolOutput.id
             }]
           }]
         });
@@ -1663,7 +1700,7 @@ describe("WorkflowExecutionService", () => {
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+            toolRunRef: toolOutput.id
           }],
           impact: "The admin panel is reachable from the assessed surface.",
           recommendation: "Restrict access to trusted operators."
@@ -1678,7 +1715,7 @@ describe("WorkflowExecutionService", () => {
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+            toolRunRef: toolOutput.id
           }],
           impact: "Weak authentication can be exploited once the admin surface is reachable.",
           recommendation: "Harden authentication and protect the admin entry point."
@@ -1694,7 +1731,7 @@ describe("WorkflowExecutionService", () => {
             transitionEvidence: [{
               sourceTool: "custom-http-proof",
               quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-              toolRunRef: toolOutput.toolRunId
+              toolRunRef: toolOutput.id
             }]
           }]
         });
@@ -1753,7 +1790,7 @@ describe("WorkflowExecutionService", () => {
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+            toolRunRef: toolOutput.id
           }],
           impact: "The admin panel is reachable from the assessed surface.",
           recommendation: "Restrict access to trusted operators."
@@ -1768,7 +1805,7 @@ describe("WorkflowExecutionService", () => {
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+            toolRunRef: toolOutput.id
           }],
           impact: "Weak authentication can be exploited once the admin surface is reachable.",
           recommendation: "Harden authentication and protect the admin entry point."
@@ -1784,7 +1821,7 @@ describe("WorkflowExecutionService", () => {
             transitionEvidence: [{
               sourceTool: "custom-http-proof",
               quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-              toolRunRef: toolOutput.toolRunId
+              toolRunRef: toolOutput.id
             }]
           }]
         });
@@ -1823,6 +1860,423 @@ describe("WorkflowExecutionService", () => {
     expect(toolContextBody).not.toContain("report_attack_vector:");
   });
 
+  it("rejects duplicate stable ids inside one report_system_graph_batch submission", async () => {
+    const workflow = makeWorkflow({
+      stages: [{
+        ...makeWorkflow().stages[0]!,
+        allowedToolIds: ["custom-http-proof"]
+      }]
+    });
+
+    streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<any> }> }) => ({
+      fullStream: (async function* () {
+        await options.tools["custom-http-proof"].execute({
+          baseUrl: "http://localhost:3000/admin"
+        });
+        await expect(options.tools.report_system_graph_batch.execute({
+          resources: [
+            { id: "resource-admin", kind: "host", name: "admin.demo.local" },
+            { id: "resource-admin", kind: "service", name: "duplicate" }
+          ]
+        })).rejects.toMatchObject({
+          status: 400
+        });
+        await options.tools.complete_run.execute({
+          summary: "Duplicate ids were rejected before completion."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({
+      workflow,
+      aiToolById: {
+        "custom-http-proof": makeCustomHttpProofTool()
+      }
+    });
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+  });
+
+  it("merges later report_system_graph_batch updates without discarding earlier fields", async () => {
+    const workflow = makeWorkflow({
+      stages: [{
+        ...makeWorkflow().stages[0]!,
+        allowedToolIds: ["custom-http-proof"]
+      }]
+    });
+
+    streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<any> }> }) => ({
+      fullStream: (async function* () {
+        const toolOutput = await options.tools["custom-http-proof"].execute({
+          baseUrl: "http://localhost:3000/admin"
+        });
+        const firstBatch = await options.tools.report_system_graph_batch.execute({
+          resources: [{
+            id: "resource-admin",
+            kind: "host",
+            name: "admin.demo.local",
+            summary: "Initial summary."
+          }],
+          resourceRelationships: [{
+            id: "rel-admin-http",
+            kind: "exposes",
+            sourceResourceId: "resource-admin",
+            targetResourceId: "resource-admin",
+            summary: "Initial relationship summary."
+          }],
+          findings: [{
+            id: "11111111-1111-4111-8111-111111111111",
+            title: "Admin Panel Reachable",
+            severity: "medium",
+            confidence: 0.95,
+            resourceId: "resource-admin",
+            resourceIds: ["resource-admin"],
+            evidence: [{
+              sourceTool: "custom-http-proof",
+              quote: "URL: http://localhost:3000/admin\nStatus: 200",
+              toolRunRef: toolOutput.id
+            }],
+            impact: "The admin panel is reachable.",
+            recommendation: "Restrict access."
+          }],
+          findingRelationships: [{
+            id: "22222222-2222-4222-8222-222222222222",
+            kind: "related",
+            sourceFindingId: "11111111-1111-4111-8111-111111111111",
+            targetFindingId: "11111111-1111-4111-8111-111111111111",
+            summary: "Initial finding relationship summary."
+          }],
+          paths: [{
+            id: "path-admin",
+            title: "Admin path",
+            summary: "Initial path summary.",
+            resourceIds: ["resource-admin"],
+            findingIds: ["11111111-1111-4111-8111-111111111111"]
+          }]
+        });
+        expect(firstBatch.accepted).toBe(true);
+
+        const secondBatch = await options.tools.report_system_graph_batch.execute({
+          resources: [{
+            id: "resource-admin"
+          }],
+          resourceRelationships: [{
+            id: "rel-admin-http"
+          }],
+          findings: [{
+            id: "11111111-1111-4111-8111-111111111111",
+            title: "Admin Panel Reachable",
+            resourceId: "resource-admin",
+            resourceIds: ["resource-admin"],
+            evidence: [{
+              sourceTool: "custom-http-proof",
+              quote: "URL: http://localhost:3000/admin\nStatus: 200",
+              toolRunRef: toolOutput.id
+            }],
+            recommendation: "Restrict admin access and add authentication hardening."
+          }],
+          findingRelationships: [{
+            id: "22222222-2222-4222-8222-222222222222"
+          }],
+          paths: [{
+            id: "path-admin"
+          }]
+        });
+        expect(secondBatch.accepted).toBe(true);
+
+        await options.tools.complete_run.execute({
+          summary: "Graph batches merged safely."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({
+      workflow,
+      aiToolById: {
+        "custom-http-proof": makeCustomHttpProofTool()
+      }
+    });
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    const graphEvent = createdRuns[0]!.events
+      .filter((event) => event.type === "system_graph_reported")
+      .at(-1);
+    const batch = graphEvent?.payload["batch"] as Record<string, unknown> | undefined;
+    const resources = Array.isArray(batch?.["resources"]) ? batch["resources"] as Array<Record<string, unknown>> : [];
+    const resourceRelationships = Array.isArray(batch?.["resourceRelationships"]) ? batch["resourceRelationships"] as Array<Record<string, unknown>> : [];
+    const findings = Array.isArray(batch?.["findings"]) ? batch["findings"] as Array<Record<string, unknown>> : [];
+    const findingRelationships = Array.isArray(batch?.["findingRelationships"]) ? batch["findingRelationships"] as Array<Record<string, unknown>> : [];
+    const paths = Array.isArray(batch?.["paths"]) ? batch["paths"] as Array<Record<string, unknown>> : [];
+    expect(resources[0]?.["summary"]).toBe("Initial summary.");
+    expect(resources[0]?.["kind"]).toBe("host");
+    expect(resources[0]?.["name"]).toBe("admin.demo.local");
+    expect(resourceRelationships[0]?.["summary"]).toBe("Initial relationship summary.");
+    expect(resourceRelationships[0]?.["kind"]).toBe("exposes");
+    expect(findings[0]?.["impact"]).toBe("The admin panel is reachable.");
+    expect(findings[0]?.["recommendation"]).toBe("Restrict admin access and add authentication hardening.");
+    expect(findingRelationships[0]?.["summary"]).toBe("Initial finding relationship summary.");
+    expect(paths[0]?.["title"]).toBe("Admin path");
+    expect(paths[0]?.["summary"]).toBe("Initial path summary.");
+
+    const findingEvents = createdRuns[0]!.events.filter((event) => event.type === "finding_reported");
+    expect(findingEvents).toHaveLength(2);
+    expect(findingEvents[0]?.payload["finding"]).toMatchObject({
+      createdAt: expect.any(String)
+    });
+    expect(findingEvents[1]?.payload["finding"]).toMatchObject({
+      createdAt: (findingEvents[0]?.payload["finding"] as Record<string, unknown>)["createdAt"]
+    });
+  });
+
+  it("accepts non-uuid stable ids in report_system_graph_batch finding relationships", async () => {
+    const workflow = makeWorkflow({
+      stages: [{
+        ...makeWorkflow().stages[0]!,
+        allowedToolIds: ["custom-http-proof"]
+      }]
+    });
+
+    streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<any> }> }) => ({
+      fullStream: (async function* () {
+        const toolOutput = await options.tools["custom-http-proof"].execute({
+          baseUrl: "http://localhost:3000/admin"
+        });
+        const result = await options.tools.report_system_graph_batch.execute({
+          resources: [{ id: "res_admin", kind: "web_endpoint", name: "/admin" }],
+          findings: [{
+            id: "find_admin_authbypass",
+            title: "Admin auth bypass",
+            severity: "critical",
+            confidence: 0.95,
+            resourceId: "res_admin",
+            resourceIds: ["res_admin"],
+            evidence: [{
+              sourceTool: "custom-http-proof",
+              quote: "GET /admin returned 200",
+              toolRunRef: toolOutput.id
+            }]
+          }],
+          findingRelationships: [{
+            id: "rel_admin_authbypass_related",
+            kind: "related",
+            sourceFindingId: "find_admin_authbypass",
+            targetFindingId: "find_admin_authbypass",
+            summary: "String stable ids should be accepted."
+          }]
+        });
+        expect(result).toMatchObject({
+          accepted: true,
+          relationshipIds: ["rel_admin_authbypass_related"]
+        });
+        await options.tools.complete_run.execute({
+          summary: "Stable ids accepted."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({
+      workflow,
+      aiToolById: {
+        "custom-http-proof": makeCustomHttpProofTool()
+      }
+    });
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+  });
+
+  it("hydrates sourceTool from toolRunRef for system graph evidence and persists non-uuid graph ids", async () => {
+    const workflow = makeWorkflow({
+      stages: [{
+        ...makeWorkflow().stages[0]!,
+        allowedToolIds: ["custom-http-proof"]
+      }]
+    });
+
+    streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<any> }> }) => ({
+      fullStream: (async function* () {
+        const toolOutput = await options.tools["custom-http-proof"].execute({
+          baseUrl: "http://localhost:3000/admin"
+        });
+        const result = await options.tools.report_system_graph_batch.execute({
+          resources: [{
+            id: "res_target_portal",
+            kind: "web_application",
+            name: "CorpNet Internal Portal",
+            evidence: [{
+              quote: "URL: http://localhost:3000/admin\nStatus: 200",
+              toolRunRef: toolOutput.id
+            }]
+          }],
+          findings: [{
+            id: "find_admin_authbypass",
+            title: "Admin auth bypass",
+            severity: "critical",
+            confidence: 0.95,
+            resourceId: "res_target_portal",
+            resourceIds: ["res_target_portal"],
+            evidence: [{
+              quote: "URL: http://localhost:3000/admin\nStatus: 200",
+              toolRunRef: toolOutput.id
+            }]
+          }],
+          findingRelationships: [{
+            id: "rel_admin_authbypass_related",
+            kind: "related",
+            sourceFindingId: "find_admin_authbypass",
+            targetFindingId: "find_admin_authbypass",
+            summary: "String stable ids should remain valid."
+          }],
+          paths: [{
+            id: "path_admin_access",
+            title: "Admin access",
+            findingIds: ["find_admin_authbypass"],
+            resourceIds: ["res_target_portal"]
+          }]
+        });
+        expect(result).toMatchObject({
+          accepted: true,
+          resourceIds: ["res_target_portal"],
+          findingIds: ["find_admin_authbypass"],
+          relationshipIds: ["rel_admin_authbypass_related"],
+          pathIds: ["path_admin_access"]
+        });
+        await options.tools.complete_run.execute({
+          summary: "System graph batch accepted."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({
+      workflow,
+      aiToolById: {
+        "custom-http-proof": makeCustomHttpProofTool()
+      }
+    });
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    const graphEvent = createdRuns[0]!.events.find((event) => event.type === "system_graph_reported");
+    const batch = graphEvent?.payload["batch"] as Record<string, unknown> | undefined;
+    const resources = Array.isArray(batch?.["resources"]) ? batch["resources"] as Array<Record<string, unknown>> : [];
+    const findings = Array.isArray(batch?.["findings"]) ? batch["findings"] as Array<Record<string, unknown>> : [];
+    expect((resources[0]?.["evidence"] as Array<Record<string, unknown>> | undefined)?.[0]?.["sourceTool"]).toBe("custom-http-proof");
+    expect((findings[0]?.["evidence"] as Array<Record<string, unknown>> | undefined)?.[0]?.["sourceTool"]).toBe("custom-http-proof");
+
+    const attackVectorEvent = createdRuns[0]!.events.find((event) => event.type === "attack_vector_reported");
+    expect((attackVectorEvent?.payload["attackVector"] as Record<string, unknown> | undefined)?.["id"]).toBe("rel_admin_authbypass_related");
+  });
+
+  it("rejects finding relationship evidence that cannot be grounded to one executed result", async () => {
+    const workflow = makeWorkflow({
+      stages: [{
+        ...makeWorkflow().stages[0]!,
+        allowedToolIds: ["custom-http-proof"]
+      }]
+    });
+
+    streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<any> }> }) => ({
+      fullStream: (async function* () {
+        const firstToolOutput = await options.tools["custom-http-proof"].execute({
+          baseUrl: "http://localhost:3000/admin"
+        });
+        await options.tools["custom-http-proof"].execute({
+          baseUrl: "http://localhost:3000/health"
+        });
+        await expect(options.tools.report_system_graph_batch.execute({
+          resources: [{
+            id: "res_target_portal",
+            kind: "web_application",
+            name: "CorpNet Internal Portal"
+          }],
+          findings: [{
+            id: "find_admin_authbypass",
+            title: "Admin auth bypass",
+            severity: "critical",
+            confidence: 0.95,
+            resourceId: "res_target_portal",
+            resourceIds: ["res_target_portal"],
+            evidence: [{
+              quote: "URL: http://localhost:3000/admin\nStatus: 200",
+              toolRunRef: firstToolOutput.id
+            }]
+          }],
+          findingRelationships: [{
+            id: "rel_admin_authbypass_enables",
+            kind: "enables",
+            sourceFindingId: "find_admin_authbypass",
+            targetFindingId: "find_admin_authbypass",
+            summary: "Ambiguous sourceTool should be rejected.",
+            evidence: [{
+              sourceTool: "custom-http-proof",
+              quote: "Observed handoff evidence."
+            }]
+          }]
+        })).rejects.toMatchObject({
+          status: 400,
+          message: expect.stringContaining("Finding relationship rel_admin_authbypass_enables evidence[0] could not be grounded")
+        });
+        await options.tools.complete_run.execute({
+          summary: "Ungrounded relationship evidence was rejected."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({
+      workflow,
+      aiToolById: {
+        "custom-http-proof": makeCustomHttpProofTool()
+      }
+    });
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+  });
+
   it("completes without emitting README coverage assertions even when evidence and chains exist", async () => {
     const baseWorkflow = makeWorkflow();
     const workflow = makeWorkflow({
@@ -1857,7 +2311,7 @@ describe("WorkflowExecutionService", () => {
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+            toolRunRef: toolOutput.id
           }],
           impact: "The admin panel is reachable from the assessed surface.",
           recommendation: "Restrict access to trusted operators."
@@ -1872,7 +2326,7 @@ describe("WorkflowExecutionService", () => {
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+            toolRunRef: toolOutput.id
           }],
           impact: "The exposed admin panel can be chained with weak authentication checks.",
           recommendation: "Add authentication and network restrictions."
@@ -1888,7 +2342,7 @@ describe("WorkflowExecutionService", () => {
             transitionEvidence: [{
               sourceTool: "custom-http-proof",
               quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-              toolRunRef: toolOutput.toolRunId
+              toolRunRef: toolOutput.id
             }]
           }]
         });
@@ -1985,7 +2439,7 @@ describe("WorkflowExecutionService", () => {
             evidence: [{
               sourceTool: "custom-http-proof",
               quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-              toolRunRef: toolOutput.toolRunId
+              toolRunRef: toolOutput.id
             }],
             impact: "Authentication bypass is possible.",
             recommendation: "Parameterize the query."
@@ -2001,7 +2455,7 @@ describe("WorkflowExecutionService", () => {
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+            toolRunRef: toolOutput.id
           }],
           impact: "Authentication bypass is possible.",
           recommendation: "Parameterize the query."
@@ -2099,7 +2553,7 @@ describe("WorkflowExecutionService", () => {
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+            toolRunRef: toolOutput.id
           }]
         });
         await expect(options.tools.complete_run.execute({
@@ -2159,7 +2613,7 @@ describe("WorkflowExecutionService", () => {
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+            toolRunRef: toolOutput.id
           }],
           impact: "The admin panel is directly reachable.",
           recommendation: "Restrict access to trusted operators."

@@ -25,6 +25,46 @@ function makeRun(): WorkflowRun {
 }
 
 describe("WorkflowRunWriter", () => {
+  it("normalizes payloads to persisted JSON objects", () => {
+    const writer = new WorkflowRunWriter({
+      workflowsRepository: {
+        getRunById: vi.fn(),
+        appendRunEvent: vi.fn()
+      },
+      workflowRunStream: new WorkflowRunStream(),
+      executionReportsService: {
+        createForWorkflowRun: vi.fn(async () => undefined)
+      }
+    } as any);
+    const run = makeRun();
+
+    const event = writer.createEvent(
+      run,
+      run.workflowId,
+      null,
+      0,
+      "finding_reported",
+      "completed",
+      {
+        finding: {
+          id: "find_admin",
+          cwe: undefined,
+          tags: ["critical"]
+        }
+      },
+      "Finding reported",
+      "A finding was reported."
+    );
+
+    expect(event.payload).toEqual({
+      finding: {
+        id: "find_admin",
+        tags: ["critical"]
+      },
+      streamPartType: "finding_reported"
+    });
+  });
+
   it("serializes concurrent appends from the same stale run snapshot", async () => {
     let currentRun = makeRun();
     const appendedEvents: WorkflowTraceEvent[] = [];

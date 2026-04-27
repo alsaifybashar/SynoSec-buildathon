@@ -243,20 +243,10 @@ describe("executeSemanticFamilyTool", () => {
       baseUrl
     });
 
-    expect(execution.response.toolId).toBe("builtin-http-surface-assessment");
-    expect(execution.response.toolName).toBe("http_surface_assessment");
-    expect(Object.keys(execution.response).sort()).toEqual([
-      "observations",
-      "outputPreview",
-      "status",
-      "toolId",
-      "toolName",
-      "toolRunId",
-      "totalObservations",
-      "truncated"
-    ]);
+    expect(Object.keys(execution.response).sort()).toEqual(["id", "summary"]);
+    expect(execution.response.id).toBe(execution.result.toolRun.id);
+    expect(execution.response.summary).toBe(execution.result.outputPreview);
     expect(familyDefinition.candidateToolIds).toContain(execution.result.usedToolId);
-    expect(execution.response.status).toBe("completed");
     expect(execution.result.observations.length).toBeGreaterThan(0);
     expect(execution.result.fullOutput.length).toBeGreaterThan(0);
   });
@@ -311,14 +301,12 @@ describe("executeSemanticFamilyTool", () => {
     expect(family.result.observations.map(comparableObservationShape)).toEqual(direct.observations.map(comparableObservationShape));
     expect(family.result.observationKeys).toEqual(direct.observations.map((observation) => observation.key));
     expect(family.result.observationSummaries).toEqual(direct.observations.map((observation) => observation.summary));
-    expect(family.response.outputPreview).toBe(direct.observations[0]?.summary ?? family.result.outputPreview);
-    expect(family.response.totalObservations).toBe(family.result.totalObservations);
-    expect(family.response.truncated).toBe(family.result.truncated);
+    expect(family.response.summary).toBe(direct.observations[0]?.summary ?? family.result.outputPreview);
     expect(family.result.attempts.length).toBeGreaterThan(0);
     const selectedAttempts = family.result.attempts.filter((attempt) => attempt.selected);
     expect(selectedAttempts).toHaveLength(1);
     expect(selectedAttempts[0]?.toolId).toBe(family.result.usedToolId);
-    expect(selectedAttempts[0]?.status).toBe(family.response.status);
+    expect(selectedAttempts[0]?.status).toBe(family.result.status);
     if (family.result.fallbackUsed) {
       expect(family.result.attempts.length).toBeGreaterThan(1);
       expect(family.result.attempts[0]?.selected).toBe(false);
@@ -369,7 +357,7 @@ describe("executeSemanticFamilyTool", () => {
       baseUrl
     });
 
-    expect(family.response.status).toBe("completed");
+    expect(family.result.status).toBe("completed");
     expect(family.result.usedToolId).toBe("seed-httpx");
     expect(family.result.fallbackUsed).toBe(true);
     expect(family.result.attempts).toHaveLength(2);
@@ -472,7 +460,7 @@ describe("executeSemanticFamilyTool", () => {
       agentId: "agent-family-parameter"
     }, rawInput);
 
-    expect(family.response.status).toBe("completed");
+    expect(family.result.status).toBe("completed");
     expect(family.result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({
         key: "parameter:q",
@@ -514,11 +502,11 @@ describe("executeSemanticFamilyTool", () => {
       agentId: "agent-family-parameter-negative"
     }, rawInput);
 
-    expect(family.response.status).toBe("completed");
-    expect(family.response.observations).toEqual([]);
-    expect(family.response.totalObservations).toBe(0);
-    expect(family.response.truncated).toBe(false);
-    expect(family.response.outputPreview).toContain("No likely parameters were confirmed");
+    expect(family.result.status).toBe("completed");
+    expect(family.result.publicObservations).toEqual([]);
+    expect(family.result.totalObservations).toBe(0);
+    expect(family.result.truncated).toBe(false);
+    expect(family.response.summary).toContain("No likely parameters were confirmed");
   });
 
   it("returns usable reflected-input evidence for xss validation", async () => {
@@ -553,7 +541,7 @@ describe("executeSemanticFamilyTool", () => {
     }, rawInput);
 
     expect(family.result.usedToolId).toBe("seed-dalfox");
-    expect(family.response.status).toBe("completed");
+    expect(family.result.status).toBe("completed");
     expect(family.result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({
         key: "xss:/search",
@@ -600,7 +588,7 @@ describe("executeSemanticFamilyTool", () => {
     }, rawInput);
 
     expect(family.result.usedToolId).toBe("seed-hashcat-crack");
-    expect(family.response.status).toBe("completed");
+    expect(family.result.status).toBe("completed");
     expect(family.result.toolRequest.target).toBe("127.0.0.1");
     expect(family.result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -641,7 +629,7 @@ describe("executeSemanticFamilyTool", () => {
     }, rawInput);
 
     expect(family.result.usedToolId).toBe("seed-tls-audit");
-    expect(family.response.status).toBe("completed");
+    expect(family.result.status).toBe("completed");
     expect(family.result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({
         key: expect.stringContaining("plaintext-http"),

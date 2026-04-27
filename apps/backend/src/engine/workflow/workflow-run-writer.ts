@@ -17,6 +17,10 @@ type PersistedWorkflowTraceType =
   | "run_completed"
   | "run_failed";
 
+function normalizeTracePayload(payload: Record<string, unknown>) {
+  return JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
+}
+
 export class WorkflowRunWriter implements WorkflowRunWriterPort {
   private readonly publisher: WorkflowRunEventPublisher;
   private readonly appendQueues = new Map<string, Promise<WorkflowRun>>();
@@ -135,7 +139,7 @@ export class WorkflowRunWriter implements WorkflowRunWriterPort {
       title: trimmedTitle,
       summary: trimmedSummary,
       detail: trimmedDetail,
-      payload: this.decorateTracePayloadWithRawType(type, payload, rawStreamPartType),
+      payload: normalizeTracePayload(this.decorateTracePayloadWithRawType(type, payload, rawStreamPartType)),
       createdAt: new Date().toISOString()
     });
   }
