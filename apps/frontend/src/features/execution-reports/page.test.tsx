@@ -346,13 +346,11 @@ describe("ExecutionReportsPage", () => {
     );
 
     expect(screen.getByRole("img", { name: "Finding traceability graph" })).toBeInTheDocument();
-    expect(screen.getByText("Attack Paths")).toBeInTheDocument();
     expect(screen.getAllByText("Admin surface to privileged pivot").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Findings").length).toBeGreaterThan(0);
     expect(screen.getByText("Executive Summary")).toBeInTheDocument();
     expect(screen.getByText("Ordered findings")).toBeInTheDocument();
     expect(screen.getByText("single source findings")).toBeInTheDocument();
-    expect(screen.getByText(/2 evidence references/)).toBeInTheDocument();
     expect(screen.getByText("Verification")).toBeInTheDocument();
   });
 

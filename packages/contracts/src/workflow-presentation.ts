@@ -22,7 +22,10 @@ import {
   type WorkflowTraceEvent,
   workflowReportSystemGraphBatchSubmissionSchema,
   workflowReportedAttackVectorSchema,
-  workflowReportedFindingSchema
+  workflowReportedFindingSchema,
+  workflowReportedPathSchema,
+  workflowReportedResourceRelationshipSchema,
+  workflowReportedResourceSchema
 } from "./resources.js";
 
 export const workflowTranscriptSystemMessageSchema = z.object({
@@ -385,6 +388,21 @@ function parseWorkflowAttackVector(value: unknown): WorkflowReportedAttackVector
   return parsed.success ? parsed.data : null;
 }
 
+function parseWorkflowResource(value: unknown): WorkflowReportedResource | null {
+  const parsed = workflowReportedResourceSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function parseWorkflowResourceRelationship(value: unknown): WorkflowReportedResourceRelationship | null {
+  const parsed = workflowReportedResourceRelationshipSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function parseWorkflowPath(value: unknown): WorkflowReportedPath | null {
+  const parsed = workflowReportedPathSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 function parseWorkflowSystemGraphBatch(value: unknown): WorkflowReportSystemGraphBatchSubmission | null {
   const parsed = workflowReportSystemGraphBatchSubmissionSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
@@ -416,8 +434,18 @@ export function getWorkflowReportedSystemGraph(run: WorkflowRun | null) {
     .filter((batch): batch is WorkflowReportSystemGraphBatchSubmission => Boolean(batch));
 
   return {
-    resources: latestPerId(batches.flatMap((batch) => batch.resources)),
-    resourceRelationships: latestPerId(batches.flatMap((batch) => batch.resourceRelationships)),
+    resources: latestPerId(
+      batches
+        .flatMap((batch) => batch.resources)
+        .map((resource) => parseWorkflowResource(resource))
+        .filter((resource): resource is WorkflowReportedResource => Boolean(resource))
+    ),
+    resourceRelationships: latestPerId(
+      batches
+        .flatMap((batch) => batch.resourceRelationships)
+        .map((relationship) => parseWorkflowResourceRelationship(relationship))
+        .filter((relationship): relationship is WorkflowReportedResourceRelationship => Boolean(relationship))
+    ),
     findings: latestPerId(batches.flatMap((batch) => batch.findings.map((finding) => workflowReportedFindingSchema.parse({
       ...finding,
       workflowRunId: run.id,
@@ -431,7 +459,12 @@ export function getWorkflowReportedSystemGraph(run: WorkflowRun | null) {
       }
     })))),
     findingRelationships: latestPerId(batches.flatMap((batch) => batch.findingRelationships)),
-    paths: latestPerId(batches.flatMap((batch) => batch.paths))
+    paths: latestPerId(
+      batches
+        .flatMap((batch) => batch.paths)
+        .map((path) => parseWorkflowPath(path))
+        .filter((path): path is WorkflowReportedPath => Boolean(path))
+    )
   };
 }
 

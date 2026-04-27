@@ -111,7 +111,12 @@ function CrudGeneratedRoute({ routeId }: { routeId: CrudNavigationId }) {
       {...(definition.onNavigateToRelatedDetail
         ? {
             onNavigateToRelatedDetail: (navigate: ReturnType<typeof useNavigate>) => ({
-              onNavigateToAgent: (id: string) => navigate(getDetailPath("ai-agents", id))
+              onNavigateToAgent: (id: string) => navigate(getDetailPath("ai-agents", id)),
+              ...(definition.id === "workflows"
+                ? {
+                    onNavigateToGraph: (id: string) => navigate(`/workflows/${id}/graph`)
+                  }
+                : {})
             })
           }
         : {})}
