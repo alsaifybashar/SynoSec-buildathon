@@ -194,13 +194,24 @@ function pickInitials(input?: string | null) {
 function SidebarBrand() {
   return (
     <div className="flex items-center justify-center gap-2.5 px-5 pb-4">
-      <img
-        src="/logo-transparent.png"
-        alt=""
+      <svg
+        viewBox="0 0 100 100"
         aria-hidden
         className="h-9 w-9 shrink-0 select-none"
-        draggable={false}
-      />
+      >
+        <defs>
+          <linearGradient id="sidebar-line-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" className="[stop-color:hsl(var(--sidebar-primary))]" />
+            <stop offset="100%" className="[stop-color:hsl(var(--sidebar-primary)/0.6)]" />
+          </linearGradient>
+        </defs>
+        <path d="M 50 18 Q 28 35, 22 62" stroke="url(#sidebar-line-gradient)" strokeWidth="8" strokeLinecap="round" fill="none"/>
+        <path d="M 50 18 Q 72 35, 78 62" stroke="url(#sidebar-line-gradient)" strokeWidth="8" strokeLinecap="round" fill="none"/>
+        <path d="M 22 70 Q 50 75, 78 70" className="stroke-sidebar-primary/60" strokeWidth="8" strokeLinecap="round" fill="none"/>
+        <circle cx="50" cy="15" r="12" className="fill-sidebar-primary" />
+        <circle cx="20" cy="72" r="12" className="fill-sidebar-primary/60" />
+        <circle cx="80" cy="72" r="12" className="fill-sidebar-primary/60" />
+      </svg>
       <p
         className="text-[1.6rem] font-bold uppercase leading-none tracking-[0.1em] text-sidebar-foreground"
         style={{ fontFamily: "'Chakra Petch', system-ui, sans-serif" }}

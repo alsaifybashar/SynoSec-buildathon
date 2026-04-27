@@ -187,7 +187,7 @@ type FindingDetailContext = {
   reproduction?: WorkflowFindingSubmission["reproduction"];
 };
 
-export function truncate(value: string, maxLength = 220) {
+export function truncate(value: string, maxLength = 500) {
   const trimmed = value.trim();
   if (trimmed.length <= maxLength) {
     return trimmed;

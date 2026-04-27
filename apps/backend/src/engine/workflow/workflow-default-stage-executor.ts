@@ -1268,7 +1268,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         ...evidenceTools,
         ...systemTools
       },
-      stopWhen: stepCountIs(24),
+      stopWhen: stepCountIs(100),
       abortSignal: abortController.signal
     });
 
