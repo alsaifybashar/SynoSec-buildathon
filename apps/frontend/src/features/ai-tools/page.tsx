@@ -165,7 +165,8 @@ function describeBuiltinAction(tool: AiTool) {
 
   const labels: Partial<Record<ToolBuiltinActionKey, string>> = {
     log_progress: "Workflow built-in: persists a short operator-visible progress update into the workflow transcript.",
-    report_finding: "Workflow built-in: persists a structured finding and supplies the metadata used to project execution-report graph nodes and edges.",
+    report_finding: "Workflow built-in: persists a structured finding.",
+    report_attack_vectors: "Workflow built-in: persists explicit relationships between previously reported findings.",
     complete_run: "Workflow built-in: marks the current workflow run as complete."
   };
 

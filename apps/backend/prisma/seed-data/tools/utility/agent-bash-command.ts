@@ -3,7 +3,7 @@ import { loadSeedToolScript } from "../load-script.js";
 export const agentBashCommandTool = {
   id: "seed-agent-bash-command",
   name: "Agent Bash Command",
-  description: "Execute agent-authored bash source supplied through structured tool input. Use this for bounded project execution when the workflow intentionally allows a single raw bash surface. Provide `command` and optional execution metadata such as `cwd`, `timeout_ms`, `env`, or `stdin`. Returns structured output with failure context and does not infer success when the command fails.",
+  description: "Execute agent-authored bash source supplied through structured tool input. Use this for bounded project execution when the workflow intentionally allows a single raw bash surface. The command may invoke installed binaries available in the execution environment. Provide `command` and optional execution metadata such as `cwd`, `timeout_ms`, `env`, or `stdin`. Returns structured output with failure context and does not infer success when the command fails.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/utility/agent-bash-command.sh");

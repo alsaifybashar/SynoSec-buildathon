@@ -1,4 +1,4 @@
-import type { Observation } from "@synosec/contracts";
+import type { InternalObservation } from "@synosec/contracts";
 
 // ---------------------------------------------------------------------------
 // Confidence Engine
@@ -25,7 +25,7 @@ export class ConfidenceEngine {
    * Register an observation. Returns whether it corroborates an existing
    * observation and the new aggregated confidence.
    */
-  registerObservation(obs: Observation, scanId: string): ObservationRegistration {
+  registerObservation(obs: InternalObservation, scanId: string): ObservationRegistration {
     const key = this.makeKey(scanId, obs.title);
     const existing = this.registry.get(key);
 

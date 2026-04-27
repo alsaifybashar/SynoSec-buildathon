@@ -5,7 +5,7 @@ import {
   coverageStatusSchema,
   scanLayerCoverageSchema
 } from "./scan-core.js";
-import { observationSchema } from "./tooling.js";
+import { observationSchema, toolExecutionPublicResultSchema } from "./tooling.js";
 import {
   type AiAgent,
   type AiTool,
@@ -52,21 +52,11 @@ export const workflowTranscriptToolResultDetailSchema = z.object({
   toolName: z.string().min(1),
   summary: z.string().min(1),
   body: z.string().nullable(),
+  rawModelOutput: z.string().nullable().default(null),
   outputPreview: z.string().nullable().default(null),
   observations: z.array(observationSchema).default([]),
-  observationSummaries: z.array(z.string().min(1)).default([]),
-  usedToolId: z.string().nullable().default(null),
-  usedToolName: z.string().nullable().default(null),
-  fallbackUsed: z.boolean().default(false),
-  attempts: z.array(z.object({
-    toolId: z.string().min(1),
-    toolName: z.string().min(1),
-    status: z.enum(["running", "completed", "failed"]),
-    exitCode: z.number().int().optional(),
-    statusReason: z.string().optional(),
-    outputExcerpt: z.string(),
-    selected: z.boolean()
-  })).default([]),
+  totalObservations: z.number().int().min(0).default(0),
+  truncated: z.boolean().default(false),
   status: z.enum(["running", "completed", "failed"])
 });
 export type WorkflowTranscriptToolResultDetail = z.infer<typeof workflowTranscriptToolResultDetailSchema>;
@@ -264,6 +254,10 @@ function getPayloadObservationList(payload: Record<string, unknown> | null | und
     .map((result) => result.data);
 }
 
+function parseToolExecutionPublicResult(value: unknown) {
+  return toolExecutionPublicResultSchema.safeParse(value);
+}
+
 function parseTokenCount(value: unknown) {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
 }
@@ -363,38 +357,6 @@ export function getWorkflowRunModelStepCount(run: WorkflowRun | null) {
   }
 
   return run.events.filter((event) => getTraceKind(event) === "start-step").length;
-}
-
-function getPayloadAttemptList(payload: Record<string, unknown> | null | undefined, key: string) {
-  const value = payload?.[key];
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  const attempts = value
-    .filter(isRecord)
-    .map((item) => {
-      const toolId = typeof item["toolId"] === "string" ? item["toolId"] : null;
-      const toolName = typeof item["toolName"] === "string" ? item["toolName"] : null;
-      const rawStatus = item["status"];
-      const outputExcerpt = typeof item["outputExcerpt"] === "string" ? item["outputExcerpt"] : "";
-      if (!toolId || !toolName || (rawStatus !== "running" && rawStatus !== "completed" && rawStatus !== "failed")) {
-        return null;
-      }
-      const status: "running" | "completed" | "failed" = rawStatus;
-
-      return {
-        toolId,
-        toolName,
-        status,
-        ...(typeof item["exitCode"] === "number" ? { exitCode: item["exitCode"] } : {}),
-        ...(typeof item["statusReason"] === "string" ? { statusReason: item["statusReason"] } : {}),
-        outputExcerpt,
-        selected: item["selected"] === true
-      };
-    });
-
-  return attempts.filter((item): item is Exclude<typeof item, null> => item !== null);
 }
 
 function parseWorkflowFinding(value: unknown): WorkflowReportedFinding | null {
@@ -518,18 +480,19 @@ function getLegacyToolInput(payload: Record<string, unknown>) {
   return isRecord(toolInput) ? JSON.stringify(toolInput, null, 2) : null;
 }
 
-function getLegacyToolOutput(payload: Record<string, unknown>, event: WorkflowTraceEvent) {
-  const fullOutput = getPayloadString(payload, "fullOutput") ?? event.detail;
-  if (fullOutput) {
-    return fullOutput;
+function getSerializedToolResultBody(payload: Record<string, unknown>) {
+  const nested = parseToolExecutionPublicResult(payload["output"]);
+  if (nested.success) {
+    return JSON.stringify(nested.data, null, 2);
+  }
+
+  const root = parseToolExecutionPublicResult(payload);
+  if (root.success) {
+    return JSON.stringify(root.data, null, 2);
   }
 
   const output = payload["output"];
-  if (output !== undefined) {
-    return JSON.stringify(output, null, 2);
-  }
-
-  return null;
+  return output === undefined ? null : JSON.stringify(output, null, 2);
 }
 
 function getLegacyVerificationTone(event: WorkflowTraceEvent) {
@@ -647,24 +610,6 @@ function emptySeveritySummary() {
   };
 }
 
-function getLatestWorkflowRunHandoff(run: WorkflowRun | null) {
-  if (!run) {
-    return null;
-  }
-
-  const stageResultEvent = run.events
-    .filter((event) => event.type === "stage_result_submitted")
-    .slice()
-    .sort((left, right) => right.ord - left.ord)[0];
-  const stageResult = isRecord(stageResultEvent?.payload?.["stageResult"])
-    ? stageResultEvent?.payload?.["stageResult"]
-    : null;
-  const handoff = stageResult && isRecord(stageResult["handoff"])
-    ? stageResult["handoff"]
-    : null;
-  return handoff;
-}
-
 export function buildWorkflowRunReport(run: WorkflowRun | null): WorkflowRunReport | null {
   if (!run) {
     return null;
@@ -672,7 +617,7 @@ export function buildWorkflowRunReport(run: WorkflowRun | null): WorkflowRunRepo
 
   const findings = getWorkflowReportedFindings(run);
   const attackVectors = getWorkflowReportedAttackVectors(run);
-  const attackPaths = attackPathSummaryFromWorkflowFindings(findings, getLatestWorkflowRunHandoff(run), attackVectors);
+  const attackPaths = attackPathSummaryFromWorkflowFindings(findings, null, attackVectors);
   const findingsBySeverity = emptySeveritySummary();
   for (const finding of findings) {
     findingsBySeverity[finding.severity] += 1;
@@ -872,8 +817,9 @@ export function buildWorkflowTranscript(input: {
     }
 
     if (event.type === "tool_result") {
-      const output = payload["output"];
-      const serializedOutput = output === undefined ? null : JSON.stringify(output, null, 2);
+      const parsedOutput = parseToolExecutionPublicResult(payload["output"]);
+      const compactOutput = parsedOutput.success ? parsedOutput.data : null;
+      const serializedOutput = getSerializedToolResultBody(payload);
       currentTurn?.details.push({
         kind: "tool_result",
         id: event.id,
@@ -883,15 +829,12 @@ export function buildWorkflowTranscript(input: {
         toolId: getPayloadString(payload, "toolId"),
         toolName: getToolName(event, input.toolLookup),
         summary: getPayloadString(payload, "summary") ?? getPayloadString(payload, "outputPreview") ?? event.summary,
-        body: getLegacyToolOutput(payload, event) ?? serializedOutput,
+        body: serializedOutput,
+        rawModelOutput: serializedOutput,
         outputPreview: getPayloadString(payload, "outputPreview"),
-        observations: getPayloadObservationList(payload, "observationRecords"),
-        observationSummaries: getPayloadStringList(payload, "observationSummaries")
-          .concat(getPayloadStringList(payload, "observations")),
-        usedToolId: getPayloadString(payload, "usedToolId"),
-        usedToolName: getPayloadString(payload, "usedToolName"),
-        fallbackUsed: payload["fallbackUsed"] === true,
-        attempts: getPayloadAttemptList(payload, "attempts"),
+        observations: compactOutput?.observations ?? getPayloadObservationList(isRecord(payload["output"]) ? payload["output"] : payload, "observations"),
+        totalObservations: compactOutput?.totalObservations ?? 0,
+        truncated: compactOutput?.truncated ?? false,
         status: event.status === "pending" ? "running" : event.status
       });
       continue;

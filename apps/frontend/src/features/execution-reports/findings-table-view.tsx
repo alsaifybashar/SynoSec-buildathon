@@ -81,7 +81,50 @@ const RELATION_SUBLABEL: Record<Exclude<EdgeVariant, "supports">, string> = {
   enables: "Enables"
 };
 
-function buildGraphModel(finding: ExecutionReportFinding, all: ExecutionReportFinding[]) {
+type RelatedEdge = {
+  findingId: string;
+  variant: Exclude<EdgeVariant, "supports">;
+  reverse?: boolean;
+  explanation?: string | null;
+};
+
+function relatedEdgesForFinding(report: ExecutionReportDetail, finding: ExecutionReportFinding): RelatedEdge[] {
+  const edges: RelatedEdge[] = [];
+  const findingNodes = new Map(
+    report.graph.nodes
+      .filter((node): node is Extract<ExecutionReportDetail["graph"]["nodes"][number], { kind: "finding" }> => node.kind === "finding")
+      .map((node) => [node.id, node.findingId] as const)
+  );
+  for (const edge of report.graph.edges) {
+    if (edge.kind === "derived_from" && edge.target === finding.id) {
+      const relatedId = findingNodes.get(edge.source);
+      if (relatedId) {
+        edges.push({ findingId: relatedId, variant: "derived", reverse: true, explanation: edge.label ?? null });
+      }
+      continue;
+    }
+    if (edge.kind === "correlates_with" && edge.source === finding.id) {
+      const relatedId = findingNodes.get(edge.target);
+      if (relatedId) {
+        edges.push({ findingId: relatedId, variant: "related", explanation: edge.label ?? null });
+      }
+      continue;
+    }
+    if (edge.kind === "enables" && edge.source === finding.id) {
+      const relatedId = findingNodes.get(edge.target);
+      if (relatedId) {
+        edges.push({ findingId: relatedId, variant: "enables", explanation: edge.label ?? null });
+      }
+    }
+  }
+  return edges;
+}
+
+function chainForFinding(report: ExecutionReportDetail, findingId: string) {
+  return report.graph.nodes.find((node) => node.kind === "chain" && node.findingIds.includes(findingId)) ?? null;
+}
+
+function buildGraphModel(report: ExecutionReportDetail, finding: ExecutionReportFinding, all: ExecutionReportFinding[]) {
   const tools = Array.from(new Set(finding.evidence.map((evidence) => evidence.sourceTool)));
   const toolNodes: GraphNodeShape[] = tools.map((tool) => ({ id: `t:${tool}`, label: tool, kind: "tool" }));
 
@@ -110,8 +153,8 @@ function buildGraphModel(finding: ExecutionReportFinding, all: ExecutionReportFi
   const relatedEdges: GraphEdgeShape[] = [];
   const seen = new Set<string>();
 
-  function pushRelated(ids: string[], variant: Exclude<EdgeVariant, "supports">, reverse = false) {
-    for (const id of ids) {
+  for (const related of relatedEdgesForFinding(report, finding)) {
+      const id = related.findingId;
       const target = lookup.get(id);
       if (!target || seen.has(id)) continue;
       seen.add(id);
@@ -119,17 +162,12 @@ function buildGraphModel(finding: ExecutionReportFinding, all: ExecutionReportFi
       relatedNodes.push({
         id: nodeId,
         label: target.title,
-        sublabel: RELATION_SUBLABEL[variant],
+        sublabel: RELATION_SUBLABEL[related.variant],
         kind: "related",
         severity: target.severity
       });
-      relatedEdges.push(reverse ? { from: nodeId, to: "f", variant } : { from: "f", to: nodeId, variant });
-    }
+      relatedEdges.push(related.reverse ? { from: nodeId, to: "f", variant: related.variant } : { from: "f", to: nodeId, variant: related.variant });
   }
-
-  pushRelated(finding.derivedFromFindingIds, "derived", true);
-  pushRelated(finding.relatedFindingIds, "related");
-  pushRelated(finding.enablesFindingIds, "enables");
 
   const edges: GraphEdgeShape[] = [];
   finding.evidence.forEach((evidence, index) => {
@@ -144,15 +182,17 @@ function buildGraphModel(finding: ExecutionReportFinding, all: ExecutionReportFi
 }
 
 function FindingNodeGraph({
+  report,
   finding,
   allFindings,
   onSelectRelated
 }: {
+  report: ExecutionReportDetail;
   finding: ExecutionReportFinding;
   allFindings: ExecutionReportFinding[];
   onSelectRelated: (id: string) => void;
 }) {
-  const { columns, edges } = useMemo(() => buildGraphModel(finding, allFindings), [finding, allFindings]);
+  const { columns, edges } = useMemo(() => buildGraphModel(report, finding, allFindings), [report, finding, allFindings]);
 
   const colWidth = 144;
   const colGap = 24;
@@ -416,17 +456,21 @@ function RelationshipGroup({
 }
 
 function FindingInspector({
+  report,
   finding,
   allFindings,
   onSelect,
   onJumpToToolActivity
 }: {
+  report: ExecutionReportDetail;
   finding: ExecutionReportFinding;
   allFindings: ExecutionReportFinding[];
   onSelect: (id: string) => void;
   onJumpToToolActivity: (toolRunRef: string) => void;
 }) {
   const findingLookup = useMemo(() => new Map(allFindings.map((item) => [item.id, item])), [allFindings]);
+  const relatedEdges = useMemo(() => relatedEdgesForFinding(report, finding), [report, finding]);
+  const chain = useMemo(() => chainForFinding(report, finding.id), [report, finding.id]);
 
   return (
     <div className="space-y-5">
@@ -444,7 +488,7 @@ function FindingInspector({
           ) : null}
         </div>
         <div className="rounded-md border border-border/60 bg-background/30 px-3 py-2">
-          <FindingNodeGraph finding={finding} allFindings={allFindings} onSelectRelated={onSelect} />
+          <FindingNodeGraph report={report} finding={finding} allFindings={allFindings} onSelectRelated={onSelect} />
         </div>
       </header>
 
@@ -508,38 +552,35 @@ function FindingInspector({
         </InspectorSection>
       ) : null}
 
-      {(finding.derivedFromFindingIds.length
-        || finding.relatedFindingIds.length
-        || finding.enablesFindingIds.length
-        || finding.chain) ? (
+      {(relatedEdges.length > 0 || chain) ? (
         <InspectorSection label="Relationships">
           <div className="space-y-3">
             <RelationshipGroup
               label="Derived from"
-              explanation={finding.relationshipExplanations?.derivedFrom}
-              ids={finding.derivedFromFindingIds}
+              explanation={relatedEdges.find((edge) => edge.variant === "derived")?.explanation ?? undefined}
+              ids={relatedEdges.filter((edge) => edge.variant === "derived").map((edge) => edge.findingId)}
               findingLookup={findingLookup}
               onSelect={onSelect}
             />
             <RelationshipGroup
               label="Related to"
-              explanation={finding.relationshipExplanations?.relatedTo}
-              ids={finding.relatedFindingIds}
+              explanation={relatedEdges.find((edge) => edge.variant === "related")?.explanation ?? undefined}
+              ids={relatedEdges.filter((edge) => edge.variant === "related").map((edge) => edge.findingId)}
               findingLookup={findingLookup}
               onSelect={onSelect}
             />
             <RelationshipGroup
               label="Enables"
-              explanation={finding.relationshipExplanations?.enables}
-              ids={finding.enablesFindingIds}
+              explanation={relatedEdges.find((edge) => edge.variant === "enables")?.explanation ?? undefined}
+              ids={relatedEdges.filter((edge) => edge.variant === "enables").map((edge) => edge.findingId)}
               findingLookup={findingLookup}
               onSelect={onSelect}
             />
-            {finding.chain ? (
+            {chain ? (
               <div className="space-y-1">
                 <p className="font-mono text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">Attack chain</p>
-                <p className="text-sm font-medium text-foreground">{finding.chain.title}</p>
-                <p className="text-sm text-muted-foreground">{finding.chain.summary}</p>
+                <p className="text-sm font-medium text-foreground">{chain.title}</p>
+                <p className="text-sm text-muted-foreground">{chain.summary}</p>
               </div>
             ) : null}
           </div>
@@ -614,6 +655,7 @@ export function ExecutionReportFindingsView({
 
         <div ref={inspectorRef} className="max-h-[640px] overflow-y-auto px-5 py-5 lg:px-6">
           <FindingInspector
+            report={report}
             finding={selected}
             allFindings={report.findings}
             onSelect={handleSelect}

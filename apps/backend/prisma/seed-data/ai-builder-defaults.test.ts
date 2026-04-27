@@ -18,6 +18,17 @@ const canonicalPromptSections = [
   "Blocked or failed behavior:"
 ] as const;
 
+const exampleTags = [
+  "<examples>",
+  "<example>",
+  "<input>",
+  "<expected_behavior>"
+] as const;
+
+function countMatches(text: string, pattern: string) {
+  return text.split(pattern).length - 1;
+}
+
 describe("getSeededWorkflowDefinitions", () => {
   it("seeds the attack-vector planning and bash PoC workflows", () => {
     const workflows = getSeededWorkflowDefinitions();
@@ -50,6 +61,15 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("attackPaths");
     expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("Do not describe an attack path as confirmed compromise");
     expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("Separate confirmed findings from unproven attack-path outcomes");
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("Examples:");
+    for (const tag of exampleTags) {
+      expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain(tag);
+    }
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("/api/support/cases/cs-4821?workspace=acme-support");
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("/api/auth/magic-link");
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("/api/release/secrets");
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("Do not invent those auth or approval surfaces as the next step.");
+    expect(planningWorkflow?.stages[0]?.stageSystemPrompt).toContain("Prefer one derived transition request using the observed artifact over repeating the same audit, crawl, or fetch with no new hypothesis.");
     expect(planningWorkflow?.stages[0]?.completionRule).toMatchObject({
       minFindings: 1,
       requireEvidenceBackedWeakness: true,
@@ -92,12 +112,17 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(bashWorkflow?.stages[0]?.allowedToolIds).toEqual([
       "builtin-log-progress",
       "builtin-report-finding",
+      "builtin-report-attack-vectors",
       "builtin-complete-run",
       "seed-agent-bash-command"
     ]);
     expect(bashWorkflow?.stages[0]?.stageSystemPrompt).toContain(
       "Evaluate the target’s cybersecurity with an attack-path-first approach."
     );
+    expect(bashWorkflow?.stages[0]?.stageSystemPrompt).toContain("Examples:");
+    for (const tag of exampleTags) {
+      expect(bashWorkflow?.stages[0]?.stageSystemPrompt).toContain(tag);
+    }
     expect(bashWorkflow?.stages[0]?.stageSystemPrompt).not.toContain(
       "Complete the current workflow stage using the approved capability surface for this run."
     );
@@ -113,6 +138,7 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(broadScriptWorkflow?.stages[0]?.allowedToolIds).toEqual([
       "builtin-log-progress",
       "builtin-report-finding",
+      "builtin-report-attack-vectors",
       "builtin-complete-run",
       ...broadScriptToolIds
     ]);
@@ -127,7 +153,9 @@ describe("getSeededWorkflowDefinitions", () => {
 
   it("gives the seeded system prompts a canonical instruction shape", () => {
     const prompts = [
-      getSeededRoleDefinition("generic-pentester")?.systemPrompt
+      getSeededRoleDefinition("generic-pentester")?.systemPrompt,
+      getSeededRoleDefinition("bash-poc-agent")?.systemPrompt,
+      getSeededRoleDefinition("broad-script-agent")?.systemPrompt
     ];
 
     for (const prompt of prompts) {
@@ -146,7 +174,7 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(genericPentester?.systemPrompt).toContain("Map how weaknesses may connect");
     expect(genericPentester?.systemPrompt).toContain("Focus on linking potential vulnerabilities");
     expect(genericPentester?.systemPrompt).toContain("lower confidence and validationStatus such as suspected or unverified");
-    expect(genericPentester?.systemPrompt).toContain("relationshipExplanations, chain, explanationSummary, and confidenceReason");
+    expect(genericPentester?.systemPrompt).toContain("report the findings first and then capture the relationship with explicit attack-vector records");
     expect(genericPentester?.systemPrompt).toContain("Do not ask for raw tool access");
     expect(genericPentester?.systemPrompt).toContain("Keep operator-visible progress updates short");
     expect(genericPentester?.systemPrompt).not.toContain("SynoSec");
@@ -163,12 +191,25 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(bashAgent?.name).toBe("Bash PoC Agent");
     expect(bashAgent?.systemPrompt).toContain("Evaluate the target’s cybersecurity with an attack-path-first approach.");
     expect(bashAgent?.systemPrompt).toContain("multiple lower-severity weaknesses can be chained");
+    expect(bashAgent?.systemPrompt).toContain("invoke installed binaries available in the execution environment");
+    expect(bashAgent?.systemPrompt).toContain("derive the exact next request");
+    expect(bashAgent?.systemPrompt).toContain("Do not invent unsupported endpoint families such as `/promote` or `/validate`");
     expect(bashAgent?.systemPrompt).toContain("Validate attack vectors by proving that output from one step is accepted by the next step.");
-    expect(bashAgent?.systemPrompt).toContain("Avoid treating scanner-friendly issues as the main result unless they lead somewhere.");
-    expect(bashAgent?.systemPrompt).toContain("Suggested attack-path workflow:");
-    expect(bashAgent?.systemPrompt).toContain("Available dependencies:");
-    expect(bashAgent?.systemPrompt).toContain("sqlmap");
-    expect(bashAgent?.systemPrompt).toContain("wpscan");
+    expect(bashAgent?.systemPrompt).toContain("Prefer one concrete transition validation over repeated fetches of already-seen pages");
+    expect(bashAgent?.systemPrompt).toContain("Do not treat scanner-friendly issues as the main result");
+    expect(bashAgent?.systemPrompt).toContain("Stop probing unsupported routes after route-not-found style errors");
+    expect(bashAgent?.systemPrompt).toContain("Examples:");
+    expect(bashAgent?.systemPrompt).toContain("Make the derived request next: `GET /api/support/cases/cs-4821?workspace=acme-support`.");
+    expect(bashAgent?.systemPrompt).toContain("Test the exact adjacent endpoint next: `POST /api/auth/magic-link` with that `email` and `nonce`.");
+    expect(bashAgent?.systemPrompt).toContain("Use those exact prerequisites to test `GET /api/release/secrets?buildId=rel-202`");
+    expect(bashAgent?.systemPrompt).toContain("Do not invent those auth or approval surfaces.");
+    expect(bashAgent?.systemPrompt).toContain("Do not switch to invented `/login` or password-reset routes");
+    expect(bashAgent?.systemPrompt).toContain("Prefer one derived transition request using the observed artifact over repeating the same audit, crawl, or fetch on already-seen pages.");
+    expect(bashAgent?.systemPrompt).not.toContain("Suggested attack-path workflow:");
+    expect(bashAgent?.systemPrompt).not.toContain("Available dependencies:");
+    expect(bashAgent?.systemPrompt).not.toContain("sqlmap");
+    expect(bashAgent?.systemPrompt).not.toContain("wpscan");
+    expect(countMatches(bashAgent?.systemPrompt ?? "", "Do not treat scanner-friendly issues as the main result")).toBe(1);
     expect(bashAgent?.toolIds).toEqual(["seed-agent-bash-command"]);
   });
 
@@ -177,8 +218,19 @@ describe("getSeededWorkflowDefinitions", () => {
 
     expect(broadScriptAgent).toBeDefined();
     expect(broadScriptAgent?.name).toBe("Broad Script Tool Agent");
-    expect(broadScriptAgent?.systemPrompt).toContain("Broad script tool access:");
-    expect(broadScriptAgent?.systemPrompt).toContain("preserve original tool failures");
+    expect(broadScriptAgent?.systemPrompt).toContain("approved direct script-backed tools exposed in this workflow");
+    expect(broadScriptAgent?.systemPrompt).toContain("invoke installed binaries available in the execution environment");
+    expect(broadScriptAgent?.systemPrompt).toContain("derive the exact next request");
+    expect(broadScriptAgent?.systemPrompt).toContain("Do not invent unsupported endpoint families such as `/promote` or `/validate`");
+    expect(broadScriptAgent?.systemPrompt).toContain("Prefer one concrete transition validation over repeated fetches of already-seen pages");
+    expect(broadScriptAgent?.systemPrompt).toContain("Preserve original tool failures.");
+    expect(broadScriptAgent?.systemPrompt).toContain("Examples:");
+    expect(broadScriptAgent?.systemPrompt).toContain("Make the derived request next: `GET /api/support/cases/cs-4821?workspace=acme-support`.");
+    expect(broadScriptAgent?.systemPrompt).toContain("Test the exact adjacent endpoint next: `POST /api/auth/magic-link` with that `email` and `nonce`.");
+    expect(broadScriptAgent?.systemPrompt).toContain("Use those exact prerequisites to test `GET /api/release/secrets?buildId=rel-202`");
+    expect(broadScriptAgent?.systemPrompt).toContain("Do not invent those auth or approval surfaces.");
+    expect(broadScriptAgent?.systemPrompt).toContain("Do not switch to invented `/login` or password-reset routes");
+    expect(broadScriptAgent?.systemPrompt).toContain("Prefer one derived transition request using the observed artifact over repeating the same audit, crawl, or fetch on already-seen pages.");
     expect(broadScriptAgent?.toolIds).toEqual(broadScriptToolIds);
     expect(directScriptToolIds).toContain("seed-agent-bash-command");
     expect(broadScriptAgent?.toolIds).not.toContain("seed-agent-bash-command");
@@ -186,6 +238,8 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(broadScriptAgent?.toolIds).not.toContain("builtin-log-progress");
     expect(broadScriptAgent?.toolIds).not.toContain("builtin-report-finding");
     expect(broadScriptAgent?.toolIds).not.toContain("builtin-complete-run");
+    expect(broadScriptAgent?.systemPrompt).not.toContain("Available dependencies:");
+    expect(countMatches(broadScriptAgent?.systemPrompt ?? "", "Do not treat scanner-friendly issues as the main result")).toBe(1);
   });
 
   it("does not seed legacy bash family wrapper tools", () => {

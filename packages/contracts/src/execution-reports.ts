@@ -1,8 +1,6 @@
 import { z } from "zod";
 import { attackPathSummarySchema } from "./attack-paths.js";
 import {
-  workflowFindingChainSchema,
-  workflowFindingRelationshipExplanationsSchema,
   workflowFindingReproductionSchema,
   workflowFindingValidationStatusSchema,
   workflowReportedFindingSchema
@@ -31,11 +29,6 @@ export const executionReportFindingSchema = z.object({
   explanationSummary: z.string().min(1).nullable().default(null),
   confidenceReason: z.string().min(1).nullable().default(null),
   targetLabel: z.string().min(1),
-  derivedFromFindingIds: z.array(z.string().uuid()).default([]),
-  relatedFindingIds: z.array(z.string().uuid()).default([]),
-  enablesFindingIds: z.array(z.string().uuid()).default([]),
-  relationshipExplanations: workflowFindingRelationshipExplanationsSchema.nullable().default(null),
-  chain: workflowFindingChainSchema.nullable().default(null),
   reproduction: workflowFindingReproductionSchema.nullable().default(null),
   evidence: z.array(z.object({
     sourceTool: z.string().min(1),
@@ -278,11 +271,6 @@ export function executionReportFindingFromWorkflowFinding(
       finding.target.port ? `:${finding.target.port}` : "",
       finding.target.path ?? ""
     ].join(""),
-    derivedFromFindingIds: finding.derivedFromFindingIds,
-    relatedFindingIds: finding.relatedFindingIds,
-    enablesFindingIds: finding.enablesFindingIds,
-    relationshipExplanations: finding.relationshipExplanations ?? null,
-    chain: finding.chain ?? null,
     reproduction: finding.reproduction ?? null,
     evidence: finding.evidence,
     sourceToolIds: uniqueExecutionReportValues(options?.sourceToolIds ?? finding.evidence.map((item) => item.sourceTool)),

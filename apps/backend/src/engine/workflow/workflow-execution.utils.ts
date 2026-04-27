@@ -1,5 +1,7 @@
 import type {
+  InternalObservation,
   Observation,
+  ToolExecutionPublicResult,
   OsiLayer,
   SecurityValidationStatus,
   ToolRequest,
@@ -16,7 +18,10 @@ export type ExecutedToolResult = {
   toolRequest: ToolRequest;
   toolRun: ToolRun;
   status: ToolRun["status"];
-  observations: Observation[];
+  observations: InternalObservation[];
+  publicObservations: Observation[];
+  totalObservations: number;
+  truncated: boolean;
   observationKeys: string[];
   observationSummaries: string[];
   outputPreview: string;
@@ -35,6 +40,139 @@ export type ExecutedToolResult = {
     selected: boolean;
   }>;
 };
+
+const MAX_PUBLIC_OBSERVATIONS = 6;
+
+function severityRank(severity: InternalObservation["severity"]) {
+  switch (severity) {
+    case "critical":
+      return 5;
+    case "high":
+      return 4;
+    case "medium":
+      return 3;
+    case "low":
+      return 2;
+    default:
+      return 1;
+  }
+}
+
+function summarizePlural(count: number, noun: string) {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+function extractHttpStatus(summary: string) {
+  const match = summary.match(/\b(401|403|404)\b/);
+  return match?.[1] ?? null;
+}
+
+function isLowSignalNegative(observation: InternalObservation) {
+  if (severityRank(observation.severity) > 2) {
+    return false;
+  }
+
+  const text = `${observation.title} ${observation.summary}`.toLowerCase();
+  return /(^|\W)(404|403|401)(\W|$)|not found|forbidden|unauthorized|no .*found|returned no usable evidence|missed|absent/.test(text);
+}
+
+function isHighSignalPositive(observation: InternalObservation) {
+  if (severityRank(observation.severity) >= 3) {
+    return true;
+  }
+
+  const text = `${observation.title} ${observation.summary}`.toLowerCase();
+  return /found|exposed|reachable|discovered|enumerated|identified|leak|missing security|bypass|injection|vulnerab|directory listing|admin|debug|token|credential|s3|bucket/.test(text)
+    && !isLowSignalNegative(observation);
+}
+
+function compactObservation(observation: InternalObservation): Observation {
+  return {
+    id: observation.id,
+    key: observation.key,
+    title: observation.title,
+    summary: observation.summary,
+    severity: observation.severity,
+    confidence: observation.confidence
+  };
+}
+
+function aggregateNegativeObservations(
+  toolRunId: string,
+  observations: InternalObservation[]
+): Observation[] {
+  const groups = new Map<string, InternalObservation[]>();
+
+  for (const observation of observations) {
+    const status = extractHttpStatus(observation.summary);
+    const groupKey = status ? `http-${status}` : "generic";
+    const group = groups.get(groupKey) ?? [];
+    group.push(observation);
+    groups.set(groupKey, group);
+  }
+
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([groupKey, group], index) => {
+      const status = groupKey.startsWith("http-") ? groupKey.replace("http-", "") : null;
+      const exemplar = group[0]!;
+      return {
+        id: `${toolRunId}-aggregate-${index + 1}`,
+        key: status ? `aggregate:http-${status}` : "aggregate:low-signal-negative",
+        title: status ? `Repeated HTTP ${status} misses` : "Repeated low-signal negatives omitted",
+        summary: status
+          ? `${summarizePlural(group.length, "candidate")} returned HTTP ${status}; individual low-signal negatives were compacted.`
+          : `${summarizePlural(group.length, "low-signal negative observation")} were omitted from the compact result.`,
+        severity: exemplar.severity,
+        confidence: Math.max(...group.map((item) => item.confidence))
+      };
+    });
+}
+
+export function compactToolExecutionResult(input: {
+  toolRunId: string;
+  toolId: string;
+  toolName: string;
+  status: ToolRun["status"];
+  outputPreview: string;
+  observations: InternalObservation[];
+}): ToolExecutionPublicResult {
+  const highSignal = input.observations.filter((observation) => !isLowSignalNegative(observation));
+  const lowSignalNegatives = input.observations.filter((observation) => isLowSignalNegative(observation));
+  const rankedHighSignal = [...highSignal].sort((left, right) => {
+    const severityDelta = severityRank(right.severity) - severityRank(left.severity);
+    if (severityDelta !== 0) {
+      return severityDelta;
+    }
+    const positiveDelta = Number(isHighSignalPositive(right)) - Number(isHighSignalPositive(left));
+    if (positiveDelta !== 0) {
+      return positiveDelta;
+    }
+    return left.id.localeCompare(right.id);
+  });
+  const aggregatedNegatives = aggregateNegativeObservations(input.toolRunId, lowSignalNegatives);
+  const publicObservations = [...rankedHighSignal.map(compactObservation), ...aggregatedNegatives].slice(0, MAX_PUBLIC_OBSERVATIONS);
+  const totalObservations = input.observations.length;
+  const truncated = publicObservations.length !== totalObservations
+    || aggregatedNegatives.length > 0
+    || rankedHighSignal.length + aggregatedNegatives.length > MAX_PUBLIC_OBSERVATIONS;
+  const compactPreview = firstNonBlankString(
+    publicObservations[0]?.summary,
+    input.outputPreview,
+    `${input.toolName} ${input.status}.`
+  ) ?? `${input.toolName} ${input.status}.`;
+
+  return {
+    toolRunId: input.toolRunId,
+    toolId: input.toolId,
+    toolName: input.toolName,
+    status: input.status,
+    outputPreview: truncate(compactPreview),
+    observations: publicObservations,
+    totalObservations,
+    truncated
+  };
+}
 
 type EvidenceMatch = {
   evidenceIndex: number;

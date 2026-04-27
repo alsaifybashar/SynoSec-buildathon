@@ -44,7 +44,10 @@ export function loadFixedAiRuntime(): FixedAiRuntime {
   const env = configuredRuntimeEnvSchema.parse({
     provider: process.env["LLM_PROVIDER"] ?? "anthropic",
     anthropicApiKey: process.env["ANTHROPIC_API_KEY"],
-    anthropicModel: process.env["LLM_ANTHROPIC_MODEL"] ?? DEFAULT_ANTHROPIC_MODEL,
+    anthropicModel:
+      process.env["CLAUDE_MODEL"]
+      ?? process.env["LLM_ANTHROPIC_MODEL"]
+      ?? DEFAULT_ANTHROPIC_MODEL,
     localBaseUrl: normalizeLocalBaseUrl(process.env["LLM_LOCAL_BASE_URL"] ?? DEFAULT_LOCAL_BASE_URL),
     localModel: process.env["LLM_LOCAL_MODEL"] ?? DEFAULT_LOCAL_MODEL,
     localOpenAiApiMode: process.env["LLM_LOCAL_OPENAI_API_MODE"] ?? "chat"

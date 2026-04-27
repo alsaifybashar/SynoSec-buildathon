@@ -133,4 +133,36 @@ describe("runAiTool", () => {
       code: "AI_TOOL_BUILTIN_NOT_RUNNABLE"
     });
   });
+
+  it("returns only compact public observations with truncation metadata", async () => {
+    const tool = createTool({
+      bashSource: [
+        "#!/usr/bin/env bash",
+        "printf '%s\\n' '{\"output\":\"scan complete\",\"observations\":[",
+        "{\"key\":\"admin\",\"title\":\"Admin panel exposed\",\"summary\":\"/admin returned HTTP 200.\",\"severity\":\"medium\",\"confidence\":0.92,\"evidence\":\"GET /admin => 200\",\"technique\":\"HTTP probe\"},",
+        "{\"key\":\"miss-1\",\"title\":\"Candidate path missing\",\"summary\":\"/backup returned HTTP 404.\",\"severity\":\"info\",\"confidence\":0.5,\"evidence\":\"GET /backup => 404\",\"technique\":\"Content discovery\"},",
+        "{\"key\":\"miss-2\",\"title\":\"Candidate path missing\",\"summary\":\"/old returned HTTP 404.\",\"severity\":\"info\",\"confidence\":0.5,\"evidence\":\"GET /old => 404\",\"technique\":\"Content discovery\"}",
+        "]}'"
+      ].join("\n")
+    });
+
+    const result = await runAiTool(createRuntime(tool), tool.id, { baseUrl: "http://scanner.test" });
+
+    expect(result.totalObservations).toBe(3);
+    expect(result.truncated).toBe(true);
+    expect(result.observations).toEqual([
+      expect.objectContaining({
+        id: expect.any(String),
+        key: "admin",
+        title: "Admin panel exposed",
+        summary: "/admin returned HTTP 200."
+      }),
+      expect.objectContaining({
+        key: "aggregate:http-404",
+        summary: "2 candidates returned HTTP 404; individual low-signal negatives were compacted."
+      })
+    ]);
+    expect(result.observations[0]).not.toHaveProperty("evidence");
+    expect(result.observations[0]).not.toHaveProperty("technique");
+  });
 });

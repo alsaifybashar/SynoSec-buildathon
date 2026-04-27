@@ -2,7 +2,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  localAttackPathTargetDefaults,
   localDemoTargetDefaults,
   localFullStackTargetDefaults,
   type Target
@@ -31,19 +30,8 @@ const seededTarget: Target = {
   updatedAt: "2026-04-21T00:00:00.000Z"
 };
 
-const attackPathTarget: Target = {
-  id: "target-3",
-  name: "Local Attack Path Target",
-  baseUrl: localAttackPathTargetDefaults.hostUrl,
-  environment: "development",
-  status: "active",
-  lastScannedAt: null,
-  createdAt: "2026-04-20T00:00:00.000Z",
-  updatedAt: "2026-04-21T00:00:00.000Z"
-};
-
 const fullStackTarget: Target = {
-  id: "target-4",
+  id: "target-3",
   name: "Local Full Stack Target",
   baseUrl: localFullStackTargetDefaults.hostUrl,
   environment: "development",
@@ -59,10 +47,10 @@ function createFetchMock() {
 
     if (url.startsWith("/api/targets?")) {
       return new Response(JSON.stringify({
-        targets: [seededTarget, attackPathTarget, fullStackTarget, target],
+        targets: [seededTarget, fullStackTarget, target],
         page: 1,
         pageSize: 25,
-        total: 4,
+        total: 3,
         totalPages: 1
       }));
     }
@@ -73,10 +61,6 @@ function createFetchMock() {
 
     if (url === `/api/targets/${seededTarget.id}`) {
       return new Response(JSON.stringify(seededTarget));
-    }
-
-    if (url === `/api/targets/${attackPathTarget.id}`) {
-      return new Response(JSON.stringify(attackPathTarget));
     }
 
     if (url === `/api/targets/${fullStackTarget.id}`) {
@@ -127,24 +111,6 @@ describe("TargetsPage", () => {
     expect(screen.getByRole("tooltip")).toHaveTextContent("Sensitive data exposure on /api/users");
   });
 
-  it("shows attack-path guidance for the chained local lab target", async () => {
-    vi.stubGlobal("fetch", createFetchMock());
-
-    render(
-      <MemoryRouter initialEntries={["/targets"]}>
-        <TargetsPage
-          onNavigateToList={() => {}}
-          onNavigateToCreate={() => {}}
-          onNavigateToDetail={() => {}}
-        />
-      </MemoryRouter>
-    );
-
-    fireEvent.focus((await screen.findAllByRole("button", { name: "Show lab target vulnerabilities" }))[1]);
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("Support case detail IDOR leaks one-time release approval tokens");
-    expect(screen.getByRole("tooltip")).toHaveTextContent("Weak magic-link issuance creates release-manager sessions");
-  });
-
   it("shows full-stack guidance for the local lab target", async () => {
     vi.stubGlobal("fetch", createFetchMock());
 
@@ -158,7 +124,7 @@ describe("TargetsPage", () => {
       </MemoryRouter>
     );
 
-    fireEvent.focus((await screen.findAllByRole("button", { name: "Show lab target vulnerabilities" }))[2]);
+    fireEvent.focus((await screen.findAllByRole("button", { name: "Show lab target vulnerabilities" }))[1]);
     expect(await screen.findByRole("tooltip")).toHaveTextContent("Invoice detail IDOR leaks treasury approval codes");
     expect(screen.getByRole("tooltip")).toHaveTextContent("Recovery token exchange creates finance-manager sessions");
   });

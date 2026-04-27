@@ -19,6 +19,7 @@ import {
   type ExecutionKind,
   type ExecutionReportSummary,
   type ExecutionReportsListQuery,
+  type WorkflowReportedAttackVector,
   type WorkflowReportedFinding
 } from "@synosec/contracts";
 import { Prisma } from "@prisma/client";
@@ -89,10 +90,9 @@ function createWorkflowFindingTargetLabel(finding: WorkflowReportedFinding) {
   ].join("");
 }
 
-function buildWorkflowExecutionGraph(findings: WorkflowReportedFinding[]) {
+function buildWorkflowExecutionGraph(findings: WorkflowReportedFinding[], attackVectors: WorkflowReportedAttackVector[] = []) {
   const nodes: unknown[] = [];
   const edges: unknown[] = [];
-  const findingIds = new Set(findings.map((finding) => finding.id));
   const chainNodes = new Map<string, {
     id: string;
     kind: "chain";
@@ -144,45 +144,6 @@ function buildWorkflowExecutionGraph(findings: WorkflowReportedFinding[]) {
       });
     });
 
-    for (const relatedFindingId of finding.derivedFromFindingIds) {
-      if (!findingIds.has(relatedFindingId)) {
-        continue;
-      }
-      edges.push({
-        id: `${relatedFindingId}:derived:${finding.id}`,
-        kind: "derived_from",
-        source: relatedFindingId,
-        target: finding.id,
-        createdAt: finding.createdAt
-      });
-    }
-
-    for (const relatedFindingId of finding.relatedFindingIds) {
-      if (!findingIds.has(relatedFindingId)) {
-        continue;
-      }
-      edges.push({
-        id: `${finding.id}:related:${relatedFindingId}`,
-        kind: "correlates_with",
-        source: finding.id,
-        target: relatedFindingId,
-        createdAt: finding.createdAt
-      });
-    }
-
-    for (const relatedFindingId of finding.enablesFindingIds) {
-      if (!findingIds.has(relatedFindingId)) {
-        continue;
-      }
-      edges.push({
-        id: `${finding.id}:enables:${relatedFindingId}`,
-        kind: "enables",
-        source: finding.id,
-        target: relatedFindingId,
-        createdAt: finding.createdAt
-      });
-    }
-
     if (finding.chain) {
       const chainNodeId = finding.chain.id?.trim().length ? finding.chain.id : `chain:${finding.chain.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
       const existingChain = chainNodes.get(chainNodeId);
@@ -209,6 +170,22 @@ function buildWorkflowExecutionGraph(findings: WorkflowReportedFinding[]) {
         createdAt: finding.createdAt
       });
     }
+  }
+
+  for (const vector of attackVectors) {
+    const edgeKind = vector.kind === "derived_from"
+      ? "derived_from"
+      : vector.kind === "related"
+        ? "correlates_with"
+        : "enables";
+    edges.push({
+      id: vector.id,
+      kind: edgeKind,
+      source: vector.sourceFindingId,
+      target: vector.destinationFindingId,
+      label: vector.summary,
+      createdAt: vector.createdAt
+    });
   }
 
   nodes.push(...chainNodes.values());
@@ -564,9 +541,7 @@ export class ExecutionReportsService {
         status: event.status === "failed" ? "failed" : "completed",
         outputPreview: typeof event.payload["outputPreview"] === "string"
           ? event.payload["outputPreview"]
-          : typeof event.payload["fullOutput"] === "string"
-            ? event.payload["fullOutput"]
-            : event.detail,
+          : event.summary,
         exitCode: typeof event.payload["exitCode"] === "number" ? event.payload["exitCode"] : null,
         startedAt: event.createdAt,
         completedAt: event.createdAt
@@ -575,7 +550,7 @@ export class ExecutionReportsService {
     const executionKind = normalizeExecutionKind(workflowRun.executionKind)
       ?? normalizeExecutionKind(run.workflow.executionKind)
       ?? "workflow";
-    const graph = buildWorkflowExecutionGraph(workflowFindings);
+    const graph = buildWorkflowExecutionGraph(workflowFindings, workflowAttackVectors);
     const attackPaths = report.attackPaths;
 
     return {

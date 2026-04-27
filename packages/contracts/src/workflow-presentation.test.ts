@@ -267,7 +267,7 @@ describe("buildWorkflowTranscript", () => {
     expect(assistantTurn.details[1]?.kind === "tool_result" ? assistantTurn.details[1].toolCallId : null).toBe("call-1");
   });
 
-  it("prefers persisted full tool output over serialized tool result JSON", () => {
+  it("shows the serialized tool result payload so user-visible output matches the model-visible payload", () => {
     const run: WorkflowRun = {
       id: "50000000-0000-0000-0000-000000000002a",
       workflowId: workflow.id,
@@ -295,9 +295,15 @@ describe("buildWorkflowTranscript", () => {
           payload: {
             toolId: "tool-1",
             toolName: "Web Probe",
-            fullOutput: "HTTP/1.1 200 OK",
             output: {
-              ok: true
+              toolRunId: "tool-run-1",
+              toolId: "tool-1",
+              toolName: "Web Probe",
+              status: "completed",
+              outputPreview: "HTTP/1.1 200 OK",
+              observations: [],
+              totalObservations: 0,
+              truncated: false
             },
             summary: "200 OK"
           },
@@ -320,7 +326,9 @@ describe("buildWorkflowTranscript", () => {
     if (!assistantTurn || assistantTurn.kind !== "assistant_turn") {
       throw new Error("assistant turn missing");
     }
-    expect(assistantTurn.details[0]?.kind === "tool_result" ? assistantTurn.details[0].body : null).toBe("HTTP/1.1 200 OK");
+    expect(assistantTurn.details[0]?.kind === "tool_result" ? assistantTurn.details[0].body : null).toContain("\"toolRunId\": \"tool-run-1\"");
+    expect(assistantTurn.details[0]?.kind === "tool_result" ? assistantTurn.details[0].totalObservations : null).toBe(0);
+    expect(assistantTurn.details[0]?.kind === "tool_result" ? assistantTurn.details[0].truncated : null).toBe(false);
   });
 
   it("does not synthesize assistant prose for a turn that only contains tool results", () => {

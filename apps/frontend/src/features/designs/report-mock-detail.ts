@@ -158,6 +158,11 @@ Combined, these turn a stale release artifact into a working session for **any t
       { id: "e3", kind: "supports", source: "ev-02", target: "fn-02", label: "supports", createdAt: "2026-04-22T14:25:01.000Z" },
       { id: "e4", kind: "supports", source: "ev-03", target: "fn-03", label: "supports", createdAt: "2026-04-22T14:27:01.000Z" },
       { id: "e5", kind: "correlates_with", source: "ev-05", target: "fn-01", label: "related", createdAt: "2026-04-22T14:24:01.000Z" },
+      { id: "e5b", kind: "correlates_with", source: "fn-02", target: "fn-01", label: "The exposed token becomes more damaging when combined with the weak session controls elsewhere in the environment.", createdAt: "2026-04-22T14:24:30.000Z" },
+      { id: "e5c", kind: "enables", source: "fn-02", target: "fn-03", label: "The refresh token can be exchanged into a session that reaches the downstream audience-confusion weakness.", createdAt: "2026-04-22T14:26:00.000Z" },
+      { id: "e5d", kind: "derived_from", source: "fn-02", target: "fn-03", label: "The leaked refresh token supplied a practical token source for probing the proxy validation path.", createdAt: "2026-04-22T14:27:10.000Z" },
+      { id: "e5e", kind: "enables", source: "fn-03", target: "fn-04", label: "Once the proxy accepts a wrong-audience token, broad cookie scope increases where that session can travel.", createdAt: "2026-04-22T14:28:10.000Z" },
+      { id: "e5f", kind: "derived_from", source: "fn-03", target: "fn-04", label: "This becomes materially exploitable after the audience-confusion path produces a usable cross-tenant session.", createdAt: "2026-04-22T14:29:10.000Z" },
       { id: "e6", kind: "enables", source: "fn-02", target: "ch-01", label: "enables", createdAt: "2026-04-22T14:35:01.000Z" },
       { id: "e7", kind: "enables", source: "fn-03", target: "ch-01", label: "enables", createdAt: "2026-04-22T14:35:02.000Z" },
       { id: "e8", kind: "derived_from", source: "fn-04", target: "ch-01", label: "derived", createdAt: "2026-04-22T14:35:03.000Z" },
@@ -182,20 +187,6 @@ Combined, these turn a stale release artifact into a working session for **any t
       explanationSummary: "A release artifact contained a live refresh token with enough remaining lifetime to mint access tokens well after disclosure.",
       confidenceReason: "The token value was extracted directly from the artifact and verified against its remaining validity window.",
       targetLabel: "atlas-release.tar.gz",
-      derivedFromFindingIds: [],
-      relatedFindingIds: ["fn-01"],
-      enablesFindingIds: ["fn-03"],
-      relationshipExplanations: {
-        relatedTo: "The exposed token becomes more damaging when combined with the weak session controls elsewhere in the environment.",
-        enables: "The refresh token can be exchanged into a session that reaches the downstream audience-confusion weakness.",
-        chainRole: "entry"
-      },
-      chain: {
-        id: "ch-01",
-        title: "Cross-tenant session graft",
-        summary: "Refresh-token disclosure, audience confusion, and weak cookie scope can be chained into cross-tenant access.",
-        severity: "critical"
-      },
       reproduction: null,
       evidence: [
         { sourceTool: "artifact-scan", quote: "ATLAS_RT=eyJhbGciOiJSUzI1NiIs… (89d remaining)", artifactRef: "atlas-release" }
@@ -221,13 +212,6 @@ Combined, these turn a stale release artifact into a working session for **any t
       explanationSummary: "The live response exposed a permissive credentialed CORS posture on a sensitive session endpoint.",
       confidenceReason: "The probe captured the exact response headers from the target service.",
       targetLabel: "sso-bridge.blackpine.internal",
-      derivedFromFindingIds: [],
-      relatedFindingIds: ["fn-02"],
-      enablesFindingIds: [],
-      relationshipExplanations: {
-        relatedTo: "The CORS exposure increases the operational impact of the leaked refresh token by widening where session material can be replayed."
-      },
-      chain: null,
       reproduction: null,
       evidence: [
         { sourceTool: "http-probe", quote: "access-control-allow-origin: *", toolRunRef: "http-probe-3" }
@@ -253,20 +237,6 @@ Combined, these turn a stale release artifact into a working session for **any t
       explanationSummary: "The proxy accepted tokens minted for the wrong audience, which breaks tenant isolation assumptions.",
       confidenceReason: "JWT fuzzing produced a successful response using a deliberately mismatched audience claim.",
       targetLabel: "aud-proxy.staging.blackpine.internal",
-      derivedFromFindingIds: ["fn-02"],
-      relatedFindingIds: [],
-      enablesFindingIds: ["fn-04"],
-      relationshipExplanations: {
-        derivedFrom: "The leaked refresh token supplied a practical token source for probing the proxy validation path.",
-        enables: "Once the proxy accepts a wrong-audience token, broad cookie scope increases where that session can travel.",
-        chainRole: "pivot"
-      },
-      chain: {
-        id: "ch-01",
-        title: "Cross-tenant session graft",
-        summary: "Refresh-token disclosure, audience confusion, and weak cookie scope can be chained into cross-tenant access.",
-        severity: "critical"
-      },
       reproduction: null,
       evidence: [{ sourceTool: "jwt-fuzz", quote: "200 OK ← unrelated-tenant aud accepted", toolRunRef: "jwt-fuzz-12" }],
       sourceToolIds: ["jwt-fuzz"],
@@ -290,19 +260,6 @@ Combined, these turn a stale release artifact into a working session for **any t
       explanationSummary: "The cookie domain spans all subdomains, increasing the lateral exposure of any stolen or mis-issued session.",
       confidenceReason: "The scope is directly visible in the Set-Cookie header, but downstream abuse still depends on other weaknesses.",
       targetLabel: "sso-bridge.blackpine.internal",
-      derivedFromFindingIds: ["fn-03"],
-      relatedFindingIds: [],
-      enablesFindingIds: [],
-      relationshipExplanations: {
-        derivedFrom: "This becomes materially exploitable after the audience-confusion path produces a usable cross-tenant session.",
-        chainRole: "impact"
-      },
-      chain: {
-        id: "ch-01",
-        title: "Cross-tenant session graft",
-        summary: "Refresh-token disclosure, audience confusion, and weak cookie scope can be chained into cross-tenant access.",
-        severity: "critical"
-      },
       reproduction: null,
       evidence: [{ sourceTool: "http-probe", quote: "Domain=.blackpine.internal", toolRunRef: "http-probe-3" }],
       sourceToolIds: ["http-probe"],

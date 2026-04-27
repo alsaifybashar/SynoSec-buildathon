@@ -13,6 +13,7 @@ import { createToolRuntime } from "@/modules/ai-tools/tool-runtime.js";
 import { WorkflowExecutionService } from "./workflow-execution.service.js";
 import { WorkflowRunStream } from "./workflow-run-stream.js";
 import { agentBashCommandTool } from "../../../prisma/seed-data/tools/utility/agent-bash-command.js";
+import { getSeededWorkflowDefinitions } from "../../../prisma/seed-data/ai-builder-defaults.js";
 
 const { streamTextMock } = vi.hoisted(() => ({
   streamTextMock: vi.fn()
@@ -375,9 +376,7 @@ describe("WorkflowExecutionService", () => {
     streamTextMock.mockImplementationOnce((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
       fullStream: (async function* () {
         await options.tools.complete_run.execute({
-          summary: "Completed with the compatible tool set.",
-          recommendedNextStep: "Review the scoped evidence.",
-          residualRisk: "Residual risk remains bounded by target policy."
+          summary: "Completed with the compatible tool set."
         });
         yield {
           type: "finish",
@@ -675,6 +674,8 @@ describe("WorkflowExecutionService", () => {
 
   it("runs a workflow with only seed-agent-bash-command and completes using structured command input", async () => {
     let bashToolRawOutput = "";
+    const seededBashStagePrompt = getSeededWorkflowDefinitions().find((candidate) => candidate.name === "Bash Single-Tool PoC")
+      ?.stages[0]?.stageSystemPrompt;
 
     streamTextMock.mockImplementationOnce((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
       fullStream: (async function* () {
@@ -683,15 +684,13 @@ describe("WorkflowExecutionService", () => {
           stdin: "piped-input",
           env: { GREETING: "hello-from-env" },
           timeout_ms: 3000
-        }) as { rawOutput: string; status: string } | undefined;
+        }) as { outputPreview: string; status: string } | undefined;
 
         expect(bashResult?.status).toBe("completed");
-        bashToolRawOutput = bashResult?.rawOutput ?? "";
+        bashToolRawOutput = bashResult?.outputPreview ?? "";
 
         await options.tools.complete_run.execute({
-          summary: "Bash-only workflow completed.",
-          recommendedNextStep: "Review command output artifacts.",
-          residualRisk: "Command execution remains bounded to configured tool policy."
+          summary: "Bash-only workflow completed."
         });
 
         yield {
@@ -711,7 +710,7 @@ describe("WorkflowExecutionService", () => {
           agentId: "30000000-0000-0000-0000-000000000001",
           ord: 0,
           objective: "Execute bash through structured command input and finish cleanly.",
-          stageSystemPrompt: defaultWorkflowStageSystemPrompt,
+          stageSystemPrompt: seededBashStagePrompt ?? defaultWorkflowStageSystemPrompt,
           taskPromptTemplate: defaultWorkflowTaskPromptTemplate,
           allowedToolIds: ["seed-agent-bash-command"],
           requiredEvidenceTypes: [],
@@ -753,6 +752,16 @@ describe("WorkflowExecutionService", () => {
     expect(exposedToolNames).toContain("log_progress");
     expect(exposedToolNames).toContain("report_finding");
     expect(exposedToolNames).toContain("complete_run");
+    const toolContextEvent = createdRuns[0]!.events.find((event) => event.title === "Tool context");
+    const toolContextBody = typeof toolContextEvent?.payload["body"] === "string"
+      ? toolContextEvent.payload["body"]
+      : toolContextEvent?.detail;
+    expect(toolContextBody).toContain("installed binaries available in the execution environment");
+    const systemPromptEvent = createdRuns[0]!.events.find((event) => event.title === "Rendered system prompt");
+    expect(systemPromptEvent?.detail).toContain("derive the exact next request");
+    expect(systemPromptEvent?.detail).toContain("Do not invent unsupported endpoint families such as `/promote` or `/validate`");
+    expect(systemPromptEvent?.detail).toContain("Prefer one concrete transition validation over repeated fetches of already-seen pages");
+    expect(systemPromptEvent?.detail).toContain("Stop probing unsupported routes after route-not-found style errors");
     expect(bashToolRawOutput).toContain("piped-input");
     expect(bashToolRawOutput).toContain("hello-from-env");
   });
@@ -778,9 +787,7 @@ describe("WorkflowExecutionService", () => {
           output: bashResult
         };
         await options.tools.complete_run.execute({
-          summary: "Bash command completed with no output.",
-          recommendedNextStep: "Continue with follow-up evidence collection.",
-          residualRisk: "No residual risk was introduced by an empty command output."
+          summary: "Bash command completed with no output."
         });
         yield {
           type: "finish",
@@ -910,9 +917,7 @@ describe("WorkflowExecutionService", () => {
         fullStream: (async function* () {
           await options.tools.log_progress.execute({ message: "Recon in progress." });
           await options.tools.complete_run.execute({
-            summary: "Stage one complete.",
-            recommendedNextStep: "Move to validation.",
-            residualRisk: "Residual risk remains manageable."
+            summary: "Stage one complete."
           });
           yield {
             type: "finish",
@@ -977,18 +982,14 @@ describe("WorkflowExecutionService", () => {
         fullStream: (async function* () {
           expect(Object.keys(options.tools)).toEqual(["complete_run"]);
           await options.tools.complete_run.execute({
-            summary: "Recovered completion from prior evidence.",
-            recommendedNextStep: "Review the partial run output.",
-            residualRisk: "Residual risk remains because recovery used available evidence only."
+            summary: "Recovered completion from prior evidence."
           });
           yield {
             type: "tool-call",
             toolCallId: "call-recovered-complete-run",
             toolName: "complete_run",
             input: {
-              summary: "Recovered completion from prior evidence.",
-              recommendedNextStep: "Review the partial run output.",
-              residualRisk: "Residual risk remains because recovery used available evidence only."
+              summary: "Recovered completion from prior evidence."
             }
           };
           yield {
@@ -1016,10 +1017,9 @@ describe("WorkflowExecutionService", () => {
       && event.payload["toolCallId"] === "call-recovered-complete-run"
     )).toBe(true);
     const recoveryEvent = createdRuns[0]!.events.find((event) => event.title === "Run completion recovery requested");
-    expect(recoveryEvent?.detail).toContain("Active stage gate:");
-    expect(recoveryEvent?.detail).toContain("Recovery state:");
     expect(recoveryEvent?.detail).toContain("Required next action:");
-    expect(recoveryEvent?.detail).toContain("Self-check before complete_run:");
+    expect(recoveryEvent?.detail).toContain("- Call complete_run once as the final action.");
+    expect(recoveryEvent?.detail).toContain("- Provide only `summary`.");
   });
 
   it("persists tool context, hides log_progress tool calls, and publishes live model output", async () => {
@@ -1050,9 +1050,7 @@ describe("WorkflowExecutionService", () => {
           message: "Checking the HTTP surface before deeper validation."
         });
         await options.tools.complete_run.execute({
-          summary: "Pipeline complete.",
-          recommendedNextStep: "Review the evidence.",
-          residualRisk: "Residual risk remains low."
+          summary: "Pipeline complete."
         });
         yield {
           type: "finish-step",
@@ -1088,9 +1086,9 @@ describe("WorkflowExecutionService", () => {
       : toolContextEvent?.detail;
     expect(toolContextBody).toContain("Built-in actions");
     expect(toolContextBody).toContain("complete_run: Finish the workflow run last");
-    expect(toolContextBody).toContain("Do not use blocked completion to compensate for missing report_finding calls.");
-    expect(toolContextBody).not.toContain("optional `handoff`");
-    expect(toolContextBody).not.toContain("report_attack_vector");
+    expect(toolContextBody).toContain("Provide only `summary`.");
+    expect(toolContextBody).toContain("report_attack_vectors:");
+    expect(toolContextBody).not.toContain("report_attack_vector:");
     expect(toolContextBody).not.toContain("deep_analysis");
 
     const systemPromptEvent = createdRuns[0]!.events.find((event) => event.title === "Rendered system prompt");
@@ -1100,24 +1098,20 @@ describe("WorkflowExecutionService", () => {
     expect(systemPromptEvent?.detail).toContain("Operator URL: http://localhost:3000");
     expect(systemPromptEvent?.detail).toContain("Execution URL: http://localhost:3000/");
     expect(systemPromptEvent?.detail).toContain("Workflow execution contract:");
-    expect(systemPromptEvent?.detail).toContain("Run evidence tools first, use report_finding for supported weaknesses, and call complete_run last.");
-    expect(systemPromptEvent?.detail).toContain("Active stage gate:");
-    expect(systemPromptEvent?.detail).toContain("Self-check before complete_run:");
-    expect(systemPromptEvent?.detail).toContain("- minimum_reported_findings: 0");
+    expect(systemPromptEvent?.detail).toContain("Run evidence tools first, use report_finding for supported weaknesses, use report_attack_vectors for cross-finding transitions, and call complete_run last.");
     expect(systemPromptEvent?.detail).not.toContain("call report_attack_vector");
-    expect(systemPromptEvent?.detail).toContain("complete_run does not create findings");
-    expect(systemPromptEvent?.detail).toContain("If complete_run is rejected, use the rejection reason to choose the next valid action.");
-    expect(systemPromptEvent?.detail).not.toContain("When requireChainedFindings is enabled");
+    expect(systemPromptEvent?.detail).toContain("complete_run accepts only `summary`.");
+    expect(systemPromptEvent?.detail).toContain("complete_run closes the workflow run and does not create findings.");
+    expect(systemPromptEvent?.detail).not.toContain("Available dependencies:");
     expect(systemPromptEvent?.payload["promptSourceLabel"]).toBe("Workflow-owned editable system prompt plus engine-generated target context and runtime contract.");
     expect(createdRuns[0]!.events.find((event) => event.title === "Rendered task prompt")).toBeUndefined();
 
     expect(createdRuns[0]!.events.some((event) => event.type === "tool_call" && event.payload?.["toolName"] === "log_progress")).toBe(false);
     expect(createdRuns[0]!.events.some((event) => event.type === "tool_result" && event.payload?.["toolName"] === "log_progress")).toBe(false);
     expect(createdRuns[0]!.events.some((event) => event.type === "run_completed")).toBe(true);
-    expect(createdRuns[0]!.events.some((event) => event.title === "Run completion accepted" && event.summary === "The agent finished pen testing.")).toBe(true);
+    expect(createdRuns[0]!.events.some((event) => event.title === "Run completion accepted" && event.summary === "The agent finished the workflow run.")).toBe(true);
     const closeoutEvent = createdRuns[0]!.events.find((event) => event.type === "run_completed");
-    expect(closeoutEvent?.detail).toContain("Recommended next step: Review the evidence.");
-    expect(closeoutEvent?.detail).toContain("Residual risk: Residual risk remains low.");
+    expect(closeoutEvent?.summary).toBe("Pipeline complete.");
 
     const liveMessages = messages.filter((message) => message["type"] === "run_event" && message["liveModelOutput"]) as Array<{
       liveModelOutput: { text: string; reasoning: string | null; final: boolean };
@@ -1131,7 +1125,7 @@ describe("WorkflowExecutionService", () => {
     }));
   });
 
-  it("fails strict completion when complete_run has no handoff and no findings", async () => {
+  it("accepts summary-only completion even when prior strict completion requirements are unmet", async () => {
     const baseWorkflow = makeWorkflow();
     const workflow = makeWorkflow({
       stages: [{
@@ -1152,10 +1146,8 @@ describe("WorkflowExecutionService", () => {
     streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
       fullStream: (async function* () {
         await expect(options.tools.complete_run.execute({
-          summary: "Nothing to report.",
-          recommendedNextStep: "Stop.",
-          residualRisk: "Unknown."
-        })).rejects.toThrow("Workflow completion assertions failed");
+          summary: "Nothing to report."
+        })).resolves.toEqual({ accepted: true });
         yield {
           type: "finish",
           finishReason: "stop",
@@ -1169,31 +1161,12 @@ describe("WorkflowExecutionService", () => {
     await service.startRun(workflow.id);
 
     await vi.waitFor(() => {
-      expect(createdRuns[0]?.status).toBe("failed");
+      expect(createdRuns[0]?.status).toBe("completed");
     });
-
-    const assertionEvent = createdRuns[0]!.events.find((event) => event.title === "README coverage assertions");
-    expect(assertionEvent).toMatchObject({
-      status: "failed"
-    });
-    expect(assertionEvent?.summary).toContain("reachable surface");
-    expect(assertionEvent?.payload["assertions"]).toMatchObject({
-      evidenceBackedWeaknesses: {
-        required: true,
-        passed: false,
-        findingCount: 0,
-        requiredFindingCount: 1
-      },
-      chainedFindings: {
-        required: true,
-        passed: false,
-        linkedFindingCount: 0
-      }
-    });
-    expect(assertionEvent?.summary).toContain("reachable surface");
+    expect(createdRuns[0]!.events.some((event) => event.title === "README coverage assertions")).toBe(false);
   });
 
-  it("fails completion before assertions when a stage handoff schema is configured but handoff is missing", async () => {
+  it("accepts completion without handoff when a stage handoff schema is configured", async () => {
     const baseWorkflow = makeWorkflow();
     const workflow = makeWorkflow({
       stages: [{
@@ -1215,10 +1188,8 @@ describe("WorkflowExecutionService", () => {
     streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
       fullStream: (async function* () {
         await expect(options.tools.complete_run.execute({
-          summary: "Done.",
-          recommendedNextStep: "Review.",
-          residualRisk: "Unknown."
-        })).rejects.toThrow("requires a handoff");
+          summary: "Done."
+        })).resolves.toEqual({ accepted: true });
         yield {
           type: "finish",
           finishReason: "stop",
@@ -1232,12 +1203,12 @@ describe("WorkflowExecutionService", () => {
     await service.startRun(workflow.id);
 
     await vi.waitFor(() => {
-      expect(createdRuns[0]?.status).toBe("failed");
+      expect(createdRuns[0]?.status).toBe("completed");
     });
-    expect(createdRuns[0]!.events.some((event) => event.title === "Run completion rejected" && event.summary.includes("requires a handoff"))).toBe(true);
+    expect(createdRuns[0]!.events.some((event) => event.title === "Run completion accepted")).toBe(true);
   });
 
-  it("accepts blocked completion with failed tool run references without requiring attack-path handoff", async () => {
+  it("rejects complete_run payloads that include deprecated blocked fields", async () => {
     const baseWorkflow = makeWorkflow();
     const workflow = makeWorkflow({
       stages: [{
@@ -1259,21 +1230,18 @@ describe("WorkflowExecutionService", () => {
 
     streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<any> }> }) => ({
       fullStream: (async function* () {
-        const toolOutput = await options.tools["custom-failing-proof"].execute({
+        await options.tools["custom-failing-proof"].execute({
           baseUrl: "http://localhost:3000"
         });
-        const completion = await options.tools.complete_run.execute({
+        await expect(options.tools.complete_run.execute({
           summary: "Assessment blocked by runtime reachability.",
-          recommendedNextStep: "Fix the target execution URL and rerun.",
-          residualRisk: "Application risk remains unknown because evidence collection could not reach the runtime target.",
           blocked: {
             reason: "The evidence tool could not reach the runtime target.",
-            failedToolRunIds: [toolOutput.toolRunId],
+            failedToolRunIds: ["tool-run-deprecated"],
             recommendedFix: "Set the target execution URL to a connector-reachable address.",
             operatorSummary: "The workflow was blocked before vulnerability assessment."
           }
-        });
-        expect(completion).toEqual({ accepted: true });
+        })).rejects.toThrow("Unrecognized key");
         yield {
           type: "finish",
           finishReason: "stop",
@@ -1292,18 +1260,11 @@ describe("WorkflowExecutionService", () => {
     await service.startRun(workflow.id);
 
     await vi.waitFor(() => {
-      expect(createdRuns[0]?.status).toBe("completed");
-    });
-    const stageResultEvent = createdRuns[0]!.events.find((event) => event.type === "stage_result_submitted");
-    expect(stageResultEvent?.payload["stageResult"]).toMatchObject({
-      status: "blocked",
-      blocked: {
-        reason: "The evidence tool could not reach the runtime target."
-      }
+      expect(createdRuns[0]?.status).toBe("failed");
     });
   });
 
-  it("fails strict completion when attack-path handoff references bogus finding ids", async () => {
+  it("rejects complete_run payloads that include deprecated handoff fields", async () => {
     const baseWorkflow = makeWorkflow();
     const workflow = makeWorkflow({
       stages: [{
@@ -1328,7 +1289,7 @@ describe("WorkflowExecutionService", () => {
         const toolOutput = await options.tools["custom-http-proof"].execute({
           baseUrl: "http://localhost:3000/admin"
         });
-        await options.tools.report_finding.execute({
+        const secondFinding = await options.tools.report_finding.execute({
           mode: "finding",
           type: "service_exposure",
           title: "Admin Panel Reachable",
@@ -1345,8 +1306,6 @@ describe("WorkflowExecutionService", () => {
         });
         await expect(options.tools.complete_run.execute({
           summary: "Bogus handoff should fail.",
-          recommendedNextStep: "Retry with real finding ids.",
-          residualRisk: "Unknown.",
           handoff: {
             attackVenues: [{
               id: "venue-admin",
@@ -1378,7 +1337,7 @@ describe("WorkflowExecutionService", () => {
               ]
             }]
           }
-        })).rejects.toThrow("handoff reference validation failed");
+        })).rejects.toThrow("Unrecognized key");
         yield {
           type: "finish",
           finishReason: "stop",
@@ -1399,10 +1358,10 @@ describe("WorkflowExecutionService", () => {
     await vi.waitFor(() => {
       expect(createdRuns[0]?.status).toBe("failed");
     });
-    expect(createdRuns[0]!.events.some((event) => event.title === "Run completion rejected" && event.summary.includes("handoff reference validation failed"))).toBe(true);
+    expect(createdRuns[0]!.events.some((event) => event.title === "Run completion rejected")).toBe(false);
   });
 
-  it("completes strict attack-path workflow with valid handoff references", async () => {
+  it("completes summary-only even when older handoff-heavy workflows report findings first", async () => {
     const baseWorkflow = makeWorkflow();
     const workflow = makeWorkflow({
       stages: [{
@@ -1457,71 +1416,8 @@ describe("WorkflowExecutionService", () => {
           impact: "The exposed admin panel can be chained with weak authentication checks.",
           recommendation: "Add authentication and network restrictions."
         });
-        await expect(options.tools.complete_run.execute({
-          summary: "Invalid handoff should be corrected.",
-          recommendedNextStep: "Retry with real refs.",
-          residualRisk: "Unknown.",
-          handoff: {
-            attackVenues: [{
-              id: "venue-admin",
-              label: "Admin panel",
-              venueType: "web_surface",
-              targetLabel: "http://localhost:3000/admin",
-              summary: "Admin panel is reachable.",
-              findingIds: [firstFinding.findingId]
-            }],
-            attackVectors: [{
-              id: "vector-admin-auth",
-              label: "Admin authentication path",
-              sourceVenueId: "venue-admin",
-              preconditions: ["Admin panel is reachable"],
-              impact: "Enables follow-on authentication testing.",
-              confidence: 0.8,
-              findingIds: [firstFinding.findingId, secondFinding.findingId]
-            }],
-            attackPaths: [{
-              id: "path-admin-auth",
-              title: "Admin path",
-              summary: "The path references a missing vector.",
-              severity: "high",
-              venueIds: ["venue-admin"],
-              vectorIds: ["vector-missing"],
-              findingIds: [firstFinding.findingId, secondFinding.findingId]
-            }]
-          }
-        })).rejects.toThrow("unknown vector id vector-missing");
         await options.tools.complete_run.execute({
-          summary: "Valid handoff accepted.",
-          recommendedNextStep: "Review the attack path.",
-          residualRisk: "Admin exposure remains until access is restricted.",
-          handoff: {
-            attackVenues: [{
-              id: "venue-admin",
-              label: "Admin panel",
-              venueType: "web_surface",
-              targetLabel: "http://localhost:3000/admin",
-              summary: "Admin panel is reachable.",
-              findingIds: [firstFinding.findingId]
-            }],
-            attackVectors: [{
-              id: "vector-admin-auth",
-              label: "Admin authentication path",
-              sourceVenueId: "venue-admin",
-              preconditions: ["Admin panel is reachable"],
-              impact: "Enables follow-on authentication testing.",
-              confidence: 0.8,
-              findingIds: [firstFinding.findingId, secondFinding.findingId]
-            }],
-            attackPaths: [{
-              id: "path-admin-auth",
-              title: "Admin path",
-              summary: "The reachable admin panel supports a follow-on path.",
-              severity: "high",
-              venueIds: ["venue-admin"],
-              vectorIds: ["vector-admin-auth"],
-              findingIds: [firstFinding.findingId, secondFinding.findingId]
-            }]
-          }
+          summary: "Valid summary-only completion accepted."
         });
         yield {
           type: "finish",
@@ -1600,8 +1496,7 @@ describe("WorkflowExecutionService", () => {
           impact: "Weak authentication can be exploited once the admin surface is reachable.",
           recommendation: "Harden authentication and protect the admin entry point."
         });
-        const vectorSubmission = await options.tools.report_finding.execute({
-          mode: "attack_vector",
+        const vectorSubmission = await options.tools.report_attack_vectors.execute({
           attackVectors: [{
             kind: "enables",
             sourceFindingId: firstFinding.findingId,
@@ -1621,9 +1516,7 @@ describe("WorkflowExecutionService", () => {
           attackVectorIds: [expect.any(String)]
         });
         await options.tools.complete_run.execute({
-          summary: "Chained findings were validated with explicit attack vectors.",
-          recommendedNextStep: "Review and remediate the reachable admin path.",
-          residualRisk: "Risk remains high until admin hardening is complete."
+          summary: "Chained findings were validated with explicit attack vectors."
         });
         yield {
           type: "finish",
@@ -1648,17 +1541,10 @@ describe("WorkflowExecutionService", () => {
 
     const attackVectorEvents = createdRuns[0]!.events.filter((event) => event.type === "attack_vector_reported");
     expect(attackVectorEvents).toHaveLength(1);
-    const assertionEvent = createdRuns[0]!.events.find((event) => event.title === "README coverage assertions");
-    expect(assertionEvent?.payload["assertions"]).toMatchObject({
-      chainedFindings: {
-        required: true,
-        passed: true,
-        attackVectorCount: 1
-      }
-    });
+    expect(createdRuns[0]!.events.find((event) => event.title === "README coverage assertions")).toBeUndefined();
   });
 
-  it("normalizes common report_finding payload mistakes for evidence refs and flat attack_vector mode", async () => {
+  it("normalizes common reporting payload mistakes for evidence refs", async () => {
     const workflow = makeWorkflow({
       stages: [{
         ...makeWorkflow().stages[0]!,
@@ -1709,27 +1595,26 @@ describe("WorkflowExecutionService", () => {
           impact: "Weak authentication can be exploited once the admin surface is reachable.",
           recommendation: "Harden authentication and protect the admin entry point."
         });
-        const vectorSubmission = await options.tools.report_finding.execute({
-          mode: "attack_vector",
-          kind: "enables",
-          sourceFindingId: firstFinding.findingId,
-          destinationFindingId: secondFinding.findingId,
-          summary: "Reachable admin panel enables direct authentication attacks.",
-          impact: "Supports a chained compromise path.",
-          confidence: 0.85,
-          transitionEvidence: JSON.stringify([{
-            sourceTool: "custom-http-proof",
-            quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel"
-          }])
+        const vectorSubmission = await options.tools.report_attack_vectors.execute({
+          attackVectors: [{
+            kind: "enables",
+            sourceFindingId: firstFinding.findingId,
+            destinationFindingId: secondFinding.findingId,
+            summary: "Reachable admin panel enables direct authentication attacks.",
+            impact: "Supports a chained compromise path.",
+            confidence: 0.85,
+            transitionEvidence: [{
+              sourceTool: "custom-http-proof",
+              quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel"
+            }]
+          }]
         });
         expect(vectorSubmission).toMatchObject({
           accepted: true,
           attackVectorIds: [expect.any(String)]
         });
         await options.tools.complete_run.execute({
-          summary: "Normalized report_finding payloads were accepted.",
-          recommendedNextStep: "Review and remediate the admin path findings.",
-          residualRisk: "Risk remains high until controls are enforced."
+          summary: "Normalized report_finding payloads were accepted."
         });
         yield {
           type: "finish",
@@ -1755,7 +1640,7 @@ describe("WorkflowExecutionService", () => {
     expect(createdRuns[0]!.events.filter((event) => event.type === "attack_vector_reported")).toHaveLength(1);
   });
 
-  it("accepts numeric strings in report_attack_vector payloads", async () => {
+  it("accepts numeric strings in report_attack_vectors payloads", async () => {
     const workflow = makeWorkflow({
       stages: [{
         ...makeWorkflow().stages[0]!,
@@ -1798,28 +1683,27 @@ describe("WorkflowExecutionService", () => {
           impact: "Weak authentication can be exploited once the admin surface is reachable.",
           recommendation: "Harden authentication and protect the admin entry point."
         });
-        const compatibilityVector = await options.tools.report_attack_vector.execute({
-          kind: "enables",
-          sourceFindingId: firstFinding.findingId,
-          destinationFindingId: secondFinding.findingId,
-          summary: "Reachable admin panel enables direct authentication attacks.",
-          impact: "Supports a chained compromise path.",
-          confidence: "0.85",
-          transitionEvidence: [{
-            sourceTool: "custom-http-proof",
-            quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+        const vectorSubmission = await options.tools.report_attack_vectors.execute({
+          attackVectors: [{
+            kind: "enables",
+            sourceFindingId: firstFinding.findingId,
+            destinationFindingId: secondFinding.findingId,
+            summary: "Reachable admin panel enables direct authentication attacks.",
+            impact: "Supports a chained compromise path.",
+            confidence: "0.85",
+            transitionEvidence: [{
+              sourceTool: "custom-http-proof",
+              quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
+              toolRunRef: toolOutput.toolRunId
+            }]
           }]
         });
-        expect(compatibilityVector).toMatchObject({
-          attackVectorId: expect.any(String),
-          sourceFindingId: firstFinding.findingId,
-          destinationFindingId: secondFinding.findingId
+        expect(vectorSubmission).toMatchObject({
+          accepted: true,
+          attackVectorIds: [expect.any(String)]
         });
         await options.tools.complete_run.execute({
-          summary: "Stringified numeric fields were accepted for workflow reporting tools.",
-          recommendedNextStep: "Keep coercion in place for hosted models that emit strings.",
-          residualRisk: "Risk remains until findings are remediated."
+          summary: "Stringified numeric fields were accepted for workflow reporting tools."
         });
         yield {
           type: "finish",
@@ -1844,7 +1728,7 @@ describe("WorkflowExecutionService", () => {
     expect(createdRuns[0]!.events.filter((event) => event.type === "attack_vector_reported")).toHaveLength(1);
   });
 
-  it("keeps report_attack_vector available as hidden compatibility", async () => {
+  it("exposes report_attack_vectors and hides the singular compatibility name", async () => {
     const workflow = makeWorkflow({
       stages: [{
         ...makeWorkflow().stages[0]!,
@@ -1854,7 +1738,8 @@ describe("WorkflowExecutionService", () => {
 
     streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<any> }> }) => ({
       fullStream: (async function* () {
-        expect(options.tools.report_attack_vector).toBeDefined();
+        expect(options.tools.report_attack_vector).toBeUndefined();
+        expect(options.tools.report_attack_vectors).toBeDefined();
         const toolOutput = await options.tools["custom-http-proof"].execute({
           baseUrl: "http://localhost:3000/admin"
         });
@@ -1888,28 +1773,27 @@ describe("WorkflowExecutionService", () => {
           impact: "Weak authentication can be exploited once the admin surface is reachable.",
           recommendation: "Harden authentication and protect the admin entry point."
         });
-        const compatibilityVector = await options.tools.report_attack_vector.execute({
-          kind: "enables",
-          sourceFindingId: firstFinding.findingId,
-          destinationFindingId: secondFinding.findingId,
-          summary: "Reachable admin panel enables direct authentication attacks.",
-          impact: "Supports a chained compromise path.",
-          confidence: 0.85,
-          transitionEvidence: [{
-            sourceTool: "custom-http-proof",
-            quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.toolRunId
+        const vectorSubmission = await options.tools.report_attack_vectors.execute({
+          attackVectors: [{
+            kind: "enables",
+            sourceFindingId: firstFinding.findingId,
+            destinationFindingId: secondFinding.findingId,
+            summary: "Reachable admin panel enables direct authentication attacks.",
+            impact: "Supports a chained compromise path.",
+            confidence: 0.85,
+            transitionEvidence: [{
+              sourceTool: "custom-http-proof",
+              quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
+              toolRunRef: toolOutput.toolRunId
+            }]
           }]
         });
-        expect(compatibilityVector).toMatchObject({
-          attackVectorId: expect.any(String),
-          sourceFindingId: firstFinding.findingId,
-          destinationFindingId: secondFinding.findingId
+        expect(vectorSubmission).toMatchObject({
+          accepted: true,
+          attackVectorIds: [expect.any(String)]
         });
         await options.tools.complete_run.execute({
-          summary: "Legacy attack-vector submissions remain accepted internally.",
-          recommendedNextStep: "Switch to report_finding mode attack_vector for new runs.",
-          residualRisk: "The admin chain remains until remediation is complete."
+          summary: "Attack vectors are submitted through report_attack_vectors."
         });
         yield {
           type: "finish",
@@ -1936,10 +1820,10 @@ describe("WorkflowExecutionService", () => {
     const toolContextBody = typeof toolContextEvent?.payload["body"] === "string"
       ? toolContextEvent.payload["body"]
       : toolContextEvent?.detail;
-    expect(toolContextBody).not.toContain("report_attack_vector");
+    expect(toolContextBody).not.toContain("report_attack_vector:");
   });
 
-  it("completes when README coverage assertions are demonstrated by evidence, coverage, and chained findings", async () => {
+  it("completes without emitting README coverage assertions even when evidence and chains exist", async () => {
     const baseWorkflow = makeWorkflow();
     const workflow = makeWorkflow({
       stages: [{
@@ -1978,7 +1862,7 @@ describe("WorkflowExecutionService", () => {
           impact: "The admin panel is reachable from the assessed surface.",
           recommendation: "Restrict access to trusted operators."
         });
-        await options.tools.report_finding.execute({
+        const secondFinding = await options.tools.report_finding.execute({
           mode: "finding",
           type: "auth_weakness",
           title: "Admin Exposure Enables Authentication Attack",
@@ -1991,18 +1875,25 @@ describe("WorkflowExecutionService", () => {
             toolRunRef: toolOutput.toolRunId
           }],
           impact: "The exposed admin panel can be chained with weak authentication checks.",
-          recommendation: "Add authentication and network restrictions.",
-          relatedFindingIds: [firstFinding.findingId],
-          explanationSummary: "The reachable admin surface provides the entry point for the authentication weakness.",
-          confidenceReason: "Both findings are grounded in the same persisted admin-panel response.",
-          relationshipExplanations: {
-            relatedTo: "The authentication issue depends on the reachable admin venue."
-          }
+          recommendation: "Add authentication and network restrictions."
+        });
+        await options.tools.report_attack_vectors.execute({
+          attackVectors: [{
+            kind: "enables",
+            sourceFindingId: firstFinding.findingId,
+            destinationFindingId: secondFinding.findingId,
+            summary: "The reachable admin surface enables the follow-on authentication weakness.",
+            impact: "This path supports a chained compromise narrative.",
+            confidence: 0.85,
+            transitionEvidence: [{
+              sourceTool: "custom-http-proof",
+              quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
+              toolRunRef: toolOutput.toolRunId
+            }]
+          }]
         });
         await options.tools.complete_run.execute({
-          summary: "All README coverage assertions are demonstrated.",
-          recommendedNextStep: "Review the chained admin-path findings.",
-          residualRisk: "Admin exposure remains until access is restricted."
+          summary: "All README coverage assertions are demonstrated."
         });
         yield {
           type: "finish",
@@ -2064,16 +1955,7 @@ describe("WorkflowExecutionService", () => {
       expect(createdRuns[0]?.status).toBe("completed");
     });
 
-    const assertionEvent = createdRuns[0]!.events.find((event) => event.title === "README coverage assertions");
-    expect(assertionEvent).toMatchObject({
-      status: "completed"
-    });
-    expect(assertionEvent?.payload["assertions"]).toMatchObject({
-      reachableSurface: { passed: true },
-      evidenceBackedWeaknesses: { passed: true },
-      osiCoverageStatus: { passed: true },
-      chainedFindings: { passed: true }
-    });
+    expect(createdRuns[0]!.events.find((event) => event.title === "README coverage assertions")).toBeUndefined();
   });
 
   it("emits a dedicated report_finding tool result summary", async () => {
@@ -2131,9 +2013,7 @@ describe("WorkflowExecutionService", () => {
           output
         };
         await options.tools.complete_run.execute({
-          summary: "Finding recorded.",
-          recommendedNextStep: "Review the SQLi evidence.",
-          residualRisk: "Residual risk remains high."
+          summary: "Finding recorded."
         });
         yield {
           type: "finish",
@@ -2200,6 +2080,62 @@ describe("WorkflowExecutionService", () => {
     expect(toolResult?.detail).toContain("\"host\": \"demo.local\"");
   });
 
+  it("accepts sparse report_finding payloads and summary-only completion", async () => {
+    const workflow = makeWorkflow({
+      stages: [{
+        ...makeWorkflow().stages[0]!,
+        allowedToolIds: ["custom-http-proof"]
+      }]
+    });
+
+    streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<any> }> }) => ({
+      fullStream: (async function* () {
+        const toolOutput = await options.tools["custom-http-proof"].execute({
+          baseUrl: "http://localhost:3000/admin"
+        });
+        await options.tools.report_finding.execute({
+          mode: "finding",
+          title: "Admin Panel Reachable",
+          evidence: [{
+            sourceTool: "custom-http-proof",
+            quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
+            toolRunRef: toolOutput.toolRunId
+          }]
+        });
+        await expect(options.tools.complete_run.execute({
+          summary: "Minimal finding recorded."
+        })).resolves.toEqual({ accepted: true });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({
+      workflow,
+      aiToolById: {
+        "custom-http-proof": makeCustomHttpProofTool()
+      }
+    });
+    await service.startRun("10000000-0000-0000-0000-000000000001");
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    const findingEvent = createdRuns[0]!.events.find((event) => event.type === "finding_reported");
+    const finding = findingEvent?.payload["finding"] as Record<string, unknown> | undefined;
+    expect(finding?.["title"]).toBe("Admin Panel Reachable");
+    expect(finding?.["type"]).toBe("other");
+    expect(finding?.["severity"]).toBe("medium");
+    expect(finding?.["impact"]).toBe("Evidence indicates: Admin Panel Reachable");
+    expect(finding?.["recommendation"]).toBe("Review and remediate the reported issue based on the supporting evidence.");
+    expect(createdRuns[0]!.events.some((event) => event.title === "Run completion accepted")).toBe(true);
+  });
+
   it("accepts JSON-string report_finding payloads", async () => {
     const workflow = makeWorkflow({
       stages: [{
@@ -2213,7 +2149,7 @@ describe("WorkflowExecutionService", () => {
         const toolOutput = await options.tools["custom-http-proof"].execute({
           baseUrl: "http://localhost:3000/admin"
         });
-        await options.tools.report_finding.execute(JSON.stringify({
+        const result = await options.tools.report_finding.execute(JSON.stringify({
           mode: "finding",
           type: "content_discovery",
           title: "Admin Panel Reachable",
@@ -2228,10 +2164,15 @@ describe("WorkflowExecutionService", () => {
           impact: "The admin panel is directly reachable.",
           recommendation: "Restrict access to trusted operators."
         }));
+        expect(result).toMatchObject({
+          accepted: true,
+          findingId: expect.any(String),
+          title: "Admin Panel Reachable",
+          severity: "medium",
+          host: "demo.local"
+        });
         await options.tools.complete_run.execute({
-          summary: "Finding recorded from string payload.",
-          recommendedNextStep: "Review access controls.",
-          residualRisk: "Admin surface is reachable."
+          summary: "Finding recorded from string payload."
         });
         yield {
           type: "finish",
@@ -2340,9 +2281,7 @@ describe("WorkflowExecutionService", () => {
           warnings: []
         };
         await options.tools.complete_run.execute({
-          summary: "Completed after recording the tool failure.",
-          recommendedNextStep: "Inspect the failed tool output.",
-          residualRisk: "Residual risk remains because parameter discovery failed."
+          summary: "Completed after recording the tool failure."
         });
         yield {
           type: "finish",

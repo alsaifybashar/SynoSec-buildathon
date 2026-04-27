@@ -74,4 +74,38 @@ describe("semantic family tools", () => {
       }
     }
   });
+
+  it("exposes only the minimal model-facing output schema for semantic families", () => {
+    for (const definition of getSemanticFamilyDefinitions()) {
+      expect(definition.tool.outputSchema).toMatchObject({
+        type: "object",
+        required: [
+          "toolRunId",
+          "toolId",
+          "toolName",
+          "status",
+          "outputPreview",
+          "observations",
+          "totalObservations",
+          "truncated"
+        ]
+      });
+      expect(definition.tool.outputSchema.properties).toMatchObject({
+        toolRunId: { type: "string" },
+        toolId: { type: "string" },
+        toolName: { type: "string" },
+        status: { type: "string" },
+        outputPreview: { type: "string" },
+        observations: { type: "array" },
+        totalObservations: { type: "number" },
+        truncated: { type: "boolean" }
+      });
+      expect(definition.tool.outputSchema.properties).not.toHaveProperty("rawOutput");
+      expect(definition.tool.outputSchema.properties).not.toHaveProperty("observationSummaries");
+      expect(definition.tool.outputSchema.properties).not.toHaveProperty("usedToolId");
+      expect(definition.tool.outputSchema.properties).not.toHaveProperty("usedToolName");
+      expect(definition.tool.outputSchema.properties).not.toHaveProperty("fallbackUsed");
+      expect(definition.tool.outputSchema.properties).not.toHaveProperty("attempts");
+    }
+  });
 });

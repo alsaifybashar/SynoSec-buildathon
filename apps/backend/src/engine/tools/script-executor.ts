@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import type {
-  Observation,
+  InternalObservation,
   Severity,
   ToolRequest,
   ToolRun
@@ -37,7 +37,7 @@ export interface ScriptExecutionContext {
 }
 
 export interface ScriptExecutionResult {
-  observations: Observation[];
+  observations: InternalObservation[];
   output: string;
   exitCode: number;
   statusReason?: string;
@@ -82,7 +82,7 @@ function normalizeObservation(
   context: ScriptExecutionContext,
   input: BashObservation,
   index: number
-): Observation {
+): InternalObservation {
   return {
     id: `${context.toolRun.id}-obs-${index + 1}`,
     scanId: context.scanId,

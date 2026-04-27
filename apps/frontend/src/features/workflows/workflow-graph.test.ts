@@ -44,7 +44,7 @@ describe("selectLatestWorkflowLaunchRun", () => {
 });
 
 describe("buildExecutionGraphFromWorkflowFindings", () => {
-  it("builds evidence/finding/chain nodes and relationship edges", () => {
+  it("builds evidence/finding/chain nodes without deriving finding relationship edges from findings alone", () => {
     const findings: WorkflowReportedFinding[] = [
       {
         id: "60000000-0000-4000-8000-000000000001",
@@ -65,7 +65,7 @@ describe("buildExecutionGraphFromWorkflowFindings", () => {
         validationStatus: "single_source",
         derivedFromFindingIds: [],
         relatedFindingIds: [],
-        enablesFindingIds: ["60000000-0000-4000-8000-000000000002"],
+        enablesFindingIds: [],
         chain: {
           title: "Privilege escalation path",
           summary: "Exposure supports a broader chain.",
@@ -91,8 +91,8 @@ describe("buildExecutionGraphFromWorkflowFindings", () => {
         impact: "Follow-on privilege pivot is possible.",
         recommendation: "Rotate credentials.",
         validationStatus: "cross_validated",
-        derivedFromFindingIds: ["60000000-0000-4000-8000-000000000001"],
-        relatedFindingIds: ["60000000-0000-4000-8000-000000000001"],
+        derivedFromFindingIds: [],
+        relatedFindingIds: [],
         enablesFindingIds: [],
         tags: [],
         createdAt: "2026-04-25T10:01:00.000Z"
@@ -107,8 +107,7 @@ describe("buildExecutionGraphFromWorkflowFindings", () => {
     expect(graph.nodes.some((node) => node.kind === "chain")).toBe(true);
 
     expect(graph.edges.some((edge) => edge.kind === "supports" && edge.target === findings[0]?.id)).toBe(true);
-    expect(graph.edges.some((edge) => edge.kind === "derived_from" && edge.source === findings[0]?.id && edge.target === findings[1]?.id)).toBe(true);
-    expect(graph.edges.some((edge) => edge.kind === "correlates_with" && edge.source === findings[1]?.id && edge.target === findings[0]?.id)).toBe(true);
-    expect(graph.edges.some((edge) => edge.kind === "enables" && edge.source === findings[0]?.id && edge.target === findings[1]?.id)).toBe(true);
+    expect(graph.edges.some((edge) => edge.kind === "derived_from")).toBe(false);
+    expect(graph.edges.some((edge) => edge.kind === "correlates_with")).toBe(false);
   });
 });

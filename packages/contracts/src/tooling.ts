@@ -211,6 +211,16 @@ export type ConnectorHeartbeatResponse = z.infer<typeof connectorHeartbeatRespon
 
 export const observationSchema = z.object({
   id: z.string(),
+  key: z.string(),
+  title: z.string(),
+  summary: z.string(),
+  severity: severitySchema,
+  confidence: z.number().min(0).max(1)
+});
+export type Observation = z.infer<typeof observationSchema>;
+
+export const internalObservationSchema = z.object({
+  id: z.string(),
   scanId: z.string(),
   tacticId: z.string(),
   toolRunId: z.string(),
@@ -229,12 +239,24 @@ export const observationSchema = z.object({
   relatedKeys: z.array(z.string()).default([]),
   createdAt: z.string().datetime()
 });
-export type Observation = z.infer<typeof observationSchema>;
+export type InternalObservation = z.infer<typeof internalObservationSchema>;
+
+export const toolExecutionPublicResultSchema = z.object({
+  toolRunId: z.string(),
+  toolId: z.string(),
+  toolName: z.string(),
+  status: toolRunStatusSchema,
+  outputPreview: z.string(),
+  observations: z.array(observationSchema).default([]),
+  totalObservations: z.number().int().min(0),
+  truncated: z.boolean()
+});
+export type ToolExecutionPublicResult = z.infer<typeof toolExecutionPublicResultSchema>;
 
 export const connectorExecutionResultSchema = z.object({
   output: z.string(),
   exitCode: z.number().int(),
-  observations: z.array(z.lazy(() => observationSchema)).default([]),
+  observations: z.array(z.lazy(() => internalObservationSchema)).default([]),
   statusReason: z.string().optional(),
   connectorId: z.string().optional()
 });

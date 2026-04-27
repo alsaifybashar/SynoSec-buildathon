@@ -174,7 +174,7 @@ export type AiToolSurface = z.infer<typeof aiToolSurfaceSchema>;
 export const toolBuiltinActionKeySchema = z.enum([
   "log_progress",
   "report_finding",
-  "report_attack_vector",
+  "report_attack_vectors",
   "complete_run",
   "http_surface_assessment",
   "web_crawl_mapping",
@@ -312,15 +312,12 @@ export const listAiToolsResponseSchema = createPaginatedResponseSchema("tools", 
 export type ListAiToolsResponse = z.infer<typeof listAiToolsResponseSchema>;
 
 export const aiToolRunObservationSchema = z.object({
+  id: z.string().min(1),
   key: z.string().min(1),
   title: z.string().min(1),
   summary: z.string().min(1),
   severity: z.enum(["info", "low", "medium", "high", "critical"]),
-  confidence: z.number().min(0).max(1),
-  evidence: z.string().min(1),
-  technique: z.string().min(1),
-  port: z.number().int().optional(),
-  relatedKeys: z.array(z.string().min(1)).default([])
+  confidence: z.number().min(0).max(1)
 });
 export type AiToolRunObservation = z.infer<typeof aiToolRunObservationSchema>;
 
@@ -340,7 +337,9 @@ export const aiToolRunResultSchema = z.object({
   statusReason: z.string().nullable(),
   exitCode: z.number().int(),
   durationMs: z.number().int().nonnegative(),
-  observations: z.array(aiToolRunObservationSchema)
+  observations: z.array(aiToolRunObservationSchema),
+  totalObservations: z.number().int().min(0),
+  truncated: z.boolean()
 });
 export type AiToolRunResult = z.infer<typeof aiToolRunResultSchema>;
 
@@ -586,22 +585,34 @@ export const workflowAttackVectorSubmissionSchema = workflowAttackVectorSubmissi
 });
 export type WorkflowAttackVectorSubmission = z.infer<typeof workflowAttackVectorSubmissionSchema>;
 
-export const workflowReportFindingFindingModeSubmissionSchema = workflowFindingSubmissionSchema.extend({
+export const workflowReportFindingFindingModeSubmissionSchema = z.object({
   mode: z.literal("finding"),
-  attackVectors: z.array(workflowAttackVectorSubmissionSchema).default([])
-});
+  type: workflowFindingTypeSchema.optional(),
+  title: z.string().min(1),
+  severity: z.enum(["info", "low", "medium", "high", "critical"]).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  target: workflowFindingTargetSchema.partial().optional(),
+  evidence: z.array(workflowFindingEvidenceSchema).min(1),
+  impact: z.string().min(1).optional(),
+  recommendation: z.string().min(1).optional(),
+  validationStatus: workflowFindingValidationStatusSchema.optional(),
+  cwe: z.string().min(1).optional(),
+  mitreId: z.string().min(1).optional(),
+  owasp: z.string().min(1).optional(),
+  reproduction: workflowFindingReproductionSchema.optional(),
+  explanationSummary: z.string().min(1).optional(),
+  confidenceReason: z.string().min(1).optional(),
+  relationshipExplanations: workflowFindingRelationshipExplanationsSchema.optional(),
+  tags: z.array(z.string().min(1)).default([])
+}).strict();
 export type WorkflowReportFindingFindingModeSubmission = z.infer<typeof workflowReportFindingFindingModeSubmissionSchema>;
 
-export const workflowReportFindingAttackVectorModeSubmissionSchema = z.object({
-  mode: z.literal("attack_vector"),
+export const workflowReportAttackVectorsSubmissionSchema = z.object({
   attackVectors: z.array(workflowAttackVectorSubmissionSchema).min(1)
-});
-export type WorkflowReportFindingAttackVectorModeSubmission = z.infer<typeof workflowReportFindingAttackVectorModeSubmissionSchema>;
+}).strict();
+export type WorkflowReportAttackVectorsSubmission = z.infer<typeof workflowReportAttackVectorsSubmissionSchema>;
 
-export const workflowReportFindingSubmissionSchema = z.discriminatedUnion("mode", [
-  workflowReportFindingFindingModeSubmissionSchema,
-  workflowReportFindingAttackVectorModeSubmissionSchema
-]);
+export const workflowReportFindingSubmissionSchema = workflowReportFindingFindingModeSubmissionSchema;
 export type WorkflowReportFindingSubmission = z.infer<typeof workflowReportFindingSubmissionSchema>;
 
 export const workflowReportedAttackVectorSchema = workflowAttackVectorSubmissionBaseSchema.extend({
@@ -634,7 +645,7 @@ export const defaultWorkflowStageSystemPrompt = [
   "Do not describe an attack path as confirmed compromise, takeover, credential theft, or privilege escalation unless the final outcome was directly observed or the transition was validated end-to-end.",
   "If individual findings are confirmed but the full chain lacks replay, label the path as plausible or qualified and state the missing validation explicitly.",
   "When findings combine into an attack path, keep findings focused on weaknesses and represent transitions explicitly.",
-  "Do not claim a chained path across multiple findings without explicit transition records, relationship fields, or chain metadata."
+  "Do not claim a chained path across multiple findings without explicit attack vectors or handoff attack paths."
 ].join("\n");
 
 export const defaultWorkflowTaskPromptTemplate = [
@@ -680,10 +691,6 @@ export const workflowStageResultSubmissionSchema = z.object({
   status: workflowStageResultStatusSchema,
   summary: z.string().min(1),
   findingIds: z.array(z.string().uuid()).default([]),
-  recommendedNextStep: z.string().min(1),
-  residualRisk: z.string().min(1),
-  handoff: z.union([jsonSchemaObjectSchema, z.null()]).default(null),
-  blocked: workflowBlockedCompletionSchema.nullable().optional()
 });
 export type WorkflowStageResultSubmission = z.infer<typeof workflowStageResultSubmissionSchema>;
 

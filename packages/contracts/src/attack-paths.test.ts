@@ -189,17 +189,13 @@ describe("buildAttackPathSummary", () => {
     });
   });
 
-  it("builds a qualified path from enables-only relationship hints", () => {
+  it("builds a qualified path from explicit enables vectors", () => {
     const entry = finding({
       id: "10000000-0000-4000-8000-000000000001",
       title: "Admin surface exposed",
       severity: "high",
-      enablesFindingIds: ["10000000-0000-4000-8000-000000000002"],
       explanationSummary: "The admin surface is reachable without a gateway.",
-      confidenceReason: "A direct probe confirmed the route.",
-      relationshipExplanations: {
-        enables: "The exposed admin surface enables the follow-on privileged test."
-      }
+      confidenceReason: "A direct probe confirmed the route."
     });
     const pivot = finding({
       id: "10000000-0000-4000-8000-000000000002",
@@ -210,28 +206,45 @@ describe("buildAttackPathSummary", () => {
       confidenceReason: "The follow-on validation succeeded immediately after the entrypoint was confirmed."
     });
 
-    const result = buildAttackPathSummary({ findings: [entry, pivot] });
+    const result = buildAttackPathSummary({
+      findings: [entry, pivot],
+      attackVectors: [{
+        id: "10000000-0000-4000-8000-000000000003",
+        workflowRunId: entry.workflowRunId,
+        workflowStageId: null,
+        createdAt: "2026-04-25T12:01:30.000Z",
+        kind: "enables",
+        sourceFindingId: entry.id,
+        destinationFindingId: pivot.id,
+        summary: "The exposed admin surface enables the follow-on privileged test.",
+        preconditions: ["The admin surface remains reachable."],
+        impact: "The privileged test can be attempted from the exposed route.",
+        transitionEvidence: [{
+          sourceTool: "httpx",
+          quote: "Status: 200",
+          toolRunRef: "tool-run-1"
+        }],
+        confidence: 0.82,
+        validationStatus: "single_source"
+      }]
+    });
 
     expect(result.paths).toHaveLength(1);
     expect(result.paths[0]?.findingIds).toEqual([entry.id, pivot.id]);
     expect(result.paths[0]?.status).toBe("qualified");
     expect(result.paths[0]?.pathSeverity).toBe("critical");
     expect(result.paths[0]?.pathLinks[0]?.status).toBe("qualified");
-    expect(result.paths[0]?.pathLinks[0]?.validation.evidenceLevel).toBe("single_source_findings");
-    expect(result.paths[0]?.pathLinks[0]?.validation.summary).toBe("The linked findings are evidence-backed, but the attack vector itself still lacks end-to-end transition validation.");
+    expect(result.paths[0]?.pathLinks[0]?.validation.evidenceLevel).toBe("single_source");
+    expect(result.paths[0]?.pathLinks[0]?.validation.summary).toBe("The attack vector transition is backed by explicit transition evidence.");
     expect(result.vectors[0]?.validation.observedTransition).toBe("The exposed admin surface enables the follow-on privileged test.");
-    expect(result.vectors[0]?.validation.evidenceRefs).toHaveLength(2);
+    expect(result.vectors[0]?.validation.evidenceRefs).toHaveLength(1);
   });
 
-  it("marks vector validation as confirmed only when both linked findings are cross-validated", () => {
+  it("marks vector validation as cross-validated only when explicit transition evidence is provided", () => {
     const entry = finding({
       id: "11000000-0000-4000-8000-000000000001",
       title: "Admin surface cross-validated",
-      validationStatus: "cross_validated",
-      enablesFindingIds: ["11000000-0000-4000-8000-000000000002"],
-      relationshipExplanations: {
-        enables: "The confirmed admin surface enables a confirmed privileged pivot."
-      }
+      validationStatus: "cross_validated"
     });
     const pivot = finding({
       id: "11000000-0000-4000-8000-000000000002",
@@ -239,12 +252,33 @@ describe("buildAttackPathSummary", () => {
       validationStatus: "reproduced"
     });
 
-    const result = buildAttackPathSummary({ findings: [entry, pivot] });
+    const result = buildAttackPathSummary({
+      findings: [entry, pivot],
+      attackVectors: [{
+        id: "11000000-0000-4000-8000-000000000003",
+        workflowRunId: entry.workflowRunId,
+        workflowStageId: null,
+        createdAt: "2026-04-25T12:02:00.000Z",
+        kind: "enables",
+        sourceFindingId: entry.id,
+        destinationFindingId: pivot.id,
+        summary: "The confirmed admin surface enables a confirmed privileged pivot.",
+        preconditions: ["The admin surface is confirmed reachable."],
+        impact: "The privileged pivot is reachable from the confirmed admin surface.",
+        transitionEvidence: [{
+          sourceTool: "replay",
+          quote: "transition cross validated",
+          toolRunRef: "tool-run-2"
+        }],
+        confidence: 0.9,
+        validationStatus: "cross_validated"
+      }]
+    });
 
-    expect(result.paths[0]?.pathLinks[0]?.validation.evidenceLevel).toBe("confirmed_findings");
-    expect(result.vectors[0]?.validation.evidenceLevel).toBe("confirmed_findings");
-    expect(result.paths[0]?.status).toBe("qualified");
-    expect(result.vectors[0]?.status).toBe("qualified");
+    expect(result.paths[0]?.pathLinks[0]?.validation.evidenceLevel).toBe("cross_validated");
+    expect(result.vectors[0]?.validation.evidenceLevel).toBe("cross_validated");
+    expect(result.paths[0]?.status).toBe("confirmed");
+    expect(result.vectors[0]?.status).toBe("confirmed");
   });
 
   it("projects explicit attack vectors ahead of duplicate finding relationships", () => {
@@ -336,11 +370,7 @@ describe("buildAttackPathSummary", () => {
     const entry = finding({
       id: "12000000-0000-4000-8000-000000000001",
       title: "Admin surface validated",
-      validationStatus: "cross_validated",
-      relatedFindingIds: ["12000000-0000-4000-8000-000000000002"],
-      relationshipExplanations: {
-        relatedTo: "The findings share the same administrative surface but no progression was observed."
-      }
+      validationStatus: "cross_validated"
     });
     const pivot = finding({
       id: "12000000-0000-4000-8000-000000000002",
@@ -348,7 +378,24 @@ describe("buildAttackPathSummary", () => {
       validationStatus: "reproduced"
     });
 
-    const result = buildAttackPathSummary({ findings: [entry, pivot] });
+    const result = buildAttackPathSummary({
+      findings: [entry, pivot],
+      attackVectors: [{
+        id: "12000000-0000-4000-8000-000000000003",
+        workflowRunId: entry.workflowRunId,
+        workflowStageId: null,
+        createdAt: "2026-04-25T12:02:30.000Z",
+        kind: "related",
+        sourceFindingId: entry.id,
+        destinationFindingId: pivot.id,
+        summary: "The findings share the same administrative surface but no progression was observed.",
+        preconditions: [],
+        impact: "The findings are related but do not prove a transition.",
+        transitionEvidence: [],
+        confidence: 0.68,
+        validationStatus: "suspected"
+      }]
+    });
 
     expect(result.paths[0]?.status).toBe("qualified");
     expect(result.vectors[0]?.validation.evidenceLevel).toBe("relationship_only");
@@ -359,12 +406,8 @@ describe("buildAttackPathSummary", () => {
     const entry = finding({
       id: "20000000-0000-4000-8000-000000000001",
       title: "Legacy login exposed",
-      relatedFindingIds: ["20000000-0000-4000-8000-000000000002"],
       explanationSummary: "The legacy login is reachable from the public edge.",
-      confidenceReason: "The route is observable but not yet cross-validated.",
-      relationshipExplanations: {
-        relatedTo: "The login exposure correlates with the downstream token weakness."
-      }
+      confidenceReason: "The route is observable but not yet cross-validated."
     });
     const token = finding({
       id: "20000000-0000-4000-8000-000000000002",
@@ -376,6 +419,21 @@ describe("buildAttackPathSummary", () => {
 
     const result = buildAttackPathSummary({
       findings: [entry, token],
+      attackVectors: [{
+        id: "20000000-0000-4000-8000-000000000003",
+        workflowRunId: entry.workflowRunId,
+        workflowStageId: null,
+        createdAt: "2026-04-25T12:03:00.000Z",
+        kind: "related",
+        sourceFindingId: entry.id,
+        destinationFindingId: token.id,
+        summary: "The login exposure correlates with the downstream token weakness.",
+        preconditions: [],
+        impact: "The weaknesses may combine but the transition is still unproven.",
+        transitionEvidence: [],
+        confidence: 0.7,
+        validationStatus: "suspected"
+      }],
       handoff: {
         attackVenues: [{
           id: "venue-legacy-login",
@@ -416,11 +474,7 @@ describe("buildAttackPathSummary", () => {
   it("qualifies overclaimed handoff outcomes when the path is not confirmed", () => {
     const exposure = finding({
       id: "21000000-0000-4000-8000-000000000001",
-      title: "Release board exposed",
-      enablesFindingIds: ["21000000-0000-4000-8000-000000000002"],
-      relationshipExplanations: {
-        enables: "The exposed board enables diagnostic data access."
-      }
+      title: "Release board exposed"
     });
     const diagnostics = finding({
       id: "21000000-0000-4000-8000-000000000002",
@@ -430,6 +484,25 @@ describe("buildAttackPathSummary", () => {
 
     const result = buildAttackPathSummary({
       findings: [exposure, diagnostics],
+      attackVectors: [{
+        id: "21000000-0000-4000-8000-000000000003",
+        workflowRunId: exposure.workflowRunId,
+        workflowStageId: null,
+        createdAt: "2026-04-25T12:03:30.000Z",
+        kind: "enables",
+        sourceFindingId: exposure.id,
+        destinationFindingId: diagnostics.id,
+        summary: "The exposed board enables diagnostic data access.",
+        preconditions: ["Release board is reachable"],
+        impact: "Diagnostic data can support follow-on testing.",
+        transitionEvidence: [{
+          sourceTool: "httpx",
+          quote: "Diagnostics link exposed",
+          toolRunRef: "tool-run-3"
+        }],
+        confidence: 0.8,
+        validationStatus: "single_source"
+      }],
       handoff: {
         attackVenues: [{
           id: "venue-release",
@@ -469,12 +542,8 @@ describe("buildAttackPathSummary", () => {
     const entry = finding({
       id: "30000000-0000-4000-8000-000000000001",
       title: "Reachable admin endpoint",
-      enablesFindingIds: ["30000000-0000-4000-8000-000000000002"],
       explanationSummary: "The endpoint is externally reachable.",
-      confidenceReason: "A direct probe confirmed the endpoint.",
-      relationshipExplanations: {
-        enables: "The exposed route is required before privileged testing can proceed."
-      }
+      confidenceReason: "A direct probe confirmed the endpoint."
     });
     const blocked = finding({
       id: "30000000-0000-4000-8000-000000000002",
@@ -484,12 +553,33 @@ describe("buildAttackPathSummary", () => {
       confidenceReason: "The route stopped at a provider-owned control boundary."
     });
 
-    const result = buildAttackPathSummary({ findings: [entry, blocked] });
+    const result = buildAttackPathSummary({
+      findings: [entry, blocked],
+      attackVectors: [{
+        id: "30000000-0000-4000-8000-000000000003",
+        workflowRunId: entry.workflowRunId,
+        workflowStageId: null,
+        createdAt: "2026-04-25T12:04:00.000Z",
+        kind: "enables",
+        sourceFindingId: entry.id,
+        destinationFindingId: blocked.id,
+        summary: "The exposed route is required before privileged testing can proceed.",
+        preconditions: ["The admin endpoint is reachable."],
+        impact: "Privileged testing depends on the reachable route.",
+        transitionEvidence: [{
+          sourceTool: "httpx",
+          quote: "Admin endpoint returned 200",
+          toolRunRef: "tool-run-4"
+        }],
+        confidence: 0.74,
+        validationStatus: "blocked"
+      }]
+    });
 
     expect(result.paths[0]?.status).toBe("blocked");
     expect(result.paths[0]?.blockedFindingIds).toContain(blocked.id);
     expect(result.vectors[0]?.validation.evidenceLevel).toBe("blocked");
-    expect(result.vectors[0]?.validation.blockedReason).toBe("The route stopped at a provider-owned control boundary.");
+    expect(result.vectors[0]?.validation.blockedReason).toBe("Attack-vector transition validation was blocked or rejected.");
   });
 });
 
@@ -498,12 +588,8 @@ describe("buildWorkflowRunReport", () => {
     const entry = finding({
       id: "40000000-0000-4000-8000-000000000001",
       title: "Admin surface exposed",
-      enablesFindingIds: ["40000000-0000-4000-8000-000000000002"],
       explanationSummary: "The admin surface is reachable without a gateway.",
-      confidenceReason: "A direct probe confirmed the route.",
-      relationshipExplanations: {
-        enables: "The entrypoint enables the follow-on pivot."
-      }
+      confidenceReason: "A direct probe confirmed the route."
     });
     const pivot = finding({
       id: "40000000-0000-4000-8000-000000000002",
@@ -563,6 +649,41 @@ describe("buildWorkflowRunReport", () => {
           workflowStageId: null,
           stepIndex: 0,
           ord: 3,
+          type: "attack_vector_reported",
+          status: "completed",
+          title: "Attack vector reported",
+          summary: "enables from entry to pivot",
+          detail: null,
+          payload: {
+            attackVector: {
+              id: "40000000-0000-4000-8000-000000000003",
+              workflowRunId: "50000000-0000-4000-8000-000000000001",
+              workflowStageId: null,
+              createdAt: "2026-04-25T12:03:00.000Z",
+              kind: "enables",
+              sourceFindingId: entry.id,
+              destinationFindingId: pivot.id,
+              summary: "The entrypoint enables the follow-on pivot.",
+              preconditions: ["The admin surface remains reachable."],
+              impact: "The privileged pivot is reachable from the exposed route.",
+              transitionEvidence: [{
+                sourceTool: "httpx",
+                quote: "Status: 200",
+                toolRunRef: "tool-run-1"
+              }],
+              confidence: 0.82,
+              validationStatus: "single_source"
+            }
+          },
+          createdAt: "2026-04-25T12:03:00.000Z"
+        },
+        {
+          id: "event-4",
+          workflowRunId: "50000000-0000-4000-8000-000000000001",
+          workflowId: "60000000-0000-4000-8000-000000000001",
+          workflowStageId: null,
+          stepIndex: 0,
+          ord: 4,
           type: "run_completed",
           status: "completed",
           title: "Run completed",

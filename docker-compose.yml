@@ -26,16 +26,6 @@ services:
     environment:
       PORT: 8888
 
-  attack-path-target:
-    build:
-      context: ./demos/attack-path-target
-    container_name: synosec-attack-path-target
-    hostname: synosec-attack-path-target
-    ports:
-      - "8890:8890"
-    environment:
-      PORT: 8890
-
   full-stack-target:
     build:
       context: ./demos/full-stack-target
@@ -93,8 +83,6 @@ services:
         condition: service_started
       vulnerable-target:
         condition: service_started
-      attack-path-target:
-        condition: service_started
       full-stack-target:
         condition: service_started
     environment:
@@ -102,6 +90,7 @@ services:
       DATABASE_URL: postgres://synosec:synosec@postgres:5432/synosec
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-}
       LLM_ANTHROPIC_MODEL: ${LLM_ANTHROPIC_MODEL:-claude-haiku-4-5}
       LLM_LOCAL_BASE_URL: http://ollama:11434/v1
       LLM_LOCAL_MODEL: ${LLM_LOCAL_MODEL:-qwen3:8b}

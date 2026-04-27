@@ -3,6 +3,7 @@ import type {
   AgentNote,
   AiTool,
   Finding,
+  InternalObservation,
   Observation,
   Scan,
   ToolRequest,
@@ -42,7 +43,7 @@ interface ExecuteRequestsInput {
 
 interface ExecuteRequestsResult {
   toolRuns: ToolRun[];
-  observations: Observation[];
+  observations: InternalObservation[];
   findings: Finding[];
 }
 
@@ -70,7 +71,7 @@ function commandPreview(request: ToolRequest): string {
   return buildScriptCommandPreview(request);
 }
 
-function validationStatusFor(observationGroup: Observation[]): ValidationStatus {
+function validationStatusFor(observationGroup: InternalObservation[]): ValidationStatus {
   if (observationGroup.length >= 2) return "cross_validated";
   return "single_source";
 }
@@ -79,7 +80,7 @@ function findingFromObservationGroup(
   scanId: string,
   tacticId: string,
   agentId: string,
-  observations: Observation[]
+  observations: InternalObservation[]
 ): Omit<Finding, "id" | "createdAt"> {
   const [primary] = observations;
   const validationStatus = validationStatusFor(observations);
@@ -154,7 +155,7 @@ export class ToolBroker {
 
   async executeRequests(input: ExecuteRequestsInput): Promise<ExecuteRequestsResult> {
     const toolRuns: ToolRun[] = [];
-    const observations: Observation[] = [];
+    const observations: InternalObservation[] = [];
     const requestByToolRunId = new Map<string, ToolRequest>();
 
     for (const request of input.requests) {
@@ -324,7 +325,7 @@ export class ToolBroker {
       }
     }
 
-    const grouped = new Map<string, Observation[]>();
+    const grouped = new Map<string, InternalObservation[]>();
     for (const observation of observations) {
       const existing = grouped.get(observation.title) ?? [];
       existing.push(observation);

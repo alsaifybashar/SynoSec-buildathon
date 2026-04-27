@@ -1,8 +1,7 @@
-import { localAttackPathTargetDefaults, localDemoTargetDefaults, localFullStackTargetDefaults } from "@synosec/contracts";
+import { localDemoTargetDefaults, localFullStackTargetDefaults } from "@synosec/contracts";
 import { Prisma, PrismaClient } from "@prisma/client";
 import {
   getSeededWorkflowDefinitions,
-  localAttackPathApplicationId,
   localApplicationId,
   localFullStackApplicationId,
   osiSingleAgentWorkflowId,
@@ -62,9 +61,10 @@ async function main() {
 
   await prisma.application.deleteMany({
     where: {
-      id: { notIn: [localApplicationId, localAttackPathApplicationId, localFullStackApplicationId, portfolioApplicationId, securePentApplicationId] },
+      id: { notIn: [localApplicationId, localFullStackApplicationId, portfolioApplicationId, securePentApplicationId] },
       name: {
         in: [
+          "Local Attack Path Target",
           "Nils Wickman Portfolio",
           "SecurePent",
           "Operator Portal",
@@ -91,27 +91,6 @@ async function main() {
       name: "Local Vulnerable Target",
       baseUrl: localDemoTargetDefaults.hostUrl,
       executionBaseUrl: localDemoTargetDefaults.internalUrl,
-      environment: "development",
-      status: "active",
-      lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
-    }
-  });
-
-  await prisma.application.upsert({
-    where: { id: localAttackPathApplicationId },
-    update: {
-      name: "Local Attack Path Target",
-      baseUrl: localAttackPathTargetDefaults.hostUrl,
-      executionBaseUrl: localAttackPathTargetDefaults.internalUrl,
-      environment: "development",
-      status: "active",
-      lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
-    },
-    create: {
-      id: localAttackPathApplicationId,
-      name: "Local Attack Path Target",
-      baseUrl: localAttackPathTargetDefaults.hostUrl,
-      executionBaseUrl: localAttackPathTargetDefaults.internalUrl,
       environment: "development",
       status: "active",
       lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
@@ -269,20 +248,6 @@ async function main() {
     update: {},
     create: {
       applicationId: localApplicationId,
-      constraintId: localTargetBypassConstraintId
-    }
-  });
-
-  await prisma.applicationConstraintBinding.upsert({
-    where: {
-      applicationId_constraintId: {
-        applicationId: localAttackPathApplicationId,
-        constraintId: localTargetBypassConstraintId
-      }
-    },
-    update: {},
-    create: {
-      applicationId: localAttackPathApplicationId,
       constraintId: localTargetBypassConstraintId
     }
   });

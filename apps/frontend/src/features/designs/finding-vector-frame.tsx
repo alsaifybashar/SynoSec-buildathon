@@ -11,6 +11,7 @@ import {
   toolEvidenceForFinding,
   type ToolEvidence
 } from "@/features/designs/finding-shared";
+import { chainNodeForFinding } from "@/features/designs/node-map";
 import { cn } from "@/shared/lib/utils";
 
 /**
@@ -97,6 +98,7 @@ function FindingInspector({
     () => toolEvidenceForFinding(finding, report.toolActivity),
     [finding, report.toolActivity]
   );
+  const chain = useMemo(() => chainNodeForFinding(report, finding.id), [report, finding.id]);
 
   return (
     <div className="space-y-5">
@@ -159,10 +161,10 @@ function FindingInspector({
         </InspectorSection>
       ) : null}
 
-      {finding.chain ? (
+      {chain ? (
         <InspectorSection label="Attack chain">
-          <p className="text-sm font-medium text-foreground">{finding.chain.title}</p>
-          <p className="text-sm text-muted-foreground">{finding.chain.summary}</p>
+          <p className="text-sm font-medium text-foreground">{chain.title}</p>
+          <p className="text-sm text-muted-foreground">{chain.summary}</p>
         </InspectorSection>
       ) : null}
 

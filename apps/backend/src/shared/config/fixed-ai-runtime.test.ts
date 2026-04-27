@@ -36,4 +36,20 @@ describe("loadFixedAiRuntime", () => {
       expect(runtime.apiMode).toBe("responses");
     }
   });
+
+  it("prefers CLAUDE_MODEL over the legacy Anthropic model env", async () => {
+    process.env["LLM_PROVIDER"] = "anthropic";
+    process.env["ANTHROPIC_API_KEY"] = "test-key";
+    process.env["CLAUDE_MODEL"] = "claude-sonnet-4-6";
+    process.env["LLM_ANTHROPIC_MODEL"] = "claude-haiku-4-5";
+
+    const { loadFixedAiRuntime } = await import("./fixed-ai-runtime.js");
+    const runtime = loadFixedAiRuntime();
+
+    expect(runtime.provider).toBe("anthropic");
+    if (runtime.provider === "anthropic") {
+      expect(runtime.model).toBe("claude-sonnet-4-6");
+      expect(runtime.label).toBe("Anthropic · claude-sonnet-4-6");
+    }
+  });
 });

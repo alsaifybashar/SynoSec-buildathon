@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { ExecutionReportFinding } from "@synosec/contracts";
+import type { ExecutionReportDetail, ExecutionReportFinding } from "@synosec/contracts";
 import { cn } from "@/shared/lib/utils";
 
 /**
@@ -60,6 +60,43 @@ const RELATION_SUBLABEL: Record<Exclude<EdgeVariant, "supports">, string> = {
   enables: "Enables"
 };
 
+export type RelatedTarget = {
+  findingId: string;
+  variant: Exclude<EdgeVariant, "supports">;
+  reverse?: boolean;
+  explanation?: string | null;
+};
+
+export function relatedTargetsForFinding(report: ExecutionReportDetail, finding: ExecutionReportFinding): RelatedTarget[] {
+  const targets: RelatedTarget[] = [];
+  const findingNodes = new Map(
+    report.graph.nodes
+      .filter((node): node is Extract<ExecutionReportDetail["graph"]["nodes"][number], { kind: "finding" }> => node.kind === "finding")
+      .map((node) => [node.id, node.findingId] as const)
+  );
+  for (const edge of report.graph.edges) {
+    if (edge.kind === "derived_from" && edge.target === finding.id) {
+      const findingId = findingNodes.get(edge.source);
+      if (findingId) targets.push({ findingId, variant: "derived", reverse: true, explanation: edge.label ?? null });
+      continue;
+    }
+    if (edge.kind === "correlates_with" && edge.source === finding.id) {
+      const findingId = findingNodes.get(edge.target);
+      if (findingId) targets.push({ findingId, variant: "related", explanation: edge.label ?? null });
+      continue;
+    }
+    if (edge.kind === "enables" && edge.source === finding.id) {
+      const findingId = findingNodes.get(edge.target);
+      if (findingId) targets.push({ findingId, variant: "enables", explanation: edge.label ?? null });
+    }
+  }
+  return targets;
+}
+
+export function chainNodeForFinding(report: ExecutionReportDetail, findingId: string) {
+  return report.graph.nodes.find((node) => node.kind === "chain" && node.findingIds.includes(findingId)) ?? null;
+}
+
 export function severityHex(severity: ExecutionReportFinding["severity"]) {
   switch (severity) {
     case "info": return "#94a3b8";
@@ -75,6 +112,7 @@ function truncate(value: string, max: number) {
 }
 
 export function buildModel(
+  report: ExecutionReportDetail,
   finding: ExecutionReportFinding,
   allFindings: ExecutionReportFinding[]
 ): GraphModel {
@@ -98,8 +136,8 @@ export function buildModel(
   const relatedNodes: GraphNode[] = [];
   const relatedEdges: GraphEdge[] = [];
   const seen = new Set<string>();
-  function pushRelated(ids: string[], variant: Exclude<EdgeVariant, "supports">, reverse = false) {
-    for (const id of ids) {
+  for (const related of relatedTargetsForFinding(report, finding)) {
+      const id = related.findingId;
       const target = lookup.get(id);
       if (!target || seen.has(id)) continue;
       seen.add(id);
@@ -107,16 +145,12 @@ export function buildModel(
       relatedNodes.push({
         id: nodeId,
         label: target.title,
-        sublabel: RELATION_SUBLABEL[variant],
+        sublabel: RELATION_SUBLABEL[related.variant],
         kind: "related",
         severity: target.severity
       });
-      relatedEdges.push(reverse ? { from: nodeId, to: "f", variant } : { from: "f", to: nodeId, variant });
-    }
+      relatedEdges.push(related.reverse ? { from: nodeId, to: "f", variant: related.variant } : { from: "f", to: nodeId, variant: related.variant });
   }
-  pushRelated(finding.derivedFromFindingIds, "derived", true);
-  pushRelated(finding.relatedFindingIds, "related");
-  pushRelated(finding.enablesFindingIds, "enables");
 
   const edges: GraphEdge[] = [];
   finding.evidence.forEach((ev, i) => {

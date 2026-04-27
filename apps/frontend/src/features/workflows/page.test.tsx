@@ -240,7 +240,14 @@ const run: WorkflowRun = {
         toolId: tool.id,
         toolName: tool.name,
         outputPreview: "200 OK",
-        fullOutput: "200 OK\nServer: demo"
+        output: {
+          toolRunId: "tool-run-1",
+          toolId: tool.id,
+          toolName: tool.name,
+          status: "completed",
+          outputPreview: "200 OK",
+          observations: []
+        }
       },
       createdAt: "2026-04-21T00:00:03.000Z"
     }
@@ -407,7 +414,7 @@ describe("WorkflowDetailPage", () => {
     expect(await screen.findByText("0k in · 0k out · 0k total")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show Full Details" }));
     expect(await screen.findByRole("button", { name: "Hide Full Details" })).toBeInTheDocument();
-    expect(screen.getByText(/Server: demo/)).toBeInTheDocument();
+    expect(screen.getByText(/"outputPreview": "200 OK"/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Workflow" }));
     expect(onNavigateToEdit).toHaveBeenCalledWith(workflow.id, workflow.name);

@@ -1,5 +1,6 @@
 import type {
   AiTool,
+  InternalObservation,
   Observation,
   Scan,
   StartWorkflowRunBody,
@@ -87,7 +88,10 @@ export type ExecutedToolResult = {
   toolRequest: ToolRequest;
   toolRun: ToolRun;
   status: ToolRun["status"];
-  observations: Observation[];
+  observations: InternalObservation[];
+  publicObservations: Observation[];
+  totalObservations: number;
+  truncated: boolean;
   observationKeys: string[];
   observationSummaries: string[];
   outputPreview: string;
@@ -110,17 +114,8 @@ export type ExecutedToolResult = {
 
 export type PipelineTerminalState =
   {
-    status: "completed" | "blocked";
+    status: "completed";
     summary: string;
-    recommendedNextStep: string;
-    residualRisk: string;
-    handoff: Record<string, unknown> | null;
-    blocked?: {
-      reason: string;
-      failedToolRunIds: string[];
-      recommendedFix: string;
-      operatorSummary: string;
-    };
   };
 
 export interface WorkflowRunWriterPort {

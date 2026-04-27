@@ -49,7 +49,6 @@ export function selectLatestWorkflowLaunchRun(launch: WorkflowLaunch): WorkflowL
 export function buildExecutionGraphFromWorkflowFindings(findings: WorkflowReportedFinding[]): ExecutionReportGraph {
   const nodesById = new Map<ExecutionReportGraph["nodes"][number]["id"], ExecutionReportGraph["nodes"][number]>();
   const edgesById = new Map<ExecutionReportGraph["edges"][number]["id"], ExecutionReportGraph["edges"][number]>();
-  const findingIds = new Set(findings.map((finding) => finding.id));
   const chainNodesById = new Map<string, Extract<ExecutionReportGraph["nodes"][number], { kind: "chain" }>>();
 
   for (const finding of findings) {
@@ -92,45 +91,6 @@ export function buildExecutionGraphFromWorkflowFindings(findings: WorkflowReport
         createdAt: finding.createdAt
       });
     });
-
-    for (const relatedFindingId of finding.derivedFromFindingIds) {
-      if (!findingIds.has(relatedFindingId)) {
-        continue;
-      }
-      edgesById.set(`${relatedFindingId}:derived:${finding.id}`, {
-        id: `${relatedFindingId}:derived:${finding.id}`,
-        kind: "derived_from",
-        source: relatedFindingId,
-        target: finding.id,
-        createdAt: finding.createdAt
-      });
-    }
-
-    for (const relatedFindingId of finding.relatedFindingIds) {
-      if (!findingIds.has(relatedFindingId)) {
-        continue;
-      }
-      edgesById.set(`${finding.id}:related:${relatedFindingId}`, {
-        id: `${finding.id}:related:${relatedFindingId}`,
-        kind: "correlates_with",
-        source: finding.id,
-        target: relatedFindingId,
-        createdAt: finding.createdAt
-      });
-    }
-
-    for (const relatedFindingId of finding.enablesFindingIds) {
-      if (!findingIds.has(relatedFindingId)) {
-        continue;
-      }
-      edgesById.set(`${finding.id}:enables:${relatedFindingId}`, {
-        id: `${finding.id}:enables:${relatedFindingId}`,
-        kind: "enables",
-        source: finding.id,
-        target: relatedFindingId,
-        createdAt: finding.createdAt
-      });
-    }
 
     if (finding.chain) {
       const chainNodeId = createChainNodeId(finding);

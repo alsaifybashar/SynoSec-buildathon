@@ -597,73 +597,6 @@ function compareFindings(left: WorkflowReportedFinding, right: WorkflowReportedF
   return left.id.localeCompare(right.id);
 }
 
-function buildDerivedLinks(findings: WorkflowReportedFinding[]) {
-  const lookup = new Map(findings.map((finding) => [finding.id, finding]));
-  const links: DerivedLink[] = [];
-  const push = (input: Omit<DerivedLink, "id">) => {
-    links.push({
-      id: `${input.kind}:${input.sourceFindingId}:${input.targetFindingId}`,
-      ...input
-    });
-  };
-
-  for (const finding of findings) {
-    for (const targetId of finding.enablesFindingIds) {
-      const target = lookup.get(targetId);
-      if (!target) {
-        continue;
-      }
-      push({
-        kind: "enables",
-        sourceFindingId: finding.id,
-        targetFindingId: targetId,
-        summary: normalizeText(finding.relationshipExplanations?.enables) || `${finding.title} enables ${target.title}.`,
-        sourceFinding: finding,
-        targetFinding: target
-      });
-    }
-
-    for (const sourceId of finding.derivedFromFindingIds) {
-      const source = lookup.get(sourceId);
-      if (!source) {
-        continue;
-      }
-      push({
-        kind: "derived_from",
-        sourceFindingId: sourceId,
-        targetFindingId: finding.id,
-        summary: normalizeText(finding.relationshipExplanations?.derivedFrom) || `${finding.title} depends on ${source.title}.`,
-        sourceFinding: source,
-        targetFinding: finding
-      });
-    }
-
-    for (const relatedId of finding.relatedFindingIds) {
-      const related = lookup.get(relatedId);
-      if (!related) {
-        continue;
-      }
-      const sourceId = finding.id < relatedId ? finding.id : relatedId;
-      const targetId = finding.id < relatedId ? relatedId : finding.id;
-      if (links.some((link) => link.kind === "related" && link.sourceFindingId === sourceId && link.targetFindingId === targetId)) {
-        continue;
-      }
-      const sourceFinding = lookup.get(sourceId)!;
-      const targetFinding = lookup.get(targetId)!;
-      push({
-        kind: "related",
-        sourceFindingId: sourceId,
-        targetFindingId: targetId,
-        summary: normalizeText(finding.relationshipExplanations?.relatedTo) || `${sourceFinding.title} correlates with ${targetFinding.title}.`,
-        sourceFinding,
-        targetFinding
-      });
-    }
-  }
-
-  return links.sort((left, right) => left.id.localeCompare(right.id));
-}
-
 function explicitVectorValidation(vector: WorkflowReportedAttackVector): AttackPathValidation {
   const evidenceLevel: AttackPathEvidenceLevel = (() => {
     switch (vector.validationStatus) {
@@ -707,7 +640,7 @@ function explicitVectorValidation(vector: WorkflowReportedAttackVector): AttackP
 
 function buildAttackVectorLinks(findings: WorkflowReportedFinding[], attackVectors: WorkflowReportedAttackVector[] = []) {
   const lookup = new Map(findings.map((finding) => [finding.id, finding]));
-  const explicitLinks = attackVectors.flatMap((vector): DerivedLink[] => {
+  return attackVectors.flatMap((vector): DerivedLink[] => {
     const sourceFinding = lookup.get(vector.sourceFindingId);
     const targetFinding = lookup.get(vector.destinationFindingId);
     if (!sourceFinding || !targetFinding || vector.validationStatus === "rejected") {
@@ -723,12 +656,7 @@ function buildAttackVectorLinks(findings: WorkflowReportedFinding[], attackVecto
       targetFinding,
       explicitVector: vector
     }];
-  });
-  const explicitKeys = new Set(explicitLinks.map((link) => `${link.kind}:${link.sourceFindingId}:${link.targetFindingId}`));
-  return [
-    ...explicitLinks,
-    ...buildDerivedLinks(findings).filter((link) => !explicitKeys.has(`${link.kind}:${link.sourceFindingId}:${link.targetFindingId}`))
-  ].sort((left, right) => left.id.localeCompare(right.id));
+  }).sort((left, right) => left.id.localeCompare(right.id));
 }
 
 function buildConnectedComponents(findings: WorkflowReportedFinding[], links: DerivedLink[]) {

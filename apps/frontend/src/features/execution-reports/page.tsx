@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Archive, ArrowLeft, Download, Trash2 } from "lucide-react";
+import { ArrowLeft, Download, Trash2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MARKDOWN_COMPONENTS_COMPACT } from "@/features/designs/finding-shared";
@@ -114,9 +114,8 @@ export function ExecutionReportsPage({
   onNavigateToDetail: (id: string, label?: string) => void;
 }) {
   const list = useResourceList(executionReportsResource);
-  const [detailReloadToken, setDetailReloadToken] = useState(0);
   const [mutating, setMutating] = useState(false);
-  const detail = useResourceDetail(executionReportsResource, reportId ?? null, detailReloadToken);
+  const detail = useResourceDetail(executionReportsResource, reportId ?? null);
 
   async function exportReportJson(id: string) {
     const report = await fetchJson<ExecutionReportDetail>(`${apiRoutes.executionReports}/${id}`);
@@ -133,31 +132,7 @@ export function ExecutionReportsPage({
     }
   }
 
-  async function archiveReport(id: string) {
-    setMutating(true);
-    try {
-      await fetchJson<ExecutionReportDetail>(apiRoutes.executionReportArchive.replace(":id", id), { method: "POST" });
-      toast.success("Execution report archived");
-      list.refetch();
-      setDetailReloadToken((current) => current + 1);
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function unarchiveReport(id: string) {
-    setMutating(true);
-    try {
-      await fetchJson<ExecutionReportDetail>(apiRoutes.executionReportUnarchive.replace(":id", id), { method: "POST" });
-      toast.success("Execution report restored");
-      list.refetch();
-      setDetailReloadToken((current) => current + 1);
-    } finally {
-      setMutating(false);
-    }
-  }
-
-  async function deleteReport(id: string) {
+async function deleteReport(id: string) {
     setMutating(true);
     try {
       await fetchJson<void>(`${apiRoutes.executionReports}/${id}`, { method: "DELETE" });
@@ -251,36 +226,26 @@ export function ExecutionReportsPage({
         void handleDetailExport(report.id);
       }}
       actions={(
-        <div className="flex flex-wrap items-center gap-2 px-0 py-0">
-          <Button type="button" variant="outline" onClick={onNavigateToList} className="h-9 text-sm">
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              void (isArchived ? unarchiveReport(report.id) : archiveReport(report.id));
-            }}
-            disabled={mutating}
-            className="h-9 text-sm"
-          >
-            <Archive className="h-4 w-4" />
-            {isArchived ? "Unarchive" : "Archive"}
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            onClick={() => {
-              void deleteReport(report.id);
-            }}
-            disabled={mutating}
-            className="h-9 text-sm"
-          >
-            <Trash2 className="h-4 w-4" />
-            Delete
-          </Button>
-          <div className="ml-auto">
+        <div className="flex w-full flex-wrap items-center justify-between gap-2 px-0 py-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" onClick={onNavigateToList} className="h-9 text-sm">
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                void deleteReport(report.id);
+              }}
+              disabled={mutating}
+              className="h-9 text-sm"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
               variant="outline"

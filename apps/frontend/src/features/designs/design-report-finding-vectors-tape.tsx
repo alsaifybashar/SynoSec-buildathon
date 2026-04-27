@@ -2,6 +2,8 @@ import type { ExecutionReportFinding } from "@synosec/contracts";
 import { FindingsAlternativeFrame } from "@/features/designs/finding-vector-frame";
 import {
   NodeMap,
+  chainNodeForFinding,
+  relatedTargetsForFinding,
   columnarLayout,
   type GraphEdge,
   type GraphModel,
@@ -22,7 +24,8 @@ function truncate(value: string, max: number) {
 
 function buildLifecycleModel(
   finding: ExecutionReportFinding,
-  allFindings: ExecutionReportFinding[]
+  allFindings: ExecutionReportFinding[],
+  report: import("@synosec/contracts").ExecutionReportDetail
 ): { model: GraphModel; columns: string[][]; labels: string[] } {
   const tools = Array.from(new Set(finding.evidence.map((e) => e.sourceTool)));
   const nodes: GraphNode[] = [];
@@ -60,20 +63,22 @@ function buildLifecycleModel(
   });
   colFinding.push("f");
 
-  if (finding.chain) {
+  const chain = chainNodeForFinding(report, finding.id);
+  if (chain) {
     const chainNode: GraphNode = {
       id: "ch",
-      label: finding.chain.title,
-      sublabel: `chain · ${finding.chain.severity ?? "—"}`,
+      label: chain.title,
+      sublabel: `chain · ${chain.severity ?? "—"}`,
       kind: "related"
     };
-    if (finding.chain.severity) chainNode.severity = finding.chain.severity;
+    if (chain.severity) chainNode.severity = chain.severity;
     nodes.push(chainNode);
     colChain.push("ch");
     edges.push({ from: "f", to: "ch", variant: "enables" });
 
     const lookup = new Map(allFindings.map((x) => [x.id, x]));
-    for (const id of finding.enablesFindingIds) {
+    for (const targetInfo of relatedTargetsForFinding(report, finding).filter((item) => item.variant === "enables")) {
+      const id = targetInfo.findingId;
       const target = lookup.get(id);
       if (!target) continue;
       const nid = `r:${id}`;
@@ -90,8 +95,8 @@ function buildLifecycleModel(
   } else {
     const lookup = new Map(allFindings.map((x) => [x.id, x]));
     const seen = new Set<string>();
-    function add(ids: string[], variant: "derived" | "related" | "enables", reverse = false) {
-      for (const id of ids) {
+    for (const related of relatedTargetsForFinding(report, finding)) {
+      const id = related.findingId;
         const target = lookup.get(id);
         if (!target || seen.has(id)) continue;
         seen.add(id);
@@ -99,23 +104,19 @@ function buildLifecycleModel(
         nodes.push({
           id: nid,
           label: target.title,
-          sublabel: variant === "derived" ? "Derived from" : variant === "enables" ? "Enables" : "Related",
+          sublabel: related.variant === "derived" ? "Derived from" : related.variant === "enables" ? "Enables" : "Related",
           kind: "related",
           severity: target.severity
         });
         colChain.push(nid);
-        edges.push(reverse ? { from: nid, to: "f", variant } : { from: "f", to: nid, variant });
-      }
+        edges.push(related.reverse ? { from: nid, to: "f", variant: related.variant } : { from: "f", to: nid, variant: related.variant });
     }
-    add(finding.derivedFromFindingIds, "derived", true);
-    add(finding.relatedFindingIds, "related");
-    add(finding.enablesFindingIds, "enables");
   }
 
   return {
     model: { nodes, edges },
     columns: [colTool, colEvidence, colFinding, colChain],
-    labels: ["Tool", "Evidence", "Finding", finding.chain ? "Chain" : "Downstream"]
+    labels: ["Tool", "Evidence", "Finding", chain ? "Chain" : "Downstream"]
   };
 }
 
@@ -124,8 +125,8 @@ export function DesignReportFindingVectorsTape() {
     <FindingsAlternativeFrame
       breadcrumbLabel="Vectors · lifecycle"
       graphLabel="ATTACK VECTOR · LIFECYCLE"
-      renderGraph={({ finding, allFindings }) => {
-        const { model, columns, labels } = buildLifecycleModel(finding, allFindings);
+      renderGraph={({ finding, allFindings, report }) => {
+        const { model, columns, labels } = buildLifecycleModel(finding, allFindings, report);
         return <NodeMap model={model} layout={columnarLayout({ columns, labels })} />;
       }}
     />

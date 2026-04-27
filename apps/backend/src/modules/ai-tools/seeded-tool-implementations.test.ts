@@ -339,7 +339,7 @@ describe("seeded bash tool implementations", () => {
     expect(result.observations).toHaveLength(1);
     expect(result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        port: vulnerablePort,
+        key: `tcp:127.0.0.1:${vulnerablePort}`,
         title: `Open TCP port ${vulnerablePort}`
       })
     ]));
@@ -409,11 +409,15 @@ describe("seeded bash tool implementations", () => {
     expect(result.statusReason).toBeNull();
     expect(result.output).toContain("200 /admin");
     expect(result.output).toContain("200 /api/users");
+    expect(result.truncated).toBe(true);
     expect(result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "content:/admin" }),
       expect.objectContaining({
         key: "content:/api/users",
-        evidence: expect.stringContaining("passwordHash")
+        summary: expect.stringContaining("HTTP 200")
+      }),
+      expect.objectContaining({
+        key: "aggregate:http-404"
       })
     ]));
   });
@@ -433,11 +437,11 @@ describe("seeded bash tool implementations", () => {
     expect(result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({
         key: "content:/release-board",
-        evidence: expect.stringContaining("buildId=rc-2026-04")
+        summary: expect.stringContaining("buildId=rc-2026-04")
       }),
       expect.objectContaining({
         key: "content:/diagnostics/export",
-        evidence: expect.stringContaining("nonce=ops-bot-4471")
+        summary: expect.stringContaining("nonce=ops-bot-4471")
       })
     ]));
   });
@@ -477,11 +481,11 @@ describe("seeded bash tool implementations", () => {
     expect(result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({
         key: "crawl:/release-board",
-        evidence: expect.stringContaining("caseRef=case-7312")
+        summary: expect.stringContaining("caseRef=case-7312")
       }),
       expect.objectContaining({
         key: "crawl:/diagnostics/export",
-        evidence: expect.stringContaining("approverEmail=release-manager@acme-retail.demo")
+        summary: expect.stringContaining("approverEmail=release-manager@acme-retail.demo")
       })
     ]));
   });
@@ -540,16 +544,11 @@ describe("seeded bash tool implementations", () => {
     expect(result.exitCode).toBe(0);
     expect(result.observations.some((observation) => (
       observation.key === "audit:chain-artifact:/api/support/cases/case-7312?workspace=acme-retail"
-      && observation.evidence.includes("Baseline status: 404")
-    ))).toBe(true);
-    expect(result.observations.some((observation) => (
-      observation.key.startsWith("audit:reachable:GET:/api/release/secrets?")
-      && observation.evidence.includes("Baseline status: 403")
     ))).toBe(true);
     expect(result.observations.some((observation) => (
       observation.key.startsWith("audit:sensitive:/api/release/secrets?")
-      && observation.evidence.includes("signingKey")
     ))).toBe(true);
+    expect(result.observations.some((observation) => observation.summary.includes("Sensitive response"))).toBe(true);
   });
 
   it("vulnerability audit validates the diagnostics to magic-link session chain", async () => {
@@ -588,16 +587,14 @@ describe("seeded bash tool implementations", () => {
     expect(result.exitCode).toBe(0);
     expect(result.observations.some((observation) => (
       observation.key === "audit:chain-artifact:/diagnostics/export"
-      && observation.evidence.includes("nonce=ops-bot-4471")
     ))).toBe(true);
     expect(result.observations.some((observation) => (
       observation.key === "audit:chain-artifact:/api/auth/magic-link"
-      && observation.evidence.includes("Baseline status: 401")
     ))).toBe(true);
     expect(result.observations.some((observation) => (
       observation.key.startsWith("audit:sensitive:/api/release/secrets?")
-      && observation.evidence.includes("Baseline status: 403")
     ))).toBe(true);
+    expect(result.observations.some((observation) => observation.summary.includes("Sensitive response"))).toBe(true);
   });
 
   it("sql injection check confirms a bypass signal on /login", async () => {
@@ -669,10 +666,9 @@ describe("seeded bash tool implementations", () => {
     expect(result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({
         key: "auth-flow:/api/auth/magic-link",
-        evidence: expect.stringContaining("Artifact status: 200")
+        summary: expect.stringContaining("accepted supplied auth-flow artifacts")
       })
     ]));
-    expect(result.observations[0]?.evidence).toContain("Matched fields: sessionToken");
   });
 
   it("parameter discovery identifies reflected search parameters without external binaries", async () => {
@@ -709,7 +705,7 @@ describe("seeded bash tool implementations", () => {
     expect(result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({
         key: "parameter:q",
-        evidence: expect.stringContaining("Request target:")
+        summary: expect.stringContaining("reflected")
       })
     ]));
   });
@@ -765,7 +761,7 @@ describe("seeded bash tool implementations", () => {
     expect(result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({
         key: "xss:/search",
-        evidence: expect.stringContaining("Parameter: q")
+        summary: expect.stringContaining("q reached")
       })
     ]));
   });
@@ -792,10 +788,10 @@ describe("seeded bash tool implementations", () => {
     expect(result.statusReason).toBeNull();
     expect(result.output).toContain("kid");
     expect(result.observations).toEqual(expect.arrayContaining([
-      expect.objectContaining({ key: "jwt:releasehub:header" }),
-      expect.objectContaining({ key: "jwt:releasehub:claim:role" }),
       expect.objectContaining({ key: "jwt:releasehub:weak-secret" })
     ]));
+    expect(result.totalObservations).toBeGreaterThan(result.observations.length);
+    expect(result.truncated).toBe(true);
   });
 
   it("http headers probes supplied candidate endpoints deterministically", async () => {
@@ -814,7 +810,7 @@ describe("seeded bash tool implementations", () => {
     expect(result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({
         key: "headers:/admin",
-        evidence: expect.stringContaining("server=Apache/2.2.34")
+        summary: expect.stringContaining("server=Apache/2.2.34")
       })
     ]));
   });

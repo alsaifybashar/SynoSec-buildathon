@@ -1,6 +1,5 @@
 import {
   apiRoutes,
-  localAttackPathTargetDefaults,
   localDemoTargetDefaults,
   localFullStackTargetDefaults,
   type CreateTargetBody,
@@ -143,17 +142,6 @@ const seededTargetCatalog = [
       "Directory listing simulation on /files",
       "Reflected XSS on /search",
       "Verbose errors and missing security headers"
-    ]
-  },
-  {
-    hostUrl: localAttackPathTargetDefaults.hostUrl,
-    vulnerabilities: [
-      "Public release board leaks build and support-case references",
-      "Support case detail IDOR leaks one-time release approval tokens",
-      "Diagnostics export leaks approver email and predictable nonce seed",
-      "Weak magic-link issuance creates release-manager sessions",
-      "Release secrets require chained build context plus approval or manager session",
-      "Distractors include reflected search and verbose health metadata"
     ]
   },
   {

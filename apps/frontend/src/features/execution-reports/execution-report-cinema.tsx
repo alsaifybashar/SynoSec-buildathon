@@ -67,6 +67,10 @@ function chainForFinding(report: ExecutionReportDetail, findingId: string) {
   return report.graph.nodes.find((node) => node.kind === "chain" && node.findingIds.includes(findingId)) ?? null;
 }
 
+function attackVectorsForFinding(report: ExecutionReportDetail, findingId: string) {
+  return report.attackPaths.vectors.filter((vector) => vector.findingIds.includes(findingId));
+}
+
 function preferredFindingId(report: ExecutionReportDetail) {
   const topFindingId = report.sourceSummary.topFindingIds.find((findingId) => report.findings.some((finding) => finding.id === findingId));
   return topFindingId ?? report.findings[0]?.id ?? null;
@@ -425,19 +429,17 @@ function CinemaGraph({
   );
 }
 
-function RelationshipPill({ label, ids }: { label: string; ids: string[] }) {
-  if (ids.length === 0) {
+function VectorPill({ label, value }: { label: string; value: string }) {
+  if (!value.trim()) {
     return null;
   }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="font-mono text-[0.58rem] uppercase tracking-[0.18em] text-muted-foreground/80">{label}</span>
-      {ids.map((id) => (
-        <span key={`${label}:${id}`} className="rounded-full border border-border/60 px-2 py-1 font-mono text-[0.62rem] text-muted-foreground">
-          {id}
-        </span>
-      ))}
+      <span className="rounded-full border border-border/60 px-2 py-1 font-mono text-[0.62rem] text-muted-foreground">
+        {value}
+      </span>
     </div>
   );
 }
@@ -465,6 +467,7 @@ export function ExecutionReportCinema({
     [finding, report.toolActivity]
   );
   const chain = finding ? chainForFinding(report, finding.id) : null;
+  const vectors = finding ? attackVectorsForFinding(report, finding.id) : [];
   const activeSignal = signals.find((signal) => signal.key === activeSignalKey) ?? null;
 
   useEffect(() => {
@@ -692,11 +695,13 @@ export function ExecutionReportCinema({
               {finding.confidenceReason ? (
                 <p className="mt-2 text-[0.75rem] leading-5 text-muted-foreground">{finding.confidenceReason}</p>
               ) : null}
-              <div className="mt-3 space-y-2">
-                <RelationshipPill label="derived" ids={finding.derivedFromFindingIds} />
-                <RelationshipPill label="related" ids={finding.relatedFindingIds} />
-                <RelationshipPill label="enables" ids={finding.enablesFindingIds} />
-              </div>
+              {vectors.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {vectors.slice(0, 3).map((vector) => (
+                    <VectorPill key={vector.id} label={vector.kind.replaceAll("_", " ")} value={vector.label} />
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             {chain ? (

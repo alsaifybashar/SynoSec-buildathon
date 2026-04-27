@@ -292,7 +292,7 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
     emptyMessage: "No AI agents have been configured yet.",
     columns: (context) => [
       { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
-      { id: "runtime", header: "Runtime", cell: () => <span className="text-muted-foreground">{context.runtimeLabel}</span> },
+      { id: "runtime", header: "Provider", cell: () => <span className="text-muted-foreground">{context.runtimeLabel}</span> },
       { id: "toolIds", header: "Tools", cell: (row) => <span className="text-muted-foreground">{row.toolIds.length}</span> }
     ],
     filters: () => []

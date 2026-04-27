@@ -2,6 +2,7 @@ import type { ExecutionReportFinding } from "@synosec/contracts";
 import { FindingsAlternativeFrame } from "@/features/designs/finding-vector-frame";
 import {
   NodeMap,
+  relatedTargetsForFinding,
   columnarLayout,
   type GraphEdge,
   type GraphModel,
@@ -22,7 +23,8 @@ function truncate(value: string, max: number) {
 
 function buildTargetModel(
   finding: ExecutionReportFinding,
-  allFindings: ExecutionReportFinding[]
+  allFindings: ExecutionReportFinding[],
+  report: import("@synosec/contracts").ExecutionReportDetail
 ): { model: GraphModel; columns: string[][]; labels: string[] } {
   const tools = Array.from(new Set(finding.evidence.map((e) => e.sourceTool)));
   const nodes: GraphNode[] = [];
@@ -72,8 +74,8 @@ function buildTargetModel(
 
   const lookup = new Map(allFindings.map((x) => [x.id, x]));
   const seen = new Set<string>();
-  function add(ids: string[], variant: "derived" | "related" | "enables", reverse = false) {
-    for (const id of ids) {
+  for (const related of relatedTargetsForFinding(report, finding)) {
+      const id = related.findingId;
       const target = lookup.get(id);
       if (!target || seen.has(id)) continue;
       seen.add(id);
@@ -81,17 +83,13 @@ function buildTargetModel(
       nodes.push({
         id: nid,
         label: target.title,
-        sublabel: variant === "derived" ? "Derived from" : variant === "enables" ? "Enables" : "Related",
+        sublabel: related.variant === "derived" ? "Derived from" : related.variant === "enables" ? "Enables" : "Related",
         kind: "related",
         severity: target.severity
       });
       colRelated.push(nid);
-      edges.push(reverse ? { from: nid, to: "f", variant } : { from: "f", to: nid, variant });
-    }
+      edges.push(related.reverse ? { from: nid, to: "f", variant: related.variant } : { from: "f", to: nid, variant: related.variant });
   }
-  add(finding.derivedFromFindingIds, "derived", true);
-  add(finding.relatedFindingIds, "related");
-  add(finding.enablesFindingIds, "enables");
 
   const columns =
     colRelated.length > 0
@@ -110,8 +108,8 @@ export function DesignReportFindingVectorsStrata() {
     <FindingsAlternativeFrame
       breadcrumbLabel="Vectors · target"
       graphLabel="ATTACK VECTOR · TARGET-FIRST"
-      renderGraph={({ finding, allFindings }) => {
-        const { model, columns, labels } = buildTargetModel(finding, allFindings);
+      renderGraph={({ finding, allFindings, report }) => {
+        const { model, columns, labels } = buildTargetModel(finding, allFindings, report);
         return <NodeMap model={model} layout={columnarLayout({ columns, labels })} />;
       }}
     />

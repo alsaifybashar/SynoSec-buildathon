@@ -12,6 +12,44 @@ import {
 import { WorkflowTraceSection } from "@/features/workflows/workflow-trace-section";
 
 const emptyTokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+const webProbeObservation = {
+  id: "obs-web-probe-1",
+  scanId: "scan-1",
+  tacticId: "tactic-1",
+  toolRunId: "tool-run-1",
+  toolId: "tool-1",
+  tool: "Web Probe",
+  capabilities: [],
+  target: "localhost:8888",
+  key: "http:200",
+  title: "HTTP service responded with 200 OK",
+  summary: "HTTP service responded with 200 OK.",
+  severity: "info" as const,
+  confidence: 0.98,
+  evidence: "HTTP/1.1 200 OK",
+  technique: "web probe",
+  relatedKeys: [],
+  createdAt: "2026-04-21T00:00:03.400Z"
+};
+const webProbeHeadersObservation = {
+  id: "obs-web-probe-2",
+  scanId: "scan-1",
+  tacticId: "tactic-1",
+  toolRunId: "tool-run-1",
+  toolId: "tool-1",
+  tool: "Web Probe",
+  capabilities: [],
+  target: "localhost:8888",
+  key: "http:headers",
+  title: "Headers were returned immediately",
+  summary: "Headers were returned immediately.",
+  severity: "info" as const,
+  confidence: 0.82,
+  evidence: "Server: Apache/2.4",
+  technique: "web probe",
+  relatedKeys: [],
+  createdAt: "2026-04-21T00:00:03.450Z"
+};
 
 const workflow: Workflow = {
   id: "10000000-0000-0000-0000-000000000001",
@@ -272,8 +310,15 @@ const run: WorkflowRun = {
       detail: "HTTP/1.1 200 OK",
       payload: {
         toolName: "Web Probe",
-        fullOutput: "HTTP/1.1 200 OK",
-        observationSummaries: ["HTTP service responded with 200 OK.", "Headers were returned immediately."]
+        output: {
+          toolRunId: "tool-run-1",
+          toolId: "tool-1",
+          toolName: "Web Probe",
+          status: "completed",
+          outputPreview: "HTTP/1.1 200 OK",
+          observations: [webProbeObservation, webProbeHeadersObservation]
+        },
+        outputPreview: "HTTP/1.1 200 OK"
       },
       createdAt: "2026-04-21T00:00:03.500Z"
     },
@@ -508,7 +553,15 @@ const streamedNarrationRun: WorkflowRun = {
         rawStreamPartType: "tool-result",
         toolName: "Web Probe",
         summary: "HTTP 200 confirmed.",
-        observations: ["HTTP service responded with 200 OK."]
+        output: {
+          toolRunId: "tool-run-stream-1",
+          toolId: "tool-1",
+          toolName: "Web Probe",
+          status: "completed",
+          outputPreview: "HTTP 200 confirmed.",
+          observations: [webProbeObservation]
+        },
+        outputPreview: "HTTP 200 confirmed."
       },
       createdAt: "2026-04-21T00:00:00.400Z"
     },
@@ -874,8 +927,15 @@ const failedToolRun: WorkflowRun = {
       payload: {
         toolId: "tool-1",
         toolName: "Web Probe",
-        fullOutput: "curl: (7) Failed to connect to localhost port 8888",
-        observationSummaries: []
+        output: {
+          toolRunId: "tool-run-failed-1",
+          toolId: "tool-1",
+          toolName: "Web Probe",
+          status: "failed",
+          outputPreview: "connection refused",
+          observations: []
+        },
+        outputPreview: "connection refused"
       },
       createdAt: "2026-04-21T00:00:02.300Z"
     },
@@ -1028,7 +1088,8 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getAllByText(/http:\/\/localhost:8888/).length).toBeGreaterThan(0);
     expect(screen.getByText("Output")).toBeInTheDocument();
     expect(screen.getByText("Input")).toBeInTheDocument();
-    expect(screen.getByText("HTTP/1.1 200 OK")).toBeInTheDocument();
+    expect(screen.getByText(/"status": "completed"/)).toBeInTheDocument();
+    expect(screen.getByText(/"outputPreview": "HTTP\/1\.1 200 OK"/)).toBeInTheDocument();
     expect(screen.getByText("Observations")).toBeInTheDocument();
     expect(screen.getByText("HTTP service responded with 200 OK.")).toBeInTheDocument();
     expect(screen.getByText("Headers were returned immediately.")).toBeInTheDocument();
@@ -1050,8 +1111,6 @@ describe("WorkflowTraceSection", () => {
         showFullDetails={false}
       />
     );
-
-    expect(screen.getByText("4 tools and actions available to the model.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Structured tool segment"));
 
@@ -1181,7 +1240,7 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getByText(/Checking the web entrypoint before expanding coverage\./)).toBeInTheDocument();
     expect(screen.getByText(/The surface is reachable, so the next step is header-focused validation\./)).toBeInTheDocument();
     expect(screen.getByText(/Called Web Probe/)).toBeInTheDocument();
-    expect(screen.getByText("HTTP service responded with 200 OK.")).toBeInTheDocument();
+    expect(screen.getAllByText(/HTTP service responded with 200 OK/).length).toBeGreaterThan(0);
   });
 
   it("does not keep a tool marked as running after a matching streaming-start and tool result pair", () => {

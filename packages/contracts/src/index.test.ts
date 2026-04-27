@@ -19,11 +19,14 @@ import {
   scanLayerCoverageSchema,
   securityVulnerabilitySchema,
   aiToolSchema,
+  observationSchema,
   startWorkflowRunBodySchema,
   targetSchema,
+  toolExecutionPublicResultSchema,
   targetsListQuerySchema,
   toolRequestSchema,
   toolRunSchema,
+  workflowReportAttackVectorsSubmissionSchema,
   workflowReportFindingSubmissionSchema,
   workflowFindingSubmissionSchema,
   updateTargetBodySchema
@@ -268,6 +271,49 @@ describe("contracts", () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it("accepts only the compact public observation contract", () => {
+    expect(observationSchema.safeParse({
+      id: "obs-1",
+      key: "admin-panel",
+      title: "Admin panel exposed",
+      summary: "/admin returned HTTP 200.",
+      severity: "medium",
+      confidence: 0.92
+    }).success).toBe(true);
+
+    expect(observationSchema.safeParse({
+      id: "obs-1",
+      key: "admin-panel",
+      title: "Admin panel exposed",
+      summary: "/admin returned HTTP 200.",
+      severity: "medium",
+      confidence: 0.92,
+      evidence: "GET /admin => 200"
+    }).data).not.toHaveProperty("evidence");
+  });
+
+  it("requires tool result payload truncation metadata", () => {
+    expect(toolExecutionPublicResultSchema.safeParse({
+      toolRunId: "tool-run-1",
+      toolId: "tool-1",
+      toolName: "Web Probe",
+      status: "completed",
+      outputPreview: "Admin panel exposed.",
+      observations: [],
+      totalObservations: 4,
+      truncated: true
+    }).success).toBe(true);
+
+    expect(toolExecutionPublicResultSchema.safeParse({
+      toolRunId: "tool-run-1",
+      toolId: "tool-1",
+      toolName: "Web Probe",
+      status: "completed",
+      outputPreview: "Admin panel exposed.",
+      observations: []
+    }).success).toBe(false);
   });
 
   it("accepts a structured security vulnerability with layer metadata", () => {
@@ -617,9 +663,23 @@ describe("contracts", () => {
     expect(result.success).toBe(true);
   });
 
-  it("accepts report_finding attack_vector mode submissions", () => {
+  it("rejects report_finding relationship and attack-vector authoring fields", () => {
     const result = workflowReportFindingSubmissionSchema.safeParse({
-      mode: "attack_vector",
+      mode: "finding",
+      title: "Admin Panel Reachable",
+      evidence: [{
+        sourceTool: "custom-http-proof",
+        quote: "URL: http://localhost:3000/admin Status: 200",
+        toolRunRef: "tool-run-1"
+      }],
+      derivedFromFindingIds: ["11111111-1111-4111-8111-111111111111"]
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts report_attack_vectors submissions", () => {
+    const result = workflowReportAttackVectorsSubmissionSchema.safeParse({
       attackVectors: [{
         kind: "derived_from",
         sourceFindingId: "20000000-0000-4000-8000-000000000001",

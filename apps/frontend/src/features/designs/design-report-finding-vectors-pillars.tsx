@@ -4,6 +4,8 @@ import { DetailFieldGroup } from "@/shared/components/detail-page";
 import {
   NodeMap,
   buildModel,
+  chainNodeForFinding,
+  relatedTargetsForFinding,
   columnarLayout,
   type GraphEdge,
   type GraphModel,
@@ -85,35 +87,37 @@ function buildPhaseModel(
 }
 
 function buildInspectorVariantModels(finding: ExecutionReportFinding, report: ExecutionReportDetail) {
-  const defaultModel = buildModel(finding, report.findings);
+  const defaultModel = buildModel(report, finding, report.findings);
   const phaseModel = buildPhaseModel(finding, report);
-  const derivedIds = finding.derivedFromFindingIds.map((id) => `r:${id}`);
-  const relatedIds = finding.relatedFindingIds.map((id) => `r:${id}`);
-  const enablesIds = finding.enablesFindingIds.map((id) => `r:${id}`);
+  const relatedTargets = relatedTargetsForFinding(report, finding);
+  const derivedIds = relatedTargets.filter((item) => item.variant === "derived").map((item) => `r:${item.findingId}`);
+  const relatedIds = relatedTargets.filter((item) => item.variant === "related").map((item) => `r:${item.findingId}`);
+  const enablesIds = relatedTargets.filter((item) => item.variant === "enables").map((item) => `r:${item.findingId}`);
+  const chain = chainNodeForFinding(report, finding.id);
 
   const relationshipColumns = [
     derivedIds.length > 0 ? derivedIds : [],
     ["f"],
     [...relatedIds, ...enablesIds].length > 0 ? [...relatedIds, ...enablesIds] : [],
-    finding.chain ? ["chain"] : []
+    chain ? ["chain"] : []
   ];
   const relationshipLabels = ["Evidence lineage", "Current finding", "Peer impact", "Chain"];
   const relationshipModel: GraphModel = {
     nodes: [
       ...defaultModel.nodes,
-      ...(finding.chain
+      ...(chain
         ? [{
             id: "chain",
-            label: finding.chain.title,
-            sublabel: finding.chain.severity ?? finding.severity,
+            label: chain.title,
+            sublabel: chain.severity ?? finding.severity,
             kind: "related" as const,
-            severity: finding.chain.severity ?? finding.severity
+            severity: chain.severity ?? finding.severity
           }]
         : [])
     ],
     edges: [
       ...defaultModel.edges,
-      ...(finding.chain ? [{ from: "f", to: "chain", variant: "enables" as const }] : [])
+      ...(chain ? [{ from: "f", to: "chain", variant: "enables" as const }] : [])
     ]
   };
 

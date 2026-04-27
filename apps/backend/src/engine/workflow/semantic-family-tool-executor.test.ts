@@ -245,7 +245,17 @@ describe("executeSemanticFamilyTool", () => {
 
     expect(execution.response.toolId).toBe("builtin-http-surface-assessment");
     expect(execution.response.toolName).toBe("http_surface_assessment");
-    expect(familyDefinition.candidateToolIds).toContain(execution.response.usedToolId);
+    expect(Object.keys(execution.response).sort()).toEqual([
+      "observations",
+      "outputPreview",
+      "status",
+      "toolId",
+      "toolName",
+      "toolRunId",
+      "totalObservations",
+      "truncated"
+    ]);
+    expect(familyDefinition.candidateToolIds).toContain(execution.result.usedToolId);
     expect(execution.response.status).toBe("completed");
     expect(execution.result.observations.length).toBeGreaterThan(0);
     expect(execution.result.fullOutput.length).toBeGreaterThan(0);
@@ -284,7 +294,7 @@ describe("executeSemanticFamilyTool", () => {
       agentId: "agent-family-compare"
     }, rawInput);
 
-    const directTool = createSeededTool(family.response.usedToolId);
+    const directTool = createSeededTool(family.result.usedToolId);
     const direct = await executeDirectSeededTool({
       broker,
       runtime,
@@ -292,7 +302,7 @@ describe("executeSemanticFamilyTool", () => {
       rawInput
     });
 
-    expect(family.response.usedToolId).toBe(directTool.id);
+    expect(family.result.usedToolId).toBe(directTool.id);
     expect(family.result.toolRequest.target).toBe(direct.request.target);
     expect(family.result.toolRequest.port ?? null).toBe(direct.request.port ?? null);
     expect(family.result.toolRequest.parameters.toolInput).toEqual(direct.request.parameters.toolInput);
@@ -302,17 +312,19 @@ describe("executeSemanticFamilyTool", () => {
     expect(family.result.observationKeys).toEqual(direct.observations.map((observation) => observation.key));
     expect(family.result.observationSummaries).toEqual(direct.observations.map((observation) => observation.summary));
     expect(family.response.outputPreview).toBe(direct.observations[0]?.summary ?? family.result.outputPreview);
-    expect(family.response.attempts.length).toBeGreaterThan(0);
-    const selectedAttempts = family.response.attempts.filter((attempt) => attempt.selected);
+    expect(family.response.totalObservations).toBe(family.result.totalObservations);
+    expect(family.response.truncated).toBe(family.result.truncated);
+    expect(family.result.attempts.length).toBeGreaterThan(0);
+    const selectedAttempts = family.result.attempts.filter((attempt) => attempt.selected);
     expect(selectedAttempts).toHaveLength(1);
-    expect(selectedAttempts[0]?.toolId).toBe(family.response.usedToolId);
+    expect(selectedAttempts[0]?.toolId).toBe(family.result.usedToolId);
     expect(selectedAttempts[0]?.status).toBe(family.response.status);
-    if (family.response.fallbackUsed) {
-      expect(family.response.attempts.length).toBeGreaterThan(1);
-      expect(family.response.attempts[0]?.selected).toBe(false);
+    if (family.result.fallbackUsed) {
+      expect(family.result.attempts.length).toBeGreaterThan(1);
+      expect(family.result.attempts[0]?.selected).toBe(false);
     } else {
-      expect(family.response.attempts).toHaveLength(1);
-      expect(family.response.attempts[0]?.selected).toBe(true);
+      expect(family.result.attempts).toHaveLength(1);
+      expect(family.result.attempts[0]?.selected).toBe(true);
     }
   });
 
@@ -358,15 +370,15 @@ describe("executeSemanticFamilyTool", () => {
     });
 
     expect(family.response.status).toBe("completed");
-    expect(family.response.usedToolId).toBe("seed-httpx");
-    expect(family.response.fallbackUsed).toBe(true);
-    expect(family.response.attempts).toHaveLength(2);
-    expect(family.response.attempts[0]).toMatchObject({
+    expect(family.result.usedToolId).toBe("seed-httpx");
+    expect(family.result.fallbackUsed).toBe(true);
+    expect(family.result.attempts).toHaveLength(2);
+    expect(family.result.attempts[0]).toMatchObject({
       toolId: "seed-http-recon",
       status: "failed",
       selected: false
     });
-    expect(family.response.attempts[1]).toMatchObject({
+    expect(family.result.attempts[1]).toMatchObject({
       toolId: "seed-httpx",
       status: "completed",
       selected: true
@@ -413,7 +425,7 @@ describe("executeSemanticFamilyTool", () => {
       agentId: "agent-family-sqli"
     }, rawInput);
 
-    const directTool = createSeededTool(family.response.usedToolId);
+    const directTool = createSeededTool(family.result.usedToolId);
     const direct = await executeDirectSeededTool({
       broker,
       runtime,
@@ -504,6 +516,8 @@ describe("executeSemanticFamilyTool", () => {
 
     expect(family.response.status).toBe("completed");
     expect(family.response.observations).toEqual([]);
+    expect(family.response.totalObservations).toBe(0);
+    expect(family.response.truncated).toBe(false);
     expect(family.response.outputPreview).toContain("No likely parameters were confirmed");
   });
 
@@ -538,7 +552,7 @@ describe("executeSemanticFamilyTool", () => {
       agentId: "agent-family-xss"
     }, rawInput);
 
-    expect(family.response.usedToolId).toBe("seed-dalfox");
+    expect(family.result.usedToolId).toBe("seed-dalfox");
     expect(family.response.status).toBe("completed");
     expect(family.result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -585,7 +599,7 @@ describe("executeSemanticFamilyTool", () => {
       agentId: "agent-family-hashcat"
     }, rawInput);
 
-    expect(family.response.usedToolId).toBe("seed-hashcat-crack");
+    expect(family.result.usedToolId).toBe("seed-hashcat-crack");
     expect(family.response.status).toBe("completed");
     expect(family.result.toolRequest.target).toBe("127.0.0.1");
     expect(family.result.observations).toEqual(expect.arrayContaining([
@@ -626,7 +640,7 @@ describe("executeSemanticFamilyTool", () => {
       agentId: "agent-family-tls"
     }, rawInput);
 
-    expect(family.response.usedToolId).toBe("seed-tls-audit");
+    expect(family.result.usedToolId).toBe("seed-tls-audit");
     expect(family.response.status).toBe("completed");
     expect(family.result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({

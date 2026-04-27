@@ -6,6 +6,52 @@ import { getSemanticFamilyBuiltinAiTools } from "./semantic-family-tools.js";
 
 const builtinTimestamp = "2026-04-25T00:00:00.000Z";
 
+const workflowFindingEvidenceSchema = {
+  type: "object",
+  properties: {
+    sourceTool: { type: "string" },
+    quote: { type: "string" },
+    artifactRef: { type: "string" },
+    observationRef: { type: "string" },
+    toolRunRef: { type: "string" },
+    traceEventId: { type: "string" },
+    externalUrl: { type: "string" }
+  },
+  required: ["sourceTool", "quote"]
+};
+
+const workflowAttackVectorSchema = {
+  type: "object",
+  properties: {
+    kind: { type: "string", enum: ["enables", "derived_from", "related", "lateral_movement"] },
+    sourceFindingId: { type: "string" },
+    destinationFindingId: { type: "string" },
+    summary: { type: "string" },
+    preconditions: {
+      type: "array",
+      items: { type: "string" }
+    },
+    impact: { type: "string" },
+    transitionEvidence: {
+      oneOf: [
+        {
+          type: "array",
+          items: workflowFindingEvidenceSchema
+        },
+        { type: "string" }
+      ]
+    },
+    confidence: {
+      oneOf: [
+        { type: "number" },
+        { type: "string" }
+      ]
+    },
+    validationStatus: { type: "string" }
+  },
+  required: ["kind", "sourceFindingId", "destinationFindingId", "summary", "impact", "confidence"]
+};
+
 const lifecycleBuiltinAiTools: AiTool[] = [
   {
     id: "builtin-log-progress",
@@ -51,7 +97,7 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     kind: "builtin-action",
     status: "active",
     source: "system",
-    description: "Persist findings and attack-vector links through a single mode-based action. Use `mode: \"finding\"` for evidence-backed weakness reporting (optionally with `attackVectors` between existing finding ids) and `mode: \"attack_vector\"` to submit one or more vectors between existing findings only. Provide persisted evidence references for findings and transition evidence for non-related vectors. Returns finding metadata plus created attack-vector ids and does not complete the run.",
+    description: "Persist one finding-only workflow report. Use this when you have evidence that a specific weakness exists: provide `title` plus at least one grounded `evidence` item, then let the server infer or default missing fields such as type, severity, confidence, impact, recommendation, target details, and reproduction details. Prefer canonical object inputs, but this action still accepts finding-compatible legacy shapes such as JSON-string payloads, numeric-string confidence, string `target`, and omitted `mode` values that default to `finding`. Returns the canonical normalized result with `accepted`, `findingId`, `title`, `severity`, and `host`. It does not create attack-vector links and it does not complete the run.",
     executorType: "builtin",
     builtinActionKey: "report_finding",
     bashSource: null,
@@ -62,44 +108,60 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     coveredToolIds: [],
     candidateToolIds: [],
     inputSchema: {
-      oneOf: [
-        {
-          type: "object",
-          properties: {
-            mode: { type: "string", enum: ["finding"] },
-            type: { type: "string" },
-            title: { type: "string" },
-            severity: { type: "string" },
-            confidence: { type: "number" },
-            impact: { type: "string" },
-            recommendation: { type: "string" },
-            target: { type: "object" },
-            evidence: { type: "array" },
-            derivedFromFindingIds: { type: "array" },
-            relatedFindingIds: { type: "array" },
-            enablesFindingIds: { type: "array" },
-            chain: { type: "object" },
-            explanationSummary: { type: "string" },
-            confidenceReason: { type: "string" },
-            relationshipExplanations: { type: "object" },
-            validationStatus: { type: "string" },
-            reproduction: { type: "object" },
-            tags: { type: "array" },
-            attackVectors: { type: "array" }
-          },
-          required: ["mode", "type", "title", "severity", "confidence", "impact", "recommendation", "target", "evidence"],
-          description: "If the finding participates in a path, include relationship fields with explanationSummary and confidenceReason. attackVectors may only reference existing finding ids."
+      type: "object",
+      properties: {
+        mode: { type: "string", enum: ["finding"] },
+        type: { type: "string" },
+        title: { type: "string" },
+        severity: { type: "string" },
+        confidence: {
+          oneOf: [
+            { type: "number" },
+            { type: "string" }
+          ]
         },
-        {
-          type: "object",
-          properties: {
-            mode: { type: "string", enum: ["attack_vector"] },
-            attackVectors: { type: "array" }
-          },
-          required: ["mode", "attackVectors"],
-          description: "Submit one or more attack vectors between existing finding ids only."
+        impact: { type: "string" },
+        recommendation: { type: "string" },
+        target: {
+          oneOf: [
+            { type: "string" },
+            {
+              type: "object",
+              properties: {
+                host: { type: "string" },
+                port: {
+                  oneOf: [
+                    { type: "number" },
+                    { type: "string" }
+                  ]
+                },
+                url: { type: "string" },
+                path: { type: "string" }
+              }
+            }
+          ]
+        },
+        evidence: {
+          oneOf: [
+            {
+              type: "array",
+              items: workflowFindingEvidenceSchema
+            },
+            { type: "string" }
+          ]
+        },
+        explanationSummary: { type: "string" },
+        confidenceReason: { type: "string" },
+        relationshipExplanations: { type: "object" },
+        validationStatus: { type: "string" },
+        reproduction: { type: "object" },
+        tags: {
+          type: "array",
+          items: { type: "string" }
         }
-      ]
+      },
+      required: ["title", "evidence"],
+      description: "Preferred finding submission. `title` and grounded `evidence` are required. Other fields are optional and are defaulted or inferred server-side. Compatibility inputs such as string target, JSON-string evidence array, numeric-string confidence, and omitted finding mode are also accepted."
     },
     outputSchema: {
       type: "object",
@@ -108,26 +170,22 @@ const lifecycleBuiltinAiTools: AiTool[] = [
         findingId: { type: "string" },
         title: { type: "string" },
         severity: { type: "string" },
-        host: { type: "string" },
-        attackVectorIds: {
-          type: "array",
-          items: { type: "string" }
-        }
+        host: { type: "string" }
       },
-      required: ["attackVectorIds"]
+      required: ["accepted", "findingId", "title", "severity", "host"]
     },
     createdAt: builtinTimestamp,
     updatedAt: builtinTimestamp
   },
   {
-    id: "builtin-report-attack-vector",
-    name: "Report Attack Vector",
+    id: "builtin-report-attack-vectors",
+    name: "Report Attack Vectors",
     kind: "builtin-action",
     status: "active",
     source: "system",
-    description: "Deprecated compatibility action for older workflow runs. Use this only when an existing run still calls `report_attack_vector`; for new workflows, use report_finding with `mode: \"attack_vector\"`. Provide kind, source/destination finding ids, impact, confidence, and grounded transition evidence for non-related vectors. Returns the created attack vector id and does not complete the run.",
+    description: "Persist one or more explicit attack-vector links between existing findings. Use this only after `report_finding` has returned the `findingId` values you want to connect. Provide `attackVectors` as an array of relationship records; each record must reference existing findings, and every non-`related` vector must include grounded `transitionEvidence`. Returns the canonical batch result with `accepted` and created `attackVectorIds`. It does not create findings and it does not complete the run.",
     executorType: "builtin",
-    builtinActionKey: "report_attack_vector" as ToolBuiltinActionKey,
+    builtinActionKey: "report_attack_vectors",
     bashSource: null,
     capabilities: ["workflow-reporting"],
     category: "utility",
@@ -138,28 +196,23 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        kind: { type: "string", enum: ["enables", "derived_from", "related", "lateral_movement"] },
-        sourceFindingId: { type: "string" },
-        destinationFindingId: { type: "string" },
-        summary: { type: "string" },
-        preconditions: { type: "array" },
-        impact: { type: "string" },
-        transitionEvidence: { type: "array" },
-        confidence: { type: "number" },
-        validationStatus: { type: "string" }
+        attackVectors: {
+          type: "array",
+          items: workflowAttackVectorSchema
+        }
       },
-      required: ["kind", "sourceFindingId", "destinationFindingId", "summary", "impact", "confidence"],
-      description: "For enables, derived_from, and lateral_movement vectors, include transitionEvidence grounded in persisted tool results."
+      required: ["attackVectors"]
     },
     outputSchema: {
       type: "object",
       properties: {
-        attackVectorId: { type: "string" },
-        kind: { type: "string" },
-        sourceFindingId: { type: "string" },
-        destinationFindingId: { type: "string" }
+        accepted: { type: "boolean" },
+        attackVectorIds: {
+          type: "array",
+          items: { type: "string" }
+        }
       },
-      required: ["attackVectorId", "kind", "sourceFindingId", "destinationFindingId"]
+      required: ["accepted", "attackVectorIds"]
     },
     createdAt: builtinTimestamp,
     updatedAt: builtinTimestamp
@@ -170,7 +223,7 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     kind: "builtin-action",
     status: "active",
     source: "system",
-    description: "Finish the workflow run last, after required evidence, report_finding calls, finding ids, and any handoff attack paths have been submitted. Use this only as the final action. Provide `summary`, `recommendedNextStep`, `residualRisk`, and optional `handoff`. It does not create findings and cannot satisfy missing evidence, finding, or chain requirements.",
+    description: "Use this as the final workflow action after any evidence gathering or report_finding calls you want to make. Provide only `summary`. Returns `{ accepted: true }` when the run is closed. It does not create findings or accept extra closeout fields.",
     executorType: "builtin",
     builtinActionKey: "complete_run",
     bashSource: null,
@@ -182,13 +235,11 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     candidateToolIds: [],
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
-        summary: { type: "string" },
-        recommendedNextStep: { type: "string" },
-        residualRisk: { type: "string" },
-        handoff: { type: "object" }
+        summary: { type: "string" }
       },
-      required: ["summary", "recommendedNextStep", "residualRisk"]
+      required: ["summary"]
     },
     outputSchema: {
       type: "object",

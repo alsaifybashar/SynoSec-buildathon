@@ -216,7 +216,10 @@ export function loadBackendEnv(): BackendEnv {
     frontendUrl: process.env["FRONTEND_URL"],
     llmProvider: process.env["LLM_PROVIDER"] ?? "anthropic",
     anthropicApiKey: process.env["ANTHROPIC_API_KEY"],
-    llmAnthropicModel: process.env["LLM_ANTHROPIC_MODEL"] ?? "claude-haiku-4-5",
+    llmAnthropicModel:
+      process.env["CLAUDE_MODEL"]
+      ?? process.env["LLM_ANTHROPIC_MODEL"]
+      ?? "claude-haiku-4-5",
     llmLocalBaseUrl: process.env["LLM_LOCAL_BASE_URL"],
     llmLocalModel: process.env["LLM_LOCAL_MODEL"],
     llmLocalOpenAiApiMode: process.env["LLM_LOCAL_OPENAI_API_MODE"] ?? "chat",

@@ -7,7 +7,7 @@ import type {
   ConnectorExecutionJob,
   ConnectorExecutionResult,
   ConnectorRegistrationRequest,
-  Observation,
+  InternalObservation,
   Severity
 } from "@synosec/contracts";
 import { evaluateConnectorToolSupport } from "@synosec/contracts";
@@ -108,7 +108,7 @@ function normalizeObservation(
   job: ConnectorExecutionJob,
   input: BashObservation,
   index: number
-): Observation {
+): InternalObservation {
   return {
     id: `${job.toolRun.id}-obs-${index + 1}`,
     scanId: job.scanId,

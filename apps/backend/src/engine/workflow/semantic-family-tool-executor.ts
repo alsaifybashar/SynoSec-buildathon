@@ -1,8 +1,8 @@
-import type { AiTool, Observation, Scan, ToolRequest, ToolRun } from "@synosec/contracts";
+import type { AiTool, InternalObservation, Scan, ToolRequest, ToolRun } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
 import type { ToolRuntime } from "@/modules/ai-tools/index.js";
 import type { SemanticFamilyDefinition } from "@/modules/ai-tools/semantic-family-tools.js";
-import { applyWorkflowRuntimeTarget, inferLayer, normalizeToolInput, parseExecutionTarget, truncate } from "./workflow-execution.utils.js";
+import { applyWorkflowRuntimeTarget, compactToolExecutionResult, inferLayer, normalizeToolInput, parseExecutionTarget, truncate } from "./workflow-execution.utils.js";
 import type { ExecutedToolResult } from "./workflow-runtime-types.js";
 import type { EffectiveExecutionConstraintSet } from "./execution-constraints.js";
 import { ToolBroker } from "./broker/tool-broker.js";
@@ -105,13 +105,9 @@ export async function executeSemanticFamilyTool(
     toolName: string;
     status: ToolRun["status"];
     outputPreview: string;
-    rawOutput: string;
-    observations: ExecutedToolResult["observations"];
-    observationSummaries: string[];
-    usedToolId: string;
-    usedToolName: string;
-    fallbackUsed: boolean;
-    attempts: ExecutedToolResult["attempts"];
+    observations: ExecutedToolResult["publicObservations"];
+    totalObservations: number;
+    truncated: boolean;
   };
 }> {
   const toolInput = applyWorkflowRuntimeTarget(normalizeToolInput(rawInput), context.target);
@@ -137,7 +133,7 @@ export async function executeSemanticFamilyTool(
   let selectedToolName: string | null = null;
   let selectedRequest: ToolRequest | null = null;
   let selectedToolRun: ToolRun | null = null;
-  let selectedObservations: Observation[] = [];
+  let selectedObservations: InternalObservation[] = [];
   const attempts: ExecutedToolResult["attempts"] = [];
 
   for (const candidateToolId of candidateToolIds) {
@@ -210,6 +206,17 @@ export async function executeSemanticFamilyTool(
     ...attempt,
     selected: index === selectedAttemptIndex
   }));
+  const publicResult = compactToolExecutionResult({
+    toolRunId: selectedToolRun.id,
+    toolId: context.familyTool.id,
+    toolName: context.familyDefinition.tool.builtinActionKey ?? context.familyTool.id,
+    status: selectedToolRun.status,
+    outputPreview: selectedObservations[0]?.summary
+      ?? selectedToolRun.statusReason
+      ?? selectedToolRun.output
+      ?? `${context.familyTool.name} ${selectedToolRun.status}.`,
+    observations: selectedObservations
+  });
 
   const result: ExecutedToolResult = {
     toolId: context.familyTool.id,
@@ -219,14 +226,12 @@ export async function executeSemanticFamilyTool(
     toolRun: selectedToolRun,
     status: selectedToolRun.status,
     observations: selectedObservations,
+    publicObservations: publicResult.observations,
+    totalObservations: publicResult.totalObservations,
+    truncated: publicResult.truncated,
     observationKeys: selectedObservations.map((observation) => observation.key),
     observationSummaries: selectedObservations.map((observation) => observation.summary),
-    outputPreview: truncate(
-      selectedObservations[0]?.summary
-        ?? selectedToolRun.statusReason
-        ?? selectedToolRun.output
-        ?? `${context.familyTool.name} ${selectedToolRun.status}.`
-    ),
+    outputPreview: truncate(publicResult.outputPreview),
     fullOutput: selectedToolRun.output ?? selectedToolRun.statusReason ?? "",
     commandPreview: selectedToolRun.commandPreview,
     ...(selectedToolRun.exitCode === undefined ? {} : { exitCode: selectedToolRun.exitCode }),
@@ -244,13 +249,9 @@ export async function executeSemanticFamilyTool(
       toolName: result.toolName,
       status: selectedToolRun.status,
       outputPreview: result.outputPreview,
-      rawOutput: result.fullOutput,
-      observations: result.observations,
-      observationSummaries: result.observationSummaries,
-      usedToolId: result.usedToolId,
-      usedToolName: result.usedToolName,
-      fallbackUsed: result.fallbackUsed,
-      attempts: result.attempts
+      observations: result.publicObservations,
+      totalObservations: result.totalObservations,
+      truncated: result.truncated
     }
   };
 }

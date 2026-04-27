@@ -5,6 +5,7 @@ import {
   type ToolRequest,
   type ToolRun
 } from "@synosec/contracts";
+import { compactToolExecutionResult } from "@/engine/workflow/workflow-execution.utils.js";
 import { RequestError } from "@/shared/http/request-error.js";
 import { executeScriptedTool } from "@/engine/tools/script-executor.js";
 import type { ToolRuntime } from "./tool-runtime.js";
@@ -242,6 +243,14 @@ export async function runAiTool(toolRuntime: ToolRuntime, toolId: string, rawInp
     toolRun,
     request
   });
+  const publicResult = compactToolExecutionResult({
+    toolRunId: toolRun.id,
+    toolId: tool.id,
+    toolName: tool.name,
+    status: result.exitCode === 0 ? "completed" : "failed",
+    outputPreview: result.output,
+    observations: result.observations
+  });
 
   return {
     toolId: tool.id,
@@ -254,16 +263,8 @@ export async function runAiTool(toolRuntime: ToolRuntime, toolId: string, rawInp
     statusReason: result.statusReason ?? null,
     exitCode: result.exitCode,
     durationMs: Date.now() - startedAt,
-    observations: result.observations.map((observation) => ({
-      key: observation.key,
-      title: observation.title,
-      summary: observation.summary,
-      severity: observation.severity,
-      confidence: observation.confidence,
-      evidence: observation.evidence,
-      technique: observation.technique,
-      ...(observation.port === undefined ? {} : { port: observation.port }),
-      relatedKeys: observation.relatedKeys
-    }))
+    observations: publicResult.observations,
+    totalObservations: publicResult.totalObservations,
+    truncated: publicResult.truncated
   };
 }
