@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import {
   apiRoutes,
   type ExecutionReportDetail,
@@ -10,6 +12,7 @@ import {
 import { ExecutionReportGraphMap } from "@/features/execution-reports/execution-report-graph";
 import { ApiError, fetchJson } from "@/shared/lib/api";
 import { buildExecutionGraphFromWorkflowFindings, selectLatestWorkflowLaunchRun } from "@/features/workflows/workflow-graph";
+import { Button } from "@/shared/ui/button";
 
 type WorkflowGraphLoadState =
   | { state: "loading" }
@@ -18,6 +21,7 @@ type WorkflowGraphLoadState =
   | { state: "loaded"; source: "report" | "findings"; graph: ExecutionReportGraph };
 
 export function WorkflowGraphPage({ workflowId }: { workflowId?: string }) {
+  const navigate = useNavigate();
   const [loadState, setLoadState] = useState<WorkflowGraphLoadState>({ state: "loading" });
 
   useEffect(() => {
@@ -94,13 +98,19 @@ export function WorkflowGraphPage({ workflowId }: { workflowId?: string }) {
   }, [workflowId]);
 
   return (
-    <section className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">
-      <header className="mb-4 flex flex-wrap items-center gap-2">
+    <section className="w-full px-4 py-6 sm:px-6 lg:px-8">
+      <header className="mb-4 space-y-3">
         <h1 className="text-lg font-semibold text-foreground">Workflow Graph</h1>
-        {loadState.state === "loaded" ? (
-          <span className="rounded-full border border-border/70 bg-background px-2 py-1 font-mono text-[0.68rem] uppercase tracking-[0.16em] text-muted-foreground">
-            {loadState.source === "report" ? "Source: report graph" : "Source: run findings"}
-          </span>
+        {workflowId ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 text-sm"
+            onClick={() => navigate(`/workflows/${workflowId}`)}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
         ) : null}
       </header>
 

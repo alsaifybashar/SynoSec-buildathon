@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ExecutionReportDetail,
@@ -111,12 +112,15 @@ describe("WorkflowGraphPage", () => {
       .mockResolvedValueOnce(reportList)
       .mockResolvedValueOnce(reportDetail);
 
-    render(<WorkflowGraphPage workflowId="70000000-0000-4000-8000-000000000002" />);
+    render(
+      <MemoryRouter>
+        <WorkflowGraphPage workflowId="70000000-0000-4000-8000-000000000002" />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
-      expect(screen.getByText("Source: report graph")).toBeInTheDocument();
+      expect(screen.getByLabelText("Execution report graph")).toBeInTheDocument();
     });
-    expect(screen.getByLabelText("Execution report graph")).toBeInTheDocument();
     expect(fetchJsonMock).toHaveBeenCalledTimes(3);
   });
 
@@ -160,18 +164,26 @@ describe("WorkflowGraphPage", () => {
       .mockResolvedValueOnce(reportList)
       .mockResolvedValueOnce(findingsResponse);
 
-    render(<WorkflowGraphPage workflowId="70000000-0000-4000-8000-000000000002" />);
+    render(
+      <MemoryRouter>
+        <WorkflowGraphPage workflowId="70000000-0000-4000-8000-000000000002" />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
-      expect(screen.getByText("Source: run findings")).toBeInTheDocument();
+      expect(screen.getByLabelText("Execution report graph")).toBeInTheDocument();
     });
-    expect(screen.getByLabelText("Execution report graph")).toBeInTheDocument();
+    expect(fetchJsonMock).toHaveBeenCalledTimes(3);
   });
 
   it("shows explicit empty state when no launch exists", async () => {
     fetchJsonMock.mockRejectedValueOnce(new ApiError("Workflow launch not found.", 404));
 
-    render(<WorkflowGraphPage workflowId="70000000-0000-4000-8000-000000000002" />);
+    render(
+      <MemoryRouter>
+        <WorkflowGraphPage workflowId="70000000-0000-4000-8000-000000000002" />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText("No workflow launch exists yet for this workflow.")).toBeInTheDocument();
@@ -181,7 +193,11 @@ describe("WorkflowGraphPage", () => {
   it("shows explicit error state on request failure", async () => {
     fetchJsonMock.mockRejectedValueOnce(new ApiError("Backend unavailable.", 500));
 
-    render(<WorkflowGraphPage workflowId="70000000-0000-4000-8000-000000000002" />);
+    render(
+      <MemoryRouter>
+        <WorkflowGraphPage workflowId="70000000-0000-4000-8000-000000000002" />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText("Failed to load workflow graph: Backend unavailable.")).toBeInTheDocument();

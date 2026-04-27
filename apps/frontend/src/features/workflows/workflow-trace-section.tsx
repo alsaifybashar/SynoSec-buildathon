@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getWorkflowReportedSystemGraph, getWorkflowRunContextTokenEstimate, getWorkflowRunModelStepCount, type AiAgent, type AiTool, type AttackPathSummary, type Observation, type Target as WorkflowTarget, type Workflow, type WorkflowRun } from "@synosec/contracts";
+import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { getWorkflowRunContextTokenEstimate, getWorkflowRunModelStepCount, type AiAgent, type AiTool, type AttackPathSummary, type Observation, type Target as WorkflowTarget, type Workflow, type WorkflowRun } from "@synosec/contracts";
 import { AlertTriangle, ChevronRight, LoaderCircle, Radio, Target } from "lucide-react";
 import { AttackPathsSection } from "@/features/attack-paths/attack-paths-section";
 import { DetailHintTrigger } from "@/shared/components/detail-page";
@@ -112,25 +112,6 @@ function MonoLabel({ children, className }: { children: ReactNode; className?: s
     <p className={cn("font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground", className)}>
       {children}
     </p>
-  );
-}
-
-function SeverityBadge({ severity }: { severity: FindingsRailItem["severity"] }) {
-  const tone =
-    severity === "critical"
-      ? "border-destructive/40 bg-destructive text-destructive-foreground"
-      : severity === "high"
-        ? "border-destructive/25 bg-destructive/90 text-destructive-foreground"
-        : severity === "medium"
-          ? "border-warning/35 bg-warning text-warning-foreground"
-          : severity === "low"
-            ? "border-primary/25 bg-primary/90 text-primary-foreground"
-            : "border-border bg-muted text-foreground";
-
-  return (
-    <span className={cn("inline-flex items-center rounded-sm border px-2 py-0.5 font-mono text-[0.62rem] uppercase tracking-[0.16em]", tone)}>
-      {severity}
-    </span>
   );
 }
 
@@ -1067,129 +1048,6 @@ function FindingsRail({
   );
 }
 
-function WorkflowSystemGraphSection({ run }: { run: WorkflowRun | null }) {
-  const graph = useMemo(() => getWorkflowReportedSystemGraph(run), [run]);
-  const [selectedResourceId, setSelectedResourceId] = useState<string | null>(graph.resources[0]?.id ?? null);
-
-  useEffect(() => {
-    setSelectedResourceId((current) => (
-      current && graph.resources.some((resource) => resource.id === current)
-        ? current
-        : graph.resources[0]?.id ?? null
-    ));
-  }, [graph.resources]);
-
-  if (graph.resources.length === 0 && graph.findings.length === 0) {
-    return null;
-  }
-
-  const selectedResource = graph.resources.find((resource) => resource.id === selectedResourceId) ?? graph.resources[0] ?? null;
-  const resourceFindings = selectedResource
-    ? graph.findings.filter((finding) => (finding.resourceIds ?? []).includes(selectedResource.id) || finding.resourceId === selectedResource.id)
-    : [];
-  const resourceEdges = selectedResource
-    ? graph.resourceRelationships.filter((relationship) => relationship.sourceResourceId === selectedResource.id || relationship.targetResourceId === selectedResource.id)
-    : [];
-
-  return (
-    <section className="rounded-xl border border-border/80 bg-card px-4 py-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <MonoLabel>System Graph</MonoLabel>
-          <p className="mt-1 text-sm text-muted-foreground">Resources are primary nodes. Findings stay attached to the resource they affect.</p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-[0.68rem] text-muted-foreground">
-          <span className="rounded-full border border-border/70 px-2 py-1">{graph.resources.length} resources</span>
-          <span className="rounded-full border border-border/70 px-2 py-1">{graph.resourceRelationships.length} system edges</span>
-          <span className="rounded-full border border-border/70 px-2 py-1">{graph.findings.length} findings</span>
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
-        <div className="space-y-2">
-          {graph.resources.map((resource) => {
-            const attachedFindings = graph.findings.filter((finding) => (finding.resourceIds ?? []).includes(resource.id) || finding.resourceId === resource.id);
-            return (
-              <button
-                key={resource.id}
-                type="button"
-                onClick={() => setSelectedResourceId(resource.id)}
-                className={cn(
-                  "w-full rounded-lg border px-3 py-3 text-left transition-colors",
-                  resource.id === selectedResource?.id ? "border-primary/60 bg-primary/5" : "border-border/70 bg-background/40 hover:bg-muted/30"
-                )}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{resource.name}</p>
-                    <p className="font-mono text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">{resource.kind}</p>
-                  </div>
-                  <span className="rounded-full border border-border/70 px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">
-                    {attachedFindings.length} findings
-                  </span>
-                </div>
-                {resource.summary ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{resource.summary}</p> : null}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="rounded-lg border border-border/70 bg-background/40 px-4 py-4">
-          {selectedResource ? (
-            <div className="space-y-4">
-              <div>
-                <p className="text-sm font-semibold text-foreground">{selectedResource.name}</p>
-                <p className="font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">{selectedResource.kind} · {selectedResource.id}</p>
-                {selectedResource.summary ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{selectedResource.summary}</p> : null}
-              </div>
-
-              <div>
-                <MonoLabel>Attached Findings</MonoLabel>
-                <div className="mt-2 space-y-2">
-                  {resourceFindings.length === 0 ? <p className="text-sm text-muted-foreground">No persisted findings are attached to this resource yet.</p> : null}
-                  {resourceFindings.map((finding) => (
-                    <div key={finding.id} className="rounded-lg border border-border/70 bg-card/70 px-3 py-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-medium text-foreground">{finding.title}</p>
-                        <SeverityBadge severity={finding.severity} />
-                      </div>
-                      <p className="mt-2 text-xs leading-5 text-muted-foreground">{finding.impact}</p>
-                      <p className="mt-2 text-[0.72rem] text-foreground/80">{finding.recommendation}</p>
-                      <div className="mt-2 flex flex-wrap gap-2 text-[0.66rem] text-muted-foreground">
-                        {finding.evidence.map((evidence, index) => (
-                          <span key={`${finding.id}:${index}`} className="rounded-full border border-border/70 px-2 py-1">
-                            {evidence.sourceTool}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <MonoLabel>System Edges</MonoLabel>
-                <div className="mt-2 space-y-2">
-                  {resourceEdges.length === 0 ? <p className="text-sm text-muted-foreground">No incoming or outgoing system relationships for this resource.</p> : null}
-                  {resourceEdges.map((relationship) => (
-                    <div key={relationship.id} className="rounded-lg border border-border/70 px-3 py-2 text-xs text-muted-foreground">
-                      <span className="font-mono uppercase tracking-[0.14em] text-foreground">{relationship.kind}</span>
-                      <span className="ml-2">{relationship.sourceResourceId} → {relationship.targetResourceId}</span>
-                      <p className="mt-1 leading-5">{relationship.summary}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No system resources have been reported yet.</p>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 export function WorkflowTraceSection({
   workflow,
   activeTarget,
@@ -1365,7 +1223,6 @@ export function WorkflowTraceSection({
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.75fr)]">
       <div className="min-w-0">
         <div className="space-y-4">
-          <WorkflowSystemGraphSection run={run} />
           {effectiveAttackPaths.paths.length > 0 ? (
             <AttackPathsSection
               attackPaths={effectiveAttackPaths}
