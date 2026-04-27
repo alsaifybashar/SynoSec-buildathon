@@ -982,6 +982,16 @@ describe("WorkflowExecutionService", () => {
             residualRisk: "Residual risk remains because recovery used available evidence only."
           });
           yield {
+            type: "tool-call",
+            toolCallId: "call-recovered-complete-run",
+            toolName: "complete_run",
+            input: {
+              summary: "Recovered completion from prior evidence.",
+              recommendedNextStep: "Review the partial run output.",
+              residualRisk: "Residual risk remains because recovery used available evidence only."
+            }
+          };
+          yield {
             type: "finish",
             finishReason: "stop",
             rawFinishReason: "end_turn",
@@ -999,6 +1009,17 @@ describe("WorkflowExecutionService", () => {
 
     expect(createdRuns[0]!.events.some((event) => event.title === "Run completion recovery requested")).toBe(true);
     expect(createdRuns[0]!.events.some((event) => event.title === "Run completion accepted")).toBe(true);
+    expect(createdRuns[0]!.events.some((event) =>
+      event.type === "tool_result"
+      && event.status === "completed"
+      && event.payload["toolName"] === "complete_run"
+      && event.payload["toolCallId"] === "call-recovered-complete-run"
+    )).toBe(true);
+    const recoveryEvent = createdRuns[0]!.events.find((event) => event.title === "Run completion recovery requested");
+    expect(recoveryEvent?.detail).toContain("Active stage gate:");
+    expect(recoveryEvent?.detail).toContain("Recovery state:");
+    expect(recoveryEvent?.detail).toContain("Required next action:");
+    expect(recoveryEvent?.detail).toContain("Self-check before complete_run:");
   });
 
   it("persists tool context, hides log_progress tool calls, and publishes live model output", async () => {
@@ -1067,7 +1088,8 @@ describe("WorkflowExecutionService", () => {
       : toolContextEvent?.detail;
     expect(toolContextBody).toContain("Built-in actions");
     expect(toolContextBody).toContain("complete_run: Finish the workflow run last");
-    expect(toolContextBody).toContain("optional `handoff`");
+    expect(toolContextBody).toContain("Do not use blocked completion to compensate for missing report_finding calls.");
+    expect(toolContextBody).not.toContain("optional `handoff`");
     expect(toolContextBody).not.toContain("report_attack_vector");
     expect(toolContextBody).not.toContain("deep_analysis");
 
@@ -1078,12 +1100,14 @@ describe("WorkflowExecutionService", () => {
     expect(systemPromptEvent?.detail).toContain("Operator URL: http://localhost:3000");
     expect(systemPromptEvent?.detail).toContain("Execution URL: http://localhost:3000/");
     expect(systemPromptEvent?.detail).toContain("Workflow execution contract:");
-    expect(systemPromptEvent?.detail).toContain("Required action order: run evidence tools first, then call report_finding");
-    expect(systemPromptEvent?.detail).toContain("report_finding mode `attack_vector`");
+    expect(systemPromptEvent?.detail).toContain("Run evidence tools first, use report_finding for supported weaknesses, and call complete_run last.");
+    expect(systemPromptEvent?.detail).toContain("Active stage gate:");
+    expect(systemPromptEvent?.detail).toContain("Self-check before complete_run:");
+    expect(systemPromptEvent?.detail).toContain("- minimum_reported_findings: 0");
     expect(systemPromptEvent?.detail).not.toContain("call report_attack_vector");
     expect(systemPromptEvent?.detail).toContain("complete_run does not create findings");
-    expect(systemPromptEvent?.detail).toContain("If complete_run is rejected, call the missing required actions");
-    expect(systemPromptEvent?.detail).toContain("When requireChainedFindings is enabled");
+    expect(systemPromptEvent?.detail).toContain("If complete_run is rejected, use the rejection reason to choose the next valid action.");
+    expect(systemPromptEvent?.detail).not.toContain("When requireChainedFindings is enabled");
     expect(systemPromptEvent?.payload["promptSourceLabel"]).toBe("Workflow-owned editable system prompt plus engine-generated target context and runtime contract.");
     expect(createdRuns[0]!.events.find((event) => event.title === "Rendered task prompt")).toBeUndefined();
 

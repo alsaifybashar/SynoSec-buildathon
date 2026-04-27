@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   attackVectorPlanningWorkflowId,
   bashSingleToolWorkflowId,
+  broadScriptToolIds,
+  broadScriptToolWorkflowId,
+  directScriptToolIds,
   getSeededRoleDefinition,
   seededToolDefinitions,
   getSeededWorkflowDefinitions,
@@ -20,8 +23,9 @@ describe("getSeededWorkflowDefinitions", () => {
     const workflows = getSeededWorkflowDefinitions();
     const planningWorkflow = workflows.find((candidate) => candidate.id === attackVectorPlanningWorkflowId);
     const bashWorkflow = workflows.find((candidate) => candidate.id === bashSingleToolWorkflowId);
+    const broadScriptWorkflow = workflows.find((candidate) => candidate.id === broadScriptToolWorkflowId);
 
-    expect(workflows).toHaveLength(2);
+    expect(workflows).toHaveLength(3);
 
     expect(planningWorkflow).toBeDefined();
     expect(planningWorkflow?.executionKind).toBe("workflow");
@@ -101,6 +105,24 @@ describe("getSeededWorkflowDefinitions", () => {
       requireToolCall: true,
       requireEvidenceBackedWeakness: false
     });
+
+    expect(broadScriptWorkflow).toBeDefined();
+    expect(broadScriptWorkflow?.executionKind).toBe("workflow");
+    expect(broadScriptWorkflow?.stages.map((stage) => stage.label)).toEqual(["Broad Script Execution"]);
+    expect(broadScriptWorkflow?.stages[0]?.agentId).toBe(seededAgentId("broad-script-agent"));
+    expect(broadScriptWorkflow?.stages[0]?.allowedToolIds).toEqual([
+      "builtin-log-progress",
+      "builtin-report-finding",
+      "builtin-complete-run",
+      ...broadScriptToolIds
+    ]);
+    expect(broadScriptWorkflow?.stages[0]?.allowedToolIds).not.toContain("builtin-report-attack-vector");
+    expect(broadScriptWorkflow?.stages[0]?.allowedToolIds).not.toContain("seed-agent-bash-command");
+    expect(broadScriptWorkflow?.stages[0]?.objective).toContain("approved direct script-backed tools");
+    expect(broadScriptWorkflow?.stages[0]?.completionRule).toMatchObject({
+      requireToolCall: true,
+      requireEvidenceBackedWeakness: false
+    });
   });
 
   it("gives the seeded system prompts a canonical instruction shape", () => {
@@ -148,6 +170,22 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(bashAgent?.systemPrompt).toContain("sqlmap");
     expect(bashAgent?.systemPrompt).toContain("wpscan");
     expect(bashAgent?.toolIds).toEqual(["seed-agent-bash-command"]);
+  });
+
+  it("seeds a broad script agent with purpose-built direct seeded bash tools", () => {
+    const broadScriptAgent = getSeededRoleDefinition("broad-script-agent");
+
+    expect(broadScriptAgent).toBeDefined();
+    expect(broadScriptAgent?.name).toBe("Broad Script Tool Agent");
+    expect(broadScriptAgent?.systemPrompt).toContain("Broad script tool access:");
+    expect(broadScriptAgent?.systemPrompt).toContain("preserve original tool failures");
+    expect(broadScriptAgent?.toolIds).toEqual(broadScriptToolIds);
+    expect(directScriptToolIds).toContain("seed-agent-bash-command");
+    expect(broadScriptAgent?.toolIds).not.toContain("seed-agent-bash-command");
+    expect(broadScriptAgent?.toolIds.every((toolId) => toolId.startsWith("seed-"))).toBe(true);
+    expect(broadScriptAgent?.toolIds).not.toContain("builtin-log-progress");
+    expect(broadScriptAgent?.toolIds).not.toContain("builtin-report-finding");
+    expect(broadScriptAgent?.toolIds).not.toContain("builtin-complete-run");
   });
 
   it("does not seed legacy bash family wrapper tools", () => {

@@ -56,21 +56,10 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
   ].join("\n");
   private static readonly SYSTEM_PROTOCOL_SUFFIX = [
     "Workflow execution contract:",
-    "Use only the approved tools and built-in workflow actions exposed for this run.",
-    "Required action order: run evidence tools first, then call report_finding for supported weaknesses and existing-finding attack vectors, then call complete_run last.",
-    "Report concrete evidence-backed findings with report_finding mode `finding`.",
-    "For report_finding mode `finding`, prefer a minimal payload: required fields plus at least one evidence item with a persisted reference.",
-    "Use report_finding mode `attack_vector` to submit one or more transitions between existing finding ids only. Non-related vectors require grounded transition evidence.",
-    "Do not report a finding unless the quote is traceable to a persisted tool result and contains concrete proof details.",
-    "If required evidence tools fail because the runtime target is unreachable or infrastructure is misconfigured, finish with complete_run blocked details instead of reporting target unavailability as a vulnerability.",
-    "Prefer at most four strong findings. Stop once the main compromise path is proven.",
-    "complete_run does not create findings and cannot satisfy missing evidence, missing finding, or missing chain requirements.",
-    "If complete_run is rejected, call the missing required actions or evidence tools before trying completion again.",
-    "For blocked outcomes, complete_run still requires top-level summary, recommendedNextStep, and residualRisk.",
-    "For blocked.failedToolRunIds, reference actual failed toolRunId values returned by prior tool calls in this run.",
-    "When setting timeout_ms for bash tools, pass a numeric value, not a string.",
-    "When requireChainedFindings is enabled, satisfy it through explicit validated attack vectors, finding relationship fields, chain metadata, or a handoff attack path referencing finding ids.",
-    ATTACK_PATH_HANDOFF_HINT,
+    "Run evidence tools first, use report_finding for supported weaknesses, and call complete_run last.",
+    "Before complete_run, compare your progress against the active stage gate below.",
+    "complete_run does not create findings and cannot compensate for missing findings, missing evidence, or missing handoff data.",
+    "If complete_run is rejected, use the rejection reason to choose the next valid action.",
     "End every run explicitly with complete_run."
   ].join("\n");
 
@@ -137,9 +126,11 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       targetUrl: target.baseUrl,
       targetDisplayUrl: target.displayBaseUrl ?? target.baseUrl
     });
+    const completionRulePrompt = describeCompletionRuleForPrompt(stage);
     const systemPrompt = [
       renderedStageSystemPrompt,
       targetContextPrompt,
+      completionRulePrompt,
       DefaultWorkflowStageExecutor.SYSTEM_PROTOCOL_SUFFIX
     ].join("\n\n");
     const builtinLifecycleToolNames = new Set([
@@ -288,8 +279,8 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         title: "Built-in actions",
         tools: [
           { name: "log_progress", description: "Persist a short operator-visible progress update in the workflow transcript. Use this before or after meaningful tool calls to explain the current action or decision in one concise sentence. Provide `message`. Returns acceptance only; it does not create evidence, findings, or attack-path links." },
-          { name: "report_finding", description: "Persist findings and attack-vector links through one mode-based action. Use `mode: \"finding\"` for evidence-backed findings (optionally with `attackVectors` between existing finding ids) and `mode: \"attack_vector\"` to submit one or more vectors between existing findings only. Non-related vectors require grounded transition evidence." },
-          { name: "complete_run", description: `Finish the workflow run last, after required evidence, report_finding calls, finding ids, and any handoff attack paths have been submitted. Use this only as the final action. Provide \`summary\`, \`recommendedNextStep\`, \`residualRisk\`, and optional \`handoff\`. For blocked outcomes, keep those top-level fields and include blocked.failedToolRunIds using actual failed toolRunId values from earlier tool results. It does not create findings and cannot satisfy missing evidence, finding, or chain requirements. ${ATTACK_PATH_HANDOFF_HINT}` }
+          { name: "report_finding", description: buildReportFindingDescription(stage) },
+          { name: "complete_run", description: buildCompleteRunDescription(stage) }
         ]
       }
     ]);
@@ -397,6 +388,44 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         summary: `Recorded ${severity} finding: ${title} on ${host}.`,
         detail: JSON.stringify(output, null, 2)
       };
+    };
+
+    const appendAcceptedCompleteRunToolResult = async (toolCallId: string, rawStreamPartType: string) => {
+      if (!terminalState || persistedToolResultIds.has(toolCallId)) {
+        return;
+      }
+
+      const completionDetail = [
+        `Agent summary: ${terminalState.summary}`,
+        `Recommended next step: ${terminalState.recommendedNextStep}`,
+        `Residual risk: ${terminalState.residualRisk}`,
+        ...(terminalState.blocked ? [
+          `Blocked reason: ${terminalState.blocked.reason}`,
+          `Operator summary: ${terminalState.blocked.operatorSummary}`,
+          `Recommended fix: ${terminalState.blocked.recommendedFix}`
+        ] : [])
+      ].join("\n");
+      const output = { accepted: true };
+      persistedToolResultIds.add(toolCallId);
+      await appendEvent("tool_result", "completed", {
+        toolCallId,
+        toolName: "complete_run",
+        toolId: null,
+        output,
+        summary: "complete_run accepted.",
+        outputPreview: "complete_run accepted.",
+        fullOutput: JSON.stringify(output, null, 2),
+        commandPreview: null,
+        exitCode: null,
+        observations: [],
+        observationRecords: [],
+        usedToolId: null,
+        usedToolName: null,
+        fallbackUsed: false,
+        attempts: []
+      }, "complete_run returned", "complete_run accepted.", completionDetail, undefined, {
+        rawStreamPartType
+      });
     };
 
     const finalizeLiveModelOutput = () => {
@@ -758,7 +787,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         }
       }),
       complete_run: createSdkTool({
-        description: `Finish the workflow run last, after required evidence, report_finding calls, finding ids, and any handoff attack paths have been submitted. Use this only as the final action. Provide \`summary\`, \`recommendedNextStep\`, \`residualRisk\`, and optional \`handoff\`. It does not create findings and cannot satisfy missing evidence, finding, or chain requirements. ${ATTACK_PATH_HANDOFF_HINT}`,
+        description: buildCompleteRunDescription(stage),
         inputSchema: z.object({
           summary: z.string().min(1),
           recommendedNextStep: z.string().min(1),
@@ -1013,6 +1042,9 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             }, `Calling ${part.toolName}`, `Invoked ${part.toolName}.`, JSON.stringify(part.input, null, 2), undefined, {
               rawStreamPartType: part.type
             });
+            if (part.toolName === "complete_run") {
+              await appendAcceptedCompleteRunToolResult(part.toolCallId, part.type);
+            }
             break;
           case "tool-result": {
             if (part.toolName === "log_progress") {
@@ -1153,10 +1185,25 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     }
 
     if (!terminalState) {
+      const failedToolRunIds = executedResults
+        .filter((result) => result.status === "failed" || result.status === "denied")
+        .map((result) => result.toolRun.id);
       const recoveryPrompt = [
         "The previous model stream ended without calling complete_run.",
-        "Use the collected tool results below and call complete_run now. Do not call additional evidence tools.",
-        "If the evidence is incomplete or tool failures blocked validation, include a blocked outcome with top-level summary, recommendedNextStep, and residualRisk.",
+        "Do not call additional evidence tools.",
+        "",
+        describeCompletionRuleForPrompt(stage),
+        "",
+        "Recovery state:",
+        `- reported_findings: ${reportedFindings.size}`,
+        `- reported_attack_vectors: ${reportedAttackVectors.size}`,
+        `- failed_tool_runs: ${failedToolRunIds.length > 0 ? failedToolRunIds.join(", ") : "none"}`,
+        "",
+        "Required next action:",
+        "- If the stage gate is already satisfied, call complete_run once as the final action.",
+        "- If evidence already supports a required weakness but no finding was submitted successfully, call report_finding instead of complete_run blocked.",
+        "- Use blocked completion only when actual failed or denied tool runs prevented validation, and include those toolRunId values.",
+        "- Do not invent findings, attack paths, or failed tool references.",
         "",
         "Tool results:",
         ...(executedResults.length > 0
@@ -1168,9 +1215,6 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
                 : null
             ].filter(Boolean).join("\n"))
           : ["No evidence tools were executed."]),
-        "",
-        `Reported findings: ${reportedFindings.size}`,
-        `Reported attack vectors: ${reportedAttackVectors.size}`
       ].join("\n");
 
       await appendEvent("verification", "failed", {
@@ -1224,6 +1268,9 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               }, `Calling ${part.toolName}`, `Invoked ${part.toolName}.`, JSON.stringify(part.input, null, 2), undefined, {
                 rawStreamPartType: part.type
               });
+              if (part.toolName === "complete_run") {
+                await appendAcceptedCompleteRunToolResult(part.toolCallId, part.type);
+              }
               break;
             }
             case "tool-result": {
@@ -1821,6 +1868,77 @@ function evaluateCompletionAssertions(input: {
   const enabled = Object.values(assertions).some((assertion) => assertion.required);
 
   return { enabled, assertions, failures };
+}
+
+function describeCompletionRuleForPrompt(stage: WorkflowStage) {
+  const rule = stage.completionRule;
+  const effectiveMinFindings = Math.max(0, rule.minFindings);
+  const evidenceBackedWeaknessesRequired = rule.requireEvidenceBackedWeakness || effectiveMinFindings > 0 || !rule.allowEmptyResult;
+  const reachableSurfaceRequired = rule.requireReachableSurface || rule.requireToolCall;
+  const handoffRequired = Boolean(stage.handoffSchema);
+  const failedToolOnlyBlocked = true;
+  const lines = [
+    "Active stage gate:",
+    `- successful_evidence_tool_required: ${reachableSurfaceRequired ? "yes" : "no"}`,
+    `- evidence_backed_findings_required: ${evidenceBackedWeaknessesRequired ? "yes" : "no"}`,
+    `- minimum_reported_findings: ${effectiveMinFindings}`,
+    `- blocked_completion_requires_failed_tool_runs: ${failedToolOnlyBlocked ? "yes" : "no"}`
+  ];
+
+  if (rule.requireOsiCoverageStatus) {
+    lines.push("- osi_coverage_required: yes");
+  }
+  if (rule.requireChainedFindings) {
+    lines.push("- chained_findings_required: yes");
+  }
+  if (handoffRequired) {
+    lines.push("- handoff_required: yes");
+  }
+
+  lines.push(
+    "Self-check before complete_run:",
+    "- Count only findings that were submitted successfully with report_finding.",
+    "- Missing findings, missing evidence, missing chain validation, or missing handoff data are not valid blocked reasons.",
+    "- If a required weakness is supported by tool results but not yet reported, call report_finding before complete_run."
+  );
+
+  return lines.join("\n");
+}
+
+function buildReportFindingDescription(stage: WorkflowStage) {
+  const lines = [
+    "Persist findings and attack-vector links through one mode-based action.",
+    "Use `mode: \"finding\"` for evidence-backed weaknesses. Include the required fields plus at least one evidence item with a persisted reference.",
+    "Use `mode: \"attack_vector\"` only for transitions between existing finding ids."
+  ];
+
+  if (stage.completionRule.requireChainedFindings) {
+    lines.push("This stage requires chained findings, so use attack vectors, relationship fields, chain metadata, or handoff attack paths to make the chain explicit.");
+  }
+
+  if (stage.handoffSchema) {
+    lines.push("If you intend to complete with handoff, keep finding ids consistent with the final handoff references.");
+  }
+
+  return lines.join(" ");
+}
+
+function buildCompleteRunDescription(stage: WorkflowStage) {
+  const lines = [
+    "Finish the workflow run last.",
+    "Use this only after the active stage gate is satisfied.",
+    "Provide `summary`, `recommendedNextStep`, and `residualRisk`.",
+    "It does not create findings and cannot compensate for missing findings or missing evidence.",
+    "Use blocked completion only when actual failed or denied tool runs prevented validation, and include `blocked.failedToolRunIds` with those real toolRunId values.",
+    "Do not use blocked completion to compensate for missing report_finding calls."
+  ];
+
+  if (stage.handoffSchema) {
+    lines.push("This stage also requires `handoff` when the stage gate says handoff is required.");
+    lines.push(ATTACK_PATH_HANDOFF_HINT);
+  }
+
+  return lines.join(" ");
 }
 
 function getCoveredWorkflowLayers(
