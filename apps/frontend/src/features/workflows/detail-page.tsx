@@ -5,7 +5,7 @@ import { apiRoutes, type AiAgent, type UpdateWorkflowBody, type Workflow } from 
 import { workflowsResource } from "@/features/workflows/resource";
 import { workflowTransfer } from "@/features/workflows/transfer";
 import { useWorkflowDefinitionContext } from "@/features/workflows/context";
-import { PromptEditModal, type PromptEditDraft } from "@/features/workflows/prompt-edit-modal";
+import { PromptEditModal, joinWorkflowPromptSections, splitWorkflowPromptSections, type PromptEditDraft } from "@/features/workflows/prompt-edit-modal";
 import { useWorkflowRunState } from "@/features/workflows/use-workflow-run-state";
 import { WorkflowTraceSection } from "@/features/workflows/workflow-trace-section";
 import { DetailLoadingState, DetailPage } from "@/shared/components/detail-page";
@@ -32,7 +32,8 @@ export function WorkflowDetailPage({
   const [showFullDetails, setShowFullDetails] = useState(false);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [promptDraft, setPromptDraft] = useState<PromptEditDraft>({
-    systemPrompt: ""
+    systemPrompt: "",
+    executionContract: ""
   });
   const [promptSavePending, setPromptSavePending] = useState(false);
   const [promptSaveError, setPromptSaveError] = useState<string | null>(null);
@@ -137,7 +138,7 @@ export function WorkflowDetailPage({
     }
 
     setPromptDraft({
-      systemPrompt: workflow.stageSystemPrompt
+      ...splitWorkflowPromptSections(workflow.stageSystemPrompt)
     });
     setPromptSaveError(null);
     setShowPromptEditor(true);
@@ -149,13 +150,20 @@ export function WorkflowDetailPage({
     }
 
     const nextSystemPrompt = promptDraft.systemPrompt.trim();
+    const nextExecutionContract = promptDraft.executionContract.trim();
     if (!nextSystemPrompt) {
       setPromptSaveError("Workflow system prompt is required.");
       return;
     }
+    if (!nextExecutionContract) {
+      setPromptSaveError("Workflow execution contract is required.");
+      return;
+    }
+
+    const nextStageSystemPrompt = joinWorkflowPromptSections(promptDraft);
 
     const workflowChanged =
-      nextSystemPrompt !== workflow.stageSystemPrompt;
+      nextStageSystemPrompt !== workflow.stageSystemPrompt;
 
     if (!workflowChanged) {
       setShowPromptEditor(false);
@@ -178,7 +186,7 @@ export function WorkflowDetailPage({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            stageSystemPrompt: nextSystemPrompt
+            stageSystemPrompt: nextStageSystemPrompt
           } satisfies UpdateWorkflowBody)
         });
         workflowSaved = true;
@@ -288,36 +296,6 @@ export function WorkflowDetailPage({
         sidebar={null}
         relatedContent={null}
       >
-        <div className="mb-4 space-y-3 rounded-xl border border-border bg-background/40 px-4 py-3">
-          <div>
-            <span className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-              Every agent receives these for this workflow
-            </span>
-            <p className="mt-1 text-sm text-foreground">
-              {workflowProvidedToolIds.length > 0
-                ? `${workflowProvidedToolIds.length} workflow-provided tool${workflowProvidedToolIds.length === 1 ? "" : "s"}`
-                : "No workflow-level surface selected. This workflow inherits the linked agent grants."}
-            </p>
-            {workflowProvidedToolIds.length > 0 ? (
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                {workflowProvidedToolIds.map((toolId) => context.toolLookup[toolId] ?? toolId).join(", ")}
-              </p>
-            ) : null}
-          </div>
-          <div>
-            <span className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-              Linked agent persisted grants
-            </span>
-            <p className="mt-1 text-sm text-foreground">
-              {inheritedAgentToolIds.length} persisted grant{inheritedAgentToolIds.length === 1 ? "" : "s"}
-            </p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              {inheritedAgentToolIds.length > 0
-                ? inheritedAgentToolIds.map((toolId) => context.toolLookup[toolId] ?? toolId).join(", ")
-                : "None"}
-            </p>
-          </div>
-        </div>
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <span className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">
             Targets

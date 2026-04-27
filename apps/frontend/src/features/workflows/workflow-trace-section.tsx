@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
-import { getWorkflowRunContextTokenEstimate, getWorkflowRunModelStepCount, type AiAgent, type AiTool, type AttackPathSummary, type Observation, type Target as WorkflowTarget, type Workflow, type WorkflowRun } from "@synosec/contracts";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { getWorkflowReportedSystemGraph, getWorkflowRunContextTokenEstimate, getWorkflowRunModelStepCount, type AiAgent, type AiTool, type AttackPathSummary, type Observation, type Target as WorkflowTarget, type Workflow, type WorkflowRun } from "@synosec/contracts";
 import { AlertTriangle, ChevronRight, LoaderCircle, Radio, Target } from "lucide-react";
 import { AttackPathsSection } from "@/features/attack-paths/attack-paths-section";
 import { DetailHintTrigger } from "@/shared/components/detail-page";
@@ -281,77 +281,18 @@ function createWorkflowBuiltinToolSegment(): StructuredToolSegment["tools"] {
       }, null, 2),
     },
     {
-      key: "builtin:report_finding",
-      name: "report_finding",
-      description: "Persist one evidence-backed workflow finding.",
+      key: "builtin:report_system_graph_batch",
+      name: "report_system_graph_batch",
+      description: "Persist one batched workflow system graph with resources, findings, and relationships.",
       source: "builtin-action",
       inputSchema: JSON.stringify({
         type: "object",
-        required: ["title", "evidence"],
         properties: {
-          mode: { type: "string", enum: ["finding"] },
-          type: { type: "string" },
-          title: { type: "string" },
-          severity: { type: "string", enum: ["info", "low", "medium", "high", "critical"] },
-          target: {
-            type: "object",
-            required: ["host"],
-            properties: {
-              host: { type: "string" },
-              port: { type: "number" },
-              url: { type: "string" }
-            }
-          },
-          evidence: {
-            type: "array",
-            items: {
-              type: "object"
-            }
-          },
-          impact: { type: "string" },
-          recommendation: { type: "string" },
-          confidence: { type: "number" },
-          validationStatus: { type: "string" },
-          explanationSummary: { type: "string" },
-          confidenceReason: { type: "string" },
-          relationshipExplanations: { type: "object" },
-          reproduction: {
-            type: "object"
-          },
-          tags: {
-            type: "array",
-            items: { type: "string" }
-          }
-        }
-      }, null, 2),
-    },
-    {
-      key: "builtin:report_attack_vectors",
-      name: "report_attack_vectors",
-      description: "Persist explicit attack-vector links between existing findings.",
-      source: "builtin-action",
-      inputSchema: JSON.stringify({
-        type: "object",
-        required: ["attackVectors"],
-        properties: {
-          attackVectors: {
-            type: "array",
-            items: {
-              type: "object",
-              required: ["kind", "sourceFindingId", "destinationFindingId", "summary", "impact", "confidence"],
-              properties: {
-                kind: { type: "string", enum: ["enables", "derived_from", "related", "lateral_movement"] },
-                sourceFindingId: { type: "string" },
-                destinationFindingId: { type: "string" },
-                summary: { type: "string" },
-                preconditions: { type: "array", items: { type: "string" } },
-                impact: { type: "string" },
-                transitionEvidence: { type: "array", items: { type: "object" } },
-                confidence: { type: "number" },
-                validationStatus: { type: "string" }
-              }
-            }
-          }
+          resources: { type: "array", items: { type: "object" } },
+          resourceRelationships: { type: "array", items: { type: "object" } },
+          findings: { type: "array", items: { type: "object" } },
+          findingRelationships: { type: "array", items: { type: "object" } },
+          paths: { type: "array", items: { type: "object" } }
         }
       }, null, 2),
     },
@@ -1096,16 +1037,11 @@ function InlineTranscriptEntry({ atom, showFullDetails }: { atom: DuplexAtom; sh
 }
 
 function FindingsRail({
-  findings,
-  runStatus,
   metadata
 }: {
-  findings: TranscriptProjection["findings"];
-  runStatus: WorkflowRun["status"] | null;
   metadata: MetadataItem[];
 }) {
-  const shouldRender = metadata.length > 0 || findings.length > 0 || runStatus === "completed" || runStatus === "failed";
-  if (!shouldRender) {
+  if (metadata.length === 0) {
     return null;
   }
 
@@ -1127,55 +1063,130 @@ function FindingsRail({
           </div>
         </DetailMetadataPanel>
       ) : null}
-      <div className="rounded-xl border border-border/80 bg-card">
-        <div className="px-4 py-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <MonoLabel>Standalone findings</MonoLabel>
-              <HelpHint
-                label="Standalone findings"
-                hint="Findings reported by the workflow that are not yet cited by any attack path. Findings rolled up into a path appear there instead."
-              />
-            </div>
-            <span className="font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">
-              {findings.length} · {runStatus ?? "idle"}
-            </span>
-          </div>
-          {findings.length === 0 ? (
-            <p className="mt-2 text-xs text-muted-foreground">All reported findings are rolled up into an attack path.</p>
-          ) : null}
-        </div>
-        {findings.length > 0 ? (
-          <ul className="divide-y divide-border/60 border-t border-border/60">
-            {findings.map((finding) => (
-              <li key={finding.id}>
-                <details className="group">
-                  <summary className="grid cursor-pointer list-none grid-cols-[5rem_minmax(0,1fr)_4rem_1rem] items-center gap-3 px-4 py-2.5 marker:hidden hover:bg-muted/30">
-                    <SeverityBadge severity={finding.severity} />
-                    <div className="min-w-0">
-                      <p className="truncate text-[0.82rem] font-medium text-foreground">{finding.title}</p>
-                      <p className="mt-0.5 flex items-center gap-1 truncate font-mono text-[0.6rem] uppercase tracking-[0.12em] text-muted-foreground">
-                        <Target className="h-3 w-3 shrink-0 text-primary" />
-                        <span className="truncate">{finding.host}</span>
-                      </p>
-                    </div>
-                    <span className="text-right font-mono text-[0.62rem] uppercase tracking-[0.12em] text-muted-foreground">
-                      {finding.confidence.toFixed(2)}
-                    </span>
-                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
-                  </summary>
-                  <div className="space-y-2 border-t border-dashed border-border/60 bg-background/40 px-4 py-3">
-                    <p className="font-mono text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">{finding.type}</p>
-                    <p className="text-[0.8rem] leading-5 text-muted-foreground">{finding.impact}</p>
-                    <p className="border-t border-dashed border-border/60 pt-2 text-[0.8rem] leading-5 text-foreground/85">{finding.recommendation}</p>
-                  </div>
-                </details>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
     </aside>
+  );
+}
+
+function WorkflowSystemGraphSection({ run }: { run: WorkflowRun | null }) {
+  const graph = useMemo(() => getWorkflowReportedSystemGraph(run), [run]);
+  const [selectedResourceId, setSelectedResourceId] = useState<string | null>(graph.resources[0]?.id ?? null);
+
+  useEffect(() => {
+    setSelectedResourceId((current) => (
+      current && graph.resources.some((resource) => resource.id === current)
+        ? current
+        : graph.resources[0]?.id ?? null
+    ));
+  }, [graph.resources]);
+
+  if (graph.resources.length === 0 && graph.findings.length === 0) {
+    return null;
+  }
+
+  const selectedResource = graph.resources.find((resource) => resource.id === selectedResourceId) ?? graph.resources[0] ?? null;
+  const resourceFindings = selectedResource
+    ? graph.findings.filter((finding) => (finding.resourceIds ?? []).includes(selectedResource.id) || finding.resourceId === selectedResource.id)
+    : [];
+  const resourceEdges = selectedResource
+    ? graph.resourceRelationships.filter((relationship) => relationship.sourceResourceId === selectedResource.id || relationship.targetResourceId === selectedResource.id)
+    : [];
+
+  return (
+    <section className="rounded-xl border border-border/80 bg-card px-4 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <MonoLabel>System Graph</MonoLabel>
+          <p className="mt-1 text-sm text-muted-foreground">Resources are primary nodes. Findings stay attached to the resource they affect.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-[0.68rem] text-muted-foreground">
+          <span className="rounded-full border border-border/70 px-2 py-1">{graph.resources.length} resources</span>
+          <span className="rounded-full border border-border/70 px-2 py-1">{graph.resourceRelationships.length} system edges</span>
+          <span className="rounded-full border border-border/70 px-2 py-1">{graph.findings.length} findings</span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
+        <div className="space-y-2">
+          {graph.resources.map((resource) => {
+            const attachedFindings = graph.findings.filter((finding) => (finding.resourceIds ?? []).includes(resource.id) || finding.resourceId === resource.id);
+            return (
+              <button
+                key={resource.id}
+                type="button"
+                onClick={() => setSelectedResourceId(resource.id)}
+                className={cn(
+                  "w-full rounded-lg border px-3 py-3 text-left transition-colors",
+                  resource.id === selectedResource?.id ? "border-primary/60 bg-primary/5" : "border-border/70 bg-background/40 hover:bg-muted/30"
+                )}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{resource.name}</p>
+                    <p className="font-mono text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">{resource.kind}</p>
+                  </div>
+                  <span className="rounded-full border border-border/70 px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">
+                    {attachedFindings.length} findings
+                  </span>
+                </div>
+                {resource.summary ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{resource.summary}</p> : null}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="rounded-lg border border-border/70 bg-background/40 px-4 py-4">
+          {selectedResource ? (
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-foreground">{selectedResource.name}</p>
+                <p className="font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">{selectedResource.kind} · {selectedResource.id}</p>
+                {selectedResource.summary ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{selectedResource.summary}</p> : null}
+              </div>
+
+              <div>
+                <MonoLabel>Attached Findings</MonoLabel>
+                <div className="mt-2 space-y-2">
+                  {resourceFindings.length === 0 ? <p className="text-sm text-muted-foreground">No persisted findings are attached to this resource yet.</p> : null}
+                  {resourceFindings.map((finding) => (
+                    <div key={finding.id} className="rounded-lg border border-border/70 bg-card/70 px-3 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-foreground">{finding.title}</p>
+                        <SeverityBadge severity={finding.severity} />
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">{finding.impact}</p>
+                      <p className="mt-2 text-[0.72rem] text-foreground/80">{finding.recommendation}</p>
+                      <div className="mt-2 flex flex-wrap gap-2 text-[0.66rem] text-muted-foreground">
+                        {finding.evidence.map((evidence, index) => (
+                          <span key={`${finding.id}:${index}`} className="rounded-full border border-border/70 px-2 py-1">
+                            {evidence.sourceTool}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <MonoLabel>System Edges</MonoLabel>
+                <div className="mt-2 space-y-2">
+                  {resourceEdges.length === 0 ? <p className="text-sm text-muted-foreground">No incoming or outgoing system relationships for this resource.</p> : null}
+                  {resourceEdges.map((relationship) => (
+                    <div key={relationship.id} className="rounded-lg border border-border/70 px-3 py-2 text-xs text-muted-foreground">
+                      <span className="font-mono uppercase tracking-[0.14em] text-foreground">{relationship.kind}</span>
+                      <span className="ml-2">{relationship.sourceResourceId} → {relationship.targetResourceId}</span>
+                      <p className="mt-1 leading-5">{relationship.summary}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No system resources have been reported yet.</p>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -1354,13 +1365,16 @@ export function WorkflowTraceSection({
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.75fr)]">
       <div className="min-w-0">
         <div className="space-y-4">
-          <AttackPathsSection
-            attackPaths={effectiveAttackPaths}
-            findingTitles={new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding.title]))}
-            findingSeverities={new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding.severity]))}
-            summary="Ranked attack paths are the primary outcome of the run. The transcript below is the evidence trail that supports each path and finding."
-            emptyMessage="No linked attack paths were derived from this run yet. Standalone findings still appear in the support rail."
-          />
+          <WorkflowSystemGraphSection run={run} />
+          {effectiveAttackPaths.paths.length > 0 ? (
+            <AttackPathsSection
+              attackPaths={effectiveAttackPaths}
+              findingTitles={new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding.title]))}
+              findingSeverities={new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding.severity]))}
+              summary="Ranked attack paths are the primary outcome of the run. The transcript below is the evidence trail that supports each path and finding."
+              emptyMessage="No linked attack paths were derived from this run yet."
+            />
+          ) : null}
           <div ref={transcriptRef} className="relative min-h-[38rem]">
             <div className="mx-auto w-full max-w-[56rem] px-6 py-8">
               <div className="space-y-5">
@@ -1409,7 +1423,7 @@ export function WorkflowTraceSection({
         </div>
       </div>
 
-      <FindingsRail findings={standaloneFindings} runStatus={run?.status ?? null} metadata={metadataItems} />
+      <FindingsRail metadata={metadataItems} />
 
       <style>{`
         @keyframes duplex-in {

@@ -241,13 +241,12 @@ const run: WorkflowRun = {
         toolName: tool.name,
         outputPreview: "200 OK",
         output: {
-          toolRunId: "tool-run-1",
-          toolId: tool.id,
-          toolName: tool.name,
-          status: "completed",
-          outputPreview: "200 OK",
-          observations: []
-        }
+          id: "tool-run-1",
+          summary: "200 OK"
+        },
+        observations: [],
+        totalObservations: 0,
+        truncated: false
       },
       createdAt: "2026-04-21T00:00:03.000Z"
     }
@@ -411,10 +410,12 @@ describe("WorkflowDetailPage", () => {
     expect(screen.getByRole("button", { name: "Show Full Details" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Show guidance for Target" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show guidance for Current Run" })).toBeInTheDocument();
+    expect(screen.queryByText("Every agent receives these for this workflow")).not.toBeInTheDocument();
+    expect(screen.queryByText("Linked agent persisted grants")).not.toBeInTheDocument();
     expect(await screen.findByText("0k in · 0k out · 0k total")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show Full Details" }));
     expect(await screen.findByRole("button", { name: "Hide Full Details" })).toBeInTheDocument();
-    expect(screen.getByText(/"outputPreview": "200 OK"/)).toBeInTheDocument();
+    expect(screen.getByText(/"summary": "200 OK"/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Workflow" }));
     expect(onNavigateToEdit).toHaveBeenCalledWith(workflow.id, workflow.name);
@@ -459,13 +460,16 @@ describe("WorkflowDetailPage", () => {
     expect(await screen.findByRole("dialog", { name: "Edit Prompts" })).toBeInTheDocument();
     expect(screen.getByText("Workflow context")).toBeInTheDocument();
     expect(screen.getByText("Target context")).toBeInTheDocument();
-    expect(screen.getByText("Completion contract")).toBeInTheDocument();
+    expect(screen.getByText("Workflow execution contract")).toBeInTheDocument();
     expect(screen.getByDisplayValue(/Runtime target context:/)).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/Target URL: http:\/\/127.0.0.1:3000/)).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/Before the run stops, call complete_run/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/Operator URL: http:\/\/127.0.0.1:3000/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/Run evidence tools first, submit evidence-backed resources, findings, and relationships with report_system_graph_batch/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Workflow system prompt"), {
       target: { value: "Drive the workflow decisively and report evidence-backed findings." }
+    });
+    fireEvent.change(screen.getByLabelText("Workflow execution contract"), {
+      target: { value: "Workflow execution contract:\nCall complete_run last and include only `summary`." }
     });
     fireEvent.click(screen.getByRole("button", { name: "Save and Run" }));
 
@@ -477,7 +481,7 @@ describe("WorkflowDetailPage", () => {
     const workflowPatchCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}` && init?.method === "PATCH");
 
     expect(JSON.parse(String(workflowPatchCall?.[1]?.body))).toEqual({
-      stageSystemPrompt: "Drive the workflow decisively and report evidence-backed findings."
+      stageSystemPrompt: "Drive the workflow decisively and report evidence-backed findings.\n\nWorkflow execution contract:\nCall complete_run last and include only `summary`."
     });
   });
 });

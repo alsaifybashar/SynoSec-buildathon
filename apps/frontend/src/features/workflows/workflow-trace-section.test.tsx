@@ -206,7 +206,7 @@ const run: WorkflowRun = {
         "Built-in actions",
         "",
         "log_progress: Persist one short operator-visible progress update for the workflow transcript.",
-        "report_finding: Persist one evidence-backed workflow finding.",
+        "report_system_graph_batch: Persist one batched workflow system graph with resources, findings, and relationships.",
         "complete_run: Finish the workflow pipeline successfully."
       ].join("\n"),
       payload: {
@@ -220,7 +220,7 @@ const run: WorkflowRun = {
           "Built-in actions",
           "",
           "log_progress: Persist one short operator-visible progress update for the workflow transcript.",
-          "report_finding: Persist one evidence-backed workflow finding.",
+          "report_system_graph_batch: Persist one batched workflow system graph with resources, findings, and relationships.",
           "complete_run: Finish the workflow pipeline successfully."
         ].join("\n")
       },
@@ -311,14 +311,13 @@ const run: WorkflowRun = {
       payload: {
         toolName: "Web Probe",
         output: {
-          toolRunId: "tool-run-1",
-          toolId: "tool-1",
-          toolName: "Web Probe",
-          status: "completed",
-          outputPreview: "HTTP/1.1 200 OK",
-          observations: [webProbeObservation, webProbeHeadersObservation]
+          id: "tool-run-1",
+          summary: "HTTP/1.1 200 OK"
         },
-        outputPreview: "HTTP/1.1 200 OK"
+        outputPreview: "HTTP/1.1 200 OK",
+        observations: [webProbeObservation, webProbeHeadersObservation],
+        totalObservations: 2,
+        truncated: false
       },
       createdAt: "2026-04-21T00:00:03.500Z"
     },
@@ -1062,7 +1061,8 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getByText("Headers were returned immediately.")).toBeInTheDocument();
     expect(screen.queryByText("HTTP/1.1 200 OK")).not.toBeInTheDocument();
     expect(screen.getByText("Evidence checkpoint after Web Probe")).toBeInTheDocument();
-    expect(screen.getAllByText("Standalone findings").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Standalone findings")).not.toBeInTheDocument();
+    expect(screen.queryByText("Attack Paths")).not.toBeInTheDocument();
     expect(screen.getByText("Run sealed")).toBeInTheDocument();
     expect(screen.queryByText("{\"url\":\"http://localhost:8888\"}")).not.toBeInTheDocument();
     expect(container.querySelector(".duplex-entry")).toBeTruthy();
@@ -1088,8 +1088,8 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getAllByText(/http:\/\/localhost:8888/).length).toBeGreaterThan(0);
     expect(screen.getByText("Output")).toBeInTheDocument();
     expect(screen.getByText("Input")).toBeInTheDocument();
-    expect(screen.getByText(/"status": "completed"/)).toBeInTheDocument();
-    expect(screen.getByText(/"outputPreview": "HTTP\/1\.1 200 OK"/)).toBeInTheDocument();
+    expect(screen.getByText(/"id": "tool-run-1"/)).toBeInTheDocument();
+    expect(screen.getByText(/"summary": "HTTP\/1\.1 200 OK"/)).toBeInTheDocument();
     expect(screen.getByText("Observations")).toBeInTheDocument();
     expect(screen.getByText("HTTP service responded with 200 OK.")).toBeInTheDocument();
     expect(screen.getByText("Headers were returned immediately.")).toBeInTheDocument();
@@ -1116,7 +1116,7 @@ describe("WorkflowTraceSection", () => {
 
     expect(screen.getByText("Web Probe")).toBeInTheDocument();
     expect(screen.getByText("log_progress")).toBeInTheDocument();
-    expect(screen.getByText("report_finding")).toBeInTheDocument();
+    expect(screen.getByText("report_system_graph_batch")).toBeInTheDocument();
     expect(screen.getByText("complete_run")).toBeInTheDocument();
     expect(screen.queryByText("fail_run")).not.toBeInTheDocument();
     expect(screen.getAllByText("Input schema").length).toBeGreaterThan(0);
@@ -1164,7 +1164,8 @@ describe("WorkflowTraceSection", () => {
     expect(screen.queryByText("Thread · Workflow Transcript · Duplex Flow")).not.toBeInTheDocument();
     expect(screen.getByText("Prompt context")).toBeInTheDocument();
     expect(screen.getAllByText("Agent typing").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Standalone findings").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Standalone findings")).not.toBeInTheDocument();
+    expect(screen.queryByText("Attack Paths")).not.toBeInTheDocument();
   });
 
   it("renders requested tool calls as a blue loading state", () => {

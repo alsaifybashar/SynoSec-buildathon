@@ -102,7 +102,7 @@ describe("AiToolsPage", () => {
       name: "Report Finding",
       source: "system",
       executorType: "builtin",
-      builtinActionKey: "report_finding",
+      builtinActionKey: "report_system_graph_batch",
       bashSource: null
     };
 

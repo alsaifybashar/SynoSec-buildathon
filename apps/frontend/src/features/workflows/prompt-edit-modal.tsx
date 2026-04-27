@@ -1,24 +1,45 @@
 import { X } from "lucide-react";
-import { type Workflow, type AiAgent, type Target } from "@synosec/contracts";
+import { defaultWorkflowExecutionContract, workflowExecutionContractHeading, type Workflow, type AiAgent, type Target } from "@synosec/contracts";
 import { Button } from "@/shared/ui/button";
 import { Textarea } from "@/shared/ui/textarea";
 
 export type PromptEditDraft = {
   systemPrompt: string;
+  executionContract: string;
 };
 
 function buildEngineGeneratedTargetContext(target: Target | null) {
   return [
     "Runtime target context:",
     `Target: ${target?.name ?? "Unknown target"}`,
-    `Target URL: ${target?.baseUrl?.trim() || "Unknown target URL"}`
+    `Operator URL: ${target?.baseUrl?.trim() || "Unknown target URL"}`,
+    `Execution URL: ${target?.executionBaseUrl?.trim() || target?.baseUrl?.trim() || "Unknown target URL"}`
   ].join("\n");
 }
 
-const workflowCompletionContract = [
-  "Required end state:",
-  "Before the run stops, call complete_run to submit the current stage result."
-].join("\n");
+export function splitWorkflowPromptSections(stageSystemPrompt: string): PromptEditDraft {
+  const normalizedPrompt = stageSystemPrompt.trim();
+  const contractIndex = normalizedPrompt.indexOf(workflowExecutionContractHeading);
+  if (contractIndex < 0) {
+    return {
+      systemPrompt: normalizedPrompt,
+      executionContract: defaultWorkflowExecutionContract
+    };
+  }
+
+  const systemPrompt = normalizedPrompt.slice(0, contractIndex).trimEnd();
+  const executionContract = normalizedPrompt.slice(contractIndex).trim();
+  return {
+    systemPrompt,
+    executionContract: executionContract || defaultWorkflowExecutionContract
+  };
+}
+
+export function joinWorkflowPromptSections(draft: PromptEditDraft) {
+  return [draft.systemPrompt.trim(), draft.executionContract.trim()]
+    .filter((section) => section.length > 0)
+    .join("\n\n");
+}
 
 export function PromptEditModal({
   open,
@@ -87,7 +108,7 @@ export function PromptEditModal({
                 <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Workflow-owned</p>
                 <h3 className="text-base text-foreground">Editable workflow instructions</h3>
                 <p className="text-xs text-muted-foreground">
-                  This editable text is the workflow-owned instruction layer. The engine appends resolved target context and the runtime contract at execution time.
+                  This editable text is the workflow-owned instruction layer. The engine appends resolved target context at execution time.
                 </p>
               </div>
               <Textarea
@@ -115,19 +136,20 @@ export function PromptEditModal({
               />
             </section>
 
-            <section className="space-y-3 rounded-2xl border border-border/70 bg-card/40 p-4">
+            <section className="space-y-3 rounded-2xl border border-border/70 bg-card/55 p-4">
               <div className="space-y-1">
-                <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Engine-generated</p>
-                <h3 className="text-base text-foreground">Completion contract</h3>
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Workflow-owned</p>
+                <h3 className="text-base text-foreground">Workflow execution contract</h3>
                 <p className="text-xs text-muted-foreground">
-                  Source: built-in workflow runtime safety and lifecycle contract.
+                  This text is saved with the workflow and can override the default execution contract for this workflow.
                 </p>
               </div>
               <Textarea
-                value={workflowCompletionContract}
-                aria-label="Generated completion contract"
+                value={draft.executionContract}
+                onChange={(event) => onDraftChange("executionContract", event.target.value)}
+                aria-label="Workflow execution contract"
                 rows={4}
-                disabled
+                disabled={saving}
               />
             </section>
           </div>
