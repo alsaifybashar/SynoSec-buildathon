@@ -87,7 +87,7 @@ async function executeDirectSeededTool(input: {
 }
 
 function comparableToolRunShape(toolRun: ToolRun) {
-  const normalizedOutput = (toolRun.output ?? null)?.replace(/^Date:\s+.+$/gmi, "Date: <redacted>");
+  const normalizedOutput = normalizeVolatileHttpOutput(toolRun.output ?? null);
   return {
     status: toolRun.status,
     output: normalizedOutput,
@@ -96,6 +96,10 @@ function comparableToolRunShape(toolRun: ToolRun) {
     target: toolRun.target,
     port: toolRun.port ?? null
   };
+}
+
+function normalizeVolatileHttpOutput(value: string | null) {
+  return value?.replace(/^Date:\s+.+$/gmi, "Date: <redacted>") ?? null;
 }
 
 function comparableObservationShape(observation: Awaited<ReturnType<typeof executeDirectSeededTool>>["observations"][number]) {
@@ -297,7 +301,7 @@ describe("executeSemanticFamilyTool", () => {
     expect(family.result.toolRequest.port ?? null).toBe(direct.request.port ?? null);
     expect(family.result.toolRequest.parameters.toolInput).toEqual(direct.request.parameters.toolInput);
     expect(comparableToolRunShape(family.result.toolRun)).toEqual(comparableToolRunShape(direct.toolRun));
-    expect(family.result.fullOutput).toBe(direct.toolRun.output ?? direct.toolRun.statusReason ?? "");
+    expect(normalizeVolatileHttpOutput(family.result.fullOutput)).toBe(normalizeVolatileHttpOutput(direct.toolRun.output ?? direct.toolRun.statusReason ?? ""));
     expect(family.result.observations.map(comparableObservationShape)).toEqual(direct.observations.map(comparableObservationShape));
     expect(family.result.observationKeys).toEqual(direct.observations.map((observation) => observation.key));
     expect(family.result.observationSummaries).toEqual(direct.observations.map((observation) => observation.summary));
