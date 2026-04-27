@@ -375,6 +375,31 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       const candidates = executedResults.filter((result) => result.toolName === sourceTool || result.toolId === sourceTool);
       return candidates.length === 1 ? candidates[0]! : null;
     };
+    const materializePersistedEvidenceRefs = <TEvidence extends Record<string, unknown>>(evidence: TEvidence[]) => evidence.map((item) => {
+      const existingSourceTool = typeof item["sourceTool"] === "string" && item["sourceTool"].trim().length > 0
+        ? item["sourceTool"].trim()
+        : null;
+      if (existingSourceTool) {
+        return {
+          ...item,
+          sourceTool: existingSourceTool
+        };
+      }
+
+      const toolRunRef = typeof item["toolRunRef"] === "string" ? item["toolRunRef"] : null;
+      const observationRef = typeof item["observationRef"] === "string" ? item["observationRef"] : null;
+      const artifactRef = typeof item["artifactRef"] === "string" ? item["artifactRef"] : null;
+      const traceEventId = typeof item["traceEventId"] === "string" ? item["traceEventId"] : null;
+      const externalUrl = typeof item["externalUrl"] === "string" ? item["externalUrl"] : null;
+      const matchingResult = (toolRunRef ? findExecutedResultByToolRunRef(toolRunRef) : null)
+        ?? (observationRef ? executedResults.find((result) => result.observationKeys.includes(observationRef)) ?? null : null)
+        ?? (artifactRef ? findExecutedResultByToolRunRef(artifactRef) : null);
+
+      return {
+        ...item,
+        sourceTool: matchingResult?.toolName ?? (traceEventId ? "workflow-trace" : externalUrl ? "external" : "unknown")
+      };
+    });
     const normalizeJsonRecord = <TValue extends Record<string, unknown>>(value: TValue) => JSON.parse(JSON.stringify(value)) as TValue;
 
     const appendLiveText = (delta: string) => {
@@ -978,27 +1003,31 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           relationshipExplanations: finding.relationshipExplanations ?? existing?.relationshipExplanations,
           tags: finding.tags ?? existing?.tags ?? []
         }, "Finding submission");
-        const referenceError = validateFindingEvidenceReferences(findingSubmission, executedResults);
+        const normalizedFindingSubmission = {
+          ...findingSubmission,
+          evidence: materializePersistedEvidenceRefs(findingSubmission.evidence)
+        } satisfies z.infer<typeof workflowFindingSubmissionSchema>;
+        const referenceError = validateFindingEvidenceReferences(normalizedFindingSubmission, executedResults);
         if (referenceError) {
           throw new RequestError(400, referenceError, {
             userFriendlyMessage: summarizeWorkflowEvidenceRepair("report_system_graph_batch", referenceError)
           });
         }
-        validateEvidenceRefs(findingSubmission.evidence);
-        const verification = verifyFindingEvidence(findingSubmission, executedResults);
+        validateEvidenceRefs(normalizedFindingSubmission.evidence);
+        const verification = verifyFindingEvidence(normalizedFindingSubmission, executedResults);
         if (verification.validationStatus === "rejected") {
           throw new RequestError(400, verification.reason, {
             userFriendlyMessage: summarizeWorkflowEvidenceRepair("report_system_graph_batch", verification.reason)
           });
         }
         return {
-          ...findingSubmission,
+          ...normalizedFindingSubmission,
           id: finding.id.trim(),
           confidence: verification.confidence,
           validationStatus: verification.validationStatus,
-          resourceIds: findingSubmission.resourceIds ?? [],
-          confidenceReason: findingSubmission.confidenceReason
-            ? `${findingSubmission.confidenceReason} ${verification.reason}`.trim()
+          resourceIds: normalizedFindingSubmission.resourceIds ?? [],
+          confidenceReason: normalizedFindingSubmission.confidenceReason
+            ? `${normalizedFindingSubmission.confidenceReason} ${verification.reason}`.trim()
             : verification.reason
         };
       }));
@@ -1009,7 +1038,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         ...(resource.customKind ? { customKind: resource.customKind } : {}),
         name: requireField(resource.name, `Resource ${resource.id} requires name on first submission.`),
         ...(resource.summary ? { summary: resource.summary } : {}),
-        evidence: resource.evidence ?? [],
+        evidence: materializePersistedEvidenceRefs(resource.evidence ?? []),
         tags: resource.tags ?? []
       }));
       const canonicalResourceRelationships = mergedResourceRelationships.map((relationship) => ({
@@ -1019,7 +1048,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         sourceResourceId: requireField(relationship.sourceResourceId, `Resource relationship ${relationship.id} requires sourceResourceId on first submission.`),
         targetResourceId: requireField(relationship.targetResourceId, `Resource relationship ${relationship.id} requires targetResourceId on first submission.`),
         summary: requireField(relationship.summary, `Resource relationship ${relationship.id} requires summary on first submission.`),
-        evidence: relationship.evidence ?? []
+        evidence: materializePersistedEvidenceRefs(relationship.evidence ?? [])
       }));
       const canonicalFindingRelationships = mergedFindingRelationships.map((relationship) => ({
         id: relationship.id,
@@ -1030,7 +1059,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         ...(relationship.impact ? { impact: relationship.impact } : {}),
         confidence: relationship.confidence ?? 0.8,
         validationStatus: relationship.validationStatus ?? "unverified",
-        evidence: relationship.evidence ?? []
+        evidence: materializePersistedEvidenceRefs(relationship.evidence ?? [])
       }));
       const canonicalPaths = mergedPaths.map((path) => ({
         id: path.id,
