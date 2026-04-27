@@ -382,6 +382,10 @@ describe("WorkflowDetailPage", () => {
 
   beforeEach(() => {
     eventSourceInstances = [];
+    Object.defineProperty(window, "scrollTo", {
+      configurable: true,
+      value: vi.fn()
+    });
     vi.stubGlobal("EventSource", class {
       onopen: (() => void) | null = null;
       onmessage: ((event: MessageEvent<string>) => void) | null = null;

@@ -388,6 +388,18 @@ describe("ExecutionReportsPage", () => {
     expect(screen.getByText(/httpx https:\/\/target.local\/admin/)).toBeInTheDocument();
   });
 
+  it("lets attack and finding detail panes grow naturally instead of pinning them to viewport height", () => {
+    const { container } = render(
+      <ExecutionReportsPage
+        reportId="report-1"
+        onNavigateToList={vi.fn()}
+        onNavigateToDetail={vi.fn()}
+      />
+    );
+
+    expect(container.innerHTML).not.toContain("h-[calc(100vh-14rem)]");
+  });
+
   it("exports the list row by fetching canonical report detail", async () => {
     fetchJsonMock.mockResolvedValue(report);
 
