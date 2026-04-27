@@ -476,17 +476,6 @@ function FindingInspector({
     <div className="space-y-5">
       <header className="space-y-2">
         <h2 className="text-lg font-semibold leading-tight text-foreground">{finding.title}</h2>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[0.62rem] uppercase tracking-[0.16em] text-muted-foreground">
-          <span>{finding.type}</span>
-          <span aria-hidden>·</span>
-          <span className="truncate">{finding.targetLabel}</span>
-          {finding.validationStatus ? (
-            <>
-              <span aria-hidden>·</span>
-              <span>{finding.validationStatus.replaceAll("_", " ")}</span>
-            </>
-          ) : null}
-        </div>
         <div className="rounded-md border border-border/60 bg-background/30 px-3 py-2">
           <FindingNodeGraph report={report} finding={finding} allFindings={allFindings} onSelectRelated={onSelect} />
         </div>
@@ -494,7 +483,7 @@ function FindingInspector({
 
       <section className="space-y-3">
         <p className="text-sm leading-6 text-foreground/90">{finding.summary}</p>
-        {finding.explanationSummary ? (
+        {finding.explanationSummary && finding.explanationSummary.trim() !== finding.summary.trim() ? (
           <p className="border-l-2 border-border/70 pl-3 text-sm leading-6 text-muted-foreground">
             {finding.explanationSummary}
           </p>
@@ -502,8 +491,12 @@ function FindingInspector({
       </section>
 
       {finding.evidence.length > 0 ? (
-        <InspectorSection label={`Evidence · ${finding.evidence.length}`}>
-          <ul className="space-y-3">
+        <section className="border-t border-border/50 pt-5">
+          <div className="mb-2 flex items-center gap-2">
+            <p className="font-mono text-[0.62rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">Evidence</p>
+            <span className="font-mono text-[0.6rem] tabular-nums text-muted-foreground">{finding.evidence.length}</span>
+          </div>
+          <ul className="space-y-3 text-sm leading-6 text-foreground/90">
             {finding.evidence.map((evidence, index) => (
               <li key={`${finding.id}:evidence:${index}`} className="space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2 text-[0.7rem] text-muted-foreground">
@@ -517,9 +510,6 @@ function FindingInspector({
                       tool:{evidence.toolRunRef.slice(0, 8)}
                     </button>
                   ) : null}
-                  {evidence.observationRef ? (
-                    <span className="font-mono text-[0.65rem]">obs:{evidence.observationRef.slice(0, 8)}</span>
-                  ) : null}
                 </div>
                 <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 font-mono text-[0.72rem] leading-5 text-muted-foreground">
                   {evidence.quote}
@@ -527,64 +517,69 @@ function FindingInspector({
               </li>
             ))}
           </ul>
-        </InspectorSection>
+        </section>
       ) : null}
 
-      {finding.confidenceReason || finding.reproduction ? (
-        <InspectorSection label="Verification">
-          {finding.confidenceReason ? <p>{finding.confidenceReason}</p> : null}
-          {finding.reproduction ? (
-            <div className="mt-3 space-y-2">
-              {finding.reproduction.commandPreview ? (
-                <pre className="overflow-x-auto rounded-md bg-muted/40 p-3 font-mono text-[0.72rem] text-muted-foreground">
-                  {finding.reproduction.commandPreview}
-                </pre>
-              ) : null}
-              {finding.reproduction.steps.length > 0 ? (
-                <ol className="ml-4 list-decimal space-y-1 text-sm text-muted-foreground">
-                  {finding.reproduction.steps.map((step, index) => (
-                    <li key={`${finding.id}:step:${index}`}>{step}</li>
-                  ))}
-                </ol>
-              ) : null}
-            </div>
-          ) : null}
-        </InspectorSection>
-      ) : null}
+      {(finding.confidenceReason || finding.reproduction || relatedEdges.length > 0 || chain) ? (
+        <details className="group border-t border-border/50 pt-4">
+          <summary className="cursor-pointer list-none font-mono text-[0.62rem] font-medium uppercase tracking-[0.22em] text-muted-foreground hover:text-foreground">
+            More <span className="ml-1 inline-block transition-transform group-open:rotate-90">›</span>
+          </summary>
+          <div className="mt-4 space-y-5">
+            {finding.confidenceReason || finding.reproduction ? (
+              <div className="space-y-2 text-sm leading-6 text-foreground/90">
+                <p className="font-mono text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">Verification</p>
+                {finding.confidenceReason ? <p>{finding.confidenceReason}</p> : null}
+                {finding.reproduction?.commandPreview ? (
+                  <pre className="overflow-x-auto rounded-md bg-muted/40 p-3 font-mono text-[0.72rem] text-muted-foreground">
+                    {finding.reproduction.commandPreview}
+                  </pre>
+                ) : null}
+                {finding.reproduction && finding.reproduction.steps.length > 0 ? (
+                  <ol className="ml-4 list-decimal space-y-1 text-sm text-muted-foreground">
+                    {finding.reproduction.steps.map((step, index) => (
+                      <li key={`${finding.id}:step:${index}`}>{step}</li>
+                    ))}
+                  </ol>
+                ) : null}
+              </div>
+            ) : null}
 
-      {(relatedEdges.length > 0 || chain) ? (
-        <InspectorSection label="Relationships">
-          <div className="space-y-3">
-            <RelationshipGroup
-              label="Derived from"
-              explanation={relatedEdges.find((edge) => edge.variant === "derived")?.explanation ?? undefined}
-              ids={relatedEdges.filter((edge) => edge.variant === "derived").map((edge) => edge.findingId)}
-              findingLookup={findingLookup}
-              onSelect={onSelect}
-            />
-            <RelationshipGroup
-              label="Related to"
-              explanation={relatedEdges.find((edge) => edge.variant === "related")?.explanation ?? undefined}
-              ids={relatedEdges.filter((edge) => edge.variant === "related").map((edge) => edge.findingId)}
-              findingLookup={findingLookup}
-              onSelect={onSelect}
-            />
-            <RelationshipGroup
-              label="Enables"
-              explanation={relatedEdges.find((edge) => edge.variant === "enables")?.explanation ?? undefined}
-              ids={relatedEdges.filter((edge) => edge.variant === "enables").map((edge) => edge.findingId)}
-              findingLookup={findingLookup}
-              onSelect={onSelect}
-            />
-            {chain ? (
-              <div className="space-y-1">
-                <p className="font-mono text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">Attack chain</p>
-                <p className="text-sm font-medium text-foreground">{chain.title}</p>
-                <p className="text-sm text-muted-foreground">{chain.summary}</p>
+            {(relatedEdges.length > 0 || chain) ? (
+              <div className="space-y-3">
+                <p className="font-mono text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">Relationships</p>
+                <RelationshipGroup
+                  label="Derived from"
+                  explanation={relatedEdges.find((edge) => edge.variant === "derived")?.explanation ?? undefined}
+                  ids={relatedEdges.filter((edge) => edge.variant === "derived").map((edge) => edge.findingId)}
+                  findingLookup={findingLookup}
+                  onSelect={onSelect}
+                />
+                <RelationshipGroup
+                  label="Related to"
+                  explanation={relatedEdges.find((edge) => edge.variant === "related")?.explanation ?? undefined}
+                  ids={relatedEdges.filter((edge) => edge.variant === "related").map((edge) => edge.findingId)}
+                  findingLookup={findingLookup}
+                  onSelect={onSelect}
+                />
+                <RelationshipGroup
+                  label="Enables"
+                  explanation={relatedEdges.find((edge) => edge.variant === "enables")?.explanation ?? undefined}
+                  ids={relatedEdges.filter((edge) => edge.variant === "enables").map((edge) => edge.findingId)}
+                  findingLookup={findingLookup}
+                  onSelect={onSelect}
+                />
+                {chain ? (
+                  <div className="space-y-1">
+                    <p className="font-mono text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">Attack chain</p>
+                    <p className="text-sm font-medium text-foreground">{chain.title}</p>
+                    <p className="text-sm text-muted-foreground">{chain.summary}</p>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
-        </InspectorSection>
+        </details>
       ) : null}
 
       {finding.recommendation ? (
@@ -638,7 +633,7 @@ export function ExecutionReportFindingsView({
   return (
     <div className="space-y-4">
       <div className="grid gap-0 lg:grid-cols-[280px_1fr]">
-        <div className="max-h-[640px] overflow-y-auto border-b border-border/40 lg:border-b-0 lg:border-r">
+        <div className="h-[calc(100vh-14rem)] overflow-y-auto border-b border-border/40 lg:border-b-0 lg:border-r">
           <ul className="divide-y divide-border/20">
             {report.findings.map((finding, index) => (
               <li key={finding.id}>
@@ -653,7 +648,7 @@ export function ExecutionReportFindingsView({
           </ul>
         </div>
 
-        <div ref={inspectorRef} className="max-h-[640px] overflow-y-auto px-5 py-5 lg:px-6">
+        <div ref={inspectorRef} className="h-[calc(100vh-14rem)] overflow-y-auto px-5 py-5 lg:px-6">
           <FindingInspector
             report={report}
             finding={selected}

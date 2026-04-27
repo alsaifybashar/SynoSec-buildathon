@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Eye, EyeOff, GitBranch, Pencil, Square, Workflow as WorkflowIcon } from "lucide-react";
+import { Download, Eye, EyeOff, Pencil, Square, Workflow as WorkflowIcon } from "lucide-react";
 import { toast } from "sonner";
 import {
   apiRoutes,
@@ -26,15 +26,13 @@ export function WorkflowDetailPage({
   workflowNameHint,
   onNavigateToList,
   onNavigateToEdit,
-  onNavigateToAgent,
-  onNavigateToGraph
+  onNavigateToAgent
 }: {
   workflowId?: string;
   workflowNameHint?: string;
   onNavigateToList: () => void;
   onNavigateToEdit?: (id: string, label?: string) => void;
   onNavigateToAgent?: (id: string) => void;
-  onNavigateToGraph?: (id: string) => void;
 }) {
   const [showFullDetails, setShowFullDetails] = useState(false);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
@@ -325,10 +323,6 @@ export function WorkflowDetailPage({
             <Button type="button" variant="outline" onClick={() => onNavigateToEdit?.(loadedWorkflow.id, loadedWorkflow.name)} disabled={!onNavigateToEdit}>
               <Pencil className="h-4 w-4" />
               Edit Workflow
-            </Button>
-            <Button type="button" variant="outline" onClick={() => onNavigateToGraph?.(loadedWorkflow.id)} disabled={!onNavigateToGraph}>
-              <GitBranch className="h-4 w-4" />
-              View Graph
             </Button>
             <div className="ml-auto">
               <Button type="button" variant="outline" onClick={handleExportJson} className="h-9 text-[0.75rem]">

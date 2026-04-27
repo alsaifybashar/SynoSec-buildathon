@@ -1,4 +1,4 @@
-import { type MouseEvent, type WheelEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dagre from "dagre";
 import type { ExecutionReportGraph, ExecutionReportGraphEdge, ExecutionReportGraphNode } from "@synosec/contracts";
 import { cn } from "@/shared/lib/utils";
@@ -531,16 +531,6 @@ function InspectorRefList({ refs }: { refs: NonNullable<RenderNode["refs"]> }) {
   );
 }
 
-function InspectorIdList({ ids }: { ids: string[] }) {
-  return (
-    <ul className="space-y-0.5 text-xs font-mono text-foreground/80">
-      {ids.map((id) => (
-        <li key={id} className="break-all">{id}</li>
-      ))}
-    </ul>
-  );
-}
-
 function NodeInspector({
   node,
   onExpandCluster
@@ -612,17 +602,6 @@ function NodeInspector({
             </InspectorSection>
           ) : null}
 
-          {node.resourceIds && node.resourceIds.length > 0 ? (
-            <InspectorSection label="Path resources">
-              <InspectorIdList ids={node.resourceIds} />
-            </InspectorSection>
-          ) : null}
-
-          {node.findingIds && node.findingIds.length > 0 ? (
-            <InspectorSection label={node.kind === "path" ? "Path findings" : "Chain findings"}>
-              <InspectorIdList ids={node.findingIds} />
-            </InspectorSection>
-          ) : null}
         </>
       )}
     </div>
@@ -810,20 +789,23 @@ export function ExecutionReportGraphMap({ graph }: { graph: ExecutionReportGraph
     panningRef.current = null;
   }, []);
 
-  const onWheel = useCallback(
-    (event: WheelEvent<SVGSVGElement>) => {
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) {
+      return;
+    }
+    const handler = (event: globalThis.WheelEvent) => {
       event.preventDefault();
-      const svg = svgRef.current;
-      if (!svg) {
+      const rect = svg.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
         return;
       }
-      const rect = svg.getBoundingClientRect();
       const anchor = {
         x: (event.clientX - rect.left) * (size.width / rect.width),
         y: (event.clientY - rect.top) * (size.height / rect.height)
       };
-      const scale = Math.max(0.3, Math.min(2.6, viewport.scale * (event.deltaY > 0 ? 0.9 : 1.1)));
       setViewport((current) => {
+        const scale = Math.max(0.3, Math.min(2.6, current.scale * (event.deltaY > 0 ? 0.9 : 1.1)));
         const worldX = (anchor.x - current.x) / current.scale;
         const worldY = (anchor.y - current.y) / current.scale;
         return {
@@ -832,9 +814,10 @@ export function ExecutionReportGraphMap({ graph }: { graph: ExecutionReportGraph
           y: anchor.y - worldY * scale
         };
       });
-    },
-    [size.height, size.width, viewport.scale]
-  );
+    };
+    svg.addEventListener("wheel", handler, { passive: false });
+    return () => svg.removeEventListener("wheel", handler);
+  }, [size.height, size.width]);
 
   const adjustZoom = useCallback(
     (factor: number) => {
@@ -893,7 +876,6 @@ export function ExecutionReportGraphMap({ graph }: { graph: ExecutionReportGraph
               onMouseMove={onMouseMove}
               onMouseUp={onMouseUp}
               onMouseLeave={onMouseUp}
-              onWheel={onWheel}
               onClick={() => {
                 if (!movedRef.current) {
                   setSelectedNodeId(null);

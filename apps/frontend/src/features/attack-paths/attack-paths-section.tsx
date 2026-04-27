@@ -232,20 +232,6 @@ function AttackPathGraph({
           );
         })}
       </svg>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 font-mono text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5">
-          <svg width={22} height={6} aria-hidden>
-            <line x1={1} x2={21} y1={3} y2={3} stroke="#0ea5e9" strokeWidth={1.4} strokeOpacity={0.9} />
-          </svg>
-          contains
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <svg width={22} height={6} aria-hidden>
-            <line x1={1} x2={21} y1={3} y2={3} stroke="#f97316" strokeWidth={1.6} strokeDasharray="3 3" />
-          </svg>
-          reaches
-        </span>
-      </div>
     </div>
   );
 }
@@ -256,20 +242,6 @@ const SEVERITY_DOT: Record<Severity, string> = {
   medium: "bg-amber-500",
   high: "bg-orange-500",
   critical: "bg-red-600"
-};
-
-const severityTone: Record<AttackPathSummary["paths"][number]["pathSeverity"], string> = {
-  info: "border-slate-500/30 bg-slate-500/10 text-slate-700",
-  low: "border-sky-500/30 bg-sky-500/10 text-sky-700",
-  medium: "border-amber-500/30 bg-amber-500/10 text-amber-700",
-  high: "border-orange-500/30 bg-orange-500/10 text-orange-700",
-  critical: "border-rose-600/30 bg-rose-600/10 text-rose-700"
-};
-
-const statusTone: Record<AttackPathSummary["paths"][number]["status"], string> = {
-  confirmed: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
-  qualified: "border-amber-500/30 bg-amber-500/10 text-amber-700",
-  blocked: "border-zinc-500/30 bg-zinc-500/10 text-zinc-700"
 };
 
 const evidenceTone: Record<AttackPathSummary["vectors"][number]["validation"]["evidenceLevel"], string> = {
@@ -320,28 +292,14 @@ export function AttackPathsSection({
   const severityLookup = findingSeverities ?? new Map<string, Severity>();
 
   return (
-    <section className="space-y-4 rounded-2xl border border-border bg-card/70 p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">{title}</p>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-foreground/90">
-            {summary ?? "Derived attack routes group supporting findings into the paths that matter operationally."}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-          <span className="rounded-full border border-border/70 px-2 py-1">{attackPaths.paths.length} paths</span>
-          <span className="rounded-full border border-border/70 px-2 py-1">{attackPaths.vectors.length} vectors</span>
-          <span className="rounded-full border border-border/70 px-2 py-1">{attackPaths.venues.length} venues</span>
-        </div>
-      </div>
-
+    <section className="space-y-3">
       {attackPaths.paths.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-background/40 px-4 py-8 text-sm text-muted-foreground">
+        <div className="rounded-md border border-dashed border-border/60 px-4 py-6 text-sm text-muted-foreground">
           {emptyMessage}
         </div>
       ) : (
-        <div className="grid gap-0 lg:grid-cols-[280px_1fr]">
-          <div className="max-h-[640px] overflow-y-auto border-b border-border/40 lg:border-b-0 lg:border-r">
+        <div className="grid gap-0 lg:grid-cols-[260px_1fr]">
+          <div className="h-[calc(100vh-14rem)] overflow-y-auto border-b border-border/40 lg:border-b-0 lg:border-r">
             <ul className="divide-y divide-border/20">
               {attackPaths.paths.map((path, index) => {
                 const isSelected = selectedPath?.id === path.id;
@@ -376,140 +334,81 @@ export function AttackPathsSection({
           </div>
 
           {selectedPath ? (
-            <div className="max-h-[640px] space-y-5 overflow-y-auto px-5 py-5 lg:px-6">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={cn("rounded-full border px-2 py-0.5 font-mono text-[0.62rem] uppercase tracking-[0.16em]", severityTone[selectedPath.pathSeverity])}>
-                  {selectedPath.pathSeverity}
-                </span>
-                <span className={cn("rounded-full border px-2 py-0.5 font-mono text-[0.62rem] uppercase tracking-[0.16em]", statusTone[selectedPath.status])}>
-                  {selectedPath.status}
-                </span>
-                <span className="rounded-full border border-border/70 px-2 py-0.5 font-mono text-[0.62rem] uppercase tracking-[0.16em] text-muted-foreground">
-                  {selectedPath.pathConfidence} confidence
-                </span>
-              </div>
-
+            <div className="h-[calc(100vh-14rem)] space-y-4 overflow-y-auto px-4 py-4 lg:px-5">
               <div>
-                <h3 className="text-lg font-semibold text-foreground">{selectedPath.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-foreground/90">{selectedPath.summary}</p>
-                <p className="mt-3 text-sm text-muted-foreground">Reached asset or outcome: {selectedPath.reachedAssetOrOutcome}</p>
+                <h3 className="text-base font-semibold text-foreground">{selectedPath.title}</h3>
+                <p className="mt-1.5 text-sm leading-6 text-foreground/90">{selectedPath.summary}</p>
+                <p className="mt-2 text-xs italic text-muted-foreground">{selectedPath.reachedAssetOrOutcome}</p>
               </div>
 
               {selectedPath.findingIds.length > 0 ? (
-                <div className="rounded-md border border-border/60 bg-background/30 px-3 py-3">
-                  <AttackPathGraph
-                    path={selectedPath}
-                    findingTitles={findingLookup}
-                    findingSeverities={severityLookup}
-                    venueLookup={venueLookup}
-                    {...(onSelectFinding ? { onSelectFinding } : {})}
-                  />
-                </div>
+                <AttackPathGraph
+                  path={selectedPath}
+                  findingTitles={findingLookup}
+                  findingSeverities={severityLookup}
+                  venueLookup={venueLookup}
+                  {...(onSelectFinding ? { onSelectFinding } : {})}
+                />
               ) : null}
 
               <div>
-                <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">Ordered findings</p>
-                <div className="mt-3 space-y-2">
+                <p className="mb-2 font-mono text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">Ordered findings</p>
+                <ol className="space-y-1 text-sm">
                   {selectedPath.findingIds.map((findingId, index) => (
-                    <div key={`${selectedPath.id}:${findingId}`} className="flex items-start gap-3 rounded-lg border border-border/60 bg-background/60 px-3 py-3">
-                      <span className="mt-0.5 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
+                    <li key={`${selectedPath.id}:${findingId}`} className="flex items-baseline gap-2">
+                      <span className="font-mono text-[0.6rem] tabular-nums text-muted-foreground">
                         {String(index + 1).padStart(2, "0")}
                       </span>
                       <button
                         type="button"
                         onClick={() => onSelectFinding?.(findingId)}
                         className={cn(
-                          "text-left text-sm leading-6",
+                          "text-left leading-6 text-foreground/90",
                           onSelectFinding ? "underline-offset-2 hover:underline" : ""
                         )}
                       >
                         {labelForFinding(findingId, findingLookup)}
                       </button>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ol>
               </div>
 
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid gap-3 lg:grid-cols-2">
                 <div>
-                  <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">Venues</p>
-                  <div className="mt-3 space-y-2">
+                  <p className="mb-2 font-mono text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">Venues</p>
+                  <ul className="space-y-1.5">
                     {selectedPath.venueIds.map((venueId) => {
                       const venue = venueLookup.get(venueId);
                       return venue ? (
-                        <div key={venue.id} className="rounded-lg border border-border/60 bg-background/60 px-3 py-3">
-                          <p className="text-sm font-medium text-foreground">{venue.label}</p>
-                          <p className="mt-1 text-sm text-muted-foreground">{venue.summary}</p>
-                        </div>
+                        <li key={venue.id} className="text-sm leading-5">
+                          <span className="font-medium text-foreground">{venue.label}</span>
+                          <span className="text-muted-foreground"> · {venue.summary}</span>
+                        </li>
                       ) : null;
                     })}
-                  </div>
+                  </ul>
                 </div>
                 <div>
-                  <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">Vectors</p>
-                  <div className="mt-3 space-y-2">
+                  <p className="mb-2 font-mono text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">Vectors</p>
+                  <ul className="space-y-2">
                     {selectedPath.vectorIds.map((vectorId) => {
                       const vector = vectorLookup.get(vectorId);
                       return vector ? (
-                        <div key={vector.id} className="rounded-lg border border-border/60 bg-background/60 px-3 py-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-medium text-foreground">{vector.label}</p>
-                            <span className={cn("rounded-full border px-2 py-0.5 font-mono text-[0.58rem] uppercase tracking-[0.14em]", evidenceTone[vector.validation.evidenceLevel])}>
+                        <li key={vector.id} className="text-sm leading-5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-medium text-foreground">{vector.label}</span>
+                            <span className={cn("rounded border px-1.5 py-px font-mono text-[0.55rem] uppercase tracking-[0.12em]", evidenceTone[vector.validation.evidenceLevel])}>
                               {formatEvidenceLevel(vector.validation.evidenceLevel)}
                             </span>
                           </div>
-                          <p className="mt-1 text-sm text-muted-foreground">{vector.impact}</p>
-                          {vector.findingIds.length >= 2 ? (
-                            <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                              Source: {labelForFinding(vector.findingIds[0]!, findingLookup)} · Destination: {labelForFinding(vector.findingIds[1]!, findingLookup)}
-                            </p>
-                          ) : null}
-                          <p className="mt-2 text-sm leading-6 text-foreground/90">{vector.validation.summary}</p>
-                          {vector.validation.observedTransition ? (
-                            <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                              Observed transition: {vector.validation.observedTransition}
-                            </p>
-                          ) : null}
-                          {vector.validation.blockedReason ? (
-                            <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                              Blocked: {vector.validation.blockedReason}
-                            </p>
-                          ) : null}
-                          {vector.validation.evidenceRefs.length > 0 ? (
-                            <p className="mt-2 text-xs text-muted-foreground">
-                              Transition evidence: {vector.validation.evidenceRefs.length} evidence reference{vector.validation.evidenceRefs.length === 1 ? "" : "s"}
-                            </p>
-                          ) : null}
-                        </div>
+                          <p className="text-muted-foreground">{vector.impact}</p>
+                          <p className="text-foreground/85">{vector.validation.summary}</p>
+                        </li>
                       ) : null;
                     })}
-                  </div>
+                  </ul>
                 </div>
-              </div>
-
-              <div>
-                <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">Link status</p>
-                <div className="mt-3 space-y-2">
-                  {selectedPath.pathLinks.map((link) => (
-                    <div key={link.id} className="rounded-lg border border-border/60 bg-background/60 px-3 py-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full border border-border/70 px-2 py-0.5 font-mono text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">
-                          {link.kind.replaceAll("_", " ")}
-                        </span>
-                        <span className={cn("rounded-full border px-2 py-0.5 font-mono text-[0.6rem] uppercase tracking-[0.16em]", statusTone[link.status])}>
-                          {link.status}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-sm text-foreground/90">{link.summary}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2 text-[0.72rem] text-muted-foreground">
-                {selectedPath.supportingFindingIds.length > 0 ? <span>Supporting: {selectedPath.supportingFindingIds.length}</span> : null}
-                {selectedPath.suspectedFindingIds.length > 0 ? <span>Suspected: {selectedPath.suspectedFindingIds.length}</span> : null}
-                {selectedPath.blockedFindingIds.length > 0 ? <span>Blocked: {selectedPath.blockedFindingIds.length}</span> : null}
               </div>
             </div>
           ) : null}
