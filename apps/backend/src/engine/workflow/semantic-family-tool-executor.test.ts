@@ -301,7 +301,7 @@ describe("executeSemanticFamilyTool", () => {
     expect(family.result.observations.map(comparableObservationShape)).toEqual(direct.observations.map(comparableObservationShape));
     expect(family.result.observationKeys).toEqual(direct.observations.map((observation) => observation.key));
     expect(family.result.observationSummaries).toEqual(direct.observations.map((observation) => observation.summary));
-    expect(family.response.summary).toBe(direct.observations[0]?.summary ?? family.result.outputPreview);
+    expect(family.response.summary).toBe(family.result.outputPreview);
     expect(family.result.attempts.length).toBeGreaterThan(0);
     const selectedAttempts = family.result.attempts.filter((attempt) => attempt.selected);
     expect(selectedAttempts).toHaveLength(1);
