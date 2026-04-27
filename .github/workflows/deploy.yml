@@ -160,7 +160,9 @@ jobs:
             )
             Path(".env").chmod(0o600)
             PY
-            docker compose -f docker-compose.vps.yml up -d --build --remove-orphans
+            compose_project="${COMPOSE_PROJECT_NAME:-synosec}"
+            docker compose -p "$compose_project" -f docker-compose.vps.yml down --remove-orphans
+            docker compose -p "$compose_project" -f docker-compose.vps.yml up -d --build --remove-orphans
             docker image prune -f
 
       - name: Purge Cloudflare cache
