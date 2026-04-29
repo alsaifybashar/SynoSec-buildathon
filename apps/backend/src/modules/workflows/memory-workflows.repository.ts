@@ -105,6 +105,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       name: input.name,
       status: input.status,
       executionKind: input.executionKind,
+      preRunEvidenceEnabled: input.preRunEvidenceEnabled,
       description: input.description,
       agentId,
       objective: normalizedContract.objective,
@@ -150,6 +151,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       name: input.name ?? current.name,
       status: input.status ?? current.status,
       executionKind: input.executionKind ?? current.executionKind,
+      preRunEvidenceEnabled: input.preRunEvidenceEnabled ?? current.preRunEvidenceEnabled,
       description: input.description === undefined ? current.description : input.description,
       agentId: input.agentId ?? current.agentId,
       objective: nextStageContract.objective,
@@ -242,7 +244,15 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       .sort(compareStartedAtDescending)[0] ?? null;
   }
 
-  async createRun(workflowId: string, workflowLaunchId: string, targetId: string): Promise<WorkflowRun | null> {
+  async createRun(
+    workflowId: string,
+    workflowLaunchId: string,
+    targetId: string,
+    options?: {
+      preRunEvidenceEnabled?: boolean;
+      preRunEvidenceOverride?: boolean | null;
+    }
+  ): Promise<WorkflowRun | null> {
     const workflow = this.workflows.get(workflowId);
     const launch = this.launches.get(workflowLaunchId);
     if (!workflow || !launch) {
@@ -255,6 +265,8 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       workflowLaunchId,
       targetId,
       executionKind: workflow.executionKind,
+      preRunEvidenceEnabled: options?.preRunEvidenceEnabled ?? workflow.preRunEvidenceEnabled,
+      preRunEvidenceOverride: options?.preRunEvidenceOverride ?? null,
       status: "running",
       currentStepIndex: 0,
       startedAt: new Date().toISOString(),

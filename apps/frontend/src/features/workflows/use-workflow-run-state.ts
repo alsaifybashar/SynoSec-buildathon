@@ -16,6 +16,10 @@ import {
 import { fetchJson } from "@/shared/lib/api";
 import { type RunStreamState, type TranscriptProjection } from "@/features/workflows/workflow-trace";
 
+const ACTIVE_WORKFLOW_RUN_STATUSES = new Set<WorkflowRun["status"]>(["pending", "running"]);
+const ACTIVE_RUN_POLL_INTERVAL_MS = 3000;
+export type WorkflowPreRunEvidenceMode = "inherit" | "enabled" | "disabled";
+
 async function fetchLatestWorkflowLaunch(workflowId: string) {
   return fetchJson<WorkflowLaunch | WorkflowRun>(`${apiRoutes.workflows}/${workflowId}/launches/latest`);
 }
@@ -92,9 +96,15 @@ function appendRunEvent(current: WorkflowRun | null, run: WorkflowRunStreamState
     status: run.status,
     currentStepIndex: run.currentStepIndex,
     completedAt: run.completedAt,
+    preRunEvidenceEnabled: run.preRunEvidenceEnabled,
+    preRunEvidenceOverride: run.preRunEvidenceOverride,
     tokenUsage: run.tokenUsage,
     events
   };
+}
+
+function isActiveWorkflowRunStatus(status: WorkflowRun["status"] | null | undefined) {
+  return typeof status === "string" && ACTIVE_WORKFLOW_RUN_STATUSES.has(status);
 }
 
 function updateLaunchWithRun(current: WorkflowLaunch | null, run: LaunchRunUpdate): WorkflowLaunch | null {
@@ -158,7 +168,7 @@ export function useWorkflowRunState({
   const launchRuns = Array.isArray(currentLaunch?.runs) ? currentLaunch.runs : [];
   const runningRunIdsKey = useMemo(
     () => launchRuns
-      .filter((entry) => entry.status === "running")
+      .filter((entry) => isActiveWorkflowRunStatus(entry.status))
       .map((entry) => entry.runId)
       .sort()
       .join(","),
@@ -293,6 +303,47 @@ export function useWorkflowRunState({
   }, [currentRun?.id, currentRun?.status, currentRun?.events.length]);
 
   useEffect(() => {
+    if (!selectedLaunchRun?.runId || !isActiveWorkflowRunStatus(selectedLaunchRun.status)) {
+      return;
+    }
+
+    let active = true;
+    const refreshRun = () => {
+      void fetchWorkflowRun(selectedLaunchRun.runId)
+        .then((run) => {
+          if (!active) {
+            return;
+          }
+
+          const latestEvent = run.events.at(-1);
+          setCurrentRun(run);
+          setCurrentLaunch((current) => updateLaunchWithRun(
+            current,
+            toLaunchRunUpdate(run, latestEvent?.summary ?? latestEvent?.detail ?? null)
+          ));
+          if (!isActiveWorkflowRunStatus(run.status)) {
+            setStreamError(null);
+          }
+        })
+        .catch((error) => {
+          if (!active) {
+            return;
+          }
+
+          setLatestRunError(error instanceof Error ? error.message : "Unable to refresh the workflow run right now.");
+        });
+    };
+
+    refreshRun();
+    const interval = window.setInterval(refreshRun, ACTIVE_RUN_POLL_INTERVAL_MS);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [selectedLaunchRun?.runId, selectedLaunchRun?.status]);
+
+  useEffect(() => {
     if (runningRunIds.length === 0) {
       setRunStreamState("idle");
       setStreamError(null);
@@ -351,15 +402,15 @@ export function useWorkflowRunState({
               toLaunchRunUpdate(run, latestEvent?.summary ?? latestEvent?.detail ?? null)
             ));
             setCurrentRun((current) => current?.id === run.id ? run : current);
-            if (run.status === "running") {
-              setStreamError("Live workflow stream disconnected. Reload the page or start a fresh run if updates stop.");
+            if (isActiveWorkflowRunStatus(run.status)) {
+              setStreamError("Live updates disconnected. Polling will keep the workflow history up to date.");
               return;
             }
 
             setStreamError(null);
           })
           .catch(() => {
-            setStreamError("Live workflow stream disconnected. Reload the page or start a fresh run if updates stop.");
+            setStreamError("Live updates disconnected. Polling will keep the workflow history up to date.");
           });
       };
     }
@@ -381,14 +432,14 @@ export function useWorkflowRunState({
     }
 
     setLiveModelOutput((existing) => (
-      currentRun.status === "running" && existing?.runId === currentRun.id
+      isActiveWorkflowRunStatus(currentRun.status) && existing?.runId === currentRun.id
         ? existing
         : null
     ));
   }, [currentRun?.id, currentRun?.status]);
 
   useEffect(() => {
-    if (!currentRun || currentRun.status === "running") {
+    if (!currentRun || isActiveWorkflowRunStatus(currentRun.status)) {
       setPersistedTranscript(null);
       setPersistedAttackPaths(null);
       setTranscriptError(null);
@@ -421,7 +472,7 @@ export function useWorkflowRunState({
     };
   }, [currentRun?.id, currentRun?.status]);
 
-  async function startRun() {
+  async function startRun(preRunEvidenceMode: WorkflowPreRunEvidenceMode = "inherit") {
     if (!workflow) {
       return;
     }
@@ -452,7 +503,12 @@ export function useWorkflowRunState({
       const launchPayload = await fetchJson<WorkflowLaunch | WorkflowRun>(`${apiRoutes.workflows}/${workflow.id}/runs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetId })
+        body: JSON.stringify({
+          targetId,
+          ...(preRunEvidenceMode === "inherit"
+            ? {}
+            : { preRunEvidenceEnabled: preRunEvidenceMode === "enabled" })
+        })
       });
       setCurrentLaunch(normalizeWorkflowLaunch(launchPayload, selectedTargetId, targets));
       toast.success("Workflow launch started");

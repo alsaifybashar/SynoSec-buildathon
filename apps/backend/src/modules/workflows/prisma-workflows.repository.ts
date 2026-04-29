@@ -137,6 +137,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
         name: input.name,
         status: input.status,
         ...(input.executionKind ? { executionKind: input.executionKind } : { executionKind: "workflow" }),
+        preRunEvidenceEnabled: input.preRunEvidenceEnabled,
         description: input.description,
         applicationId: null,
         stages: {
@@ -198,6 +199,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
           ...((input.executionKind ?? current.executionKind)
             ? { executionKind: input.executionKind ?? current.executionKind }
             : {}),
+          ...(input.preRunEvidenceEnabled === undefined ? {} : { preRunEvidenceEnabled: input.preRunEvidenceEnabled }),
           description: input.description === undefined ? current.description : input.description,
           applicationId: current.applicationId,
           stages: {
@@ -309,7 +311,15 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
     return launch ? mapWorkflowLaunchRow(launch as Parameters<typeof mapWorkflowLaunchRow>[0]) : null;
   }
 
-  async createRun(workflowId: string, workflowLaunchId: string, targetId: string): Promise<WorkflowRun | null> {
+  async createRun(
+    workflowId: string,
+    workflowLaunchId: string,
+    targetId: string,
+    options?: {
+      preRunEvidenceEnabled?: boolean;
+      preRunEvidenceOverride?: boolean | null;
+    }
+  ): Promise<WorkflowRun | null> {
     const workflow = await this.prisma.workflow.findUnique({ where: { id: workflowId } });
     const target = await this.prisma.application.findUnique({ where: { id: targetId } });
     const launch = await this.prisma.workflowLaunch.findUnique({ where: { id: workflowLaunchId } });
@@ -324,6 +334,8 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
         workflowLaunchId,
         targetId,
         executionKind: workflow.executionKind ?? "workflow",
+        preRunEvidenceEnabled: options?.preRunEvidenceEnabled ?? workflow.preRunEvidenceEnabled,
+        preRunEvidenceOverride: options?.preRunEvidenceOverride ?? null,
         status: "running"
       },
       include: { traceEvents: true }

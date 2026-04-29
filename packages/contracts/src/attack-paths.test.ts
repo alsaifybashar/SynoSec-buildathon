@@ -605,6 +605,8 @@ describe("buildWorkflowRunReport", () => {
       workflowLaunchId: "70000000-0000-4000-8000-000000000001",
       targetId: "80000000-0000-4000-8000-000000000001",
       executionKind: "workflow",
+      preRunEvidenceEnabled: false,
+      preRunEvidenceOverride: null,
       status: "completed",
       currentStepIndex: 0,
       startedAt: "2026-04-25T12:00:00.000Z",

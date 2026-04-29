@@ -20,7 +20,7 @@ export const sqlInjectionCheckTool = {
   inputSchema: {
     type: "object",
     properties: seededWebSteeringProperties,
-    required: ["target", "baseUrl"]
+    required: ["baseUrl"]
   },
   outputSchema: {
     type: "object",

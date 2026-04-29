@@ -54,8 +54,8 @@ async function failInterruptedWorkflowRuns() {
               type: "run_failed" as never,
               status: "failed" as never,
               title: "Workflow run interrupted",
-              summary: "Workflow run interrupted by backend restart.",
-              detail: "Backend process restarted while the run was active. Marked as failed during startup recovery.",
+              summary: "Workflow background run interrupted by backend restart.",
+              detail: "Backend process restarted while the background workflow run was active. Marked as failed during startup recovery.",
               payload: {
                 interruptedBy: "backend_restart"
               } as Prisma.InputJsonValue,

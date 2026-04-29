@@ -14,6 +14,8 @@ function createRun(overrides: Partial<WorkflowRun> = {}): WorkflowRun {
     workflowLaunchId: "30000000-0000-0000-0000-000000000001",
     targetId: "40000000-0000-0000-0000-000000000001",
     executionKind: "workflow",
+    preRunEvidenceEnabled: false,
+    preRunEvidenceOverride: null,
     status: "running",
     currentStepIndex: 0,
     startedAt: "2026-04-24T10:00:00.000Z",

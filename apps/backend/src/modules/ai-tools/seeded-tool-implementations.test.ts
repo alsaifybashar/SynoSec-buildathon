@@ -446,6 +446,22 @@ describe("seeded bash tool implementations", () => {
     ]));
   });
 
+  it("content discovery derives the execution target from url input when target is omitted", async () => {
+    const tool = createSeededTool("seed-content-discovery");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      url: `${attackPathBaseUrl}release-board`,
+      candidatePaths: ["/diagnostics/export"],
+      maxPaths: 4
+    });
+
+    expect(result.target).toBe("127.0.0.1");
+    expect(result.port).toBeDefined();
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.commandPreview).toContain(`baseUrl=${attackPathBaseUrl}release-board`);
+    expect(result.output).toContain("/diagnostics/export");
+  });
+
   it("web crawl follows in-scope links from the start page", async () => {
     const tool = createSeededTool("seed-web-crawl");
     const result = await runAiTool(createRuntime(tool), tool.id, {
@@ -615,7 +631,6 @@ describe("seeded bash tool implementations", () => {
   it("sql injection check respects an explicit path instead of pivoting to /login", async () => {
     const tool = createSeededTool("seed-sql-injection-check");
     const result = await runAiTool(createRuntime(tool), tool.id, {
-      target: "127.0.0.1",
       url: `${vulnerableBaseUrl}search`,
       method: "GET",
       parameters: ["q"]
@@ -630,6 +645,22 @@ describe("seeded bash tool implementations", () => {
     ]));
   });
 
+  it("sql injection check derives the execution target from url input when target is omitted", async () => {
+    const tool = createSeededTool("seed-sql-injection-check");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      url: `${vulnerableBaseUrl}search`,
+      method: "GET",
+      parameters: ["q"]
+    });
+
+    expect(result.target).toBe("127.0.0.1");
+    expect(result.port).toBe(vulnerablePort);
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.commandPreview).toContain(`GET:${vulnerableBaseUrl}search:q`);
+    expect(result.output).toContain("/search?q=%27+OR+%271%27%3D%271 appears injectable");
+  });
+
   it("auth flow probe derives /login from a non-login page and tolerates GET /login returning 404", async () => {
     const tool = createSeededTool("seed-auth-flow-probe");
     const result = await runAiTool(createRuntime(tool), tool.id, {
@@ -639,6 +670,20 @@ describe("seeded bash tool implementations", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.statusReason).toBeNull();
+    expect(result.output).toContain("Login flow did not rate-limit repeated failures");
+  });
+
+  it("auth flow probe derives the execution target from url input when target is omitted", async () => {
+    const tool = createSeededTool("seed-auth-flow-probe");
+    const result = await runAiTool(createRuntime(tool), tool.id, {
+      url: `${vulnerableBaseUrl}admin`
+    });
+
+    expect(result.target).toBe("127.0.0.1");
+    expect(result.port).toBe(vulnerablePort);
+    expect(result.exitCode).toBe(0);
+    expect(result.statusReason).toBeNull();
+    expect(result.commandPreview).toContain(`auth-flow-probe ${vulnerableBaseUrl}login`);
     expect(result.output).toContain("Login flow did not rate-limit repeated failures");
   });
 

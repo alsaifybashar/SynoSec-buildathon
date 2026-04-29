@@ -230,6 +230,7 @@ model Workflow {
   name          String
   status        WorkflowStatus
   executionKind String               @default("workflow") @map("execution_kind")
+  preRunEvidenceEnabled Boolean      @default(false) @map("pre_run_evidence_enabled")
   description   String?
   applicationId String?              @map("application_id") @db.Uuid
   createdAt     DateTime             @default(now()) @map("created_at")
@@ -293,6 +294,8 @@ model WorkflowRun {
   workflowLaunchId String               @map("workflow_launch_id") @db.Uuid
   targetId         String               @map("target_id") @db.Uuid
   executionKind    String               @default("workflow") @map("execution_kind")
+  preRunEvidenceEnabled Boolean         @default(false) @map("pre_run_evidence_enabled")
+  preRunEvidenceOverride Boolean?       @map("pre_run_evidence_override")
   status           WorkflowRunStatus
   currentStepIndex Int                  @default(0) @map("current_step_index")
   startedAt        DateTime             @default(now()) @map("started_at")

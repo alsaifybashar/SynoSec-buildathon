@@ -9,6 +9,8 @@ function summarizeRunForStream(run: WorkflowRun): WorkflowRunStreamState {
     workflowLaunchId: run.workflowLaunchId,
     targetId: run.targetId,
     executionKind: run.executionKind,
+    preRunEvidenceEnabled: run.preRunEvidenceEnabled,
+    preRunEvidenceOverride: run.preRunEvidenceOverride,
     status: run.status,
     currentStepIndex: run.currentStepIndex,
     startedAt: run.startedAt,

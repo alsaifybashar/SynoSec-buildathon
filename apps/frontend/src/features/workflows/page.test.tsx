@@ -90,6 +90,7 @@ const workflow: Workflow = {
   name: "Evidence Workflow",
   status: "active",
   executionKind: "workflow",
+  preRunEvidenceEnabled: false,
   description: "Stage timeline test",
   agentId: agent.id,
   objective: "Complete the Initial Recon stage using allowed tools and structured reporting.",
@@ -163,6 +164,8 @@ const run: WorkflowRun = {
   workflowId: workflow.id,
   workflowLaunchId: "launch-1",
   targetId: target.id,
+  preRunEvidenceEnabled: false,
+  preRunEvidenceOverride: null,
   status: "running",
   currentStepIndex: 1,
   startedAt: "2026-04-21T00:00:00.000Z",
@@ -399,6 +402,11 @@ describe("WorkflowDetailPage", () => {
 
   beforeEach(() => {
     eventSourceInstances = [];
+    vi.stubGlobal("scrollTo", vi.fn());
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn()
+    });
     vi.stubGlobal("EventSource", class {
       onopen: (() => void) | null = null;
       onmessage: ((event: MessageEvent<string>) => void) | null = null;
@@ -452,6 +460,34 @@ describe("WorkflowDetailPage", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     const postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST");
     expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({ targetId: target.id });
+  });
+
+  it("sends a forced pre-run evidence override when the operator enables it for a run", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === `/api/workflows/${workflow.id}/launches/latest`) {
+        return new Response(JSON.stringify({ message: "Workflow launch not found." }), { status: 404 });
+      }
+      return createFetchMock()(input, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWorkflowDetailPage();
+
+    fireEvent.click(await screen.findByRole("combobox", { name: "Pre-run evidence override" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Force enabled" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start Run" }));
+
+    await waitFor(() => {
+      const postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST");
+      expect(postCall).toBeDefined();
+    });
+
+    const postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST");
+    expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({
+      targetId: target.id,
+      preRunEvidenceEnabled: true
+    });
   });
 
   it("keeps the existing SSE workflow channel active for running runs", async () => {

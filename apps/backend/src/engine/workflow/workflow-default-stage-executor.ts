@@ -1,6 +1,7 @@
 import { stepCountIs, streamText, tool as createSdkTool, type LanguageModel } from "ai";
 import { randomUUID } from "node:crypto";
 import type {
+  AiTool,
   Scan,
   Workflow,
   WorkflowAttackVectorSubmission,
@@ -36,6 +37,10 @@ import { getSemanticFamilyDefinition } from "@/modules/ai-tools/index.js";
 import { ToolBroker } from "./broker/tool-broker.js";
 import { executeSemanticFamilyTool } from "./semantic-family-tool-executor.js";
 import {
+  authorizeToolAgainstConstraints,
+  type EffectiveExecutionConstraintSet
+} from "./execution-constraints.js";
+import {
   applyWorkflowRuntimeTarget,
   compactToolExecutionResult,
   firstNonBlankString,
@@ -50,6 +55,7 @@ import { createWorkflowReportedAttackVector, createWorkflowReportedFinding } fro
 import type {
   ExecutedToolResult,
   PipelineTerminalState,
+  StageExecutionTarget,
   WorkflowRuntimePorts,
   WorkflowStageExecutionContext,
   WorkflowStageExecutionOutcome,
@@ -62,6 +68,11 @@ import { createLanguageModelFromRuntime } from "./language-model-factory.js";
 
 const DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS = 120_000;
 const MODEL_STREAM_IDLE_TIMEOUT_ENV = "WORKFLOW_MODEL_STREAM_IDLE_TIMEOUT_MS";
+const PRE_RUN_EVIDENCE_TOOL_IDS = [
+  "seed-http-recon",
+  "seed-web-crawl",
+  "seed-nmap-scan"
+] as const;
 export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
   private readonly broker: ToolBroker;
   private static readonly TARGET_CONTEXT_SUFFIX = [
@@ -135,7 +146,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       targetDisplayUrl: target.displayBaseUrl ?? target.baseUrl
     });
     const workflowOwnsExecutionContract = renderedStageSystemPrompt.includes(workflowExecutionContractHeading);
-    const systemPrompt = [
+    const baseSystemPrompt = [
       renderedStageSystemPrompt,
       targetContextPrompt,
       workflowOwnsExecutionContract ? null : defaultWorkflowExecutionContract
@@ -306,41 +317,10 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       }
     ]);
 
-    await appendEvent("system_message", "completed", {
-      title: "Rendered system prompt",
-      summary: workflowOwnsExecutionContract
-        ? "Persisted the exact system prompt delivered to the workflow model, including workflow-owned execution contract text and engine-generated target context."
-        : "Persisted the exact system prompt delivered to the workflow model, including engine-generated target and runtime contract context.",
-      body: systemPrompt,
-      messageKind: "prompt",
-      promptKind: "system",
-      promptSourceLabel: workflowOwnsExecutionContract
-        ? "Workflow-owned editable system prompt including the workflow execution contract, plus engine-generated target context."
-        : "Workflow-owned editable system prompt plus engine-generated target context and runtime contract.",
-      promptCharCount: systemPrompt.length,
-      fullPrompt: systemPrompt
-    }, "Rendered system prompt", "Persisted the exact system prompt delivered to the workflow model.", systemPrompt);
-
-    if (toolContext) {
-      await appendEvent("system_message", "completed", {
-        title: "Tool context",
-        summary: "Persisted the tool inventory exposed to the workflow model.",
-        body: toolContext
-      }, "Tool context", "Persisted the tool inventory exposed to the workflow model.", toolContext);
-    }
-
-    if (excludedTools.length > 0) {
-      const excludedToolSummary = excludedTools.map((tool) => `${tool.name}: ${tool.reason}`).join("\n");
-      await appendEvent("system_message", "completed", {
-        title: "Policy-filtered tools",
-        summary: `Excluded ${excludedTools.length} tool${excludedTools.length === 1 ? "" : "s"} for this target run because they were not compatible with the active target constraints.`,
-        excludedTools
-      }, "Policy-filtered tools", `Excluded ${excludedTools.length} incompatible tool${excludedTools.length === 1 ? "" : "s"} for this target run.`, excludedToolSummary);
-    }
-
     const scan = createWorkflowScan(currentRun, constraintSet, target);
     await this.ensureWorkflowScan(scan, targetRecord.id, agent.id);
     const executedResults: ExecutedToolResult[] = [];
+    const preRunResults: ExecutedToolResult[] = [];
     const reportedSystemGraph = getWorkflowReportedSystemGraph(currentRun);
     const reportedResources = new Map(reportedSystemGraph.resources.map((resource) => [resource.id, resource]));
     const reportedResourceRelationships = new Map(reportedSystemGraph.resourceRelationships.map((relationship) => [relationship.id, relationship]));
@@ -369,6 +349,55 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       return candidates.length === 1 ? candidates[0]! : null;
     };
     const normalizeJsonRecord = <TValue extends Record<string, unknown>>(value: TValue) => JSON.parse(JSON.stringify(value)) as TValue;
+    const preRunEvidenceEnabled = currentRun.preRunEvidenceEnabled;
+    const preRunSummary = preRunEvidenceEnabled
+      ? await this.executePreRunEvidenceBundle({
+        workflow,
+        currentRun,
+        stage,
+        agentId: agent.id,
+        target,
+        constraintSet,
+        scan,
+        appendEvent
+      }, preRunResults, executedResults)
+      : null;
+    const systemPrompt = preRunSummary
+      ? [baseSystemPrompt, preRunSummary].filter((part) => part.trim().length > 0).join("\n\n")
+      : baseSystemPrompt;
+
+    await appendEvent("system_message", "completed", {
+      title: "Rendered system prompt",
+      summary: workflowOwnsExecutionContract
+        ? "Persisted the exact system prompt delivered to the workflow model, including workflow-owned execution contract text and engine-generated target context."
+        : "Persisted the exact system prompt delivered to the workflow model, including engine-generated target and runtime contract context.",
+      body: systemPrompt,
+      messageKind: "prompt",
+      promptKind: "system",
+      promptSourceLabel: workflowOwnsExecutionContract
+        ? "Workflow-owned editable system prompt including the workflow execution contract, plus engine-generated target context."
+        : "Workflow-owned editable system prompt plus engine-generated target context and runtime contract.",
+      promptCharCount: systemPrompt.length,
+      fullPrompt: systemPrompt,
+      ...(preRunEvidenceEnabled ? { preRunEvidenceEnabled: true } : {})
+    }, "Rendered system prompt", "Persisted the exact system prompt delivered to the workflow model.", systemPrompt);
+
+    if (toolContext) {
+      await appendEvent("system_message", "completed", {
+        title: "Tool context",
+        summary: "Persisted the tool inventory exposed to the workflow model.",
+        body: toolContext
+      }, "Tool context", "Persisted the tool inventory exposed to the workflow model.", toolContext);
+    }
+
+    if (excludedTools.length > 0) {
+      const excludedToolSummary = excludedTools.map((tool) => `${tool.name}: ${tool.reason}`).join("\n");
+      await appendEvent("system_message", "completed", {
+        title: "Policy-filtered tools",
+        summary: `Excluded ${excludedTools.length} tool${excludedTools.length === 1 ? "" : "s"} for this target run because they were not compatible with the active target constraints.`,
+        excludedTools
+      }, "Policy-filtered tools", `Excluded ${excludedTools.length} incompatible tool${excludedTools.length === 1 ? "" : "s"} for this target run.`, excludedToolSummary);
+    }
 
     const appendLiveText = (delta: string) => {
       if (!liveModelOutput) {
@@ -1728,6 +1757,255 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       run: currentRun,
       result: stageResult
     };
+  }
+
+  private async executePreRunEvidenceBundle(
+    input: {
+      workflow: Workflow;
+      currentRun: WorkflowRun;
+      stage: WorkflowStage;
+      agentId: string;
+      target: StageExecutionTarget;
+      constraintSet: EffectiveExecutionConstraintSet;
+      scan: Scan;
+      appendEvent: (
+        type: WorkflowTraceEvent["type"],
+        status: WorkflowTraceEvent["status"],
+        payload: Record<string, unknown>,
+        title: string,
+        summary: string,
+        detail?: string | null,
+        patch?: { status?: WorkflowRun["status"]; completedAt?: string | null; currentStepIndex?: number },
+        options?: {
+          rawStreamPartType?: string;
+          liveModelOutput?: WorkflowLiveModelOutput | null;
+        }
+      ) => Promise<WorkflowRun>;
+    },
+    preRunResults: ExecutedToolResult[],
+    executedResults: ExecutedToolResult[]
+  ) {
+    const bundleTools = await Promise.all(
+      PRE_RUN_EVIDENCE_TOOL_IDS.map(async (toolId) => {
+        const tool = await this.ports.aiToolsRepository.getById(toolId);
+        if (!tool) {
+          throw new RequestError(500, `Pre-run evidence tool is missing: ${toolId}.`);
+        }
+        if (tool.executorType !== "bash" || !tool.bashSource) {
+          throw new RequestError(500, `Pre-run evidence tool is not runnable through bash execution: ${tool.name}.`);
+        }
+        return tool;
+      })
+    );
+
+    await input.appendEvent(
+      "system_message",
+      "completed",
+      {
+        phase: "pre_run",
+        enabled: true,
+        toolIds: bundleTools.map((tool) => tool.id)
+      },
+      "Pre-run evidence bundle started",
+      `Running ${bundleTools.length} pre-run evidence tool${bundleTools.length === 1 ? "" : "s"} before the first model turn.`,
+      bundleTools.map((tool) => `${tool.name} (${tool.id})`).join("\n")
+    );
+
+    for (const tool of bundleTools) {
+      try {
+        const result = await this.executeStructuredBashTool({
+          tool,
+          workflow: input.workflow,
+          agentId: input.agentId,
+          target: input.target,
+          constraintSet: input.constraintSet,
+          scan: input.scan,
+          toolInput: this.buildPreRunToolInput(tool, input.target),
+          justification: `Pre-run evidence collection for workflow ${input.workflow.name} before the first model turn.`
+        });
+        preRunResults.push(result);
+        executedResults.push(result);
+
+        await input.appendEvent(
+          "tool_result",
+          "completed",
+          {
+            phase: "pre_run",
+            toolName: result.toolName,
+            toolId: result.toolId,
+            toolRunId: result.toolRun.id,
+            outputPreview: result.outputPreview,
+            observations: result.publicObservations,
+            totalObservations: result.totalObservations,
+            truncated: result.truncated,
+            commandPreview: result.commandPreview,
+            ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode })
+          },
+          `Pre-run tool completed: ${tool.name}`,
+          result.outputPreview,
+          result.fullOutput
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await input.appendEvent(
+          "system_message",
+          "failed",
+          {
+            phase: "pre_run",
+            toolId: tool.id,
+            toolName: tool.name,
+            message
+          },
+          `Pre-run tool failed: ${tool.name}`,
+          message,
+          message
+        );
+        throw error;
+      }
+    }
+
+    const summary = this.buildPreRunEvidencePromptSection(preRunResults);
+    await input.appendEvent(
+      "system_message",
+      "completed",
+      {
+        phase: "pre_run",
+        title: "Pre-run evidence summary",
+        body: summary
+      },
+      "Pre-run evidence summary",
+      `Prepared ${preRunResults.length} pre-run evidence result${preRunResults.length === 1 ? "" : "s"} for the first model turn.`,
+      summary
+    );
+
+    return summary;
+  }
+
+  private buildPreRunToolInput(tool: AiTool, target: StageExecutionTarget) {
+    return tool.id === "seed-nmap-scan"
+      ? {
+          target: target.host,
+          baseUrl: target.baseUrl
+        }
+      : {
+          target: target.host,
+          baseUrl: target.baseUrl
+        };
+  }
+
+  private async executeStructuredBashTool(input: {
+    tool: AiTool;
+    workflow: Workflow;
+    agentId: string;
+    target: StageExecutionTarget;
+    constraintSet: EffectiveExecutionConstraintSet;
+    scan: Scan;
+    toolInput: Record<string, unknown>;
+    justification: string;
+  }): Promise<ExecutedToolResult> {
+    const executionTarget = parseExecutionTarget(input.toolInput, input.target);
+    const request = await this.ports.toolRuntime.compile(input.tool.id, {
+      target: executionTarget.target,
+      ...(executionTarget.port === undefined ? {} : { port: executionTarget.port }),
+      layer: inferLayer(input.tool.category),
+      justification: input.justification,
+      toolInput: input.toolInput
+    });
+    const constraintDecision = authorizeToolAgainstConstraints(input.constraintSet, input.tool, request);
+    if (!constraintDecision.allowed) {
+      throw new RequestError(400, `Pre-run evidence tool ${input.tool.name} is not compatible with the active target constraints: ${constraintDecision.reason}`);
+    }
+
+    const brokerResult = await this.broker.executeRequests({
+      scan: input.scan,
+      tacticId: input.workflow.id,
+      agentId: input.agentId,
+      requests: [request],
+      constraintSet: input.constraintSet,
+      toolLookup: {
+        [input.tool.id]: input.tool
+      }
+    });
+    const toolRun = brokerResult.toolRuns[0];
+    if (!toolRun) {
+      throw new RequestError(500, `Workflow tool execution did not create a tool run for ${input.tool.name}.`);
+    }
+    if (toolRun.status !== "completed") {
+      throw new RequestError(
+        400,
+        `${input.tool.name} failed during pre-run evidence collection: ${toolRun.statusReason ?? toolRun.output ?? toolRun.status}.`
+      );
+    }
+
+    const publicResult = compactToolExecutionResult({
+      toolRunId: toolRun.id,
+      toolId: input.tool.id,
+      toolName: input.tool.id,
+      status: toolRun.status,
+      outputPreview: firstNonBlankString(
+        brokerResult.observations[0]?.summary,
+        toolRun.statusReason,
+        toolRun.output,
+        `${input.tool.name} ${toolRun.status}.`
+      )!,
+      observations: brokerResult.observations
+    });
+
+    return {
+      toolId: input.tool.id,
+      toolName: input.tool.id,
+      toolInput: input.toolInput,
+      toolRequest: request,
+      toolRun,
+      status: toolRun.status,
+      observations: brokerResult.observations,
+      publicObservations: publicResult.observations,
+      totalObservations: publicResult.totalObservations,
+      truncated: publicResult.truncated,
+      observationKeys: brokerResult.observations.map((observation) => observation.key),
+      observationSummaries: brokerResult.observations.map((observation) => observation.summary),
+      outputPreview: publicResult.outputPreview,
+      fullOutput: toolRun.output ?? toolRun.statusReason ?? "",
+      commandPreview: toolRun.commandPreview,
+      ...(toolRun.exitCode === undefined ? {} : { exitCode: toolRun.exitCode }),
+      usedToolId: input.tool.id,
+      usedToolName: input.tool.name,
+      fallbackUsed: false,
+      attempts: [{
+        toolId: input.tool.id,
+        toolName: input.tool.name,
+        status: toolRun.status,
+        ...(toolRun.exitCode === undefined ? {} : { exitCode: toolRun.exitCode }),
+        ...(toolRun.statusReason ? { statusReason: toolRun.statusReason } : {}),
+        outputExcerpt: truncate(toolRun.output ?? toolRun.statusReason ?? "", 400),
+        selected: true
+      }]
+    };
+  }
+
+  private buildPreRunEvidencePromptSection(results: ExecutedToolResult[]) {
+    const lines = [
+      "Pre-run evidence:",
+      "Use these observed facts as prior context before taking any tool actions."
+    ];
+
+    for (const result of results) {
+      const observations = result.publicObservations.length > 0
+        ? result.publicObservations
+        : [{
+            summary: result.outputPreview,
+            confidence: 0.5
+          }];
+      for (const observation of observations) {
+        const confidence = typeof observation.confidence === "number"
+          ? observation.confidence.toFixed(2)
+          : "0.50";
+        lines.push(`- Observation: ${observation.summary}`);
+        lines.push(`  Confidence: ${confidence}. Source: ${result.toolName}. Ref: ${result.toolRun.id}.`);
+      }
+    }
+
+    return lines.join("\n");
   }
 
   private renderPromptTemplate(

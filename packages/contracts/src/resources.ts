@@ -954,6 +954,7 @@ export const workflowSchema = z.object({
   name: z.string().min(1),
   status: workflowStatusSchema,
   executionKind: executionKindSchema.optional(),
+  preRunEvidenceEnabled: z.boolean().default(false),
   description: z.string().nullable(),
   agentId: z.string().uuid(),
   objective: z.string().min(1),
@@ -1024,6 +1025,7 @@ const workflowBodyBaseSchema = z.object({
   name: z.string().trim().min(1),
   status: workflowStatusSchema,
   executionKind: executionKindSchema.optional(),
+  preRunEvidenceEnabled: z.boolean().default(false),
   description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
   agentId: z.string().uuid(),
   objective: z.string().trim().min(1),
@@ -1061,7 +1063,8 @@ export const workflowRunStatusSchema = z.enum(["pending", "running", "completed"
 export type WorkflowRunStatus = z.infer<typeof workflowRunStatusSchema>;
 
 export const startWorkflowRunBodySchema = z.object({
-  targetId: z.string().uuid().optional()
+  targetId: z.string().uuid().optional(),
+  preRunEvidenceEnabled: z.boolean().optional()
 });
 export type StartWorkflowRunBody = z.infer<typeof startWorkflowRunBodySchema>;
 
@@ -1151,6 +1154,8 @@ export const workflowRunSchema = z.object({
   workflowLaunchId: z.string().uuid(),
   targetId: z.string().uuid(),
   executionKind: executionKindSchema.optional(),
+  preRunEvidenceEnabled: z.boolean().default(false),
+  preRunEvidenceOverride: z.boolean().nullable().default(null),
   status: workflowRunStatusSchema,
   currentStepIndex: z.number().int().min(0).default(0),
   startedAt: z.string().datetime(),

@@ -164,5 +164,5 @@ export const seededContextSteeringProperties = {
 export const seededWebSteeringInputSchema = {
   type: "object",
   properties: seededWebSteeringProperties,
-  required: ["target", "baseUrl"]
+  required: ["baseUrl"]
 } as const;

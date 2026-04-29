@@ -4,7 +4,7 @@ import { seededWebSteeringInputSchema } from "../shared/seeded-web-input-schema.
 export const contentDiscoveryTool = {
   id: "seed-content-discovery",
   name: "Content Discovery",
-  description: "Enumerate common content paths on a confirmed web target to expand the application attack surface. Use when bounded path guessing is authorized and hidden routes matter. Provide `target` and `baseUrl`; optionally steer with candidate paths or limits. Returns path/status observations; do not use for passive crawling or vulnerability confirmation.",
+  description: "Enumerate common content paths on a confirmed web target to expand the application attack surface. Use when bounded path guessing is authorized and hidden routes matter. Provide `baseUrl`, `url`, or `target`; optionally steer with candidate paths or limits. Returns path/status observations; do not use for passive crawling or vulnerability confirmation.",
   executorType: "bash" as const,
   get bashSource() {
     return loadSeedToolScript(import.meta.url, "scripts/tools/content/content-discovery.sh");

@@ -66,6 +66,7 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
     name: "Pipeline Workflow",
     status: "active",
     executionKind: "workflow",
+    preRunEvidenceEnabled: false,
     description: null,
     agentId: stage.agentId,
     objective: stage.objective,
@@ -190,6 +191,74 @@ function makeSeededAgentBashCommandRuntimeTool() {
   };
 }
 
+function makePreRunBundleTool(overrides: {
+  id: "seed-http-recon" | "seed-web-crawl" | "seed-nmap-scan";
+  name: string;
+  category: "web" | "content" | "network";
+  output: string;
+  observationSummary: string;
+  statusReason?: string;
+  exitCode?: number;
+}) {
+  const exitCode = overrides.exitCode ?? 0;
+  const payload = {
+    output: overrides.output,
+    observations: [{
+      key: `${overrides.id}:1`,
+      title: `${overrides.name} evidence`,
+      summary: overrides.observationSummary,
+      severity: "info",
+      confidence: 0.88,
+      evidence: overrides.output,
+      technique: `${overrides.id} deterministic`
+    }],
+    ...(overrides.statusReason ? { statusReason: overrides.statusReason } : {}),
+    commandPreview: overrides.id
+  };
+
+  return {
+    id: overrides.id,
+    name: overrides.name,
+    status: "active",
+    source: "system",
+    description: `${overrides.name} pre-run bundle tool.`,
+    executorType: "bash" as const,
+    builtinActionKey: null,
+    bashSource: `#!/usr/bin/env bash\nprintf '%s\\n' '${JSON.stringify(payload)}'\nexit ${exitCode}`,
+    capabilities: ["passive"],
+    category: overrides.category,
+    riskTier: "passive",
+    timeoutMs: 30000,
+    constraintProfile: {
+      enforced: true,
+      targetKinds: ["host", "domain", "url"],
+      networkBehavior: "outbound-read",
+      mutationClass: "none",
+      supportsHostAllowlist: true,
+      supportsPathExclusions: true,
+      supportsRateLimit: true
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: { type: "string" },
+        baseUrl: { type: "string" }
+      },
+      required: ["target"]
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        output: { type: "string" },
+        observations: { type: "array" }
+      },
+      required: ["output"]
+    },
+    createdAt: "2026-04-29T00:00:00.000Z",
+    updatedAt: "2026-04-29T00:00:00.000Z"
+  };
+}
+
 function createService(overrides: {
   workflow?: Workflow | null;
   target?: Target;
@@ -267,13 +336,23 @@ function createService(overrides: {
         ...createdLaunch,
         runs: createdLaunch.runs.slice()
       }),
-      createRun: async (workflowId: string, workflowLaunchId: string, targetId: string) => {
+      createRun: async (
+        workflowId: string,
+        workflowLaunchId: string,
+        targetId: string,
+        options?: {
+          preRunEvidenceEnabled?: boolean;
+          preRunEvidenceOverride?: boolean | null;
+        }
+      ) => {
         const run: WorkflowRun = {
           id: "50000000-0000-0000-0000-000000000001",
           workflowId,
           workflowLaunchId,
           targetId,
           executionKind: workflow?.executionKind,
+          preRunEvidenceEnabled: options?.preRunEvidenceEnabled ?? false,
+          preRunEvidenceOverride: options?.preRunEvidenceOverride ?? null,
           status: "running",
           currentStepIndex: 0,
           startedAt: "2026-04-24T10:00:00.000Z",
@@ -912,6 +991,108 @@ describe("WorkflowExecutionService", () => {
     });
   });
 
+  it("injects pre-run bundle evidence into the first model turn when enabled", async () => {
+    streamTextMock.mockImplementationOnce((options: { system: string; tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
+      fullStream: (async function* () {
+        expect(options.system).toContain("Pre-run evidence:");
+        expect(options.system).toContain("Admin endpoint redirects to /login.");
+        expect(options.system).toContain("Ports 80/http and 22/ssh are reachable.");
+        await options.tools.complete_run.execute({
+          summary: "Completed with pre-run evidence."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const workflow = makeWorkflow({
+      preRunEvidenceEnabled: true
+    });
+    const service = createService({
+      workflow,
+      aiToolById: {
+        "seed-http-recon": makePreRunBundleTool({
+          id: "seed-http-recon",
+          name: "HTTP Recon",
+          category: "web",
+          output: "302 /admin -> /login",
+          observationSummary: "Admin endpoint redirects to /login."
+        }),
+        "seed-web-crawl": makePreRunBundleTool({
+          id: "seed-web-crawl",
+          name: "Web Crawl",
+          category: "content",
+          output: "200 /login",
+          observationSummary: "Login page links to /reset-password."
+        }),
+        "seed-nmap-scan": makePreRunBundleTool({
+          id: "seed-nmap-scan",
+          name: "Nmap Scan",
+          category: "network",
+          output: "80/tcp open http\n22/tcp open ssh",
+          observationSummary: "Ports 80/http and 22/ssh are reachable."
+        })
+      }
+    });
+
+    await service.service.startRun(workflow.id);
+    await vi.waitFor(() => {
+      expect(streamTextMock).toHaveBeenCalled();
+      expect(service.createdRuns[0]?.events.some((event) => event.title === "Rendered system prompt")).toBe(true);
+    });
+
+    const renderedPromptEvent = service.createdRuns[0]?.events.find((event) => event.title === "Rendered system prompt");
+    expect(renderedPromptEvent?.detail).toContain("Pre-run evidence:");
+    expect(renderedPromptEvent?.detail).toContain("Source: seed-http-recon.");
+  });
+
+  it("fails before model execution when the enabled pre-run bundle fails", async () => {
+    const workflow = makeWorkflow({
+      preRunEvidenceEnabled: true
+    });
+    const service = createService({
+      workflow,
+      aiToolById: {
+        "seed-http-recon": makePreRunBundleTool({
+          id: "seed-http-recon",
+          name: "HTTP Recon",
+          category: "web",
+          output: "failed",
+          observationSummary: "HTTP recon failed.",
+          statusReason: "Missing required binary: httpx",
+          exitCode: 64
+        }),
+        "seed-web-crawl": makePreRunBundleTool({
+          id: "seed-web-crawl",
+          name: "Web Crawl",
+          category: "content",
+          output: "200 /",
+          observationSummary: "Root page responded."
+        }),
+        "seed-nmap-scan": makePreRunBundleTool({
+          id: "seed-nmap-scan",
+          name: "Nmap Scan",
+          category: "network",
+          output: "80/tcp open http",
+          observationSummary: "Port 80/http is reachable."
+        })
+      }
+    });
+
+    await service.service.startRun(workflow.id);
+    await vi.waitFor(() => {
+      expect(service.createdRuns[0]?.status).toBe("failed");
+    });
+
+    expect(streamTextMock).not.toHaveBeenCalled();
+    const latestTitles = service.createdRuns[0]?.events.map((event) => event.title) ?? [];
+    expect(latestTitles).toContain("Pre-run tool failed: HTTP Recon");
+  });
+
   it("fails the workflow when a later stage never submits complete_run", async () => {
     streamTextMock
       .mockImplementationOnce((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
@@ -961,7 +1142,7 @@ describe("WorkflowExecutionService", () => {
     const stageStartedLabels = createdRuns[0]!.events
       .filter((event) => event.type === "stage_started")
       .map((event) => String(event.payload["stageLabel"]));
-    expect(stageStartedLabels).toEqual(["Pipeline"]);
+    expect(stageStartedLabels).toEqual(["Pipeline", "Validation"]);
     expect(createdRuns[0]!.events.some((event) => event.type === "run_failed")).toBe(true);
     expect(createdRuns[0]!.events.some((event) => event.summary.includes("without calling complete_run"))).toBe(true);
     expect(executionReportsService.createForWorkflowRun).toHaveBeenCalledWith(createdRuns[0]!.id);

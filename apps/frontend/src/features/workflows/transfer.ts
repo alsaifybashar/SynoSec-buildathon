@@ -16,6 +16,7 @@ export const workflowTransfer = {
     name: workflow.name,
     status: workflow.status,
     executionKind: workflow.executionKind,
+    preRunEvidenceEnabled: workflow.preRunEvidenceEnabled,
     description: workflow.description,
     agentId: workflow.agentId,
     objective: workflow.objective,

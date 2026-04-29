@@ -432,6 +432,57 @@ describe("executeSemanticFamilyTool", () => {
     expect(family.result.observations.map(comparableObservationShape)).toEqual(direct.observations.map(comparableObservationShape));
   });
 
+  it("derives semantic family execution target from url input when target is omitted", async () => {
+    const familyTool = getBuiltinAiTool("builtin-sql-injection-validation");
+    const familyDefinition = getSemanticFamilyDefinition("sql_injection_validation");
+    if (!familyTool || !familyDefinition) {
+      throw new Error("Missing builtin semantic family tool definition");
+    }
+
+    const runtime = createToolRuntime(new MemoryAiToolsRepository([
+      createSeededTool("seed-sql-injection-check"),
+      createSeededTool("seed-sqlmap-scan")
+    ]));
+    const broker = new ToolBroker({ broadcast: () => undefined });
+    const exploitAllowedScan = {
+      ...scan,
+      scope: {
+        ...scan.scope,
+        allowActiveExploits: true
+      }
+    };
+    const rawInput = {
+      url: `${baseUrl}search`,
+      method: "GET",
+      parameters: ["q"]
+    };
+
+    const family = await executeSemanticFamilyTool({
+      broker,
+      toolRuntime: runtime,
+      familyTool,
+      familyDefinition,
+      target: {
+        baseUrl,
+        host: "127.0.0.1"
+      },
+      scan: exploitAllowedScan,
+      tacticId: "tactic-family-sqli-url-only",
+      agentId: "agent-family-sqli-url-only"
+    }, rawInput);
+
+    expect(family.result.toolRequest.target).toBe("127.0.0.1");
+    expect(family.result.toolRequest.port).toBe(new URL(baseUrl).port ? Number(new URL(baseUrl).port) : undefined);
+    expect(family.result.toolRequest.parameters.toolInput).toEqual({
+      target: "127.0.0.1",
+      port: new URL(baseUrl).port ? Number(new URL(baseUrl).port) : undefined,
+      baseUrl: `${baseUrl}search`,
+      ...rawInput
+    });
+    expect(family.result.fullOutput).toContain("/search?q=%27+OR+%271%27%3D%271");
+    expect(family.result.fullOutput).not.toContain("/login");
+  });
+
   it("returns usable evidence for parameter discovery through the semantic family executor", async () => {
     const familyTool = getBuiltinAiTool("builtin-parameter-discovery");
     const familyDefinition = getSemanticFamilyDefinition("parameter_discovery");

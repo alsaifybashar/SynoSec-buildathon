@@ -19,6 +19,7 @@ export const workflowExecutionKindLabels: Record<ExecutionKind, string> = {
 
 const workflowFieldHints = {
   executionKind: "Choose how this workflow executes within the standard workflow engine.",
+  preRunEvidenceEnabled: "Run the fixed pre-run evidence bundle before the first model turn. If enabled, any pre-run failure aborts the workflow run.",
   agent: "The linked AI agent provides the model, provider, and default capability grants used by this workflow.",
   systemPrompt: "This workflow-owned instruction layer is sent on every run before the engine-appended target context and runtime contract.",
   allowedTools: "Select a narrower capability set for this workflow. If nothing is selected, the workflow inherits every capability grant assigned to the linked agent."
@@ -72,6 +73,17 @@ export function WorkflowConfigEditor({
               ))}
             </SelectContent>
           </Select>
+        </DetailField>
+        <DetailField label="Pre-run evidence bundle" hint={workflowFieldHints.preRunEvidenceEnabled}>
+          <label className="flex items-center gap-3 rounded-[4px] border border-input bg-background px-3 py-2 text-xs text-foreground">
+            <input
+              type="checkbox"
+              checked={formValues.preRunEvidenceEnabled}
+              onChange={(event) => onFieldChange("preRunEvidenceEnabled", event.target.checked)}
+              aria-label="Pre-run evidence bundle"
+            />
+            <span>{formValues.preRunEvidenceEnabled ? "Enabled by default" : "Disabled by default"}</span>
+          </label>
         </DetailField>
         <DetailField label="Description" hint="Optional internal summary of what this workflow is intended to do." className="md:col-span-2">
           <Textarea value={formValues.description} onChange={(event) => onFieldChange("description", event.target.value)} aria-label="Description" rows={4} />

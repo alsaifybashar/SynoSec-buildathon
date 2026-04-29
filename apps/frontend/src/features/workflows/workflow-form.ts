@@ -10,6 +10,7 @@ export type WorkflowFormValues = {
   name: string;
   status: WorkflowStatus;
   executionKind: ExecutionKind;
+  preRunEvidenceEnabled: boolean;
   description: string;
   agentId: string;
   systemPrompt: string;
@@ -21,6 +22,7 @@ export function createEmptyFormValues(defaultAgentId = ""): WorkflowFormValues {
     name: "",
     status: "draft",
     executionKind: "workflow",
+    preRunEvidenceEnabled: false,
     description: "",
     agentId: defaultAgentId,
     systemPrompt: defaultWorkflowStageSystemPrompt,
@@ -33,6 +35,7 @@ export function toWorkflowFormValues(workflow: Workflow): WorkflowFormValues {
     name: workflow.name,
     status: workflow.status,
     executionKind: workflow.executionKind ?? "workflow",
+    preRunEvidenceEnabled: workflow.preRunEvidenceEnabled,
     description: workflow.description ?? "",
     agentId: workflow.agentId,
     systemPrompt: workflow.stageSystemPrompt,
@@ -45,6 +48,7 @@ export function toWorkflowRequestBody(values: WorkflowFormValues): CreateWorkflo
     name: values.name.trim(),
     status: values.status,
     executionKind: values.executionKind,
+    preRunEvidenceEnabled: values.preRunEvidenceEnabled,
     description: values.description.trim() || null,
     agentId: values.agentId,
     objective: "Run the configured workflow using the linked agent, allowed tools, and structured reporting.",

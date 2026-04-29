@@ -22,7 +22,7 @@ export class WorkflowRuntimeService {
   }
 
   async launchWorkflowRun(workflowId: string, input: StartWorkflowRunBody = {}): Promise<WorkflowLaunchResult> {
-    await this.preflight.prepareWorkflowStart(workflowId);
+    const { workflow } = await this.preflight.prepareWorkflowStart(workflowId);
 
     const launch = await this.ports.workflowsRepository.createLaunch(workflowId);
     if (!launch) {
@@ -42,7 +42,11 @@ export class WorkflowRuntimeService {
 
     const targetRuns = await Promise.all(
       selectedTargets.map(async (target) => {
-        const run = await this.ports.workflowsRepository.createRun(workflowId, launch.id, target.id);
+        const effectivePreRunEvidenceEnabled = input.preRunEvidenceEnabled ?? workflow.preRunEvidenceEnabled;
+        const run = await this.ports.workflowsRepository.createRun(workflowId, launch.id, target.id, {
+          preRunEvidenceEnabled: effectivePreRunEvidenceEnabled,
+          preRunEvidenceOverride: input.preRunEvidenceEnabled ?? null
+        });
         if (!run) {
           throw new RequestError(500, `Failed to create workflow run for target ${target.id}.`);
         }
