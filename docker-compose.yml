@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: postgres
     ports:
       - "${POSTGRES_PORT:-55432}:5432"
     environment:
@@ -19,7 +20,7 @@ services:
   vulnerable-target:
     build:
       context: ./demos/vulnerable-app
-    container_name: synosec-target
+    container_name: target-broad-web
     hostname: synosec-target
     ports:
       - "8888:8888"
@@ -29,7 +30,7 @@ services:
   full-stack-target:
     build:
       context: ./demos/full-stack-target
-    container_name: synosec-full-stack-target
+    container_name: target-finance-chain
     hostname: synosec-full-stack-target
     ports:
       - "8891:8891"
@@ -38,6 +39,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    container_name: ollama
     profiles:
       - local-llm
     ports:
@@ -52,6 +54,7 @@ services:
 
   ollama-init:
     image: ollama/ollama:latest
+    container_name: ollama-init
     profiles:
       - local-llm
     depends_on:
@@ -70,6 +73,7 @@ services:
     build:
       context: .
       dockerfile: apps/backend/Dockerfile
+    container_name: backend
     ports:
       - "${BACKEND_PORT:-3001}:${BACKEND_PORT:-3001}"
     volumes:
@@ -80,7 +84,7 @@ services:
     working_dir: /workspace
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       vulnerable-target:
         condition: service_started
       full-stack-target:
@@ -104,14 +108,27 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/backend prisma:generate && pnpm --filter @synosec/backend prisma:push && pnpm --filter @synosec/backend dev"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:' + (process.env.BACKEND_PORT || 3001) + '/api/health').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+    command: sh -c "sh ./scripts/docker/ensure-pnpm-deps.sh && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/backend prisma:generate && pnpm --filter @synosec/backend dev"
 
   connector:
     build:
       context: .
       dockerfile: apps/connector/Dockerfile
+      target: ${CONNECTOR_DOCKER_TARGET:-connector-dev-web}
+    container_name: connector
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       CONNECTOR_CONTROL_PLANE_URL: http://backend:${BACKEND_PORT:-3001}
       CONNECTOR_SHARED_TOKEN: ${CONNECTOR_SHARED_TOKEN:-synosec-connector-dev}
@@ -132,20 +149,32 @@ services:
     build:
       context: .
       dockerfile: apps/frontend/Dockerfile
+    container_name: frontend
     environment:
       VITE_API_PROXY_TARGET: http://backend:${BACKEND_PORT:-3001}
       VITE_DEV_PORT: ${VITE_DEV_PORT:-5173}
     ports:
       - "${VITE_DEV_PORT:-5173}:${VITE_DEV_PORT:-5173}"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     volumes:
       - .:/workspace
       - frontend_node_modules:/workspace/apps/frontend/node_modules
       - contracts_node_modules:/workspace/packages/contracts/node_modules
       - root_node_modules:/workspace/node_modules
     working_dir: /workspace
-    command: sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/frontend dev -- --host 0.0.0.0 --port ${VITE_DEV_PORT:-5173}"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:' + (process.env.VITE_DEV_PORT || 5173)).then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+    command: sh -c "sh ./scripts/docker/ensure-pnpm-deps.sh && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/frontend dev -- --host 0.0.0.0 --port ${VITE_DEV_PORT:-5173}"
 
 volumes:
   postgres_data:

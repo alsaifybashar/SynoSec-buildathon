@@ -95,7 +95,8 @@ services:
   connector:
     build:
       context: .
-      dockerfile: apps/connector/Dockerfile.prod
+      dockerfile: apps/connector/Dockerfile
+      target: ${CONNECTOR_DOCKER_TARGET:-connector-prod-full}
     restart: unless-stopped
     depends_on:
       - backend

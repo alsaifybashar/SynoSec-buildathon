@@ -178,6 +178,7 @@ export interface ConnectorExecutionPolicyInput {
   allowedSandboxProfiles: ConnectorRegistrationRequest["allowedSandboxProfiles"];
   allowedPrivilegeProfiles: ConnectorRegistrationRequest["allowedPrivilegeProfiles"];
   installedBinaries: readonly string[];
+  enforceInstalledBinaries?: boolean;
 }
 
 export interface ConnectorToolSupportResult {
@@ -237,6 +238,14 @@ export function evaluateConnectorToolSupport(
   }
 
   const requiredBinaries = extractRequiredBinariesFromBashSource(bashSource);
+  if (policy.enforceInstalledBinaries === false) {
+    return {
+      supported: true,
+      requiredBinaries,
+      missingBinaries: []
+    };
+  }
+
   const installed = new Set(policy.installedBinaries);
   const missingBinaries = requiredBinaries.filter((binary) => !installed.has(binary));
 

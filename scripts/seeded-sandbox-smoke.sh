@@ -129,8 +129,6 @@ dispatch_tool() {
           maxDurationMinutes: 2,
           rateLimitRps: 2,
           allowActiveExploits: false,
-          graceEnabled: true,
-          graceRoundInterval: 3,
           cyberRangeMode: "simulation"
         },
         request: {
@@ -202,31 +200,36 @@ dispatch_tool() {
 
 echo "Resetting any previous Docker stack state ..."
 docker compose down --remove-orphans >/dev/null 2>&1 || true
-docker rm -f synosec-target >/dev/null 2>&1 || true
+docker rm -f target-broad-web >/dev/null 2>&1 || true
 
 echo "Starting Docker stack for seeded sandbox smoke test ..."
 docker compose up --build -d vulnerable-target postgres ollama >/dev/null
 
 BACKEND_PORT="$BACKEND_PORT" \
 TOOL_EXECUTION_MODE=connector \
+CONNECTOR_SHARED_TOKEN="$CONNECTOR_TOKEN" \
 CONNECTOR_RUN_MODE=execute \
 CONNECTOR_DISPATCH_TIMEOUT_MS=45000 \
 CONNECTOR_ALLOWED_CAPABILITIES=passive,web-recon,network-recon,content-discovery \
 CONNECTOR_ALLOWED_SANDBOX_PROFILES=network-recon \
 CONNECTOR_ALLOWED_PRIVILEGE_PROFILES=read-only-network \
 docker compose run -d --no-deps --use-aliases --service-ports backend \
-  sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/backend prisma:generate && pnpm --filter @synosec/backend prisma:push && pnpm --filter @synosec/backend exec tsx src/main.ts" \
+  sh -c "sh ./scripts/docker/ensure-pnpm-deps.sh && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/backend prisma:generate && pnpm --filter @synosec/backend prisma:push && pnpm --filter @synosec/backend exec tsx src/main.ts" \
   >/dev/null
 
 wait_for_backend
 
+BACKEND_PORT="$BACKEND_PORT" \
+CONNECTOR_CONTROL_PLANE_URL="http://backend:${BACKEND_PORT}" \
+CONNECTOR_SHARED_TOKEN="$CONNECTOR_TOKEN" \
+CONNECTOR_DOCKER_TARGET="${CONNECTOR_DOCKER_TARGET:-connector-dev-web}" \
 CONNECTOR_RUN_MODE=execute \
 CONNECTOR_COMMAND_TIMEOUT_MS=15000 \
 CONNECTOR_ALLOWED_CAPABILITIES=passive,web-recon,network-recon,content-discovery \
 CONNECTOR_ALLOWED_SANDBOX_PROFILES=network-recon \
 CONNECTOR_ALLOWED_PRIVILEGE_PROFILES=read-only-network \
 docker compose run -d --no-deps --use-aliases connector \
-  sh -c "pnpm install --frozen-lockfile || pnpm install && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/connector exec tsx src/main.ts" \
+  sh -c "sh ./scripts/docker/ensure-pnpm-deps.sh && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/connector exec tsx src/main.ts" \
   >/dev/null
 
 wait_for_connector

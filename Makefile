@@ -1,4 +1,4 @@
-.PHONY: help dev build test database docker-database dev-services docker-up docker-down docker-logs smoke-seeded-sandbox free-dev-ports wait-for-postgres check-docker-compose
+.PHONY: help dev build test database docker-database dev-services docker-up docker-up-build docker-down docker-logs smoke-seeded-sandbox free-dev-ports wait-for-postgres wait-for-service-health check-docker-compose
 
 ifneq (,$(wildcard .env))
 include .env
@@ -7,15 +7,17 @@ endif
 
 BACKEND_PORT ?= 3001
 VITE_DEV_PORT ?= 5173
-LOCAL_ENABLED ?= $(if $(LOCAL_ENABHLED),$(LOCAL_ENABHLED),FALSE)
+LOCAL_ENABLED ?= FALSE
 
 help:
 	@printf "\033[1;32m╔══════════════════════════════════╗\033[0m\n"
 	@printf "\033[1;32m║     SynoSec AI PenTest Tool      ║\033[0m\n"
 	@printf "\033[1;32m╚══════════════════════════════════╝\033[0m\n"
-	@printf "\033[33m  make docker-up\033[0m   Start full stack (Docker Compose) without resetting existing database data\n"
+	@printf "\033[33m  make docker-up\033[0m   Start full stack (Docker Compose) without rebuilding unchanged images\n"
+	@printf "\033[33m  make docker-up-build\033[0m Rebuild images, then start full stack\n"
 	@printf "\033[33m  make docker-down\033[0m Stop and remove containers\n"
 	@printf "\033[33m  make docker-logs\033[0m Follow all container logs\n"
+	@printf "\033[33m  CONNECTOR_DOCKER_TARGET\033[0m Select connector image profile (default: connector-dev-web)\n"
 	@printf "\033[35m  make database\033[0m    Start Postgres, reset persisted app data, then generate Prisma client, push schema, and seed app data\n"
 	@printf "\033[35m  make dev-services\033[0m Start Docker-backed dev dependencies (Postgres, target, optional Ollama when enabled)\n"
 	@printf "\033[36m  make test\033[0m        Run workspace tests plus seeded sandbox smoke validation\n"
@@ -24,38 +26,78 @@ help:
 	@printf "\033[33m  make smoke-seeded-sandbox\033[0m  Run seeded DB-backed tools through connector execute-mode sandbox\n"
 
 DOCKER_COMPOSE := $(shell \
-	if docker compose version >/dev/null 2>&1; then \
+	if timeout 5s docker compose version >/dev/null 2>&1; then \
 		printf '%s' 'docker compose'; \
-	elif command -v docker-compose >/dev/null 2>&1; then \
+	elif command -v docker-compose >/dev/null 2>&1 && timeout 5s docker-compose version >/dev/null 2>&1; then \
 		printf '%s' 'docker-compose'; \
-	elif [ -f "./docker-compose" ]; then \
+	elif [ -x "./docker-compose" ] && timeout 5s ./docker-compose version >/dev/null 2>&1; then \
 		printf '%s' './docker-compose'; \
 	else \
-		printf '%s' 'docker compose'; \
+		printf '%s' ''; \
 	fi)
 
 check-docker-compose:
-	@if [ "$(DOCKER_COMPOSE)" = "docker compose" ] && ! docker compose version >/dev/null 2>&1; then \
-		printf "\033[1;31mError: docker compose is not installed.\033[0m\n"; \
-		printf "Please install the Docker Compose plugin or docker-compose binary.\n"; \
+	@if [ -z "$(DOCKER_COMPOSE)" ]; then \
+		printf "\033[1;31mError: no working Docker Compose command was found.\033[0m\n"; \
+		printf "Tried: docker compose, docker-compose, and ./docker-compose.\n"; \
+		printf "This machine currently has broken Docker CLI plugins.\n"; \
+		exit 1; \
+	fi
+	@if ! timeout 5s $(DOCKER_COMPOSE) version >/dev/null 2>&1; then \
+		printf "\033[1;31mError: %s is not available.\033[0m\n" "$(DOCKER_COMPOSE)"; \
+		printf "Please install a working Docker Compose plugin or docker-compose binary.\n"; \
 		exit 1; \
 	fi
 
-docker-up:
-	@$(MAKE) dev-services
+docker-up: check-docker-compose
 	@set -e; \
-	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-FALSE}}" | tr '[:upper:]' '[:lower:]'); \
+	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-FALSE}" | tr '[:upper:]' '[:lower:]'); \
 	if [ "$$local_enabled" = "true" ]; then \
-		$(DOCKER_COMPOSE) --profile local-llm up --build -d --remove-orphans; \
+		$(DOCKER_COMPOSE) --profile local-llm up -d --remove-orphans postgres vulnerable-target full-stack-target ollama ollama-init backend connector frontend; \
 	else \
-		$(DOCKER_COMPOSE) up --build -d --remove-orphans; \
+		$(DOCKER_COMPOSE) up -d --remove-orphans postgres vulnerable-target full-stack-target backend connector frontend; \
+	fi
+	@$(MAKE) wait-for-service-health SERVICE=postgres
+	@$(MAKE) wait-for-service-health SERVICE=backend
+	@$(MAKE) wait-for-service-health SERVICE=frontend
+	@set -e; \
+	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-FALSE}" | tr '[:upper:]' '[:lower:]'); \
+	if [ "$$local_enabled" = "true" ]; then \
+		$(MAKE) wait-for-service-health SERVICE=ollama; \
 	fi
 	@printf "\n\033[1;32m✓ SynoSec started!\033[0m\n"
 	@printf "  Frontend: \033[36mhttp://localhost:%s\033[0m\n" "$${VITE_DEV_PORT:-5173}"
 	@printf "  Backend:  \033[36mhttp://localhost:%s\033[0m\n" "$${BACKEND_PORT:-3001}"
 	@printf "  Connector dispatch: \033[36m%s\033[0m\n" "$${TOOL_EXECUTION_MODE:-connector}"
+	@printf "  Connector image: \033[36m%s\033[0m\n" "$${CONNECTOR_DOCKER_TARGET:-connector-dev-web}"
 	@printf "  Targets:  \033[36mhttp://localhost:8888\033[0m and \033[36mhttp://localhost:8891\033[0m\n"
-	@if [ "$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-FALSE}}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then \
+	@if [ "$$(printf '%s' "$${LOCAL_ENABLED:-FALSE}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then \
+		printf "  Local LLM: \033[36mhttp://localhost:11434\033[0m\n"; \
+	fi
+
+docker-up-build: check-docker-compose
+	@set -e; \
+	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-FALSE}" | tr '[:upper:]' '[:lower:]'); \
+	if [ "$$local_enabled" = "true" ]; then \
+		$(DOCKER_COMPOSE) --profile local-llm up --build -d --remove-orphans postgres vulnerable-target full-stack-target ollama ollama-init backend connector frontend; \
+	else \
+		$(DOCKER_COMPOSE) up --build -d --remove-orphans postgres vulnerable-target full-stack-target backend connector frontend; \
+	fi
+	@$(MAKE) wait-for-service-health SERVICE=postgres
+	@$(MAKE) wait-for-service-health SERVICE=backend
+	@$(MAKE) wait-for-service-health SERVICE=frontend
+	@set -e; \
+	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-FALSE}" | tr '[:upper:]' '[:lower:]'); \
+	if [ "$$local_enabled" = "true" ]; then \
+		$(MAKE) wait-for-service-health SERVICE=ollama; \
+	fi
+	@printf "\n\033[1;32m✓ SynoSec started!\033[0m\n"
+	@printf "  Frontend: \033[36mhttp://localhost:%s\033[0m\n" "$${VITE_DEV_PORT:-5173}"
+	@printf "  Backend:  \033[36mhttp://localhost:%s\033[0m\n" "$${BACKEND_PORT:-3001}"
+	@printf "  Connector dispatch: \033[36m%s\033[0m\n" "$${TOOL_EXECUTION_MODE:-connector}"
+	@printf "  Connector image: \033[36m%s\033[0m\n" "$${CONNECTOR_DOCKER_TARGET:-connector-dev-web}"
+	@printf "  Targets:  \033[36mhttp://localhost:8888\033[0m and \033[36mhttp://localhost:8891\033[0m\n"
+	@if [ "$$(printf '%s' "$${LOCAL_ENABLED:-FALSE}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then \
 		printf "  Local LLM: \033[36mhttp://localhost:11434\033[0m\n"; \
 	fi
 
@@ -116,22 +158,17 @@ free-dev-ports:
 dev-services:
 	@$(MAKE) check-docker-compose
 	@set -e; \
-	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-$${LOCAL_ENABHLED:-FALSE}}" | tr '[:upper:]' '[:lower:]'); \
+	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-FALSE}" | tr '[:upper:]' '[:lower:]'); \
 	if [ "$$local_enabled" = "false" ]; then \
 		$(DOCKER_COMPOSE) up -d postgres vulnerable-target full-stack-target; \
 	else \
-		model_name=$${LLM_LOCAL_MODEL:-qwen3:8b}; \
-		$(DOCKER_COMPOSE) rm -sf ollama ollama-init >/dev/null 2>&1 || true; \
-		$(DOCKER_COMPOSE) up -d postgres vulnerable-target full-stack-target ollama; \
-		until [ "$$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}starting{{end}}' synosec-buildathon-ollama-1 2>/dev/null)" = "healthy" ]; do \
-			sleep 1; \
-		done; \
-		if $(DOCKER_COMPOSE) exec -T ollama ollama list | awk 'NR > 1 { print $$1 }' | grep -Fx "$$model_name" >/dev/null 2>&1; then \
-			printf "Ollama model %s already present, skipping pull\n" "$$model_name"; \
-		else \
-			printf "Ollama model %s missing, starting background pull\n" "$$model_name"; \
-			$(DOCKER_COMPOSE) exec -d ollama ollama pull "$$model_name" >/dev/null; \
-		fi; \
+		$(DOCKER_COMPOSE) --profile local-llm up -d postgres vulnerable-target full-stack-target ollama ollama-init; \
+	fi
+	@$(MAKE) wait-for-service-health SERVICE=postgres
+	@set -e; \
+	local_enabled=$$(printf '%s' "$${LOCAL_ENABLED:-FALSE}" | tr '[:upper:]' '[:lower:]'); \
+	if [ "$$local_enabled" = "true" ]; then \
+		$(MAKE) wait-for-service-health SERVICE=ollama; \
 	fi
 
 database:
@@ -153,14 +190,35 @@ docker-database:
 		DATABASE_URL=postgres://synosec:synosec@postgres:5432/synosec pnpm --filter @synosec/backend prisma:seed'
 
 wait-for-postgres:
+	@$(MAKE) wait-for-service-health SERVICE=postgres
+
+wait-for-service-health:
 	@set -e; \
-	container_id=$$($(DOCKER_COMPOSE) ps -q postgres); \
-	if [ -z "$$container_id" ]; then \
-		printf "Postgres container not found\n" >&2; \
+	service="$(SERVICE)"; \
+	if [ -z "$$service" ]; then \
+		printf "SERVICE is required\n" >&2; \
 		exit 1; \
 	fi; \
-	printf "Waiting for Postgres to become healthy"; \
-	until [ "$$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}starting{{end}}' "$$container_id")" = "healthy" ]; do \
+	container_id=$$($(DOCKER_COMPOSE) ps -q "$$service"); \
+	if [ -z "$$container_id" ]; then \
+		printf "Service %s container not found\n" "$$service" >&2; \
+		exit 1; \
+	fi; \
+	if ! docker inspect -f '{{if .State.Health}}configured{{end}}' "$$container_id" | grep -qx 'configured'; then \
+		printf "Service %s does not define a healthcheck\n" "$$service" >&2; \
+		exit 1; \
+	fi; \
+	printf "Waiting for %s to become healthy" "$$service"; \
+	while true; do \
+		status=$$(docker inspect -f '{{.State.Health.Status}}' "$$container_id"); \
+		if [ "$$status" = "healthy" ]; then \
+			break; \
+		fi; \
+		if [ "$$status" = "unhealthy" ]; then \
+			printf "\nService %s became unhealthy. Recent logs:\n" "$$service" >&2; \
+			docker logs --tail=100 "$$container_id" >&2; \
+			exit 1; \
+		fi; \
 		printf "."; \
 		sleep 1; \
 	done; \

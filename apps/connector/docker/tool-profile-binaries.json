@@ -1,0 +1,82 @@
+{
+  "core": [
+    "cipher-identifier",
+    "curl",
+    "nc",
+    "ncat",
+    "nmap",
+    "openssl",
+    "strings"
+  ],
+  "web": [
+    "amass",
+    "arjun",
+    "dalfox",
+    "dirb",
+    "dirsearch",
+    "feroxbuster",
+    "ffuf",
+    "gau",
+    "gobuster",
+    "hakrawler",
+    "httpx",
+    "katana",
+    "nikto",
+    "nuclei",
+    "paramspider",
+    "sqlmap",
+    "subfinder",
+    "waybackurls",
+    "whatweb",
+    "wpscan"
+  ],
+  "cloud": [
+    "kube-bench",
+    "kube-hunter",
+    "prowler",
+    "scout",
+    "trivy"
+  ],
+  "windows": [
+    "crackmapexec",
+    "dnsenum",
+    "enum4linux",
+    "enum4linux-ng",
+    "evil-winrm",
+    "fierce",
+    "hashcat",
+    "hydra",
+    "john",
+    "medusa",
+    "nxc",
+    "ophcrack",
+    "patator",
+    "responder"
+  ],
+  "forensics": [
+    "bulk_extractor",
+    "exiftool",
+    "foremost",
+    "scalpel",
+    "steghide",
+    "volatility"
+  ],
+  "reversing": [
+    "binwalk",
+    "checksec",
+    "gdb",
+    "ghidra",
+    "objdump",
+    "r2"
+  ],
+  "exploitation": [
+    "autorecon",
+    "burp",
+    "hash-identifier",
+    "masscan",
+    "msfconsole",
+    "rustscan",
+    "sublist3r",
+    "theHarvester"
+  ]
+}
