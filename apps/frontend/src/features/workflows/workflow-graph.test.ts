@@ -44,7 +44,7 @@ describe("selectLatestWorkflowLaunchRun", () => {
 });
 
 describe("buildExecutionGraphFromWorkflowFindings", () => {
-  it("builds evidence/finding/chain nodes without deriving finding relationship edges from findings alone", () => {
+  it("builds evidence/finding/attack-chain nodes without deriving finding relationship edges from findings alone", () => {
     const findings: WorkflowReportedFinding[] = [
       {
         id: "60000000-0000-4000-8000-000000000001",
@@ -66,7 +66,7 @@ describe("buildExecutionGraphFromWorkflowFindings", () => {
         derivedFromFindingIds: [],
         relatedFindingIds: [],
         enablesFindingIds: [],
-        chain: {
+        attackChain: {
           title: "Privilege escalation path",
           summary: "Exposure supports a broader chain.",
           severity: "high"
@@ -104,7 +104,7 @@ describe("buildExecutionGraphFromWorkflowFindings", () => {
     expect(graph.nodes.some((node) => node.kind === "finding" && node.id === findings[0]?.id)).toBe(true);
     expect(graph.nodes.some((node) => node.kind === "finding" && node.id === findings[1]?.id)).toBe(true);
     expect(graph.nodes.some((node) => node.kind === "evidence" && node.id === `${findings[0]?.id}:evidence:0`)).toBe(true);
-    expect(graph.nodes.some((node) => node.kind === "chain")).toBe(true);
+    expect(graph.nodes.some((node) => node.kind === "attack_chain")).toBe(true);
 
     expect(graph.edges.some((edge) => edge.kind === "supports" && edge.target === findings[0]?.id)).toBe(true);
     expect(graph.edges.some((edge) => edge.kind === "derived_from")).toBe(false);

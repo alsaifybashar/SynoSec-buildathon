@@ -55,19 +55,20 @@ const target: Target = {
 const tool: AiTool = {
   id: "tool-1",
   name: "HTTP Recon",
+  kind: "raw-adapter",
   status: "active",
   source: "custom",
+  accessProfile: "standard",
   description: "HTTP reconnaissance",
-  binary: "httpx",
   executorType: "bash",
+  builtinActionKey: null,
   bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
   capabilities: ["web-recon"],
   category: "web",
   riskTier: "passive",
-  notes: null,
-  sandboxProfile: "network-recon",
-  privilegeProfile: "read-only-network",
   timeoutMs: 30000,
+  coveredToolIds: [],
+  candidateToolIds: [],
   inputSchema: { type: "object", properties: {} },
   outputSchema: { type: "object", properties: {} },
   createdAt: "2026-04-21T00:00:00.000Z",
@@ -80,7 +81,7 @@ const agent: AiAgent = {
   status: "active",
   description: "Local workflow runner",
   systemPrompt: "Coordinate the next best step.",
-  toolIds: [tool.id],
+  toolAccessMode: "system_plus_custom",
   createdAt: "2026-04-21T00:00:00.000Z",
   updatedAt: "2026-04-21T00:00:00.000Z"
 };
@@ -306,7 +307,7 @@ function createFetchMock() {
     if (url.startsWith("/api/ai-agents?")) {
       return new Response(JSON.stringify(paginatedResponse("agents", [agent])));
     }
-    if (url.startsWith("/api/ai-tools?")) {
+    if (url.startsWith("/api/tool-registry?")) {
       return new Response(JSON.stringify(paginatedResponse("tools", [tool])));
     }
     if (url.startsWith("/api/workflows?")) {
@@ -465,7 +466,7 @@ describe("WorkflowDetailPage", () => {
     expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({ targetId: target.id });
   });
 
-  it("sends a forced pre-run evidence override when the operator enables it for a run", async () => {
+  it("starts a workflow run from the detail page without sending a pre-run override", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === `/api/workflows/${workflow.id}/launches/latest`) {
@@ -476,10 +477,7 @@ describe("WorkflowDetailPage", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderWorkflowDetailPage();
-
-    fireEvent.click(await screen.findByRole("combobox", { name: "Pre-run evidence override" }));
-    fireEvent.click(await screen.findByRole("option", { name: "Force enabled" }));
-    fireEvent.click(screen.getByRole("button", { name: "Start Run" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start Run" }));
 
     await waitFor(() => {
       const postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST");
@@ -487,10 +485,7 @@ describe("WorkflowDetailPage", () => {
     });
 
     const postCall = fetchMock.mock.calls.find(([input, init]) => String(input) === `/api/workflows/${workflow.id}/runs` && init?.method === "POST");
-    expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({
-      targetId: target.id,
-      preRunEvidenceEnabled: true
-    });
+    expect(JSON.parse(String(postCall?.[1]?.body))).toEqual({ targetId: target.id });
   });
 
   it("keeps the existing SSE workflow channel active for running runs", async () => {
@@ -518,7 +513,7 @@ describe("WorkflowDetailPage", () => {
     expect(screen.getByText("Target context")).toBeInTheDocument();
     expect(screen.getByText("Workflow execution contract")).toBeInTheDocument();
     expect(screen.getByDisplayValue(/Runtime target context:/)).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/Operator URL: http:\/\/127.0.0.1:3000/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/Workflow execution contract:/)).toBeInTheDocument();
     expect(screen.getByDisplayValue(/Run evidence tools first, submit evidence-backed resources, findings, and relationships with report_system_graph_batch/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Workflow system prompt"), {

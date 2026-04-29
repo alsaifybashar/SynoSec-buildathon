@@ -224,6 +224,10 @@ function getPayloadString(payload: Record<string, unknown> | null | undefined, k
   return value !== null && value.trim().length > 0 ? value.trim() : null;
 }
 
+function getPayloadPhase(payload: Record<string, unknown> | null | undefined) {
+  return getPayloadString(payload, "phase");
+}
+
 function getTraceKind(event: WorkflowTraceEvent) {
   const kind = getPayloadString(event.payload ?? {}, "rawStreamPartType")
     ?? getPayloadString(event.payload ?? {}, "streamPartType")
@@ -494,16 +498,40 @@ function toFindingsRailItem(finding: WorkflowReportedFinding, ord: number, creat
 
 function createSystemMessage(event: WorkflowTraceEvent): WorkflowTranscriptSystemMessage {
   const payload = event.payload ?? {};
+  const phase = getPayloadPhase(payload);
+  const isPreRunPhase = phase === "pre_run";
   return {
     kind: "system_message",
     id: event.id,
     ord: event.ord,
     createdAt: event.createdAt,
-    title: getPayloadString(payload, "title") ?? event.title,
+    title: isPreRunPhase ? "Initial scanning" : (getPayloadString(payload, "title") ?? event.title),
     summary: getPayloadString(payload, "summary") ?? event.summary,
     body: getPayloadString(payload, "body")
       ?? getPayloadString(payload, "fullPrompt")
       ?? event.detail
+  };
+}
+
+function createPreRunToolResultMessage(event: WorkflowTraceEvent): WorkflowTranscriptSystemMessage {
+  const payload = event.payload ?? {};
+  const toolName = getPayloadString(payload, "toolName") ?? "Initial scanning tool";
+  const summary = getPayloadString(payload, "summary")
+    ?? getPayloadString(payload, "outputPreview")
+    ?? event.summary;
+  const body = getSerializedToolResultBody(payload)
+    ?? getPayloadString(payload, "outputPreview")
+    ?? event.detail
+    ?? summary;
+
+  return {
+    kind: "system_message",
+    id: event.id,
+    ord: event.ord,
+    createdAt: event.createdAt,
+    title: "Initial scanning",
+    summary: `${toolName}: ${summary}`,
+    body: body ? `${toolName}\n\n${body}` : toolName
   };
 }
 
@@ -829,6 +857,7 @@ export function buildWorkflowTranscript(input: {
   for (const event of orderedEvents) {
     const payload = event.payload ?? {};
     const traceKind = getTraceKind(event);
+    const eventPhase = getPayloadPhase(payload);
 
     if (event.type === "system_message") {
       if (isPromptSystemMessage(event)) {
@@ -872,7 +901,16 @@ export function buildWorkflowTranscript(input: {
       continue;
     }
 
-    if (!currentTurn && (traceKind === "text" || traceKind === "reasoning" || traceKind === "tool_call" || traceKind === "tool_call_delta" || traceKind === "tool_call_streaming_start" || traceKind === "tool_result" || event.type === "finding_reported" || traceKind === "error")) {
+    const shouldStartAssistantTurn = traceKind === "text"
+      || traceKind === "reasoning"
+      || traceKind === "tool_call"
+      || traceKind === "tool_call_delta"
+      || traceKind === "tool_call_streaming_start"
+      || (traceKind === "tool_result" && eventPhase !== "pre_run")
+      || event.type === "finding_reported"
+      || traceKind === "error";
+
+    if (!currentTurn && shouldStartAssistantTurn) {
       currentTurn = createAssistantTurnShell({
         id: `turn:${event.id}`,
         ord: event.ord,
@@ -938,6 +976,13 @@ export function buildWorkflowTranscript(input: {
     }
 
     if (event.type === "tool_result") {
+      if (eventPhase === "pre_run") {
+        flushPromptMessages();
+        flushTurn();
+        items.push(createPreRunToolResultMessage(event));
+        continue;
+      }
+
       const parsedOutput = parseToolExecutionPublicResult(payload["output"]);
       const compactOutput = parsedOutput.success ? parsedOutput.data : null;
       const serializedOutput = getSerializedToolResultBody(payload);

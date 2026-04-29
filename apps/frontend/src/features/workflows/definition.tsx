@@ -95,11 +95,20 @@ export const workflowsDefinition: CrudFeatureDefinition<
         <DetailSidebarItem label="Workflow surface">
           {item.allowedToolIds.length}
         </DetailSidebarItem>
-        <DetailSidebarItem label="Persisted agent grants">
-          {context.agentLookup[item.agentId]?.toolIds.length ?? 0}
+        <DetailSidebarItem label="Agent mode">
+          {context.agentLookup[item.agentId]?.toolAccessMode ?? "system"}
         </DetailSidebarItem>
         <DetailSidebarItem label="Effective tools">
-          {item.allowedToolIds.length > 0 ? item.allowedToolIds.length : context.agentLookup[item.agentId]?.toolIds.length ?? 0}
+          {item.allowedToolIds.length > 0 ? item.allowedToolIds.length : context.tools.filter((tool) => {
+            const agent = context.agentLookup[item.agentId];
+            if (!agent || tool.status !== "active") {
+              return false;
+            }
+            if (agent.toolAccessMode === "system") {
+              return tool.source === "system" && tool.accessProfile === "standard";
+            }
+            return tool.accessProfile === "standard" || tool.accessProfile === "shell";
+          }).length}
         </DetailSidebarItem>
         <DetailSidebarItem label="Updated">{formatTimestamp(item.updatedAt)}</DetailSidebarItem>
       </>
@@ -110,6 +119,7 @@ export const workflowsDefinition: CrudFeatureDefinition<
         errors={errors as Record<string, string>}
         agents={context.agents}
         agentLookup={context.agentLookup}
+        tools={context.tools}
         toolLookup={context.toolLookup}
         onFieldChange={handleFieldChange}
       />

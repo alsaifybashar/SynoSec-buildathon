@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import type { AiAgent, ExecutionKind, WorkflowStatus } from "@synosec/contracts";
+import type { AiAgent, AiTool, ExecutionKind, ToolAccessMode, WorkflowStatus } from "@synosec/contracts";
 import { definedFieldError, type WorkflowFormValues } from "@/features/workflows/workflow-form";
 import { DetailField, DetailFieldGroup } from "@/shared/components/detail-page";
 import { Button } from "@/shared/ui/button";
@@ -20,16 +20,29 @@ export const workflowExecutionKindLabels: Record<ExecutionKind, string> = {
 const workflowFieldHints = {
   executionKind: "Choose how this workflow executes within the standard workflow engine.",
   preRunEvidenceEnabled: "Run the fixed pre-run evidence bundle before the first model turn. If enabled, any pre-run failure aborts the workflow run.",
-  agent: "The linked AI agent provides the model, provider, and default capability grants used by this workflow.",
+  agent: "The linked AI agent provides the model, provider, and default registry visibility used by this workflow.",
   systemPrompt: "This workflow-owned instruction layer is sent on every run before the engine-appended target context and runtime contract.",
-  allowedTools: "Select a narrower capability set for this workflow. If nothing is selected, the workflow inherits every capability grant assigned to the linked agent."
+  allowedTools: "Select a narrower registry subset for this workflow. If nothing is selected, the workflow inherits every registry entry visible through the linked agent mode."
 } as const;
+
+function resolveVisibleTools(toolAccessMode: ToolAccessMode, tools: AiTool[]) {
+  return tools.filter((tool) => {
+    if (tool.status !== "active") {
+      return false;
+    }
+    if (toolAccessMode === "system") {
+      return tool.source === "system" && tool.accessProfile === "standard";
+    }
+    return tool.accessProfile === "standard" || tool.accessProfile === "shell";
+  });
+}
 
 export function WorkflowConfigEditor({
   formValues,
   errors,
   agents,
   agentLookup,
+  tools,
   toolLookup,
   onFieldChange
 }: {
@@ -37,17 +50,19 @@ export function WorkflowConfigEditor({
   errors: Record<string, string>;
   agents: AiAgent[];
   agentLookup: Record<string, AiAgent>;
+  tools: AiTool[];
   toolLookup: Record<string, string>;
   onFieldChange: <Key extends keyof WorkflowFormValues>(field: Key, value: WorkflowFormValues[Key]) => void;
 }) {
   const selectedAgent = agentLookup[formValues.agentId];
-  const inheritedToolIds = selectedAgent?.toolIds ?? [];
+  const inheritedToolIds = selectedAgent ? resolveVisibleTools(selectedAgent.toolAccessMode, tools).map((tool) => tool.id) : [];
   const workflowProvidedToolIds = formValues.allowedToolIds;
   const effectiveToolIds = workflowProvidedToolIds.length > 0 ? workflowProvidedToolIds : inheritedToolIds;
   const workflowActions = ["Complete run", "Fail run"];
 
   function normalizeAllowedToolIds(nextAgentId: string) {
-    const nextInheritedToolIds = agentLookup[nextAgentId]?.toolIds ?? [];
+    const nextAgent = agentLookup[nextAgentId];
+    const nextInheritedToolIds = nextAgent ? resolveVisibleTools(nextAgent.toolAccessMode, tools).map((tool) => tool.id) : [];
     if (formValues.allowedToolIds.length === 0) {
       return [];
     }

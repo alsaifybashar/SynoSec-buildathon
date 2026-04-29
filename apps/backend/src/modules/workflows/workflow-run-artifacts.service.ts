@@ -13,6 +13,7 @@ import {
 } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
+import { resolveAgentTools } from "@/modules/ai-agents/index.js";
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
 import type { WorkflowsRepository } from "./workflows.repository.js";
 
@@ -90,12 +91,18 @@ export class WorkflowRunArtifactsService {
     workflow: Workflow,
     agents: Awaited<ReturnType<WorkflowRunArtifactsService["loadAgents"]>>
   ) {
+    const registryPage = await this.aiToolsRepository.list({
+      page: 1,
+      pageSize: 100,
+      sortBy: "name",
+      sortDirection: "asc"
+    });
     const toolIds = new Set<string>();
     for (const toolId of workflow.allowedToolIds ?? []) {
       toolIds.add(toolId);
     }
     for (const agent of agents) {
-      for (const toolId of agent.toolIds) {
+      for (const toolId of resolveAgentTools(agent, registryPage.items).map((tool) => tool.id)) {
         toolIds.add(toolId);
       }
     }

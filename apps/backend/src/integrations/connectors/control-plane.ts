@@ -55,7 +55,8 @@ function connectorSupportsRequest(connector: ConnectorDescriptor, request: ToolR
     allowedCapabilities: connector.allowedCapabilities,
     allowedSandboxProfiles: connector.allowedSandboxProfiles,
     allowedPrivilegeProfiles: connector.allowedPrivilegeProfiles,
-    installedBinaries: connector.installedBinaries
+    installedBinaries: connector.installedBinaries,
+    enforceInstalledBinaries: false
   }).supported;
 }
 
@@ -87,7 +88,8 @@ function computeSupportedToolIds(connector: Omit<ConnectorDescriptor, "supported
       allowedCapabilities: connector.allowedCapabilities,
       allowedSandboxProfiles: connector.allowedSandboxProfiles,
       allowedPrivilegeProfiles: connector.allowedPrivilegeProfiles,
-      installedBinaries: connector.installedBinaries
+      installedBinaries: connector.installedBinaries,
+      enforceInstalledBinaries: false
     }).supported)
     .map((tool) => tool.id)
     .sort((left, right) => left.localeCompare(right));

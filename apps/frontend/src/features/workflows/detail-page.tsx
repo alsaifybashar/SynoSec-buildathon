@@ -13,14 +13,13 @@ import { workflowsResource } from "@/features/workflows/resource";
 import { workflowTransfer } from "@/features/workflows/transfer";
 import { useWorkflowDefinitionContext } from "@/features/workflows/context";
 import { PromptEditModal, joinWorkflowPromptSections, splitWorkflowPromptSections, type PromptEditDraft } from "@/features/workflows/prompt-edit-modal";
-import { useWorkflowRunState, type WorkflowPreRunEvidenceMode } from "@/features/workflows/use-workflow-run-state";
+import { useWorkflowRunState } from "@/features/workflows/use-workflow-run-state";
 import { WorkflowTraceSection } from "@/features/workflows/workflow-trace-section";
 import { DetailLoadingState, DetailPage } from "@/shared/components/detail-page";
 import { fetchJson } from "@/shared/lib/api";
 import { exportResourceRecords } from "@/shared/lib/resource-transfer";
 import { useResourceDetail } from "@/shared/hooks/use-resource-detail";
 import { Button } from "@/shared/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
 
 export function WorkflowDetailPage({
   workflowId,
@@ -47,7 +46,6 @@ export function WorkflowDetailPage({
   const [workflowOverride, setWorkflowOverride] = useState<Workflow | null>(null);
   const [agentOverride, setAgentOverride] = useState<AiAgent | null>(null);
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
-  const [preRunEvidenceMode, setPreRunEvidenceMode] = useState<WorkflowPreRunEvidenceMode>("inherit");
   const context = useWorkflowDefinitionContext();
   const workflowDetail = useResourceDetail(workflowsResource, workflowId ?? null, detailReloadToken);
 
@@ -134,7 +132,19 @@ export function WorkflowDetailPage({
     ? (agentOverride?.id === workflow.agentId ? agentOverride : context.agentLookup[workflow.agentId] ?? null)
     : null;
   const workflowProvidedToolIds = workflow?.allowedToolIds ?? [];
-  const inheritedAgentToolIds = workflowAgent?.toolIds ?? [];
+  const inheritedAgentToolIds = workflowAgent
+    ? context.tools
+        .filter((tool) => {
+          if (tool.status !== "active") {
+            return false;
+          }
+          if (workflowAgent.toolAccessMode === "system") {
+            return tool.source === "system" && tool.accessProfile === "standard";
+          }
+          return tool.accessProfile === "standard" || tool.accessProfile === "shell";
+        })
+        .map((tool) => tool.id)
+    : [];
   const targetTabs = useMemo(() => context.targets.map((target) => ({
     target,
     summary: currentLaunch?.runs.find((item) => item.targetId === target.id) ?? null,
@@ -215,7 +225,7 @@ export function WorkflowDetailPage({
       setShowPromptEditor(false);
       setPromptSaveError(null);
       if (runAfterSave) {
-        await startRun(preRunEvidenceMode);
+        await startRun();
       }
       return;
     }
@@ -243,7 +253,7 @@ export function WorkflowDetailPage({
       setShowPromptEditor(false);
       toast.success(runAfterSave ? "Prompts saved. Starting workflow run." : "Prompts saved");
       if (runAfterSave) {
-        await startRun(preRunEvidenceMode);
+        await startRun();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to save prompt edits.";
@@ -280,12 +290,9 @@ export function WorkflowDetailPage({
   const loadedWorkflow = workflow ?? workflowDetail.item;
 
   const runActive = runPending || currentRun?.status === "running" || currentRun?.status === "pending";
-  const resolvedPreRunLabel = currentRun
-    ? (currentRun.preRunEvidenceEnabled ? "Enabled" : "Disabled")
-    : (loadedWorkflow.preRunEvidenceEnabled ? "Enabled by workflow default" : "Disabled by workflow default");
 
   async function handleStartRun() {
-    await startRun(preRunEvidenceMode);
+    await startRun();
     if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
       try {
         window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
@@ -367,36 +374,6 @@ export function WorkflowDetailPage({
                 </button>
               );
             })}
-          </div>
-        </div>
-        <div className="mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_18rem]">
-          <div className="rounded-xl border border-border bg-card/60 p-3">
-            <p className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-              Pre-run evidence
-            </p>
-            <p className="mt-2 text-sm text-foreground">
-              Workflow default: {loadedWorkflow.preRunEvidenceEnabled ? "Enabled" : "Disabled"}
-            </p>
-            <p className="mt-1 text-sm text-foreground">
-              Current resolved mode: {resolvedPreRunLabel}
-            </p>
-          </div>
-          <div className="rounded-xl border border-border bg-card/60 p-3">
-            <p className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-              Run override
-            </p>
-            <div className="mt-2">
-              <Select value={preRunEvidenceMode} onValueChange={(value) => setPreRunEvidenceMode(value as WorkflowPreRunEvidenceMode)}>
-                <SelectTrigger aria-label="Pre-run evidence override">
-                  <SelectValue placeholder="Choose run override" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inherit">Use workflow default</SelectItem>
-                  <SelectItem value="enabled">Force enabled</SelectItem>
-                  <SelectItem value="disabled">Force disabled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
         </div>
         {activeTarget && !activeTarget.baseUrl ? (

@@ -14,8 +14,6 @@ describe("buildEnvironmentGraphFromScope", () => {
       maxDurationMinutes: 15,
       rateLimitRps: 5,
       allowActiveExploits: false,
-      graceEnabled: true,
-      graceRoundInterval: 3,
       cyberRangeMode: "live"
     });
 
@@ -39,8 +37,6 @@ describe("buildEnvironmentGraphFromScope", () => {
       maxDurationMinutes: 15,
       rateLimitRps: 5,
       allowActiveExploits: false,
-      graceEnabled: true,
-      graceRoundInterval: 3,
       cyberRangeMode: "live" as const
     };
 

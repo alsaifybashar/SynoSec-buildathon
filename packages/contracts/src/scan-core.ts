@@ -36,8 +36,6 @@ export const scanScopeSchema = z.object({
   maxDurationMinutes: z.number().int().min(1).max(60).default(10),
   rateLimitRps: z.number().int().min(1).max(50).default(5),
   allowActiveExploits: z.boolean().default(false),
-  graceEnabled: z.boolean().default(true),
-  graceRoundInterval: z.number().int().min(1).max(10).default(3),
   cyberRangeMode: z.enum(["simulation", "live"]).default("simulation")
 });
 export type ScanScope = z.infer<typeof scanScopeSchema>;

@@ -64,7 +64,7 @@ function buildFindingSignals(
 }
 
 function chainForFinding(report: ExecutionReportDetail, findingId: string) {
-  return report.graph.nodes.find((node) => node.kind === "chain" && node.findingIds.includes(findingId)) ?? null;
+  return report.graph.nodes.find((node) => node.kind === "attack_chain" && node.findingIds.includes(findingId)) ?? null;
 }
 
 function attackVectorsForFinding(report: ExecutionReportDetail, findingId: string) {
@@ -100,7 +100,7 @@ function CinemaGraph({
   const stroke = SEVERITY_STROKE[finding.severity];
   const width = 880;
   const height = 460;
-  const laneX = { tool: 100, evidence: 330, finding: 600, chain: 800 };
+  const laneX = { tool: 100, evidence: 330, finding: 600, attackChain: 800 };
   const findingY = height / 2;
   const rowCount = Math.max(signals.length, 1);
   const rowHeight = Math.min(78, (height - 110) / rowCount);
@@ -118,7 +118,7 @@ function CinemaGraph({
           <stop offset="0%" stopColor={stroke} stopOpacity="0.0" />
           <stop offset="100%" stopColor={stroke} stopOpacity="0.85" />
         </linearGradient>
-        <linearGradient id="cinema-flow-chain" x1="0" y1="0" x2="1" y2="0">
+        <linearGradient id="cinema-flow-attack-chain" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0%" stopColor={stroke} stopOpacity="0.85" />
           <stop offset="100%" stopColor={stroke} stopOpacity="0.0" />
         </linearGradient>
@@ -151,7 +151,7 @@ function CinemaGraph({
         { x: laneX.tool, label: "TOOLS" },
         { x: laneX.evidence, label: "EVIDENCE" },
         { x: laneX.finding, label: "MODEL REPORT" },
-        { x: laneX.chain, label: "CHAIN" }
+        { x: laneX.attackChain, label: "ATTACK CHAIN" }
       ].map((lane) => (
         <g key={lane.label}>
           <line
@@ -213,9 +213,9 @@ function CinemaGraph({
 
       {chainTitle ? (
         <path
-          d={`M ${laneX.finding + 76} ${findingY} C ${laneX.finding + 150} ${findingY}, ${laneX.chain - 110} ${findingY}, ${laneX.chain - 30} ${findingY}`}
+          d={`M ${laneX.finding + 76} ${findingY} C ${laneX.finding + 150} ${findingY}, ${laneX.attackChain - 110} ${findingY}, ${laneX.attackChain - 30} ${findingY}`}
           fill="none"
-          stroke="url(#cinema-flow-chain)"
+          stroke="url(#cinema-flow-attack-chain)"
           strokeWidth={2.2}
           strokeDasharray="320"
           className="cinema-trace"
@@ -378,7 +378,7 @@ function CinemaGraph({
       {chainTitle ? (
         <g>
           <rect
-            x={laneX.chain - 70}
+            x={laneX.attackChain - 70}
             y={findingY - 25}
             width={140}
             height={50}
@@ -389,7 +389,7 @@ function CinemaGraph({
             strokeDasharray="3 3"
           />
           <text
-            x={laneX.chain}
+            x={laneX.attackChain}
             y={findingY - 6}
             textAnchor="middle"
             fontFamily="ui-monospace, monospace"
@@ -397,10 +397,10 @@ function CinemaGraph({
             fill={stroke}
             letterSpacing="3"
           >
-            ⛓ CHAIN
+            ⛓ ATTACK CHAIN
           </text>
           <text
-            x={laneX.chain}
+            x={laneX.attackChain}
             y={findingY + 12}
             textAnchor="middle"
             fontFamily="ui-monospace, monospace"
@@ -413,7 +413,7 @@ function CinemaGraph({
         </g>
       ) : (
         <text
-          x={laneX.chain}
+          x={laneX.attackChain}
           y={findingY + 4}
           textAnchor="middle"
           fontFamily="ui-monospace, monospace"
@@ -507,7 +507,7 @@ export function ExecutionReportCinema({
             </span>
           </div>
           <p className="mt-2 text-sm leading-6 text-foreground/90">
-            The workflow model reported these findings. The cinema map below shows the supporting evidence, tool trace, and relational chain context used to back each reported finding.
+            The workflow model reported these findings. The cinema map below shows the supporting evidence, tool trace, and attack-chain context used to back each reported finding.
           </p>
         </div>
 
@@ -707,7 +707,7 @@ export function ExecutionReportCinema({
             {chain ? (
               <div className="rounded-md border border-border/60 bg-background/55 px-3 py-2.5">
                 <div className="font-mono text-[0.6rem] uppercase tracking-[0.22em] text-rose-500/85">
-                  ⛓ chain support
+                  ⛓ attack chain support
                 </div>
                 <p className="mt-1 text-[0.78rem] leading-5 text-foreground/95">{chain.title}</p>
                 <p className="mt-1 text-[0.74rem] leading-5 text-muted-foreground">{chain.summary}</p>

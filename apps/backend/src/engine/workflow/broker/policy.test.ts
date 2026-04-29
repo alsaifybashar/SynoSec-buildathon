@@ -14,8 +14,6 @@ const scan: Scan = {
     maxDurationMinutes: 5,
     rateLimitRps: 5,
     allowActiveExploits: false,
-    graceEnabled: true,
-    graceRoundInterval: 3,
     cyberRangeMode: "simulation"
   },
   status: "running",

@@ -142,8 +142,6 @@ export function buildScopeFromTargetAssets(input: {
     maxDurationMinutes: 15,
     rateLimitRps: input.rateLimitRps,
     allowActiveExploits: input.allowActiveExploit,
-    graceEnabled: true,
-    graceRoundInterval: 3,
     cyberRangeMode: "live"
   };
 }

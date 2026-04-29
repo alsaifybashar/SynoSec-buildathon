@@ -1076,7 +1076,8 @@ describe("WorkflowTraceSection", () => {
     expect(screen.queryByText("HTTP/1.1 200 OK")).not.toBeInTheDocument();
     expect(screen.getByText("Evidence checkpoint after Web Probe")).toBeInTheDocument();
     expect(screen.queryByText("Standalone findings")).not.toBeInTheDocument();
-    expect(screen.queryByText("Attack Paths")).not.toBeInTheDocument();
+    expect(screen.getByText("Attack Paths")).toBeInTheDocument();
+    expect(screen.getByText("No linked attack paths were derived from this run yet.")).toBeInTheDocument();
     expect(screen.getByText("Run sealed")).toBeInTheDocument();
     expect(screen.queryByText("{\"url\":\"http://localhost:8888\"}")).not.toBeInTheDocument();
     expect(container.querySelector(".duplex-entry")).toBeTruthy();
@@ -1207,7 +1208,8 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getByText("Prompt context")).toBeInTheDocument();
     expect(screen.getAllByText("Agent typing").length).toBeGreaterThan(0);
     expect(screen.queryByText("Standalone findings")).not.toBeInTheDocument();
-    expect(screen.queryByText("Attack Paths")).not.toBeInTheDocument();
+    expect(screen.getByText("Attack Paths")).toBeInTheDocument();
+    expect(screen.getByText("No linked attack paths were derived from this run yet.")).toBeInTheDocument();
   });
 
   it("renders requested tool calls as a blue loading state", () => {
@@ -1396,24 +1398,7 @@ describe("WorkflowTraceSection", () => {
 
   it("auto-follows live transcript growth when the operator is already at the page bottom", () => {
     const scrollToSpy = vi.fn();
-    Object.defineProperty(window, "scrollTo", {
-      configurable: true,
-      value: scrollToSpy
-    });
-    Object.defineProperty(window, "innerHeight", {
-      configurable: true,
-      value: 800
-    });
-    Object.defineProperty(window, "scrollY", {
-      configurable: true,
-      value: 1178
-    });
-    Object.defineProperty(document.documentElement, "scrollHeight", {
-      configurable: true,
-      value: 2000
-    });
-
-    const { rerender } = render(
+    const { container, rerender } = render(
       <WorkflowTraceSection
         workflow={workflow}
         targets={targets}
@@ -1428,6 +1413,27 @@ describe("WorkflowTraceSection", () => {
         showFullDetails={false}
       />
     );
+
+    const transcriptScroller = container.querySelector(".h-full.overflow-y-auto") as HTMLDivElement | null;
+    expect(transcriptScroller).not.toBeNull();
+    Object.defineProperty(transcriptScroller!, "scrollTo", {
+      configurable: true,
+      value: scrollToSpy
+    });
+    Object.defineProperty(transcriptScroller!, "clientHeight", {
+      configurable: true,
+      value: 400
+    });
+    Object.defineProperty(transcriptScroller!, "scrollHeight", {
+      configurable: true,
+      value: 1000
+    });
+    Object.defineProperty(transcriptScroller!, "scrollTop", {
+      configurable: true,
+      value: 600,
+      writable: true
+    });
+    fireEvent.scroll(transcriptScroller!);
 
     rerender(
       <WorkflowTraceSection
@@ -1450,25 +1456,7 @@ describe("WorkflowTraceSection", () => {
 
   it("does not auto-follow live transcript growth when the operator has scrolled away from the bottom", () => {
     const scrollToSpy = vi.fn();
-    Object.defineProperty(window, "scrollTo", {
-      configurable: true,
-      value: scrollToSpy
-    });
-    Object.defineProperty(window, "innerHeight", {
-      configurable: true,
-      value: 800
-    });
-    Object.defineProperty(window, "scrollY", {
-      configurable: true,
-      value: 900,
-      writable: true
-    });
-    Object.defineProperty(document.documentElement, "scrollHeight", {
-      configurable: true,
-      value: 2200
-    });
-
-    const { rerender } = render(
+    const { container, rerender } = render(
       <WorkflowTraceSection
         workflow={workflow}
         targets={targets}
@@ -1484,8 +1472,26 @@ describe("WorkflowTraceSection", () => {
       />
     );
 
-    window.scrollY = 900;
-    fireEvent.scroll(window);
+    const transcriptScroller = container.querySelector(".h-full.overflow-y-auto") as HTMLDivElement | null;
+    expect(transcriptScroller).not.toBeNull();
+    Object.defineProperty(transcriptScroller!, "scrollTo", {
+      configurable: true,
+      value: scrollToSpy
+    });
+    Object.defineProperty(transcriptScroller!, "clientHeight", {
+      configurable: true,
+      value: 400
+    });
+    Object.defineProperty(transcriptScroller!, "scrollHeight", {
+      configurable: true,
+      value: 1200
+    });
+    Object.defineProperty(transcriptScroller!, "scrollTop", {
+      configurable: true,
+      value: 500,
+      writable: true
+    });
+    fireEvent.scroll(transcriptScroller!);
 
     rerender(
       <WorkflowTraceSection
@@ -1508,23 +1514,6 @@ describe("WorkflowTraceSection", () => {
 
   it("does not auto-follow when non-running transcript content changes", () => {
     const scrollToSpy = vi.fn();
-    Object.defineProperty(window, "scrollTo", {
-      configurable: true,
-      value: scrollToSpy
-    });
-    Object.defineProperty(window, "innerHeight", {
-      configurable: true,
-      value: 800
-    });
-    Object.defineProperty(window, "scrollY", {
-      configurable: true,
-      value: 1178
-    });
-    Object.defineProperty(document.documentElement, "scrollHeight", {
-      configurable: true,
-      value: 2000
-    });
-
     const completedRunExtended: WorkflowRun = {
       ...run,
       events: [
@@ -1547,7 +1536,7 @@ describe("WorkflowTraceSection", () => {
       ]
     };
 
-    const { rerender } = render(
+    const { container, rerender } = render(
       <WorkflowTraceSection
         workflow={workflow}
         targets={targets}
@@ -1562,6 +1551,27 @@ describe("WorkflowTraceSection", () => {
         showFullDetails={false}
       />
     );
+
+    const transcriptScroller = container.querySelector(".h-full.overflow-y-auto") as HTMLDivElement | null;
+    expect(transcriptScroller).not.toBeNull();
+    Object.defineProperty(transcriptScroller!, "scrollTo", {
+      configurable: true,
+      value: scrollToSpy
+    });
+    Object.defineProperty(transcriptScroller!, "clientHeight", {
+      configurable: true,
+      value: 400
+    });
+    Object.defineProperty(transcriptScroller!, "scrollHeight", {
+      configurable: true,
+      value: 1000
+    });
+    Object.defineProperty(transcriptScroller!, "scrollTop", {
+      configurable: true,
+      value: 600,
+      writable: true
+    });
+    fireEvent.scroll(transcriptScroller!);
 
     rerender(
       <WorkflowTraceSection

@@ -15,11 +15,11 @@ function toRunSortTimestamp(run: WorkflowLaunchTargetRun) {
 }
 
 function createChainNodeId(finding: WorkflowReportedFinding) {
-  if (finding.chain?.id && finding.chain.id.trim().length > 0) {
-    return finding.chain.id;
+  if (finding.attackChain?.id && finding.attackChain.id.trim().length > 0) {
+    return finding.attackChain.id;
   }
-  const title = finding.chain?.title ?? "chain";
-  return `chain:${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  const title = finding.attackChain?.title ?? "attack-chain";
+  return `attack-chain:${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 }
 
 export function selectLatestWorkflowLaunchRun(launch: WorkflowLaunch): WorkflowLaunchTargetRun | null {
@@ -49,7 +49,7 @@ export function selectLatestWorkflowLaunchRun(launch: WorkflowLaunch): WorkflowL
 export function buildExecutionGraphFromWorkflowFindings(findings: WorkflowReportedFinding[]): ExecutionReportGraph {
   const nodesById = new Map<ExecutionReportGraph["nodes"][number]["id"], ExecutionReportGraph["nodes"][number]>();
   const edgesById = new Map<ExecutionReportGraph["edges"][number]["id"], ExecutionReportGraph["edges"][number]>();
-  const chainNodesById = new Map<string, Extract<ExecutionReportGraph["nodes"][number], { kind: "chain" }>>();
+  const chainNodesById = new Map<string, Extract<ExecutionReportGraph["nodes"][number], { kind: "attack_chain" }>>();
 
   for (const finding of findings) {
     nodesById.set(finding.id, {
@@ -92,7 +92,7 @@ export function buildExecutionGraphFromWorkflowFindings(findings: WorkflowReport
       });
     });
 
-    if (finding.chain) {
+    if (finding.attackChain) {
       const chainNodeId = createChainNodeId(finding);
       const existingChainNode = chainNodesById.get(chainNodeId);
       if (existingChainNode) {
@@ -102,16 +102,16 @@ export function buildExecutionGraphFromWorkflowFindings(findings: WorkflowReport
       } else {
         chainNodesById.set(chainNodeId, {
           id: chainNodeId,
-          kind: "chain",
-          title: finding.chain.title,
-          summary: finding.chain.summary,
-          severity: finding.chain.severity ?? finding.severity,
+          kind: "attack_chain",
+          title: finding.attackChain.title,
+          summary: finding.attackChain.summary,
+          severity: finding.attackChain.severity ?? finding.severity,
           findingIds: [finding.id],
           createdAt: finding.createdAt
         });
       }
-      edgesById.set(`${finding.id}:chain:${chainNodeId}`, {
-        id: `${finding.id}:chain:${chainNodeId}`,
+      edgesById.set(`${finding.id}:attack-chain:${chainNodeId}`, {
+        id: `${finding.id}:attack-chain:${chainNodeId}`,
         kind: "enables",
         source: finding.id,
         target: chainNodeId,

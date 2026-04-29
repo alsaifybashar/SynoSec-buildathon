@@ -47,7 +47,7 @@ const agents: AiAgent[] = [{
   status: "active",
   description: null,
   systemPrompt: "Be precise.",
-  toolIds: ["tool-1"],
+  toolAccessMode: "system",
   createdAt: "2026-04-25T00:00:00.000Z",
   updatedAt: "2026-04-25T00:00:00.000Z"
 }];
@@ -334,6 +334,84 @@ describe("buildWorkflowTranscript", () => {
     expect(assistantTurn.details[0]?.kind === "tool_result" ? assistantTurn.details[0].body : null).toContain("\"summary\": \"HTTP/1.1 200 OK\"");
     expect(assistantTurn.details[0]?.kind === "tool_result" ? assistantTurn.details[0].totalObservations : null).toBe(0);
     expect(assistantTurn.details[0]?.kind === "tool_result" ? assistantTurn.details[0].truncated : null).toBe(false);
+  });
+
+  it("projects configurable pre-scanning as initial scanning system messages instead of tool details", () => {
+    const run: WorkflowRun = {
+      id: "50000000-0000-0000-0000-000000000002b",
+      workflowId: workflow.id,
+      workflowLaunchId: "60000000-0000-0000-0000-000000000002b",
+      targetId: "70000000-0000-0000-0000-000000000002",
+      preRunEvidenceEnabled: true,
+      preRunEvidenceOverride: null,
+      status: "completed",
+      currentStepIndex: 0,
+      startedAt: "2026-04-25T00:00:00.000Z",
+      completedAt: "2026-04-25T00:00:01.000Z",
+      tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      trace: [],
+      events: [
+        {
+          id: "pre-run-start",
+          workflowRunId: "50000000-0000-0000-0000-000000000002b",
+          workflowId: workflow.id,
+          workflowStageId: null,
+          stepIndex: 0,
+          ord: 0,
+          type: "system_message",
+          status: "completed",
+          title: "Pre-run evidence bundle started",
+          summary: "Running 1 pre-run evidence tool before the first model turn.",
+          detail: "nmap-scan (seed-nmap-scan)",
+          payload: {
+            phase: "pre_run",
+            enabled: true,
+            toolIds: ["seed-nmap-scan"]
+          },
+          createdAt: "2026-04-25T00:00:00.050Z"
+        },
+        {
+          id: "pre-run-tool-result",
+          workflowRunId: "50000000-0000-0000-0000-000000000002b",
+          workflowId: workflow.id,
+          workflowStageId: null,
+          stepIndex: 0,
+          ord: 1,
+          type: "tool_result",
+          status: "completed",
+          title: "Pre-run tool completed: Nmap Scan",
+          summary: "Found ports 80 and 443.",
+          detail: "Found ports 80 and 443.",
+          payload: {
+            phase: "pre_run",
+            toolId: "seed-nmap-scan",
+            toolName: "Nmap Scan",
+            summary: "Found ports 80 and 443.",
+            outputPreview: "Found ports 80 and 443.",
+            output: {
+              id: "tool-run-pre-1",
+              summary: "Found ports 80 and 443."
+            }
+          },
+          createdAt: "2026-04-25T00:00:00.100Z"
+        }
+      ]
+    };
+
+    const transcript = buildWorkflowTranscript({
+      workflow,
+      run,
+      agents,
+      toolLookup: {
+        "seed-nmap-scan": "Nmap Scan"
+      },
+      running: false
+    });
+
+    const initialScanningItems = transcript.items.filter((item) => item.kind === "system_message" && item.title === "Initial scanning");
+    expect(initialScanningItems).toHaveLength(2);
+    expect(initialScanningItems[1]?.summary).toBe("Nmap Scan: Found ports 80 and 443.");
+    expect(transcript.items.some((item) => item.kind === "assistant_turn")).toBe(false);
   });
 
   it("does not synthesize assistant prose for a turn that only contains tool results", () => {

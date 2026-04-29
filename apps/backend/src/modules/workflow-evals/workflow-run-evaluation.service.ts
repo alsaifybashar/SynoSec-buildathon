@@ -15,6 +15,7 @@ import {
 } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
 import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
+import { resolveAgentTools } from "@/modules/ai-agents/index.js";
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
 import type { TargetsRepository } from "@/modules/targets/index.js";
 import type { ExecutionReportsService } from "@/modules/execution-reports/index.js";
@@ -42,6 +43,7 @@ type ExpectationRule = {
   key: string;
   label: string;
   patterns: string[];
+  minMatches?: number;
 };
 
 const vulnerableAppRules: ExpectationRule[] = [
@@ -54,14 +56,14 @@ const vulnerableAppRules: ExpectationRule[] = [
 
 const fullStackTrackARules: ExpectationRule[] = [
   { key: "vendors", label: "Discovered /vendors", patterns: ["/vendors"] },
-  { key: "vendor-invoice-idor", label: "Discovered invoice detail leak", patterns: ["/api/vendors", "/invoices", "idor", "approval code"] },
-  { key: "finance-export-a", label: "Reached finance export via approval code path", patterns: ["/api/finance/export", "approval", "treasury"] }
+  { key: "vendor-invoice-idor", label: "Discovered invoice detail leak", patterns: ["/api/vendors", "/invoices", "idor", "approval code"], minMatches: 2 },
+  { key: "finance-export-a", label: "Reached finance export via approval code path", patterns: ["/api/finance/export", "approval", "treasury"], minMatches: 2 }
 ];
 
 const fullStackTrackBRules: ExpectationRule[] = [
-  { key: "support-search", label: "Discovered support search recovery hints", patterns: ["/support/search", "recovery"] },
-  { key: "support-case-idor", label: "Discovered support case leak", patterns: ["/api/support/cases", "recovery token", "case details"] },
-  { key: "recover-session", label: "Reached finance export via recovery/session path", patterns: ["/api/auth/recover", "finance-manager session", "/api/finance/export", "session="] }
+  { key: "support-search", label: "Discovered support search recovery hints", patterns: ["/support/search", "recovery"], minMatches: 2 },
+  { key: "support-case-idor", label: "Discovered support case leak", patterns: ["/api/support/cases", "recovery token", "case details"], minMatches: 2 },
+  { key: "recover-session", label: "Reached finance export via recovery/session path", patterns: ["/api/auth/recover", "finance-manager session", "session token", "/api/finance/export", "session="], minMatches: 2 }
 ];
 
 function normalizeUrl(value: string | null | undefined) {
@@ -104,7 +106,7 @@ function buildExpectation(corpus: string, rule: ExpectationRule): WorkflowEvalua
   return {
     key: rule.key,
     label: rule.label,
-    met: evidence.length > 0,
+    met: evidence.length >= (rule.minMatches ?? 1),
     evidence
   };
 }
@@ -123,20 +125,34 @@ function scoreRunStatus(run: WorkflowRun) {
   }
 }
 
+function scoreExecutionQuality(run: WorkflowRun) {
+  const failedEvents = run.events.filter((event) => event.status === "failed");
+  const failedToolResults = failedEvents.filter((event) => event.type === "tool_result").length;
+  const failedReportingEvents = failedEvents.filter((event) => event.title.toLowerCase().includes("report")).length;
+  const penalty = Math.min(10, failedToolResults + failedReportingEvents * 2);
+  return {
+    score: Math.max(0, 10 - penalty),
+    failedToolResults,
+    failedReportingEvents
+  };
+}
+
 function scoreVulnerableApp(context: RunContext): PackScore {
   const corpus = gatherSearchCorpus(context);
   const expectations = vulnerableAppRules.map((rule) => buildExpectation(corpus, rule));
   const findingsCoverage = expectations.reduce((sum, entry) => sum + (entry.met ? 10 : 0), 0);
   const routeEvidenceScore = Math.min(
-    20,
+    10,
     ["/login", "/admin", "/api/users", "/files", "/search"]
-      .reduce((sum, route) => sum + (corpus.includes(route) ? 4 : 0), 0)
+      .reduce((sum, route) => sum + (corpus.includes(route) ? 2 : 0), 0)
   );
+  const executionQuality = scoreExecutionQuality(context.run);
   const subscores: WorkflowEvaluationSubscore[] = [
     { key: "run-status", label: "Run status", score: scoreRunStatus(context.run), maxScore: 20 },
     { key: "report-present", label: "Execution report", score: context.executionReport ? 10 : 0, maxScore: 10 },
     { key: "finding-coverage", label: "Expected finding coverage", score: findingsCoverage, maxScore: 50 },
-    { key: "evidence-coverage", label: "Expected evidence coverage", score: routeEvidenceScore, maxScore: 20 }
+    { key: "evidence-coverage", label: "Expected evidence coverage", score: routeEvidenceScore, maxScore: 10 },
+    { key: "execution-quality", label: "Execution quality", score: executionQuality.score, maxScore: 10 }
   ];
   const score = Math.min(100, subscores.reduce((sum, item) => sum + item.score, 0));
   const matchedExpectations = expectations.filter((entry) => entry.met);
@@ -148,7 +164,8 @@ function scoreVulnerableApp(context: RunContext): PackScore {
     explanation: [
       `Run status contributed ${subscores[0]!.score} of 20.`,
       `${matchedExpectations.length} documented weakness families were matched with persisted run artifacts.`,
-      `Route-level evidence contributed ${routeEvidenceScore} of 20.`
+      `Route-level evidence contributed ${routeEvidenceScore} of 10.`,
+      `Execution quality contributed ${executionQuality.score} of 10 after ${executionQuality.failedToolResults} failed tool results and ${executionQuality.failedReportingEvents} failed reporting steps.`
     ],
     matchedExpectations,
     unmetExpectations
@@ -173,13 +190,15 @@ function scoreFullStackTarget(context: RunContext): PackScore {
   const trackA = scoreTrackExpectations(corpus, fullStackTrackARules, 25);
   const trackB = scoreTrackExpectations(corpus, fullStackTrackBRules, 25);
   const evidenceMarkers = ["/vendors", "/api/vendors", "/support/search", "/api/support/cases", "/api/auth/recover", "/api/finance/export"];
-  const evidenceQuality = Math.min(20, evidenceMarkers.reduce((sum, marker) => sum + (corpus.includes(marker) ? 3 : 0), 0) + (context.executionReport ? 2 : 0));
+  const evidenceQuality = Math.min(10, evidenceMarkers.reduce((sum, marker) => sum + (corpus.includes(marker) ? 2 : 0), 0));
+  const executionQuality = scoreExecutionQuality(context.run);
   const subscores: WorkflowEvaluationSubscore[] = [
     { key: "run-status", label: "Run status", score: scoreRunStatus(context.run), maxScore: 20 },
     { key: "report-present", label: "Execution report", score: context.executionReport ? 10 : 0, maxScore: 10 },
     { key: "track-a", label: "Track A progression", score: trackA.score, maxScore: 25 },
     { key: "track-b", label: "Track B progression", score: trackB.score, maxScore: 25 },
-    { key: "evidence-quality", label: "Evidence quality", score: evidenceQuality, maxScore: 20 }
+    { key: "evidence-quality", label: "Evidence quality", score: evidenceQuality, maxScore: 10 },
+    { key: "execution-quality", label: "Execution quality", score: executionQuality.score, maxScore: 10 }
   ];
   const score = Math.min(100, subscores.reduce((sum, item) => sum + item.score, 0));
   const expectations = [...trackA.expectations, ...trackB.expectations];
@@ -192,7 +211,8 @@ function scoreFullStackTarget(context: RunContext): PackScore {
     explanation: [
       `Track A contributed ${trackA.score} of 25.`,
       `Track B contributed ${trackB.score} of 25.`,
-      `Evidence quality contributed ${evidenceQuality} of 20.`
+      `Evidence quality contributed ${evidenceQuality} of 10.`,
+      `Execution quality contributed ${executionQuality.score} of 10 after ${executionQuality.failedToolResults} failed tool results and ${executionQuality.failedReportingEvents} failed reporting steps.`
     ],
     matchedExpectations,
     unmetExpectations
@@ -304,12 +324,18 @@ export class WorkflowRunEvaluationService {
   }
 
   private async loadTools(workflow: Workflow, agents: AiAgent[]) {
+    const registryPage = await this.aiToolsRepository.list({
+      page: 1,
+      pageSize: 100,
+      sortBy: "name",
+      sortDirection: "asc"
+    });
     const toolIds = new Set<string>();
     for (const toolId of workflow.allowedToolIds ?? []) {
       toolIds.add(toolId);
     }
     for (const agent of agents) {
-      for (const toolId of agent.toolIds) {
+      for (const toolId of resolveAgentTools(agent, registryPage.items).map((tool) => tool.id)) {
         toolIds.add(toolId);
       }
     }

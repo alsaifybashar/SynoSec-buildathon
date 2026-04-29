@@ -1,5 +1,6 @@
 import type { AiTool, Workflow, WorkflowStage } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
+import { resolveAgentTools } from "@/modules/ai-agents/index.js";
 import { derivePrivilegeProfile, deriveSandboxProfile } from "@/modules/ai-tools/tool-execution-config.js";
 import {
   authorizeToolAgainstConstraints,
@@ -79,9 +80,23 @@ export class WorkflowRunPreflight implements WorkflowPreflightReader {
       ...(targetRecord.baseUrl ? { displayBaseUrl: targetRecord.baseUrl } : {})
     };
 
-    const tools = (
-      await Promise.all(stage.allowedToolIds.map(async (toolId) => this.ports.aiToolsRepository.getById(toolId)))
-    ).filter((candidate): candidate is AiTool => Boolean(candidate));
+    const registryPage = await this.ports.aiToolsRepository.list({
+      page: 1,
+      pageSize: 100,
+      sortBy: "name",
+      sortDirection: "asc"
+    });
+    const visibleTools = resolveAgentTools(agent, registryPage.items);
+    const visibleToolIds = new Set(visibleTools.map((tool) => tool.id));
+    const tools = stage.allowedToolIds.length > 0
+      ? (
+          await Promise.all(
+            stage.allowedToolIds
+              .filter((toolId) => visibleToolIds.has(toolId))
+              .map(async (toolId) => this.ports.aiToolsRepository.getById(toolId))
+          )
+        ).filter((candidate): candidate is AiTool => Boolean(candidate))
+      : visibleTools;
 
     const excludedTools: StageDependencies["excludedTools"] = [];
     let compatibleTools = tools;

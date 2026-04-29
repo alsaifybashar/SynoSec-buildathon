@@ -293,6 +293,12 @@ export function AttackPathsSection({
 
   return (
     <section className="space-y-3">
+      <div className="space-y-1">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-foreground/90">{title}</h2>
+        {summary ? (
+          <p className="text-sm leading-6 text-muted-foreground">{summary}</p>
+        ) : null}
+      </div>
       {attackPaths.paths.length === 0 ? (
         <div className="rounded-md border border-dashed border-border/60 px-4 py-6 text-sm text-muted-foreground">
           {emptyMessage}

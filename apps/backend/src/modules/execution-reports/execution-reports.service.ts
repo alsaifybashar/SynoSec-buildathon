@@ -147,9 +147,9 @@ function buildWorkflowExecutionGraph(input: {
   const defaultCreatedAt = input.defaultCreatedAt ?? new Date().toISOString();
   const nodes: unknown[] = [];
   const edges: unknown[] = [];
-  const chainNodes = new Map<string, {
+  const attackChainNodes = new Map<string, {
     id: string;
-    kind: "chain";
+    kind: "attack_chain";
     title: string;
     summary: string;
     severity: WorkflowReportedFinding["severity"];
@@ -223,26 +223,26 @@ function buildWorkflowExecutionGraph(input: {
       });
     });
 
-    if (finding.chain) {
-      const chainNodeId = finding.chain.id?.trim().length ? finding.chain.id : `chain:${finding.chain.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-      const existingChain = chainNodes.get(chainNodeId);
+    if (finding.attackChain) {
+      const chainNodeId = finding.attackChain.id?.trim().length ? finding.attackChain.id : `attack-chain:${finding.attackChain.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+      const existingChain = attackChainNodes.get(chainNodeId);
       if (existingChain) {
         if (!existingChain.findingIds.includes(finding.id)) {
           existingChain.findingIds.push(finding.id);
         }
       } else {
-        chainNodes.set(chainNodeId, {
+        attackChainNodes.set(chainNodeId, {
           id: chainNodeId,
-          kind: "chain",
-          title: finding.chain.title,
-          summary: finding.chain.summary,
-          severity: finding.chain.severity ?? finding.severity,
+          kind: "attack_chain",
+          title: finding.attackChain.title,
+          summary: finding.attackChain.summary,
+          severity: finding.attackChain.severity ?? finding.severity,
           findingIds: [finding.id],
           createdAt: finding.createdAt
         });
       }
       edges.push({
-        id: `${finding.id}:chain:${chainNodeId}`,
+        id: `${finding.id}:attack-chain:${chainNodeId}`,
         kind: "enables",
         source: finding.id,
         target: chainNodeId,
@@ -308,7 +308,7 @@ function buildWorkflowExecutionGraph(input: {
     });
   }
 
-  nodes.push(...chainNodes.values());
+  nodes.push(...attackChainNodes.values());
   return dedupeGraph({ nodes, edges });
 }
 
@@ -359,7 +359,7 @@ function buildAttackMapExecutionGraph(input: {
     });
   }
 
-  for (const node of input.mapNodes.filter((candidate) => candidate["type"] === "chain")) {
+  for (const node of input.mapNodes.filter((candidate) => candidate["type"] === "chain" || candidate["type"] === "attack_chain")) {
     const chainId = typeof node["id"] === "string" ? node["id"] : null;
     if (!chainId) {
       continue;
@@ -368,7 +368,7 @@ function buildAttackMapExecutionGraph(input: {
     const findingIds = Array.isArray(data["findingIds"]) ? data["findingIds"].filter((value): value is string => typeof value === "string") : [];
     nodes.push({
       id: chainId,
-      kind: "chain",
+      kind: "attack_chain",
       title: typeof node["label"] === "string" ? node["label"] : "Attack chain",
       summary: typeof data["description"] === "string" ? data["description"] : "Correlated attack path.",
       severity: typeof node["severity"] === "string" ? node["severity"] : "medium",
@@ -377,7 +377,7 @@ function buildAttackMapExecutionGraph(input: {
     });
   }
 
-  for (const edge of input.mapEdges.filter((candidate) => candidate["kind"] === "chain")) {
+  for (const edge of input.mapEdges.filter((candidate) => candidate["kind"] === "chain" || candidate["kind"] === "attack_chain")) {
     const source = typeof edge["source"] === "string" ? edge["source"] : null;
     const target = typeof edge["target"] === "string" ? edge["target"] : null;
     if (!source || !target) {

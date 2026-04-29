@@ -187,8 +187,6 @@ export function createWorkflowScan(
       maxDurationMinutes: 15,
       rateLimitRps: constraints.rateLimitRps,
       allowActiveExploits: constraints.allowActiveExploit,
-      graceEnabled: true,
-      graceRoundInterval: 3,
       cyberRangeMode: "live"
     },
     status: "running",

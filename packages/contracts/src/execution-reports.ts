@@ -60,7 +60,7 @@ export const executionReportToolActivitySchema = z.object({
 });
 export type ExecutionReportToolActivity = z.infer<typeof executionReportToolActivitySchema>;
 
-export const executionReportGraphNodeKindSchema = z.enum(["evidence", "resource", "finding", "path", "chain"]);
+export const executionReportGraphNodeKindSchema = z.enum(["evidence", "resource", "finding", "path", "attack_chain"]);
 export type ExecutionReportGraphNodeKind = z.infer<typeof executionReportGraphNodeKindSchema>;
 
 export const executionReportGraphEdgeKindSchema = z.enum([
@@ -135,23 +135,23 @@ export const executionReportGraphPathNodeSchema = z.object({
 });
 export type ExecutionReportGraphPathNode = z.infer<typeof executionReportGraphPathNodeSchema>;
 
-export const executionReportGraphChainNodeSchema = z.object({
+export const executionReportGraphAttackChainNodeSchema = z.object({
   id: z.string().min(1),
-  kind: z.literal("chain"),
+  kind: z.literal("attack_chain"),
   title: z.string().min(1),
   summary: z.string().min(1),
   severity: severitySchema,
   findingIds: z.array(z.string().min(1)).min(1),
   createdAt: z.string().datetime()
 });
-export type ExecutionReportGraphChainNode = z.infer<typeof executionReportGraphChainNodeSchema>;
+export type ExecutionReportGraphAttackChainNode = z.infer<typeof executionReportGraphAttackChainNodeSchema>;
 
 export const executionReportGraphNodeSchema = z.discriminatedUnion("kind", [
   executionReportGraphEvidenceNodeSchema,
   executionReportGraphResourceNodeSchema,
   executionReportGraphFindingNodeSchema,
   executionReportGraphPathNodeSchema,
-  executionReportGraphChainNodeSchema
+  executionReportGraphAttackChainNodeSchema
 ]);
 export type ExecutionReportGraphNode = z.infer<typeof executionReportGraphNodeSchema>;
 

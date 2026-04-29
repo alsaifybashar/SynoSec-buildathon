@@ -51,14 +51,14 @@ afterEach(() => {
 });
 
 describe("connectorControlPlane", () => {
-  it("derives supported seeded tools from installed binaries", () => {
+  it("derives supported seeded tools from connector policy without requiring installed binaries up front", () => {
     connectorControlPlane.register({
       name: "test-connector",
       version: "0.1.0",
       allowedCapabilities: ["web-recon", "network-recon", "content-discovery", "active-recon", "passive"],
       allowedSandboxProfiles: ["network-recon", "active-recon"],
       allowedPrivilegeProfiles: ["read-only-network", "active-network"],
-      installedBinaries: ["httpx", "nmap", "curl", "katana"],
+      installedBinaries: [],
       runMode: "execute",
       concurrency: 1,
       capabilities: []
@@ -68,10 +68,10 @@ describe("connectorControlPlane", () => {
     expect(status.connectors).toHaveLength(1);
     expect(status.connectors[0]?.supportedToolIds).toContain("seed-http-recon");
     expect(status.connectors[0]?.supportedToolIds).toContain("seed-nmap-scan");
-    expect(status.connectors[0]?.supportedToolIds).not.toContain("seed-dirb-scan");
+    expect(status.connectors[0]?.supportedToolIds).not.toContain("seed-metasploit-framework");
   });
 
-  it("rejects dispatch when no registered connector supports the exact tool", async () => {
+  it("leases dispatches when connector policy allows the tool even if binaries are missing", async () => {
     connectorControlPlane.register({
       name: "test-connector",
       version: "0.1.0",
@@ -79,6 +79,54 @@ describe("connectorControlPlane", () => {
       allowedSandboxProfiles: ["network-recon"],
       allowedPrivilegeProfiles: ["read-only-network"],
       installedBinaries: [],
+      runMode: "execute",
+      concurrency: 1,
+      capabilities: []
+    });
+
+    const request = createRequest();
+    const dispatchPromise = connectorControlPlane.dispatch({
+      scanId: "scan-1",
+      tacticId: "tactic-1",
+      agentId: "agent-1",
+      toolRun: createToolRun(request),
+      request
+    });
+
+    const status = connectorControlPlane.getStatus();
+    const connectorId = status.connectors[0]?.connectorId;
+    expect(connectorId).toBeDefined();
+    if (!connectorId) {
+      return;
+    }
+
+    const job = connectorControlPlane.pollNext(connectorId);
+    expect(job?.request.toolId).toBe("seed-http-recon");
+
+    connectorControlPlane.complete(connectorId, String(job?.id), {
+      output: "missing httpx",
+      exitCode: 127,
+      observations: [],
+      statusReason: "Missing required binary: httpx"
+    });
+
+    await expect(dispatchPromise).resolves.toMatchObject({
+      connectorId,
+      result: {
+        exitCode: 127,
+        statusReason: "Missing required binary: httpx"
+      }
+    });
+  });
+
+  it("rejects dispatch when no registered connector policy allows the exact tool", async () => {
+    connectorControlPlane.register({
+      name: "test-connector",
+      version: "0.1.0",
+      allowedCapabilities: ["network-recon"],
+      allowedSandboxProfiles: ["network-recon"],
+      allowedPrivilegeProfiles: ["read-only-network"],
+      installedBinaries: ["httpx"],
       runMode: "execute",
       concurrency: 1,
       capabilities: []

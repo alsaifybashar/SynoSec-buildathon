@@ -52,7 +52,7 @@ const NODE_WIDTH: Record<GraphKind, number> = {
   resource: 170,
   finding: 200,
   path: 190,
-  chain: 200
+  attack_chain: 200
 };
 
 const NODE_HEIGHT: Record<GraphKind, number> = {
@@ -60,7 +60,7 @@ const NODE_HEIGHT: Record<GraphKind, number> = {
   resource: 50,
   finding: 58,
   path: 54,
-  chain: 58
+  attack_chain: 58
 };
 
 const NODE_FILL: Record<GraphKind, string> = {
@@ -68,7 +68,7 @@ const NODE_FILL: Record<GraphKind, string> = {
   resource: "#14532d",
   finding: "#7c2d12",
   path: "#4c1d95",
-  chain: "#7f1d1d"
+  attack_chain: "#7f1d1d"
 };
 
 const NODE_STROKE: Record<GraphKind, string> = {
@@ -76,7 +76,7 @@ const NODE_STROKE: Record<GraphKind, string> = {
   resource: "#4ade80",
   finding: "#fb923c",
   path: "#c4b5fd",
-  chain: "#fca5a5"
+  attack_chain: "#fca5a5"
 };
 
 const NODE_GLYPH: Record<GraphKind, string> = {
@@ -84,7 +84,7 @@ const NODE_GLYPH: Record<GraphKind, string> = {
   resource: "R",
   finding: "F",
   path: "P",
-  chain: "C"
+  attack_chain: "C"
 };
 
 const EDGE_STYLE: Record<RenderEdge["kind"], { stroke: string; dash: string; width: number; label: string }> = {

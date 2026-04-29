@@ -86,6 +86,8 @@ const backendEnvSchema = z.object({
   llmProvider: z.enum(["anthropic", "local"]).default("anthropic"),
   anthropicApiKey: z.string().optional(),
   llmAnthropicModel: z.string().min(1).default("claude-haiku-4-5"),
+  anthropicPromptCachingEnabled: z.boolean().default(true),
+  anthropicPromptCachingTtl: z.enum(["5m", "1h"]).default("1h"),
   llmLocalBaseUrl: z.string().url().optional(),
   llmLocalModel: z.string().min(1).optional(),
   llmLocalOpenAiApiMode: z.enum(["chat", "responses"]).default("chat"),
@@ -220,6 +222,8 @@ export function loadBackendEnv(): BackendEnv {
       process.env["CLAUDE_MODEL"]
       ?? process.env["LLM_ANTHROPIC_MODEL"]
       ?? "claude-haiku-4-5",
+    anthropicPromptCachingEnabled: parseBoolean(process.env["ANTHROPIC_PROMPT_CACHING_ENABLED"], true),
+    anthropicPromptCachingTtl: process.env["ANTHROPIC_PROMPT_CACHING_TTL"] ?? "1h",
     llmLocalBaseUrl: process.env["LLM_LOCAL_BASE_URL"],
     llmLocalModel: process.env["LLM_LOCAL_MODEL"],
     llmLocalOpenAiApiMode: process.env["LLM_LOCAL_OPENAI_API_MODE"] ?? "chat",

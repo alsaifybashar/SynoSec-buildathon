@@ -24,7 +24,7 @@ describe("MemoryWorkflowsRepository", () => {
       status: "active",
       description: null,
       systemPrompt: "Work the target.",
-      toolIds: ["builtin-http-surface-assessment"],
+      toolAccessMode: "system",
       createdAt: "2026-04-24T10:00:00.000Z",
       updatedAt: "2026-04-24T10:00:00.000Z"
       })
@@ -90,7 +90,7 @@ describe("MemoryWorkflowsRepository", () => {
       status: "active",
       description: null,
       systemPrompt: "Work the target.",
-      toolIds: [],
+      toolAccessMode: "system",
       createdAt: "2026-04-24T10:00:00.000Z",
       updatedAt: "2026-04-24T10:00:00.000Z"
       })

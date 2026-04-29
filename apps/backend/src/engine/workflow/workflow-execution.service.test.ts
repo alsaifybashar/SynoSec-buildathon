@@ -11,6 +11,7 @@ import {
   type WorkflowTraceEvent
 } from "@synosec/contracts";
 import { createToolRuntime } from "@/modules/ai-tools/tool-runtime.js";
+import { getBuiltinAiTool, getBuiltinAiTools } from "@/modules/ai-tools/builtin-ai-tools.js";
 import { WorkflowExecutionService } from "./workflow-execution.service.js";
 import { WorkflowRunStream } from "./workflow-run-stream.js";
 import { agentBashCommandTool } from "../../../prisma/seed-data/tools/utility/agent-bash-command.js";
@@ -325,7 +326,7 @@ function createService(overrides: {
       status: "active",
       description: null,
       systemPrompt: "Work the target.",
-      toolIds: [],
+      toolAccessMode: "system_plus_custom",
       createdAt: "2026-04-24T10:00:00.000Z",
       updatedAt: "2026-04-24T10:00:00.000Z"
     }
@@ -335,7 +336,9 @@ function createService(overrides: {
     providerName: "Anthropic",
     model: "claude-haiku-4-5",
     label: "Anthropic · claude-haiku-4-5",
-    apiKey: "test-key"
+    apiKey: "test-key",
+    promptCachingEnabled: true,
+    promptCachingTtl: "1h"
   };
   const workflowRunStream = overrides.workflowRunStream ?? new WorkflowRunStream();
   const createdRuns: WorkflowRun[] = [];
@@ -357,9 +360,17 @@ function createService(overrides: {
   const executionReportsService = {
     createForWorkflowRun: vi.fn(async () => undefined)
   };
+  const builtinTools = getBuiltinAiTools();
+  const overrideTools = Object.values(overrides.aiToolById ?? {});
   const aiToolsRepository = {
-    getById: async (id: string) => overrides.aiToolById?.[id] ?? null,
-    list: async () => ({ items: [], page: 1, pageSize: 1000, total: 0, totalPages: 0 })
+    getById: async (id: string) => overrides.aiToolById?.[id] ?? getBuiltinAiTool(id),
+    list: async () => ({
+      items: [...overrideTools, ...builtinTools],
+      page: 1,
+      pageSize: 100,
+      total: overrideTools.length + builtinTools.length,
+      totalPages: 1
+    })
   } as any;
 
   const service = new WorkflowExecutionService({
@@ -1027,7 +1038,9 @@ describe("WorkflowExecutionService", () => {
         providerName: "Anthropic",
         model: "claude-sonnet-4-5",
         label: "Anthropic · claude-sonnet-4-5",
-        apiKey: "test-key"
+        apiKey: "test-key",
+        promptCachingEnabled: true,
+        promptCachingTtl: "1h"
       }
     });
 
@@ -1250,6 +1263,22 @@ describe("WorkflowExecutionService", () => {
     expect(recoveryEvent?.detail).toContain("Required next action:");
     expect(recoveryEvent?.detail).toContain("- Call complete_run once as the final action.");
     expect(recoveryEvent?.detail).toContain("- Provide only `summary`.");
+    expect(streamTextMock.mock.calls[0]?.[0]?.providerOptions).toEqual({
+      anthropic: {
+        cacheControl: {
+          type: "ephemeral",
+          ttl: "1h"
+        }
+      }
+    });
+    expect(streamTextMock.mock.calls[1]?.[0]?.providerOptions).toEqual({
+      anthropic: {
+        cacheControl: {
+          type: "ephemeral",
+          ttl: "1h"
+        }
+      }
+    });
   });
 
   it("persists tool context, hides log_progress tool calls, and publishes live model output", async () => {
@@ -1354,8 +1383,88 @@ describe("WorkflowExecutionService", () => {
     expect(liveMessages.some((message) => message.liveModelOutput.final)).toBe(true);
     expect(streamTextMock).toHaveBeenCalledWith(expect.objectContaining({
       system: expect.any(String),
-      prompt: "Proceed."
+      prompt: "Proceed.",
+      providerOptions: {
+        anthropic: {
+          cacheControl: {
+            type: "ephemeral",
+            ttl: "1h"
+          }
+        }
+      }
     }));
+  });
+
+  it("omits Anthropic prompt caching provider options for local runtimes", async () => {
+    streamTextMock.mockImplementationOnce((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
+      fullStream: (async function* () {
+        await options.tools.complete_run.execute({
+          summary: "Pipeline complete."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({
+      fixedRuntime: {
+        provider: "local",
+        providerName: "Ollama",
+        model: "qwen3:8b",
+        label: "Ollama · qwen3:8b",
+        baseUrl: "http://localhost:11434/v1",
+        apiKey: "ollama",
+        apiMode: "chat"
+      }
+    });
+
+    await service.startRun("10000000-0000-0000-0000-000000000001");
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    expect(streamTextMock.mock.calls[0]?.[0]?.providerOptions).toBeUndefined();
+  });
+
+  it("omits Anthropic prompt caching provider options when disabled", async () => {
+    streamTextMock.mockImplementationOnce((options: { tools: Record<string, { execute: (input: unknown) => Promise<unknown> }> }) => ({
+      fullStream: (async function* () {
+        await options.tools.complete_run.execute({
+          summary: "Pipeline complete."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({
+      fixedRuntime: {
+        provider: "anthropic",
+        providerName: "Anthropic",
+        model: "claude-haiku-4-5",
+        label: "Anthropic · claude-haiku-4-5",
+        apiKey: "test-key",
+        promptCachingEnabled: false,
+        promptCachingTtl: "1h"
+      }
+    });
+
+    await service.startRun("10000000-0000-0000-0000-000000000001");
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    expect(streamTextMock.mock.calls[0]?.[0]?.providerOptions).toBeUndefined();
   });
 
   it("does not append a duplicate execution contract when the workflow prompt already contains one", async () => {

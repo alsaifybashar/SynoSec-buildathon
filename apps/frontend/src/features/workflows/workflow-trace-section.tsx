@@ -303,7 +303,17 @@ function createWorkflowBuiltinToolSegment(): StructuredToolSegment["tools"] {
 function buildStructuredToolSegment(workflow: Workflow, agent: AiAgent | null, tools: AiTool[]): StructuredToolSegment {
   const effectiveToolIds = workflow.allowedToolIds.length > 0
     ? workflow.allowedToolIds
-    : (agent?.toolIds ?? []);
+    : tools
+        .filter((tool) => {
+          if (!agent || tool.status !== "active") {
+            return false;
+          }
+          if (agent.toolAccessMode === "system") {
+            return tool.source === "system" && tool.accessProfile === "standard";
+          }
+          return tool.accessProfile === "standard" || tool.accessProfile === "shell";
+        })
+        .map((tool) => tool.id);
   const toolLookup = new Map(tools.map((tool) => [tool.id, tool]));
   const reconstructedTools = effectiveToolIds
     .map((toolId) => toolLookup.get(toolId))
@@ -1216,17 +1226,24 @@ export function WorkflowTraceSection({
       return;
     }
 
+    const container = transcriptRef.current;
+
     const updateFollowState = () => {
-      shouldFollowRef.current = isWindowNearPageBottom();
+      if (container) {
+        const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+        shouldFollowRef.current = distanceFromBottom <= PAGE_BOTTOM_THRESHOLD_PX;
+      } else {
+        shouldFollowRef.current = isWindowNearPageBottom();
+      }
       hasMeasuredScrollStateRef.current = true;
     };
 
     updateFollowState();
-    window.addEventListener("scroll", updateFollowState, { passive: true });
+    container?.addEventListener("scroll", updateFollowState, { passive: true });
     window.addEventListener("resize", updateFollowState);
 
     return () => {
-      window.removeEventListener("scroll", updateFollowState);
+      container?.removeEventListener("scroll", updateFollowState);
       window.removeEventListener("resize", updateFollowState);
     };
   }, []);
@@ -1253,16 +1270,13 @@ export function WorkflowTraceSection({
       return;
     }
 
-    const transcriptBottom = transcriptRef.current?.getBoundingClientRect().bottom ?? document.documentElement.getBoundingClientRect().bottom;
-    const targetTop = window.scrollY + transcriptBottom - window.innerHeight + PAGE_BOTTOM_THRESHOLD_PX;
-
-    try {
-      window.scrollTo({
-        top: Math.max(0, targetTop),
-        behavior: "auto"
-      });
-    } catch {
-      return;
+    const container = transcriptRef.current;
+    if (container) {
+      try {
+        container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+      } catch {
+        return;
+      }
     }
     shouldFollowRef.current = true;
   }, [run?.status, streamEventCount]);
@@ -1273,16 +1287,17 @@ export function WorkflowTraceSection({
 
   const runView = (
     <div className="space-y-4">
-      {effectiveAttackPaths.paths.length > 0 ? (
-        <AttackPathsSection
-          attackPaths={effectiveAttackPaths}
-          findingTitles={new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding.title]))}
-          findingSeverities={new Map(effectiveTranscript.findings.map((finding) => [finding.id, finding.severity]))}
-          summary="Ranked attack paths are the primary outcome of the run. The transcript below is the evidence trail that supports each path and finding."
-          emptyMessage="No linked attack paths were derived from this run yet."
-        />
-      ) : null}
-      <div ref={transcriptRef} className="relative min-h-[38rem]">
+      <div className="relative h-[38rem] overflow-hidden rounded-xl border bg-card/30">
+        <div
+          ref={transcriptRef}
+          className="h-full overflow-y-auto"
+          style={{
+            maskImage:
+              "linear-gradient(to bottom, transparent 0, black 4rem, black calc(100% - 4rem), transparent 100%)",
+            WebkitMaskImage:
+              "linear-gradient(to bottom, transparent 0, black 4rem, black calc(100% - 4rem), transparent 100%)",
+          }}
+        >
             <div className="mx-auto w-full max-w-[56rem] px-6 py-8">
               <div className="space-y-5">
                 {atoms.map((atom) => (
@@ -1318,6 +1333,7 @@ export function WorkflowTraceSection({
               </div>
             </div>
           </div>
+      </div>
 
       {errorMessages.length > 0 ? (
         <div className="px-4 pb-4 md:px-6">
@@ -1365,10 +1381,10 @@ export function WorkflowTraceSection({
 
       <style>{`
         @keyframes duplex-in {
-          from { opacity: 0; transform: translateY(2px); }
-          to { opacity: 1; transform: none; }
+          from { opacity: 0; transform: translateY(10px) scale(0.99); filter: blur(2px); }
+          to { opacity: 1; transform: none; filter: blur(0); }
         }
-        .duplex-entry { animation: duplex-in 260ms ease-out both; }
+        .duplex-entry { animation: duplex-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both; }
         @keyframes duplex-dot { 0%, 80%, 100% { opacity: 0.25 } 40% { opacity: 1 } }
         .duplex-typing span { animation: duplex-dot 1.1s infinite; }
         .duplex-typing span:nth-child(2) { animation-delay: 0.15s; }

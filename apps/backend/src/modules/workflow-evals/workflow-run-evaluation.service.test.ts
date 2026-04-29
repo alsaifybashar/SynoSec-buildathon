@@ -78,26 +78,59 @@ function createService(input: {
         status: "active",
         description: null,
         systemPrompt: "Be precise.",
-        toolIds: ["tool-1"],
+        toolAccessMode: "system",
         createdAt: "2026-04-29T00:00:00.000Z",
         updatedAt: "2026-04-29T00:00:00.000Z"
       })
     } as any,
     {
+      list: vi.fn().mockResolvedValue({
+        items: [{
+          id: "tool-1",
+          name: "Web Probe",
+          kind: "raw-adapter",
+          status: "active",
+          source: "system",
+          accessProfile: "standard",
+          description: "Probe",
+          executorType: "bash",
+          builtinActionKey: null,
+          bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' ok",
+          capabilities: ["web-recon"],
+          category: "web",
+          riskTier: "passive",
+          timeoutMs: 1000,
+          coveredToolIds: [],
+          candidateToolIds: [],
+          inputSchema: { type: "object" },
+          outputSchema: { type: "object" },
+          createdAt: "2026-04-29T00:00:00.000Z",
+          updatedAt: "2026-04-29T00:00:00.000Z"
+        }],
+        page: 1,
+        pageSize: 100,
+        total: 1,
+        totalPages: 1
+      }),
       getById: vi.fn().mockResolvedValue({
         id: "tool-1",
         name: "Web Probe",
         kind: "raw-adapter",
         status: "active",
         source: "system",
+        accessProfile: "standard",
         description: "Probe",
         executorType: "bash",
-        surface: "primary",
+        builtinActionKey: null,
+        bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' ok",
+        capabilities: ["web-recon"],
         category: "web",
         riskTier: "passive",
-        tags: [],
+        timeoutMs: 1000,
+        coveredToolIds: [],
+        candidateToolIds: [],
         inputSchema: { type: "object" },
-        runtimeState: { cataloged: true, installed: true, executable: true, granted: true },
+        outputSchema: { type: "object" },
         createdAt: "2026-04-29T00:00:00.000Z",
         updatedAt: "2026-04-29T00:00:00.000Z"
       })
@@ -168,6 +201,79 @@ describe("WorkflowRunEvaluationService", () => {
     expect(result.status).toBe("available");
     expect(result.status === "available" ? result.targetPack : null).toBe("full-stack-target");
     expect(result.status === "available" ? result.score : 0).toBeGreaterThanOrEqual(80);
+  });
+
+  it("penalizes partial full-stack coverage and failed execution steps", async () => {
+    const run = createRun({
+      events: [
+        {
+          id: "event-1",
+          workflowRunId: "60000000-0000-0000-0000-000000000001",
+          workflowId: workflow.id,
+          workflowStageId: null,
+          stepIndex: 0,
+          ord: 0,
+          type: "agent_summary",
+          status: "completed",
+          title: "Summary",
+          summary: "Observed /vendors, /support/search?q=recovery, /api/support/cases/case-8842, and /api/auth/recover issuing a session token for finance-manager.",
+          detail: null,
+          payload: {},
+          createdAt: "2026-04-29T00:00:30.000Z"
+        },
+        {
+          id: "event-2",
+          workflowRunId: "60000000-0000-0000-0000-000000000001",
+          workflowId: workflow.id,
+          workflowStageId: null,
+          stepIndex: 0,
+          ord: 1,
+          type: "tool_result",
+          status: "failed",
+          title: "bash returned",
+          summary: "Command exited with code 1.",
+          detail: null,
+          payload: {},
+          createdAt: "2026-04-29T00:00:40.000Z"
+        },
+        {
+          id: "event-3",
+          workflowRunId: "60000000-0000-0000-0000-000000000001",
+          workflowId: workflow.id,
+          workflowStageId: null,
+          stepIndex: 0,
+          ord: 2,
+          type: "tool_result",
+          status: "failed",
+          title: "report_system_graph_batch failed",
+          summary: "Evidence item 1 references unknown observationRef.",
+          detail: null,
+          payload: {},
+          createdAt: "2026-04-29T00:00:50.000Z"
+        }
+      ]
+    });
+
+    const report = {
+      findings: [
+        { title: "Support case leak", summary: "GET /api/support/cases/case-8842 returns a recovery token." },
+        { title: "Weak recovery flow", summary: "/api/auth/recover issues a session token." }
+      ],
+      toolActivity: [],
+      attackPaths: [],
+      graph: {
+        attackVectors: [
+          { summary: "Recovery token obtained from case API can be used with exposed email to obtain session token" }
+        ]
+      }
+    };
+
+    const service = createService({ run, report, targetBaseUrl: "http://localhost:8891" });
+    const result = await service.evaluateRun(run.id);
+
+    expect(result.status).toBe("available");
+    expect(result.status === "available" ? result.targetPack : null).toBe("full-stack-target");
+    expect(result.status === "available" ? result.score : 0).toBe(77);
   });
 
   it("returns unavailable for unsupported targets", async () => {

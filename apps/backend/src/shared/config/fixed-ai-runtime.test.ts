@@ -50,6 +50,24 @@ describe("loadFixedAiRuntime", () => {
     if (runtime.provider === "anthropic") {
       expect(runtime.model).toBe("claude-sonnet-4-6");
       expect(runtime.label).toBe("Anthropic · claude-sonnet-4-6");
+      expect(runtime.promptCachingEnabled).toBe(true);
+      expect(runtime.promptCachingTtl).toBe("1h");
+    }
+  });
+
+  it("supports overriding Anthropic prompt caching through env", async () => {
+    process.env["LLM_PROVIDER"] = "anthropic";
+    process.env["ANTHROPIC_API_KEY"] = "test-key";
+    process.env["ANTHROPIC_PROMPT_CACHING_ENABLED"] = "false";
+    process.env["ANTHROPIC_PROMPT_CACHING_TTL"] = "5m";
+
+    const { loadFixedAiRuntime } = await import("./fixed-ai-runtime.js");
+    const runtime = loadFixedAiRuntime();
+
+    expect(runtime.provider).toBe("anthropic");
+    if (runtime.provider === "anthropic") {
+      expect(runtime.promptCachingEnabled).toBe(false);
+      expect(runtime.promptCachingTtl).toBe("5m");
     }
   });
 });

@@ -543,7 +543,7 @@ function createFindingTargetLabel(finding: WorkflowReportedFinding) {
 }
 
 function candidateVenueKey(finding: WorkflowReportedFinding) {
-  return `${finding.chain?.id ?? finding.chain?.title ?? "surface"}::${createFindingTargetLabel(finding)}`;
+  return `${finding.attackChain?.id ?? finding.attackChain?.title ?? "surface"}::${createFindingTargetLabel(finding)}`;
 }
 
 function parseAttackPathHandoffEnrichment(handoff: unknown) {
@@ -674,10 +674,10 @@ function buildConnectedComponents(findings: WorkflowReportedFinding[], links: De
 
   const byChain = new Map<string, string[]>();
   for (const finding of findings) {
-    if (!finding.chain?.title) {
+    if (!finding.attackChain?.title) {
       continue;
     }
-    const key = finding.chain.id ?? `chain:${slugify(finding.chain.title)}`;
+    const key = finding.attackChain.id ?? `attack-chain:${slugify(finding.attackChain.title)}`;
     const bucket = byChain.get(key) ?? [];
     bucket.push(finding.id);
     byChain.set(key, bucket);
@@ -839,7 +839,7 @@ function routeFromCluster(findings: WorkflowReportedFinding[], links: DerivedLin
           default: return 3;
         }
       };
-      const roleDelta = roleOrder(left.relationshipExplanations?.chainRole) - roleOrder(right.relationshipExplanations?.chainRole);
+      const roleDelta = roleOrder(left.relationshipExplanations?.attackChainRole) - roleOrder(right.relationshipExplanations?.attackChainRole);
       if (roleDelta !== 0) {
         return roleDelta;
       }
@@ -866,7 +866,7 @@ function routeFromCluster(findings: WorkflowReportedFinding[], links: DerivedLin
       kind: "related",
       sourceFindingId: sourceId,
       targetFindingId: targetId,
-      summary: sourceFinding.chain?.summary ?? `${sourceFinding.title} and ${targetFinding.title} belong to the same correlated attack path candidate.`,
+      summary: sourceFinding.attackChain?.summary ?? `${sourceFinding.title} and ${targetFinding.title} belong to the same correlated attack path candidate.`,
       sourceFinding,
       targetFinding
     });
@@ -990,10 +990,10 @@ export function buildAttackPathSummary(input: {
 
     const venue = mergeVenueEnrichment({
       id: `venue:${slugify(key)}`,
-      label: finding.chain?.title ?? createFindingTargetLabel(finding),
+      label: finding.attackChain?.title ?? createFindingTargetLabel(finding),
       venueType: classifyVenueType(finding),
       targetLabel: createFindingTargetLabel(finding),
-      summary: finding.chain?.summary ?? finding.explanationSummary ?? finding.impact,
+      summary: finding.attackChain?.summary ?? finding.explanationSummary ?? finding.impact,
       findingIds: [finding.id]
     }, handoff.venues);
     venueMap.set(key, venue);
@@ -1108,14 +1108,14 @@ export function buildAttackPathSummary(input: {
       relatedOnly: pathLinks.every((link) => link.kind === "related"),
       status: routeStatusValue
     });
-    const title = strongestFinding.chain?.title
+    const title = strongestFinding.attackChain?.title
       ?? `${routeFindings[0]!.title} to ${finalFinding.title}`;
-    const summary = strongestFinding.chain?.summary
+    const summary = strongestFinding.attackChain?.summary
       ?? finalFinding.explanationSummary
       ?? `${routeFindings[0]!.title} combines with ${finalFinding.title} to reach ${createFindingTargetLabel(finalFinding)}.`;
 
     paths.push(mergePathEnrichment({
-      id: strongestFinding.chain?.id ?? `path:${slugify(component.map((finding) => finding.id).join("-"))}`,
+      id: strongestFinding.attackChain?.id ?? `path:${slugify(component.map((finding) => finding.id).join("-"))}`,
       title,
       summary,
       reachedAssetOrOutcome: createFindingTargetLabel(finalFinding),

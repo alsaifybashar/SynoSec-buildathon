@@ -765,7 +765,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         derivedFrom: z.string().min(1).optional(),
         relatedTo: z.string().min(1).optional(),
         enables: z.string().min(1).optional(),
-        chainRole: z.string().min(1).optional()
+        attackChainRole: z.string().min(1).optional()
       }).strict().optional(),
       tags: z.array(z.string().min(1)).optional(),
     }).strict();
@@ -1026,7 +1026,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           derivedFromFindingIds: existing?.derivedFromFindingIds ?? [],
           relatedFindingIds: existing?.relatedFindingIds ?? [],
           enablesFindingIds: existing?.enablesFindingIds ?? [],
-          chain: existing?.chain,
+          attackChain: existing?.attackChain,
           explanationSummary: finding.explanationSummary ?? existing?.explanationSummary,
           confidenceReason: finding.confidenceReason ?? existing?.confidenceReason,
           relationshipExplanations: finding.relationshipExplanations ?? existing?.relationshipExplanations,
@@ -1387,6 +1387,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       })
     };
 
+    const modelProviderOptions = this.getModelProviderOptions(runtime);
     const result = streamText({
       model: this.createLanguageModel(runtime),
       system: systemPrompt,
@@ -1395,6 +1396,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         ...evidenceTools,
         ...systemTools
       },
+      ...(modelProviderOptions === undefined ? {} : { providerOptions: modelProviderOptions }),
       stopWhen: stepCountIs(100),
       abortSignal: abortController.signal
     });
@@ -1693,6 +1695,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         message: "The model stream ended before complete_run; requesting one final completion call."
       }, "Run completion recovery requested", "The model ended without complete_run; requesting one final completion call.", recoveryPrompt);
 
+      const recoveryProviderOptions = this.getModelProviderOptions(runtime);
       const recoveryResult = streamText({
         model: this.createLanguageModel(runtime),
         system: systemPrompt,
@@ -1700,6 +1703,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         tools: {
           complete_run: systemTools.complete_run
         },
+        ...(recoveryProviderOptions === undefined ? {} : { providerOptions: recoveryProviderOptions }),
         stopWhen: stepCountIs(2),
         abortSignal: abortController.signal
       });
@@ -2157,6 +2161,21 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
 
   private createLanguageModel(runtime: FixedAiRuntime): LanguageModel {
     return createLanguageModelFromRuntime(runtime);
+  }
+
+  private getModelProviderOptions(runtime: FixedAiRuntime) {
+    if (runtime.provider !== "anthropic" || !runtime.promptCachingEnabled) {
+      return undefined;
+    }
+
+    return {
+      anthropic: {
+        cacheControl: {
+          type: "ephemeral" as const,
+          ttl: runtime.promptCachingTtl
+        }
+      }
+    };
   }
 
   private async ensureWorkflowScan(scan: Scan, targetId: string, agentId: string) {

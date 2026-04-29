@@ -85,7 +85,9 @@ describe("createLanguageModelFromRuntime", () => {
       providerName: "Anthropic",
       model: "claude-haiku-4-5",
       label: "Anthropic · claude-haiku-4-5",
-      apiKey: "test-key"
+      apiKey: "test-key",
+      promptCachingEnabled: true,
+      promptCachingTtl: "1h"
     };
 
     const result = createLanguageModelFromRuntime(runtime);

@@ -121,7 +121,7 @@ function relatedEdgesForFinding(report: ExecutionReportDetail, finding: Executio
 }
 
 function chainForFinding(report: ExecutionReportDetail, findingId: string) {
-  return report.graph.nodes.find((node) => node.kind === "chain" && node.findingIds.includes(findingId)) ?? null;
+  return report.graph.nodes.find((node) => node.kind === "attack_chain" && node.findingIds.includes(findingId)) ?? null;
 }
 
 function buildGraphModel(report: ExecutionReportDetail, finding: ExecutionReportFinding, all: ExecutionReportFinding[]) {
