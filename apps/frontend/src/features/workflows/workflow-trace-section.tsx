@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getWorkflowRunContextTokenEstimate, getWorkflowRunModelStepCount, type AiAgent, type AiTool, type AttackPathSummary, type ExecutionReportDetail, type Observation, type Target as WorkflowTarget, type Workflow, type WorkflowRun } from "@synosec/contracts";
+import { getWorkflowRunContextTokenEstimate, getWorkflowRunModelStepCount, type AiAgent, type AiTool, type AttackPathSummary, type ExecutionReportDetail, type Observation, type Target as WorkflowTarget, type Workflow, type WorkflowRun, type WorkflowRunEvaluationResponse } from "@synosec/contracts";
 import { AlertTriangle, ChevronRight, LoaderCircle, Radio, Target } from "lucide-react";
 import { AttackPathsSection } from "@/features/attack-paths/attack-paths-section";
 import { ExecutionReportFindingsView } from "@/features/execution-reports/findings-table-view";
@@ -170,14 +170,10 @@ const KIND_ACCENT: Record<DuplexAtomKind, { label: string; dot: string }> = {
 };
 
 const WORKFLOW_METADATA_HINTS = {
-  status: "Lifecycle state of the workflow definition itself, separate from the currently selected run.",
-  target: "Target context for the currently selected per-target run.",
-  agent: "AI agent definition that provides the standing prompt, provider, and default tool grants.",
-  currentRun: "Latest persisted run state and the number of workflow events currently attached to it.",
+  evaluation: "Automatic target-aware evaluation for the selected run, scored against the documented local cyber range expectations for this repo.",
   modelSteps: "Number of persisted model step requests in this run. Each step is a new request where the model resumes with the current accumulated context.",
   tokens: "Model token usage for the currently selected per-target workflow run.",
-  contextLoad: "Estimated tokens represented by the final persisted step request body sent to the model, reflecting the last effective context window.",
-  updated: "Last time the workflow definition record changed."
+  contextLoad: "Estimated tokens represented by the final persisted step request body sent to the model, reflecting the last effective context window."
 } as const;
 
 const PAGE_BOTTOM_THRESHOLD_PX = 24;
@@ -236,6 +232,13 @@ function formatContextLoad(run: WorkflowRun) {
 
 function formatModelSteps(run: WorkflowRun) {
   return String(getWorkflowRunModelStepCount(run));
+}
+
+function formatWorkflowEvaluation(value: WorkflowRunEvaluationResponse | null) {
+  if (!value || value.status === "unavailable") {
+    return "Not available";
+  }
+  return value.label;
 }
 
 function getVerificationToneLabel(status: string | undefined, title: string) {
@@ -1107,7 +1110,8 @@ export function WorkflowTraceSection({
   latestRunError,
   transcriptError,
   streamError,
-  executionReport
+  executionReport,
+  workflowEvaluation
 }: {
   workflow: Workflow | null;
   activeTarget: WorkflowTarget | null;
@@ -1124,6 +1128,7 @@ export function WorkflowTraceSection({
   transcriptError?: string | null;
   streamError?: string | null;
   executionReport?: ExecutionReportDetail | null;
+  workflowEvaluation?: WorkflowRunEvaluationResponse | null;
 }) {
   const [selectedView, setSelectedView] = useState<WorkflowDetailView>("run");
   const reportAvailable = Boolean(executionReport);
@@ -1175,22 +1180,14 @@ export function WorkflowTraceSection({
     () => workflow ? agents.find((item) => item.id === workflow.agentId) ?? null : null,
     [workflow, agents]
   );
-  const applicationName = activeTarget?.name ?? "Unknown target";
   const metadataItems = useMemo<MetadataItem[]>(() => {
-    if (!workflow) {
-      return [];
-    }
-
     return [
-      { label: "Target", value: applicationName, hint: WORKFLOW_METADATA_HINTS.target },
-      { label: "Agent", value: agent?.name ?? "Unknown", hint: WORKFLOW_METADATA_HINTS.agent },
-      { label: "Current Run", value: run ? `${run.status} · ${run.events.length} events` : "No active run", hint: WORKFLOW_METADATA_HINTS.currentRun },
+      { label: "Evaluation", value: formatWorkflowEvaluation(workflowEvaluation ?? null), hint: WORKFLOW_METADATA_HINTS.evaluation },
       ...(run ? [{ label: "Model Steps", value: formatModelSteps(run), hint: WORKFLOW_METADATA_HINTS.modelSteps }] : []),
       ...(run ? [{ label: "Tokens", value: formatTokenUsage(run), hint: WORKFLOW_METADATA_HINTS.tokens }] : []),
       ...(run ? [{ label: "Context Window", value: formatContextLoad(run), hint: WORKFLOW_METADATA_HINTS.contextLoad }] : []),
-      { label: "Updated", value: new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(workflow.updatedAt)), hint: WORKFLOW_METADATA_HINTS.updated }
     ];
-  }, [workflow, applicationName, agent, run]);
+  }, [run, workflowEvaluation]);
   const atoms = useMemo(() => {
     if (!workflow) {
       return [];

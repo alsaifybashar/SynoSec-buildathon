@@ -46,6 +46,7 @@ export function registerRoutes(app: Express, dependencies: {
     dependencies.workflowsRepository,
     routeServices.workflowExecutionEngine,
     routeServices.workflowRunEventStream,
-    routeServices.workflowRunArtifactsService
+    routeServices.workflowRunArtifactsService,
+    routeServices.workflowRunEvaluationService
   );
 }

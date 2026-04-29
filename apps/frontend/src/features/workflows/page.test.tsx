@@ -9,7 +9,8 @@ import {
   type Target,
   type Workflow,
   type WorkflowLaunch,
-  type WorkflowRun
+  type WorkflowRun,
+  type WorkflowRunEvaluationResponse
 } from "@synosec/contracts";
 import { WorkflowDetailPage } from "@/features/workflows/detail-page";
 import { WorkflowsPage } from "@/features/workflows/page";
@@ -269,6 +270,19 @@ const launch: WorkflowLaunch = {
   }]
 };
 
+const workflowEvaluation: WorkflowRunEvaluationResponse = {
+  status: "available",
+  runId: run.id,
+  targetPack: "vulnerable-app",
+  score: 84,
+  label: "84 / 100",
+  summary: "Matched most documented expectations.",
+  subscores: [{ key: "run-status", label: "Run status", score: 20, maxScore: 20 }],
+  explanation: ["Run completed successfully."],
+  matchedExpectations: [{ key: "admin", label: "Admin path", met: true, evidence: ["/admin"] }],
+  unmetExpectations: []
+};
+
 function paginatedResponse<T>(key: string, items: T[]) {
   return {
     [key]: items,
@@ -309,6 +323,9 @@ function createFetchMock() {
     }
     if (url === `/api/workflow-runs/${run.id}`) {
       return new Response(JSON.stringify(run));
+    }
+    if (url === `/api/workflow-runs/${run.id}/evaluation`) {
+      return new Response(JSON.stringify(workflowEvaluation));
     }
     if (url === "/api/workflows" && init?.method === "POST") {
       return new Response(JSON.stringify({
@@ -408,8 +425,8 @@ describe("WorkflowDetailPage", () => {
 
     expect(await screen.findByRole("button", { name: "Start Run" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Show Full Details" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Show guidance for Target" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Show guidance for Current Run" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show guidance for Evaluation" })).toBeInTheDocument();
+    expect(await screen.findByText("84 / 100")).toBeInTheDocument();
     expect(screen.queryByText("Every agent receives these for this workflow")).not.toBeInTheDocument();
     expect(screen.queryByText("Linked agent persisted grants")).not.toBeInTheDocument();
     expect(await screen.findByText("0k in · 0k out · 0k total")).toBeInTheDocument();

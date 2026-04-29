@@ -7,7 +7,8 @@ import {
   type AiTool,
   type Target,
   type Workflow,
-  type WorkflowRun
+  type WorkflowRun,
+  type WorkflowRunEvaluationResponse
 } from "@synosec/contracts";
 import { WorkflowTraceSection } from "@/features/workflows/workflow-trace-section";
 
@@ -463,6 +464,19 @@ const tools: AiTool[] = [{
   createdAt: "2026-04-21T00:00:00.000Z",
   updatedAt: "2026-04-21T00:00:00.000Z"
 }];
+
+const workflowEvaluation: WorkflowRunEvaluationResponse = {
+  status: "available",
+  runId: run.id,
+  targetPack: "vulnerable-app",
+  score: 84,
+  label: "84 / 100",
+  summary: "Matched most documented expectations.",
+  subscores: [{ key: "run-status", label: "Run status", score: 20, maxScore: 20 }],
+  explanation: ["Run completed successfully."],
+  matchedExpectations: [{ key: "admin", label: "Admin path", met: true, evidence: ["/admin"] }],
+  unmetExpectations: []
+};
 
 const activeRun: WorkflowRun = {
   ...run,
@@ -1122,6 +1136,34 @@ describe("WorkflowTraceSection", () => {
     expect(screen.getAllByText("Input schema").length).toBeGreaterThan(0);
     expect(screen.getByText(/"required": \[\s*"url"/)).toBeInTheDocument();
     expect(screen.getAllByText(/"url"/).length).toBeGreaterThan(0);
+  });
+
+  it("shows only evaluation and run telemetry in the metadata panel", () => {
+    render(
+      <WorkflowTraceSection
+        workflow={workflow}
+        targets={targets}
+        agents={agents}
+        tools={tools}
+        run={run}
+        running={false}
+        summaryCard={{
+          toolCount: 1,
+          toolNames: [tools[0]!.name]
+        }}
+        workflowEvaluation={workflowEvaluation}
+      />
+    );
+
+    expect(screen.getByText("Evaluation")).toBeInTheDocument();
+    expect(screen.getByText("84 / 100")).toBeInTheDocument();
+    expect(screen.getByText("Model Steps")).toBeInTheDocument();
+    expect(screen.getByText("Tokens")).toBeInTheDocument();
+    expect(screen.getByText("Context Window")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show guidance for Target" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show guidance for Agent" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show guidance for Current Run" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show guidance for Updated" })).not.toBeInTheDocument();
   });
 
   it("renders a fallback compact output line when a completed tool has no non-redundant output preview", () => {

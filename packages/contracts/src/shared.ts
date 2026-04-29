@@ -17,6 +17,7 @@ export const apiRoutes = {
   workflowRunFindings: "/api/workflow-runs/:id/findings",
   workflowRunCoverage: "/api/workflow-runs/:id/coverage",
   workflowRunReport: "/api/workflow-runs/:id/report",
+  workflowRunEvaluation: "/api/workflow-runs/:id/evaluation",
   executionReports: "/api/execution-reports",
   executionReportArchive: "/api/execution-reports/:id/archive",
   executionReportUnarchive: "/api/execution-reports/:id/unarchive",

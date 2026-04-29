@@ -5,6 +5,7 @@ import {
   startWorkflowRunBodySchema,
   workflowLaunchSchema,
   workflowRunCoverageResponseSchema,
+  workflowRunEvaluationResponseSchema,
   workflowRunFindingsResponseSchema,
   workflowRunReportSchema,
   type WorkflowRunStreamMessage,
@@ -19,6 +20,7 @@ import { type Express } from "express";
 import { registerCrudRoutes } from "@/shared/http/register-crud-routes.js";
 import type { WorkflowExecutionEngine, WorkflowRunEventStream } from "@/engine/contracts.js";
 import type { WorkflowArtifactReader } from "@/engine/workflow/index.js";
+import type { WorkflowRunEvaluationService } from "@/modules/workflow-evals/index.js";
 import type { WorkflowsRepository } from "./workflows.repository.js";
 
 function writeSseMessage(response: { write: (chunk: string) => void }, payload: unknown) {
@@ -30,7 +32,8 @@ export function registerWorkflowsRoutes(
   repository: WorkflowsRepository,
   executionService: WorkflowExecutionEngine,
   workflowRunStream: WorkflowRunEventStream,
-  workflowRunArtifactsService: WorkflowArtifactReader
+  workflowRunArtifactsService: WorkflowArtifactReader,
+  workflowRunEvaluationService: WorkflowRunEvaluationService
 ) {
   registerCrudRoutes(app, {
     resourcePath: apiRoutes.workflows,
@@ -124,6 +127,16 @@ export function registerWorkflowsRoutes(
     try {
       response.json(workflowRunReportSchema.parse(
         await workflowRunArtifactsService.getReport(request.params.id)
+      ));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get(`${apiRoutes.workflowRuns}/:id/evaluation`, async (request, response, next) => {
+    try {
+      response.json(workflowRunEvaluationResponseSchema.parse(
+        await workflowRunEvaluationService.evaluateRun(request.params.id)
       ));
     } catch (error) {
       next(error);

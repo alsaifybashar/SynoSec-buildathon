@@ -78,6 +78,7 @@ export function WorkflowDetailPage({
     runPending,
     persistedTranscript,
     persistedAttackPaths,
+    workflowEvaluation,
     latestRunError,
     transcriptError,
     streamError,
@@ -383,6 +384,7 @@ export function WorkflowDetailPage({
           transcriptError={transcriptError}
           streamError={streamError}
           executionReport={executionReport}
+          workflowEvaluation={workflowEvaluation}
         />
       </DetailPage>
       <PromptEditModal

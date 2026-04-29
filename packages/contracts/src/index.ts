@@ -5,6 +5,7 @@ export * from "./connector-support.js";
 export * from "./resources.js";
 export * from "./workflow-lifecycle.js";
 export * from "./workflow-presentation.js";
+export * from "./workflow-evals.js";
 export * from "./defensive-loop.js";
 export * from "./scan.js";
 export * from "./execution-reports.js";

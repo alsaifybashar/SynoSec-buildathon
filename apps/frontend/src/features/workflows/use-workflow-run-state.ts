@@ -5,6 +5,7 @@ import {
   apiRoutes,
   type Target,
   type Workflow,
+  type WorkflowRunEvaluationResponse,
   type WorkflowLaunch,
   type WorkflowLiveModelOutput,
   type WorkflowRun,
@@ -150,6 +151,7 @@ export function useWorkflowRunState({
   const [, setRunStreamState] = useState<RunStreamState>("idle");
   const [persistedTranscript, setPersistedTranscript] = useState<TranscriptProjection | null>(null);
   const [persistedAttackPaths, setPersistedAttackPaths] = useState<AttackPathSummary | null>(null);
+  const [workflowEvaluation, setWorkflowEvaluation] = useState<WorkflowRunEvaluationResponse | null>(null);
   const [latestRunError, setLatestRunError] = useState<string | null>(null);
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -178,6 +180,7 @@ export function useWorkflowRunState({
       setCurrentRun(null);
       setLiveModelOutput(null);
       setPersistedAttackPaths(null);
+      setWorkflowEvaluation(null);
       setLatestRunError(null);
       return;
     }
@@ -234,6 +237,7 @@ export function useWorkflowRunState({
       setLiveModelOutput(null);
       setPersistedTranscript(null);
       setPersistedAttackPaths(null);
+      setWorkflowEvaluation(null);
       setTranscriptError(null);
       return;
     }
@@ -263,6 +267,30 @@ export function useWorkflowRunState({
       active = false;
     };
   }, [selectedLaunchRun?.runId]);
+
+  useEffect(() => {
+    if (!currentRun) {
+      setWorkflowEvaluation(null);
+      return;
+    }
+
+    let active = true;
+    void fetchJson<WorkflowRunEvaluationResponse>(`${apiRoutes.workflowRuns}/${currentRun.id}/evaluation`)
+      .then((evaluation) => {
+        if (active) {
+          setWorkflowEvaluation(evaluation);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setWorkflowEvaluation(null);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [currentRun?.id, currentRun?.status, currentRun?.events.length]);
 
   useEffect(() => {
     if (runningRunIds.length === 0) {
@@ -475,6 +503,7 @@ export function useWorkflowRunState({
     cancelPending,
     persistedTranscript,
     persistedAttackPaths,
+    workflowEvaluation,
     latestRunError,
     transcriptError,
     streamError,
