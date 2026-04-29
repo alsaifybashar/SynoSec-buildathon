@@ -124,7 +124,8 @@ describe("ListPage", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Export CSV" }));
 
     expect(createObjectURLMock).toHaveBeenCalledTimes(1);
     expect(createdLink?.download).toBe("targets.csv");
@@ -171,7 +172,8 @@ describe("ListPage", () => {
       />
     );
 
-    expect(screen.getByRole("button", { name: "Import JSON" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(screen.getByRole("menuitem", { name: "Import JSON" })).toBeInTheDocument();
 
     const fileInput = container.querySelector("input[type='file']");
     expect(fileInput).not.toBeNull();

@@ -139,7 +139,7 @@ describe("contracts", () => {
       status: "active",
       description: "Handles reconnaissance",
       systemPrompt: "Investigate the target.",
-      toolIds: ["httpx"]
+      toolAccessMode: "system"
     });
 
     expect(result.success).toBe(true);
@@ -373,7 +373,7 @@ describe("contracts", () => {
       derivedFromFindingIds: ["11111111-1111-4111-8111-111111111111"],
       relatedFindingIds: ["22222222-2222-4222-8222-222222222222"],
       enablesFindingIds: ["33333333-3333-4333-8333-333333333333"],
-      chain: {
+      attackChain: {
         id: "admin-path",
         title: "Admin exposure path",
         summary: "This finding contributes to a broader privilege escalation chain.",
@@ -410,7 +410,7 @@ describe("contracts", () => {
         relatedTo: longText,
         derivedFrom: longText,
         enables: longText,
-        chainRole: longText
+        attackChainRole: longText
       }
     });
 
@@ -544,7 +544,7 @@ describe("contracts", () => {
           relatedFindingIds: [],
           enablesFindingIds: [],
           relationshipExplanations: null,
-          chain: null,
+          attackChain: null,
           reproduction: null,
           evidence: [],
           sourceToolIds: ["tool-httpx"],
@@ -588,8 +588,6 @@ describe("contracts", () => {
         maxDurationMinutes: 1,
         rateLimitRps: 1,
         allowActiveExploits: false,
-        graceEnabled: true,
-        graceRoundInterval: 3,
         cyberRangeMode: "simulation"
       },
       request: {

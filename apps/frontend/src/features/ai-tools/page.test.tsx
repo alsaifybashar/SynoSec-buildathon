@@ -6,15 +6,20 @@ import { AiToolsPage } from "@/features/ai-tools/page";
 const tool: AiTool = {
   id: "tool-1",
   name: "HTTP Headers",
+  kind: "raw-adapter",
   status: "active",
   source: "custom",
+  accessProfile: "standard",
   description: "Fetch headers",
   executorType: "bash",
+  builtinActionKey: null,
   bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
   capabilities: ["web-recon"],
   category: "web",
   riskTier: "passive",
   timeoutMs: 30000,
+  coveredToolIds: [],
+  candidateToolIds: [],
   inputSchema: { type: "object", properties: { baseUrl: { type: "string" } } },
   outputSchema: { type: "object", properties: { output: { type: "string" } } },
   createdAt: "2026-04-21T00:00:00.000Z",
@@ -87,7 +92,7 @@ describe("AiToolsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run Tool" }));
 
     await waitFor(() => {
-      expect(mockFetchJson).toHaveBeenCalledWith("/api/ai-tools/tool-1/run", expect.objectContaining({
+      expect(mockFetchJson).toHaveBeenCalledWith("/api/tool-registry/tool-1/run", expect.objectContaining({
         method: "POST"
       }));
     });

@@ -32,6 +32,7 @@ type ToolFormValues = {
   name: string;
   status: AiToolStatus;
   source: "custom" | "system";
+  accessProfile: "standard" | "shell";
   description: string;
   bashSource: string;
   category: ToolCategory;
@@ -50,6 +51,7 @@ const statusLabels: Record<AiToolStatus, string> = {
 
 const categoryOptions: ToolCategory[] = ["topology", "auth", "web", "network", "content", "dns", "subdomain", "cloud", "utility", "password", "windows", "kubernetes", "forensics", "reversing", "exploitation"];
 const riskTierOptions: ToolRiskTier[] = ["passive", "active", "controlled-exploit"];
+const accessProfileOptions: Array<ToolFormValues["accessProfile"]> = ["standard", "shell"];
 const kindLabels: Record<AiToolKind, string> = {
   "builtin-action": "Built-in Action",
   "semantic-family": "Capability Tool",
@@ -69,6 +71,7 @@ function createEmptyFormValues(): ToolFormValues {
     name: "",
     status: "active",
     source: "custom",
+    accessProfile: "standard",
     description: "",
     bashSource: "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' 'Tool implementation is required before execution.' >&2\nexit 1\n",
     category: "utility",
@@ -84,6 +87,7 @@ function toFormValues(tool: AiTool): ToolFormValues {
     name: tool.name,
     status: tool.status,
     source: tool.source,
+    accessProfile: tool.accessProfile,
     description: tool.description ?? "",
     bashSource: tool.bashSource ?? "",
     category: tool.category,
@@ -140,6 +144,7 @@ function parseRequestBody(values: ToolFormValues): { body?: CreateAiToolBody; er
       name: values.name.trim(),
       status: values.status,
       source: "custom",
+      accessProfile: values.accessProfile,
       description: values.description.trim(),
       executorType: "bash",
       bashSource: values.bashSource,
@@ -385,14 +390,13 @@ export function AiToolsPage({
 
   const filters = useMemo<ListPageFilter[]>(() => [
     {
-      id: "surface",
-      label: "View surface",
-      placeholder: "View surface",
-      allLabel: "Primary capabilities",
+      id: "accessProfile",
+      label: "Access profile",
+      placeholder: "Access profile",
+      allLabel: "All access profiles",
       options: [
-        { value: "primary", label: "Primary capabilities" },
-        { value: "advanced", label: "Advanced and raw" },
-        { value: "raw", label: "Raw adapters only" }
+        { value: "standard", label: "Standard" },
+        { value: "shell", label: "Shell" }
       ]
     },
     {
@@ -460,17 +464,17 @@ export function AiToolsPage({
 
     try {
       if (isCreateMode || !tool) {
-        const created = await fetchJson<AiTool>(apiRoutes.aiTools, {
+        const created = await fetchJson<AiTool>(apiRoutes.toolRegistry, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body)
         });
-        toast.success("AI tool created");
+        toast.success("Registry entry created");
         onNavigateToDetail(created.id, created.name);
         return;
       }
 
-      const updated = await fetchJson<AiTool>(`${apiRoutes.aiTools}/${tool.id}`, {
+      const updated = await fetchJson<AiTool>(`${apiRoutes.toolRegistry}/${tool.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
@@ -480,9 +484,9 @@ export function AiToolsPage({
       setTool(updated);
       setFormValues(nextValues);
       setInitialValues(nextValues);
-      toast.success("AI tool updated");
+      toast.success("Registry entry updated");
     } catch (error) {
-      toast.error("AI tool request failed", {
+      toast.error("Tool Registry request failed", {
         description: error instanceof Error ? error.message : "Unknown error"
       });
     } finally {
@@ -508,7 +512,7 @@ export function AiToolsPage({
     setRunError(null);
 
     try {
-      const result = await fetchJson<AiToolRunResult>(`${apiRoutes.aiTools}/${tool.id}/run`, {
+      const result = await fetchJson<AiToolRunResult>(`${apiRoutes.toolRegistry}/${tool.id}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input: parsedInput })
@@ -533,10 +537,10 @@ export function AiToolsPage({
   async function handleImportJson(file: File) {
     try {
       const created = await importResourceRecords(aiToolTransfer, file);
-      toast.success(created.length === 1 ? "AI tool imported" : `${created.length} AI tools imported`);
+      toast.success(created.length === 1 ? "Registry entry imported" : `${created.length} registry entries imported`);
       toolList.refetch();
     } catch (error) {
-      toast.error("AI tool import failed", {
+      toast.error("Tool Registry import failed", {
         description: error instanceof Error ? error.message : "Unknown error"
       });
     }
@@ -547,7 +551,7 @@ export function AiToolsPage({
   }
 
   async function handleDeleteTool(selected: AiTool) {
-    await fetchJson<void>(`${apiRoutes.aiTools}/${selected.id}`, {
+    await fetchJson<void>(`${apiRoutes.toolRegistry}/${selected.id}`, {
       method: "DELETE"
     });
     toolList.refetch();
@@ -557,7 +561,7 @@ export function AiToolsPage({
     return (
       <div className="space-y-3 pb-6">
         <ListPage
-          title="AI Tools"
+          title="Tool Registry"
           recordLabel="AI Tool"
           columns={columns}
           query={toolList.query}
@@ -565,7 +569,7 @@ export function AiToolsPage({
           items={toolList.items}
           meta={toolList.meta}
           filters={filters}
-          emptyMessage="No capabilities matched the current surface."
+          emptyMessage="No registry entries matched the current filters."
           onSearchChange={toolList.setSearch}
           onFilterChange={toolList.setFilter}
           onSortChange={toolList.setSort}
@@ -588,19 +592,19 @@ export function AiToolsPage({
   if (!isCreateMode && toolDetail.state !== "loaded") {
     return (
       <DetailLoadingState
-        title={toolNameHint ?? "AI tool detail"}
-        breadcrumbs={["Start", "AI Tools", toolNameHint ?? "Loading"]}
+        title={toolNameHint ?? "Tool Registry detail"}
+        breadcrumbs={["Start", "Tool Registry", toolNameHint ?? "Loading"]}
         onBack={onNavigateToList}
-        message="Loading AI tool..."
+        message="Loading registry entry..."
       />
     );
   }
 
-  const currentToolName = isCreateMode ? "New AI tool" : tool?.name ?? "AI tool detail";
+  const currentToolName = isCreateMode ? "New Tool Registry entry" : tool?.name ?? "Tool Registry detail";
 
   const detailPageProps = {
     title: currentToolName,
-    breadcrumbs: ["Start", "AI Tools", isCreateMode ? "New" : tool?.name ?? "Detail"],
+    breadcrumbs: ["Start", "Tool Registry", isCreateMode ? "New" : tool?.name ?? "Detail"],
     isDirty: isToolEditable ? isDirty : false,
     isSaving: saving,
     onBack: onNavigateToList,
@@ -644,6 +648,18 @@ export function AiToolsPage({
               <SelectContent>
                 {riskTierOptions.map((riskTier) => (
                   <SelectItem key={riskTier} value={riskTier}>{riskTier}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </DetailField>
+          <DetailField label="Access profile">
+            <Select value={formValues.accessProfile} onValueChange={(value) => handleFieldChange("accessProfile", value as ToolFormValues["accessProfile"])} disabled={!isToolEditable}>
+              <SelectTrigger aria-label="Access profile">
+                <SelectValue placeholder="Select access profile" />
+              </SelectTrigger>
+              <SelectContent>
+                {accessProfileOptions.map((accessProfile) => (
+                  <SelectItem key={accessProfile} value={accessProfile}>{accessProfile}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

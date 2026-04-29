@@ -9,9 +9,9 @@ describe("fetchJson", () => {
   it("uses resource-aware defaults for not found responses", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
 
-    await expect(fetchJson("/api/ai-tools/tool-1")).rejects.toMatchObject({
+    await expect(fetchJson("/api/tool-registry/tool-1")).rejects.toMatchObject({
       name: "ApiError",
-      message: "AI tool not found.",
+      message: "Tool Registry entry not found.",
       status: 404
     });
   });
@@ -26,7 +26,7 @@ describe("fetchJson", () => {
       headers: { "Content-Type": "application/json" }
     })));
 
-    await expect(fetchJson("/api/ai-tools")).rejects.toMatchObject({
+    await expect(fetchJson("/api/tool-registry")).rejects.toMatchObject({
       name: "ApiError",
       message: "This AI tool is missing required execution settings.",
       status: 500,
@@ -43,9 +43,9 @@ describe("fetchJson", () => {
       headers: { "Content-Type": "application/json" }
     })));
 
-    await expect(fetchJson("/api/ai-tools", { method: "POST" })).rejects.toMatchObject({
+    await expect(fetchJson("/api/tool-registry", { method: "POST" })).rejects.toMatchObject({
       name: "ApiError",
-      message: "Unable to create AI tool. Check the submitted data and try again.",
+      message: "Unable to create Tool Registry entry. Check the submitted data and try again.",
       status: 400,
       code: "VALIDATION_ERROR"
     });
@@ -60,9 +60,9 @@ describe("fetchJson", () => {
       headers: { "Content-Type": "application/json" }
     })));
 
-    await expect(fetchJson("/api/ai-tools/tool-1/run", { method: "POST" })).rejects.toMatchObject({
+    await expect(fetchJson("/api/tool-registry/tool-1/run", { method: "POST" })).rejects.toMatchObject({
       name: "ApiError",
-      message: "Unable to run AI tool right now.",
+      message: "Unable to run Tool Registry entry right now.",
       status: 500,
       code: "REQUEST_ERROR"
     });
@@ -78,7 +78,7 @@ describe("fetchJson", () => {
       headers: { "Content-Type": "application/json" }
     })));
 
-    await expect(fetchJson("/api/ai-tools/tool-1/run", { method: "POST" })).rejects.toMatchObject({
+    await expect(fetchJson("/api/tool-registry/tool-1/run", { method: "POST" })).rejects.toMatchObject({
       name: "ApiError",
       message: "Required AI tool input is missing.",
       status: 400,

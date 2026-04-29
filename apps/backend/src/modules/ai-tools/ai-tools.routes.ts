@@ -20,7 +20,7 @@ export function registerAiToolsRoutes(
   toolRuntime: ToolRuntime = createToolRuntime(repository)
 ) {
   registerCrudRoutes(app, {
-    resourcePath: apiRoutes.aiTools,
+    resourcePath: apiRoutes.toolRegistry,
     repository,
     querySchema: aiToolsListQuerySchema,
     listResponseSchema: listAiToolsResponseSchema,
@@ -31,7 +31,7 @@ export function registerAiToolsRoutes(
     notFoundMessage: "AI tool not found."
   });
 
-  app.post(`${apiRoutes.aiTools}/:id/run`, async (request, response, next) => {
+  app.post(`${apiRoutes.toolRegistry}/:id/run`, async (request, response, next) => {
     try {
       const input = aiToolRunBodySchema.parse(request.body);
       const result = await runAiTool(toolRuntime, request.params.id, input.input);

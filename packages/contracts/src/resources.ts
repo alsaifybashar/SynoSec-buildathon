@@ -158,18 +158,24 @@ export type UpdateTargetBody = z.infer<typeof updateTargetBodySchema>;
 
 export const aiToolSourceSchema = z.enum(["system", "custom"]);
 export type AiToolSource = z.infer<typeof aiToolSourceSchema>;
+export const toolRegistrySourceSchema = aiToolSourceSchema;
+export type ToolRegistrySource = z.infer<typeof toolRegistrySourceSchema>;
 
 export const aiToolStatusSchema = z.enum(["active", "inactive", "missing", "manual"]);
 export type AiToolStatus = z.infer<typeof aiToolStatusSchema>;
+export const toolRegistryEntryStatusSchema = aiToolStatusSchema;
+export type ToolRegistryEntryStatus = z.infer<typeof toolRegistryEntryStatusSchema>;
 
 export const toolExecutorTypeSchema = z.enum(["bash", "builtin"]);
 export type ToolExecutorType = z.infer<typeof toolExecutorTypeSchema>;
 
 export const aiToolKindSchema = z.enum(["builtin-action", "semantic-family", "raw-adapter"]);
 export type AiToolKind = z.infer<typeof aiToolKindSchema>;
+export const toolRegistryEntryKindSchema = aiToolKindSchema;
+export type ToolRegistryEntryKind = z.infer<typeof toolRegistryEntryKindSchema>;
 
-export const aiToolSurfaceSchema = z.enum(["primary", "advanced", "raw"]);
-export type AiToolSurface = z.infer<typeof aiToolSurfaceSchema>;
+export const toolAccessProfileSchema = z.enum(["standard", "shell"]);
+export type ToolAccessProfile = z.infer<typeof toolAccessProfileSchema>;
 
 export const toolBuiltinActionKeySchema = z.enum([
   "log_progress",
@@ -245,20 +251,22 @@ export const toolConstraintProfileSchema = z.object({
 });
 export type ToolConstraintProfile = z.infer<typeof toolConstraintProfileSchema>;
 
-export const aiToolRuntimeStateSummarySchema = z.object({
+export const toolRegistryRuntimeStateSummarySchema = z.object({
   cataloged: z.boolean().default(false),
   installed: z.boolean().default(false),
   executable: z.boolean().default(false),
   granted: z.boolean().default(false)
 });
-export type AiToolRuntimeStateSummary = z.infer<typeof aiToolRuntimeStateSummarySchema>;
+export type ToolRegistryRuntimeStateSummary = z.infer<typeof toolRegistryRuntimeStateSummarySchema>;
+export type AiToolRuntimeStateSummary = ToolRegistryRuntimeStateSummary;
 
-export const aiToolSchema = z.object({
+export const toolRegistryEntrySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  kind: aiToolKindSchema.default("raw-adapter"),
-  status: aiToolStatusSchema,
-  source: aiToolSourceSchema,
+  kind: toolRegistryEntryKindSchema.default("raw-adapter"),
+  status: toolRegistryEntryStatusSchema,
+  source: toolRegistrySourceSchema,
+  accessProfile: toolAccessProfileSchema.default("standard"),
   description: z.string().nullable(),
   executorType: toolExecutorTypeSchema.default("bash"),
   builtinActionKey: toolBuiltinActionKeySchema.nullable().optional(),
@@ -270,7 +278,7 @@ export const aiToolSchema = z.object({
   constraintProfile: toolConstraintProfileSchema.optional(),
   coveredToolIds: z.array(z.string().min(1)).default([]),
   candidateToolIds: z.array(z.string().min(1)).default([]),
-  runtimeStateSummary: aiToolRuntimeStateSummarySchema.optional(),
+  runtimeStateSummary: toolRegistryRuntimeStateSummarySchema.optional(),
   inputSchema: z.lazy(() => jsonSchemaObjectSchema),
   outputSchema: z.lazy(() => jsonSchemaObjectSchema),
   createdAt: z.string().datetime(),
@@ -296,21 +304,27 @@ export const aiToolSchema = z.object({
     });
   }
 });
-export type AiTool = z.infer<typeof aiToolSchema>;
+export type ToolRegistryEntry = z.infer<typeof toolRegistryEntrySchema>;
+export type AiTool = ToolRegistryEntry;
+export const aiToolSchema = toolRegistryEntrySchema;
 
-export const aiToolsListQuerySchema = resourceListQuerySchema.extend({
-  status: aiToolStatusSchema.optional(),
-  source: aiToolSourceSchema.optional(),
-  surface: aiToolSurfaceSchema.optional(),
+export const toolRegistryListQuerySchema = resourceListQuerySchema.extend({
+  status: toolRegistryEntryStatusSchema.optional(),
+  source: toolRegistrySourceSchema.optional(),
+  accessProfile: toolAccessProfileSchema.optional(),
   category: z.lazy(() => toolCategorySchema).optional(),
   sortBy: z.enum(["name", "kind", "source", "status", "category", "riskTier", "createdAt", "updatedAt"]).optional()
 });
-export type AiToolsListQuery = z.infer<typeof aiToolsListQuerySchema>;
+export type ToolRegistryListQuery = z.infer<typeof toolRegistryListQuerySchema>;
+export type AiToolsListQuery = ToolRegistryListQuery;
+export const aiToolsListQuerySchema = toolRegistryListQuerySchema;
 
-export const listAiToolsResponseSchema = createPaginatedResponseSchema("tools", aiToolSchema);
-export type ListAiToolsResponse = z.infer<typeof listAiToolsResponseSchema>;
+export const listToolRegistryEntriesResponseSchema = createPaginatedResponseSchema("tools", toolRegistryEntrySchema);
+export type ListToolRegistryEntriesResponse = z.infer<typeof listToolRegistryEntriesResponseSchema>;
+export const listAiToolsResponseSchema = listToolRegistryEntriesResponseSchema;
+export type ListAiToolsResponse = ListToolRegistryEntriesResponse;
 
-export const aiToolRunObservationSchema = z.object({
+export const toolRegistryRunObservationSchema = z.object({
   id: z.string().min(1),
   key: z.string().min(1),
   title: z.string().min(1),
@@ -318,14 +332,17 @@ export const aiToolRunObservationSchema = z.object({
   severity: z.enum(["info", "low", "medium", "high", "critical"]),
   confidence: z.number().min(0).max(1)
 });
-export type AiToolRunObservation = z.infer<typeof aiToolRunObservationSchema>;
+export type ToolRegistryRunObservation = z.infer<typeof toolRegistryRunObservationSchema>;
+export type AiToolRunObservation = ToolRegistryRunObservation;
 
-export const aiToolRunBodySchema = z.object({
+export const toolRegistryRunBodySchema = z.object({
   input: jsonSchemaObjectSchema
 });
-export type AiToolRunBody = z.infer<typeof aiToolRunBodySchema>;
+export type ToolRegistryRunBody = z.infer<typeof toolRegistryRunBodySchema>;
+export type AiToolRunBody = ToolRegistryRunBody;
+export const aiToolRunBodySchema = toolRegistryRunBodySchema;
 
-export const aiToolRunResultSchema = z.object({
+export const toolRegistryRunResultSchema = z.object({
   toolId: z.string().min(1),
   toolName: z.string().min(1),
   toolInput: jsonSchemaObjectSchema,
@@ -336,16 +353,19 @@ export const aiToolRunResultSchema = z.object({
   statusReason: z.string().nullable(),
   exitCode: z.number().int(),
   durationMs: z.number().int().nonnegative(),
-  observations: z.array(aiToolRunObservationSchema),
+  observations: z.array(toolRegistryRunObservationSchema),
   totalObservations: z.number().int().min(0),
   truncated: z.boolean()
 });
-export type AiToolRunResult = z.infer<typeof aiToolRunResultSchema>;
+export type ToolRegistryRunResult = z.infer<typeof toolRegistryRunResultSchema>;
+export type AiToolRunResult = ToolRegistryRunResult;
+export const aiToolRunResultSchema = toolRegistryRunResultSchema;
 
-const aiToolBodyBaseSchema = z.object({
+const toolRegistryEntryBodyBaseSchema = z.object({
   name: z.string().trim().min(1),
-  status: aiToolStatusSchema,
-  source: aiToolSourceSchema,
+  status: toolRegistryEntryStatusSchema,
+  source: toolRegistrySourceSchema,
+  accessProfile: toolAccessProfileSchema.default("standard"),
   description: z.string().trim().min(1),
   executorType: z.literal("bash").default("bash"),
   bashSource: z.string().min(1),
@@ -357,7 +377,7 @@ const aiToolBodyBaseSchema = z.object({
   outputSchema: z.lazy(() => jsonSchemaObjectSchema)
 });
 
-export const createAiToolBodySchema = aiToolBodyBaseSchema.superRefine((value, ctx) => {
+export const createToolRegistryEntryBodySchema = toolRegistryEntryBodyBaseSchema.superRefine((value, ctx) => {
   if (value.source === "system") {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -373,9 +393,11 @@ export const createAiToolBodySchema = aiToolBodyBaseSchema.superRefine((value, c
     });
   }
 });
-export type CreateAiToolBody = z.infer<typeof createAiToolBodySchema>;
+export type CreateToolRegistryEntryBody = z.infer<typeof createToolRegistryEntryBodySchema>;
+export const createAiToolBodySchema = createToolRegistryEntryBodySchema;
+export type CreateAiToolBody = CreateToolRegistryEntryBody;
 
-export const updateAiToolBodySchema = aiToolBodyBaseSchema
+export const updateToolRegistryEntryBodySchema = toolRegistryEntryBodyBaseSchema
   .partial()
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required."
@@ -403,10 +425,15 @@ export const updateAiToolBodySchema = aiToolBodyBaseSchema
       });
     }
   });
-export type UpdateAiToolBody = z.infer<typeof updateAiToolBodySchema>;
+export type UpdateToolRegistryEntryBody = z.infer<typeof updateToolRegistryEntryBodySchema>;
+export const updateAiToolBodySchema = updateToolRegistryEntryBodySchema;
+export type UpdateAiToolBody = UpdateToolRegistryEntryBody;
 
 export const aiAgentStatusSchema = z.enum(["draft", "active", "archived"]);
 export type AiAgentStatus = z.infer<typeof aiAgentStatusSchema>;
+
+export const toolAccessModeSchema = z.enum(["system", "system_plus_custom"]);
+export type ToolAccessMode = z.infer<typeof toolAccessModeSchema>;
 
 export const aiAgentSchema = z.object({
   id: z.string().uuid(),
@@ -414,7 +441,7 @@ export const aiAgentSchema = z.object({
   status: aiAgentStatusSchema,
   description: z.string().nullable(),
   systemPrompt: z.string().min(1),
-  toolIds: z.array(z.string().min(1)).default([]),
+  toolAccessMode: toolAccessModeSchema.default("system"),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 });
@@ -422,7 +449,7 @@ export type AiAgent = z.infer<typeof aiAgentSchema>;
 
 export const aiAgentsListQuerySchema = resourceListQuerySchema.extend({
   status: aiAgentStatusSchema.optional(),
-  sortBy: z.enum(["name", "status", "toolIds", "createdAt", "updatedAt"]).optional()
+  sortBy: z.enum(["name", "status", "toolAccessMode", "createdAt", "updatedAt"]).optional()
 });
 export type AiAgentsListQuery = z.infer<typeof aiAgentsListQuerySchema>;
 
@@ -434,7 +461,7 @@ const aiAgentBodyBaseSchema = z.object({
   status: aiAgentStatusSchema,
   description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
   systemPrompt: z.string().min(1),
-  toolIds: z.array(z.string().min(1)).default([])
+  toolAccessMode: toolAccessModeSchema.default("system")
 });
 
 export const createAiAgentBodySchema = aiAgentBodyBaseSchema;
@@ -509,19 +536,19 @@ export const workflowFindingReproductionSchema = z.object({
 });
 export type WorkflowFindingReproduction = z.infer<typeof workflowFindingReproductionSchema>;
 
-export const workflowFindingChainSchema = z.object({
+export const workflowFindingAttackChainSchema = z.object({
   id: z.string().min(1).optional(),
   title: z.string().min(1),
   summary: z.string().min(1),
   severity: z.enum(["info", "low", "medium", "high", "critical"]).optional()
 });
-export type WorkflowFindingChain = z.infer<typeof workflowFindingChainSchema>;
+export type WorkflowFindingAttackChain = z.infer<typeof workflowFindingAttackChainSchema>;
 
 export const workflowFindingRelationshipExplanationsSchema = z.object({
   derivedFrom: z.string().min(1).optional(),
   relatedTo: z.string().min(1).optional(),
   enables: z.string().min(1).optional(),
-  chainRole: z.string().min(1).optional()
+  attackChainRole: z.string().min(1).optional()
 });
 export type WorkflowFindingRelationshipExplanations = z.infer<typeof workflowFindingRelationshipExplanationsSchema>;
 
@@ -544,7 +571,7 @@ export const workflowFindingSubmissionSchema = z.object({
   derivedFromFindingIds: z.array(z.string().trim().min(1)).default([]),
   relatedFindingIds: z.array(z.string().trim().min(1)).default([]),
   enablesFindingIds: z.array(z.string().trim().min(1)).default([]),
-  chain: workflowFindingChainSchema.optional(),
+  attackChain: workflowFindingAttackChainSchema.optional(),
   explanationSummary: z.string().min(1).optional(),
   confidenceReason: z.string().min(1).optional(),
   relationshipExplanations: workflowFindingRelationshipExplanationsSchema.optional(),

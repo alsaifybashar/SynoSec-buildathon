@@ -302,6 +302,7 @@ async function main() {
           name: tool.name,
           status: "active",
           source: "system",
+          accessProfile: resolveAccessProfile(tool.id),
           description: tool.description,
           adapter: null,
           binary: tool.binary,
@@ -324,6 +325,7 @@ async function main() {
           name: tool.name,
           status: "active",
           source: "system",
+          accessProfile: resolveAccessProfile(tool.id),
           description: tool.description,
           adapter: null,
           binary: tool.binary,
@@ -353,6 +355,7 @@ async function main() {
           name: tool.name,
           status: "active",
           source: "system",
+          accessProfile: tool.accessProfile,
           description: tool.description,
           adapter: "builtin-capability",
           binary: null,
@@ -367,6 +370,7 @@ async function main() {
           name: tool.name,
           status: "active",
           source: "system",
+          accessProfile: tool.accessProfile,
           description: tool.description,
           adapter: "builtin-capability",
           binary: null,
@@ -397,36 +401,20 @@ async function main() {
           name: `Anthropic ${role.name}`,
           status: "active",
           description: role.description,
-          systemPrompt: role.systemPrompt
+          systemPrompt: role.systemPrompt,
+          toolAccessMode: role.toolAccessMode
         },
         create: {
           id: seededAgentId(role.key),
           name: `Anthropic ${role.name}`,
           status: "active",
           description: role.description,
-          systemPrompt: role.systemPrompt
+          systemPrompt: role.systemPrompt,
+          toolAccessMode: role.toolAccessMode
         }
       })
     )
   );
-
-  const seededAgentIdList = roleDefinitions.map((role) => seededAgentId(role.key));
-
-  await prisma.aiAgentTool.deleteMany({
-    where: {
-      agentId: { in: seededAgentIdList }
-    }
-  });
-
-  await prisma.aiAgentTool.createMany({
-    data: roleDefinitions.flatMap((role) =>
-      role.toolIds.map((toolId, index) => ({
-        agentId: seededAgentId(role.key),
-        toolId,
-        ord: index
-      }))
-    )
-  });
 
   const workflowDefinitions = getSeededWorkflowDefinitions();
   const seededWorkflowIds = workflowDefinitions.map((workflow) => workflow.id);
@@ -498,12 +486,6 @@ async function main() {
     })
   );
 
-  await prisma.aiAgentTool.deleteMany({
-    where: {
-      agentId: { in: [...deprecatedSeededAgentIds] }
-    }
-  });
-
   await prisma.aiAgent.deleteMany({
     where: {
       id: { in: [...deprecatedSeededAgentIds] }
@@ -563,3 +545,6 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
+function resolveAccessProfile(toolId: string) {
+  return toolId === "seed-agent-bash-command" ? "shell" : "standard";
+}

@@ -1,21 +1,25 @@
 import { describe, expect, it } from "vitest";
-import type { AiTool } from "@synosec/contracts";
+import type { AiAgent, AiTool } from "@synosec/contracts";
 import { resolveAgentTools } from "./agent-tool-resolver.js";
-import type { AgentToolPolicy } from "@/shared/seed-data/agent-tool-policies.js";
 
 function createTool(overrides: Partial<AiTool> & Pick<AiTool, "id" | "name" | "category" | "riskTier">): AiTool {
   return {
     id: overrides.id,
     name: overrides.name,
-    status: "active",
-    source: "system",
+    kind: overrides.kind ?? "raw-adapter",
+    status: overrides.status ?? "active",
+    source: overrides.source ?? "system",
+    accessProfile: overrides.accessProfile ?? "standard",
     description: overrides.description ?? null,
-    executorType: "bash",
+    executorType: overrides.executorType ?? "bash",
+    builtinActionKey: overrides.builtinActionKey ?? null,
     bashSource: overrides.bashSource ?? "#!/usr/bin/env bash\necho ok",
     capabilities: overrides.capabilities ?? [],
     category: overrides.category,
     riskTier: overrides.riskTier,
     timeoutMs: overrides.timeoutMs ?? 30000,
+    coveredToolIds: overrides.coveredToolIds ?? [],
+    candidateToolIds: overrides.candidateToolIds ?? [],
     inputSchema: overrides.inputSchema ?? { type: "object", properties: {} },
     outputSchema: overrides.outputSchema ?? { type: "object", properties: {} },
     createdAt: overrides.createdAt ?? "2026-04-24T00:00:00.000Z",
@@ -23,62 +27,47 @@ function createTool(overrides: Partial<AiTool> & Pick<AiTool, "id" | "name" | "c
   };
 }
 
+function createAgent(toolAccessMode: AiAgent["toolAccessMode"]): Pick<AiAgent, "toolAccessMode"> {
+  return { toolAccessMode };
+}
+
 describe("resolveAgentTools", () => {
-  it("preserves explicit toolIds when no policy is configured", async () => {
+  it("returns only standard system tools for system mode", () => {
     const tools = [
       createTool({ id: "seed-http-recon", name: "HTTP Recon", category: "web", riskTier: "passive" }),
-      createTool({ id: "seed-service-scan", name: "Service Scan", category: "network", riskTier: "passive" })
+      createTool({ id: "seed-agent-bash-command", name: "Agent Bash Command", category: "utility", riskTier: "active", accessProfile: "shell" }),
+      createTool({ id: "custom-tool", name: "Custom Tool", category: "utility", riskTier: "passive", source: "custom" })
     ];
 
-    const resolved = await resolveAgentTools("agent-1", ["seed-service-scan"], tools, undefined);
+    const resolved = resolveAgentTools(createAgent("system"), tools);
 
-    expect(resolved.map((tool) => tool.id)).toEqual(["seed-service-scan"]);
+    expect(resolved.map((tool) => tool.id)).toEqual(["seed-http-recon"]);
   });
 
-  it("merges pinned, explicit, and policy-matched tools without duplicates", async () => {
+  it("includes custom and shell-profile tools for system_plus_custom mode", () => {
     const tools = [
-      createTool({ id: "httpx", name: "HTTPx", category: "web", riskTier: "passive" }),
-      createTool({ id: "whatweb", name: "WhatWeb", category: "web", riskTier: "passive" }),
-      createTool({ id: "nmap", name: "Nmap", category: "network", riskTier: "passive" }),
-      createTool({ id: "nikto", name: "Nikto", category: "web", riskTier: "active" })
+      createTool({ id: "seed-http-recon", name: "HTTP Recon", category: "web", riskTier: "passive" }),
+      createTool({ id: "seed-agent-bash-command", name: "Agent Bash Command", category: "utility", riskTier: "active", accessProfile: "shell" }),
+      createTool({ id: "custom-tool", name: "Custom Tool", category: "utility", riskTier: "passive", source: "custom" })
     ];
-    const policy: AgentToolPolicy = {
-      agentId: "agent-1",
-      pinnedToolIds: ["httpx"],
-      selectionCriteria: {
-        categories: ["network", "web"],
-        riskTiers: ["passive"],
-        phases: ["recon", "enum"],
-        maxCount: 10
-      }
-    };
 
-    const resolved = await resolveAgentTools("agent-1", ["nmap"], tools, policy);
+    const resolved = resolveAgentTools(createAgent("system_plus_custom"), tools);
 
     expect(resolved.map((tool) => tool.id)).toEqual([
-      "httpx",
-      "nmap",
-      "whatweb"
+      "seed-http-recon",
+      "seed-agent-bash-command",
+      "custom-tool"
     ]);
   });
 
-  it("respects tag and maxCount filters for policy-selected tools", async () => {
+  it("excludes inactive tools regardless of mode", () => {
     const tools = [
-      createTool({ id: "httpx", name: "HTTPx", category: "web", riskTier: "passive" }),
-      createTool({ id: "whatweb", name: "WhatWeb", category: "web", riskTier: "passive" }),
-      createTool({ id: "ffuf", name: "FFuf", category: "content", riskTier: "passive" })
+      createTool({ id: "inactive-tool", name: "Inactive", category: "web", riskTier: "passive", status: "inactive" }),
+      createTool({ id: "active-tool", name: "Active", category: "web", riskTier: "passive" })
     ];
-    const policy: AgentToolPolicy = {
-      agentId: "agent-1",
-      pinnedToolIds: [],
-      selectionCriteria: {
-        tags: ["probe"],
-        maxCount: 1
-      }
-    };
 
-    const resolved = await resolveAgentTools("agent-1", [], tools, policy);
+    const resolved = resolveAgentTools(createAgent("system_plus_custom"), tools);
 
-    expect(resolved.map((tool) => tool.id)).toEqual(["httpx"]);
+    expect(resolved.map((tool) => tool.id)).toEqual(["active-tool"]);
   });
 });

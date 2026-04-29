@@ -2,7 +2,7 @@ import { apiRoutes, type AiTool, type ListAiToolsResponse } from "@synosec/contr
 import { createResourceClient, type AiToolsQuery } from "@/shared/lib/resource-client";
 
 export const aiToolsResource = createResourceClient<AiTool, AiToolsQuery, ListAiToolsResponse>({
-  path: apiRoutes.aiTools,
+  path: apiRoutes.toolRegistry,
   dataKey: "tools",
   capabilities: {
     canCreate: true,
@@ -15,7 +15,7 @@ export const aiToolsResource = createResourceClient<AiTool, AiToolsQuery, ListAi
     q: "",
     sortBy: "name",
     sortDirection: "asc",
-    surface: "primary",
+    accessProfile: undefined,
     source: undefined,
     category: undefined,
     status: undefined,

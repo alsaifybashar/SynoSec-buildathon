@@ -7,7 +7,8 @@ import {
   type AiAgentStatus,
   type AiTool,
   type CreateAiAgentBody,
-  type HealthResponse
+  type HealthResponse,
+  type ToolAccessMode
 } from "@synosec/contracts";
 import { aiAgentsResource } from "@/features/ai-agents/resource";
 import { aiAgentTransfer } from "@/features/ai-agents/transfer";
@@ -16,13 +17,14 @@ import type { CrudFeatureDefinition } from "@/shared/crud/crud-feature";
 import { DetailField, DetailFieldGroup, DetailSidebarItem } from "@/shared/components/detail-page";
 import type { AiAgentsQuery } from "@/shared/lib/resource-client";
 import { Input } from "@/shared/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
 
 export type AgentFormValues = {
   name: string;
   status: AiAgentStatus;
   description: string;
   systemPrompt: string;
-  toolIds: string[];
+  toolAccessMode: ToolAccessMode;
 };
 
 export type AiAgentDefinitionContext = {
@@ -38,33 +40,13 @@ export const statusLabels: Record<AiAgentStatus, string> = {
 
 const hiddenAgentPrompt = [
   "Workflow-owned prompts are the primary execution instructions in SynoSec.",
-  "Use this agent as a tool grant and execution profile only.",
+  "Use this agent as a tool access policy and execution profile only.",
   "Prefer concise progress, evidence-backed findings, and allowed tool usage."
 ].join(" ");
 
-const categoryLabels: Record<AiTool["category"], string> = {
-  topology: "Topology Tools",
-  auth: "Auth Tools",
-  network: "Network Tools",
-  web: "Web Tools",
-  content: "Content Tools",
-  dns: "DNS Tools",
-  subdomain: "Subdomain Tools",
-  password: "Password Tools",
-  cloud: "Cloud Tools",
-  kubernetes: "Kubernetes Tools",
-  windows: "Windows Tools",
-  forensics: "Forensics Tools",
-  reversing: "Reversing Tools",
-  exploitation: "Exploitation Tools",
-  utility: "Utility Tools"
-};
-
-type ToolGroup = {
-  id: string;
-  title: string;
-  description?: string | null;
-  tools: AiTool[];
+const toolAccessModeLabels: Record<ToolAccessMode, string> = {
+  system: "System",
+  system_plus_custom: "System + Custom"
 };
 
 export function createEmptyFormValues(): AgentFormValues {
@@ -73,7 +55,7 @@ export function createEmptyFormValues(): AgentFormValues {
     status: "draft",
     description: "",
     systemPrompt: hiddenAgentPrompt,
-    toolIds: []
+    toolAccessMode: "system"
   };
 }
 
@@ -83,7 +65,7 @@ export function toFormValues(agent: AiAgent): AgentFormValues {
     status: agent.status,
     description: agent.description ?? "",
     systemPrompt: agent.systemPrompt,
-    toolIds: [...agent.toolIds]
+    toolAccessMode: agent.toolAccessMode
   };
 }
 
@@ -93,7 +75,7 @@ export function toRequestBody(values: AgentFormValues, fallbackPrompt = hiddenAg
     status: values.status,
     description: values.description.trim() || null,
     systemPrompt: values.systemPrompt.trim() || fallbackPrompt,
-    toolIds: values.toolIds
+    toolAccessMode: values.toolAccessMode
   };
 }
 
@@ -119,99 +101,18 @@ function sortToolsByName(left: AiTool, right: AiTool) {
   return left.name.localeCompare(right.name);
 }
 
-function isSemanticFamilyTool(tool: AiTool) {
-  return tool.capabilities.includes("semantic-family");
-}
+function resolveVisibleTools(toolAccessMode: ToolAccessMode, tools: AiTool[]) {
+  return tools.filter((tool) => {
+    if (tool.status !== "active") {
+      return false;
+    }
 
-function groupFamilyTools(tools: AiTool[]): ToolGroup[] {
-  return tools
-    .filter(isSemanticFamilyTool)
-    .sort(sortToolsByName)
-    .map((tool) => ({
-      id: tool.id,
-      title: tool.name,
-      description: tool.description,
-      tools: [tool]
-    }));
-}
+    if (toolAccessMode === "system") {
+      return tool.source === "system" && tool.accessProfile === "standard";
+    }
 
-function groupCategoryTools(tools: AiTool[]): ToolGroup[] {
-  const grouped = new Map<AiTool["category"], AiTool[]>();
-
-  for (const tool of tools.filter((item) => !isSemanticFamilyTool(item) && item.kind !== "builtin-action")) {
-    const current = grouped.get(tool.category) ?? [];
-    current.push(tool);
-    grouped.set(tool.category, current);
-  }
-
-  return Array.from(grouped.entries())
-    .sort(([left], [right]) => categoryLabels[left].localeCompare(categoryLabels[right]))
-    .map(([category, categoryTools]) => ({
-      id: category,
-      title: categoryLabels[category],
-      tools: categoryTools.sort(sortToolsByName)
-    }));
-}
-
-function renderToolGroupList(
-  groups: ToolGroup[],
-  selectedToolIds: string[],
-  toggleTool?: (toolId: string, checked: boolean) => void
-) {
-  return groups.length > 0 ? groups.map((group) => (
-    <section key={group.id} className="space-y-2">
-      <div>
-        <h3 className="text-sm font-semibold text-foreground">{group.title}</h3>
-        {group.description ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{group.description}</p> : null}
-      </div>
-      <ul className="rounded-lg border border-border bg-background/40 px-3">
-        {group.tools.map((tool) => (
-          <ToolGrantCard
-            key={tool.id}
-            tool={tool}
-            checked={selectedToolIds.includes(tool.id)}
-            onToggle={toggleTool ? (checked) => toggleTool(tool.id, checked) : () => {}}
-          />
-        ))}
-      </ul>
-    </section>
-  )) : null;
-}
-
-function ToolGrantCard({
-  tool,
-  checked,
-  onToggle
-}: {
-  tool: AiTool;
-  checked: boolean;
-  onToggle: (checked: boolean) => void;
-}) {
-  return (
-    <li className="border-b border-border/60 py-2 last:border-b-0">
-      <label key={tool.id} className="flex items-start gap-3 text-sm">
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(event) => onToggle(event.target.checked)}
-          aria-label={`Tool ${tool.name}`}
-          className="mt-0.5"
-        />
-        <span className="min-w-0">
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-foreground">{tool.name}</span>
-            <span className="text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">
-              {tool.status}
-            </span>
-          </span>
-          <span className="block text-xs text-muted-foreground">
-            {tool.source} · {tool.category} · {tool.riskTier}
-          </span>
-          {tool.description ? <span className="block text-xs leading-5 text-foreground/80">{tool.description}</span> : null}
-        </span>
-      </label>
-    </li>
-  );
+    return tool.accessProfile === "standard" || tool.accessProfile === "shell";
+  }).sort(sortToolsByName);
 }
 
 function useAiAgentDefinitionContext(): AiAgentDefinitionContext {
@@ -293,7 +194,7 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
     columns: (context) => [
       { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
       { id: "runtime", header: "Provider", cell: () => <span className="text-muted-foreground">{context.runtimeLabel}</span> },
-      { id: "toolIds", header: "Tools", cell: (row) => <span className="text-muted-foreground">{row.toolIds.length}</span> }
+      { id: "toolAccessMode", header: "Tool access", cell: (row) => <span className="text-muted-foreground">{toolAccessModeLabels[row.toolAccessMode]}</span> }
     ],
     filters: () => []
   },
@@ -305,33 +206,20 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
       <>
         <DetailSidebarItem label="Status" hint="Lifecycle state of the agent definition in SynoSec.">{statusLabels[item.status]}</DetailSidebarItem>
         <DetailSidebarItem label="Runtime" hint="All workflow execution uses the backend's currently configured runtime.">{context.runtimeLabel}</DetailSidebarItem>
-        <DetailSidebarItem label="Automatic tools" hint="Workflow-provided built-in tools that are available without being persisted on the agent.">
-          {context.tools.filter((tool) => tool.executorType === "builtin").length}
+        <DetailSidebarItem label="Tool access mode" hint="Controls whether the agent sees only system registry entries or system plus custom entries.">
+          {toolAccessModeLabels[item.toolAccessMode]}
         </DetailSidebarItem>
-        <DetailSidebarItem label="Persisted grants" hint="Count of agent-managed tool grants currently persisted on this agent.">{item.toolIds.length}</DetailSidebarItem>
+        <DetailSidebarItem label="Visible registry entries" hint="Count of currently active registry entries reachable under this access mode.">
+          {resolveVisibleTools(item.toolAccessMode, context.tools).length}
+        </DetailSidebarItem>
         <DetailSidebarItem label="Updated">{formatTimestamp(item.updatedAt)}</DetailSidebarItem>
       </>
     ),
-    renderContent: ({ formValues, errors, context, handleFieldChange, setFormValues }) => {
-      const automaticTools = context.tools.filter((tool) => tool.executorType === "builtin");
-      const automaticFamilyGroups = groupFamilyTools(automaticTools);
-      const automaticCategoryGroups = groupCategoryTools(automaticTools);
-      const persistedGrantedTools = context.tools.filter((tool) => formValues.toolIds.includes(tool.id));
-      const persistedFamilyGroups = groupFamilyTools(persistedGrantedTools);
-      const persistedCategoryGroups = groupCategoryTools(persistedGrantedTools);
-      const grantableTools = context.tools.filter((tool) => tool.executorType !== "builtin");
-      const familyGroups = groupFamilyTools(grantableTools);
-      const categoryGroups = groupCategoryTools(grantableTools);
-
-      function toggleTool(toolId: string, checked: boolean) {
-        setFormValues((current) => ({
-          ...current,
-          toolIds: checked
-            ? Array.from(new Set([...current.toolIds, toolId]))
-            : current.toolIds.filter((currentToolId) => currentToolId !== toolId)
-        }));
-      }
-
+    renderContent: ({ formValues, errors, context, handleFieldChange }) => {
+      const visibleTools = resolveVisibleTools(formValues.toolAccessMode, context.tools);
+      const visibleSystemTools = visibleTools.filter((tool) => tool.source === "system");
+      const visibleCustomTools = visibleTools.filter((tool) => tool.source === "custom");
+      const shellTools = visibleTools.filter((tool) => tool.accessProfile === "shell");
       return (
         <>
           <DetailFieldGroup title="Agent Overview" className="bg-card/70">
@@ -344,70 +232,50 @@ export const aiAgentsDefinition: CrudFeatureDefinition<
             <DetailField label="Description" hint="Optional summary of the agent's role or specialization." className="md:col-span-2">
               <Input value={formValues.description} onChange={(event) => handleFieldChange("description", event.target.value)} aria-label="Description" />
             </DetailField>
-            <DetailField label="Tool policy" hint="Workflow prompts now live on workflows. This page focuses on tool grants and execution profile." className="md:col-span-2">
+            <DetailField label="Tool policy" hint="Workflow prompts now live on workflows. This page focuses on registry visibility and execution profile." className="md:col-span-2">
               <div className="rounded-xl border border-border bg-background/50 px-4 py-3 text-sm text-muted-foreground">
                 The agent prompt remains stored for compatibility, but it is no longer edited here.
               </div>
             </DetailField>
           </DetailFieldGroup>
 
-          <DetailFieldGroup title="Automatic Workflow Tools" className="bg-card/70">
-            <DetailField label="Every agent receives these" hint="These built-in workflow tools come from the platform and do not need to be persisted on an agent." className="md:col-span-2">
-              <div className="space-y-4">
-                <div className="rounded-xl border border-border bg-background/50 px-4 py-3">
-                  <p className="text-sm font-medium text-foreground">{automaticTools.length} automatic tool{automaticTools.length === 1 ? "" : "s"}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    These are part of the effective workflow tool surface even when the agent itself only persists a smaller grant set.
-                  </p>
-                </div>
-                {renderToolGroupList([...automaticFamilyGroups, ...automaticCategoryGroups], automaticTools.map((tool) => tool.id))}
-              </div>
-            </DetailField>
-          </DetailFieldGroup>
-
-          <DetailFieldGroup title="Persisted Agent Grants" className="bg-card/70">
-            <DetailField label="Agent-specific tool grants" hint="These grants are persisted on the agent and can be inherited by workflows that do not define their own tool surface." className="md:col-span-2">
-              <div className="space-y-4">
-                <div className="rounded-xl border border-border bg-background/50 px-4 py-3">
-                  <p className="text-sm font-medium text-foreground">{formValues.toolIds.length} persisted grant{formValues.toolIds.length === 1 ? "" : "s"}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    This is the smaller agent-managed grant set you were previously seeing by itself.
-                  </p>
-                </div>
-                {persistedGrantedTools.length > 0
-                  ? renderToolGroupList([...persistedFamilyGroups, ...persistedCategoryGroups], formValues.toolIds)
-                  : <p className="text-sm text-muted-foreground">No persisted grants selected yet.</p>}
-              </div>
-            </DetailField>
-          </DetailFieldGroup>
-
           <DetailFieldGroup title="Tool Access" className="bg-card/70">
-            <DetailField label="Granted tools" hint="These grants define which AI tools the linked workflow agent may call during execution." className="md:col-span-2">
-              <div className="rounded-xl border border-border bg-background/50 px-4 py-3">
-                <p className="text-sm font-medium text-foreground">{formValues.toolIds.length} tool{formValues.toolIds.length === 1 ? "" : "s"} selected</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Capability tools are grouped first. Everything else is grouped by tool category.
-                </p>
-              </div>
+            <DetailField label="Tool access mode" hint="`System` exposes only standard system registry entries. `System + Custom` also exposes custom entries and shell-profile tools." className="md:col-span-2">
+              <Select value={formValues.toolAccessMode} onValueChange={(value) => handleFieldChange("toolAccessMode", value as ToolAccessMode)}>
+                <SelectTrigger aria-label="Tool access mode">
+                  <SelectValue placeholder="Select tool access mode" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(toolAccessModeLabels).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </DetailField>
-          </DetailFieldGroup>
-
-          <DetailFieldGroup title="Capability Tools" className="bg-card/70">
-            <DetailField label="Capability tools" hint="These compact tools expose assessment intent instead of raw tool brands." className="md:col-span-2">
+            <DetailField label="Visible registry summary" hint="Counts are computed from the current Tool Registry and this agent mode." className="md:col-span-2">
               <div className="space-y-4">
-                {familyGroups.length > 0
-                  ? renderToolGroupList(familyGroups, formValues.toolIds, toggleTool)
-                  : <p className="text-sm text-muted-foreground">No capability tools are available.</p>}
-              </div>
-            </DetailField>
-          </DetailFieldGroup>
-
-          <DetailFieldGroup title="Category Grants" className="bg-card/70">
-            <DetailField label="Remaining tool catalog" hint="Raw and specialized tools are grouped by their current category metadata." className="md:col-span-2">
-              <div className="space-y-4">
-                {categoryGroups.length > 0
-                  ? renderToolGroupList(categoryGroups, formValues.toolIds, toggleTool)
-                  : <p className="text-sm text-muted-foreground">No additional category-grouped tools are available.</p>}
+                <div className="rounded-xl border border-border bg-background/50 px-4 py-3">
+                  <p className="text-sm font-medium text-foreground">{visibleTools.length} visible registry entr{visibleTools.length === 1 ? "y" : "ies"}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {visibleSystemTools.length} system, {visibleCustomTools.length} custom, {shellTools.length} shell-profile.
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border bg-background/50 px-4 py-3">
+                  <p className="text-sm font-medium text-foreground">Current mode</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {formValues.toolAccessMode === "system"
+                      ? "Workflows linked to this agent inherit standard system registry entries only unless stage allowlists narrow the surface further."
+                      : "Workflows linked to this agent inherit both system and custom registry entries, including shell-profile tools, unless stage allowlists narrow the surface further."}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border bg-background/50 px-4 py-3">
+                  <p className="text-sm font-medium text-foreground">Visible entries</p>
+                  <p className="mt-1 text-xs leading-6 text-muted-foreground">
+                    {visibleTools.length > 0
+                      ? visibleTools.map((tool) => `${tool.name} (${tool.source}${tool.accessProfile === "shell" ? ", shell" : ""})`).join(", ")
+                      : "No active registry entries match this mode."}
+                  </p>
+                </div>
               </div>
             </DetailField>
           </DetailFieldGroup>

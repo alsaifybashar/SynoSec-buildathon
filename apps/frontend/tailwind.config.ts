@@ -70,11 +70,19 @@ const config = {
         sm: "calc(var(--radius) - 4px)"
       },
       fontFamily: {
-        sans: ['"Manrope"', '"Segoe UI"', "sans-serif"],
-        mono: ['"JetBrains Mono"', "monospace"]
+        sans: ['"Manrope"', '"Segoe UI"', "system-ui", "sans-serif"],
+        display: ['"Chakra Petch"', '"Manrope"', "system-ui", "sans-serif"],
+        mono: ['"JetBrains Mono"', '"Fira Code"', "ui-monospace", "monospace"]
       },
       fontSize: {
-        eyebrow: ["0.625rem", { lineHeight: "1rem" }]
+        eyebrow: ["0.625rem", { lineHeight: "1rem" }],
+        "eyebrow-sm": ["0.5625rem", { lineHeight: "0.875rem" }],
+        "label-sm": ["0.6875rem", { lineHeight: "0.95rem" }]
+      },
+      letterSpacing: {
+        eyebrow: "0.18em",
+        badge: "0.22em",
+        caps: "0.28em"
       },
       keyframes: {
         "accordion-down": {

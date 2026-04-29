@@ -80,9 +80,9 @@ export const crudRouteConfigs: Record<CrudNavigationId, CrudRouteConfig> = {
   },
   "ai-tools": {
     id: "ai-tools",
-    listPath: "/ai/tools",
-    createPath: "/ai/tools/new",
-    detailPath: "/ai/tools/:toolId",
+    listPath: "/tool-registry",
+    createPath: "/tool-registry/new",
+    detailPath: "/tool-registry/:toolId",
     paramName: "toolId"
   },
   "execution-constraints": {
@@ -142,7 +142,7 @@ export const navigationTree: NavigationTreeEntry[] = [
         }),
         createNavigationItem({
           id: "ai-tools",
-          label: "AI Tools",
+          label: "Tool Registry",
           path: crudRouteConfigs["ai-tools"].listPath,
           icon: Wrench
         }),

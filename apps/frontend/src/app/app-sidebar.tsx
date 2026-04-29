@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { isNavigationItemActive, navigationTree } from "@/app/navigation";
 import { logout } from "@/features/auth/auth-store";
 import { cn } from "@/shared/lib/utils";
-import { Button } from "@/shared/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -162,11 +161,9 @@ function SettingsPopover({
             </div>
 
             <div className="border-t border-sidebar-border/50 pt-2.5">
-              <Button
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 w-full justify-between border-sidebar-border/70 bg-sidebar-accent/20 px-2.5 text-xs uppercase tracking-[0.16em] text-sidebar-foreground hover:bg-sidebar-accent/60"
+                className="flex h-7 w-full items-center justify-between rounded-md border border-sidebar-border/60 bg-sidebar-accent/15 px-2.5 text-xs font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/45"
                 onClick={() => {
                   setIsOpen(false);
                   onLogout();
@@ -174,7 +171,7 @@ function SettingsPopover({
               >
                 <span>Sign out</span>
                 <LogOut className="text-sidebar-muted-foreground" />
-              </Button>
+              </button>
             </div>
           </div>
         </div>

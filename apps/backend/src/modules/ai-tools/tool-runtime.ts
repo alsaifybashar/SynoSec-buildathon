@@ -58,9 +58,8 @@ export class ToolRuntime {
     const normalizedName = normalizeName(name);
     const result = await this.repository.list({
       page: 1,
-      pageSize: 1000,
+      pageSize: 100,
       q: "",
-      surface: "advanced",
       sortBy: "name",
       sortDirection: "asc"
     });

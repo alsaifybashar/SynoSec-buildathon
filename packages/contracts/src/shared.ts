@@ -7,7 +7,7 @@ export const apiRoutes = {
   authSession: "/api/auth/session",
   targets: "/api/targets",
   aiAgents: "/api/ai-agents",
-  aiTools: "/api/ai-tools",
+  toolRegistry: "/api/tool-registry",
   executionConstraints: "/api/execution-constraints",
   workflows: "/api/workflows",
   workflowLaunches: "/api/workflow-launches",

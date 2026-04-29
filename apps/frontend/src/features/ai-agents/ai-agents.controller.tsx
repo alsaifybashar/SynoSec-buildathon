@@ -24,7 +24,7 @@ import type { AiAgentsQuery } from "@/shared/lib/resource-client";
 
 async function loadAiAgentContext(): Promise<AiAgentDefinitionContext> {
   const [toolsPayload, healthPayload] = await Promise.all([
-    fetchJson<ListAiToolsResponse>("/api/ai-tools?page=1&pageSize=100&sortBy=name&sortDirection=asc"),
+    fetchJson<ListAiToolsResponse>(`${apiRoutes.toolRegistry}?page=1&pageSize=100&sortBy=name&sortDirection=asc`),
     fetchJson<HealthResponse>(apiRoutes.health)
   ]);
   const tools = Array.isArray(toolsPayload["tools"]) ? toolsPayload["tools"] as AiTool[] : [];

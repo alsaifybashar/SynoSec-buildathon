@@ -11,15 +11,18 @@ const familyTool: AiTool = {
   name: "HTTP Surface Assessment",
   status: "active",
   source: "system",
+  accessProfile: "standard",
   description: "Assess a known HTTP or HTTPS target without crawling or guessing paths. Use this as the first web action when reachability, status, headers, cookies, and technology hints are needed. Provide `baseUrl`. Returns observations for evidence quotes.",
-  binary: "httpx",
+  kind: "semantic-family",
   executorType: "bash",
+  builtinActionKey: null,
   bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
   capabilities: ["semantic-family", "http-surface", "passive"],
   category: "web",
   riskTier: "passive",
-  notes: "Capability-level HTTP assessment tool.",
   timeoutMs: 30000,
+  coveredToolIds: [],
+  candidateToolIds: [],
   inputSchema: { type: "object", properties: {} },
   outputSchema: { type: "object", properties: {} },
   createdAt: "2026-04-21T00:00:00.000Z",
@@ -31,15 +34,18 @@ const categoryTool: AiTool = {
   name: "HTTP Recon",
   status: "active",
   source: "custom",
+  accessProfile: "standard",
   description: "HTTP reconnaissance",
-  binary: "httpx",
+  kind: "raw-adapter",
   executorType: "bash",
+  builtinActionKey: null,
   bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
   capabilities: ["web-recon"],
   category: "web",
   riskTier: "passive",
-  notes: null,
   timeoutMs: 30000,
+  coveredToolIds: [],
+  candidateToolIds: [],
   inputSchema: { type: "object", properties: {} },
   outputSchema: { type: "object", properties: {} },
   createdAt: "2026-04-21T00:00:00.000Z",
@@ -52,7 +58,7 @@ const agent: AiAgent = {
   status: "active",
   description: "Uses passive reconnaissance first.",
   systemPrompt: "Inspect the target first.",
-  toolIds: [familyTool.id],
+  toolAccessMode: "system",
   createdAt: "2026-04-21T00:00:00.000Z",
   updatedAt: "2026-04-21T00:00:00.000Z"
 };
@@ -61,7 +67,7 @@ function createFetchMock() {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
 
-    if (url.startsWith("/api/ai-tools?")) {
+    if (url.startsWith("/api/tool-registry?")) {
       return new Response(JSON.stringify({
         tools: [familyTool, categoryTool],
         page: 1,
@@ -125,7 +131,7 @@ describe("AiAgentsPage", () => {
     expect(screen.getAllByText(runtimeLabel).length).toBeGreaterThan(0);
   });
 
-  it("renders grouped tools without exposing prompt editing", async () => {
+  it("renders mode-based tool visibility without exposing prompt editing", async () => {
     vi.stubGlobal("fetch", createFetchMock());
 
     render(
@@ -140,11 +146,13 @@ describe("AiAgentsPage", () => {
     );
 
     await waitFor(() => {
-    expect(screen.getByText("Capability Tools")).toBeInTheDocument();
+      expect(screen.getByText("Tool Access")).toBeInTheDocument();
     });
-    expect(screen.getAllByText("HTTP Surface Assessment").length).toBeGreaterThan(0);
-    expect(screen.getByText("Web Tools")).toBeInTheDocument();
-    expect(screen.getByText("HTTP Recon")).toBeInTheDocument();
+    expect(screen.getByLabelText("Tool access mode")).toBeInTheDocument();
+    expect(screen.getByText("Visible registry summary")).toBeInTheDocument();
+    expect(screen.getByText("1 visible registry entry")).toBeInTheDocument();
+    expect(screen.getByText("1 system, 0 custom, 0 shell-profile.")).toBeInTheDocument();
+    expect(screen.queryByText("HTTP Recon")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("System prompt")).not.toBeInTheDocument();
   });
 });

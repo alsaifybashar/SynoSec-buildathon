@@ -77,6 +77,11 @@ export type CrudFeatureDefinition<
     emptyMessage: string;
     columns: (context: TContext) => ListPageColumn<TItem>[];
     filters?: (context: TContext) => ListPageFilter[];
+    /**
+     * Plug/slot for custom filter UI rendered inside the filter panel,
+     * alongside (or instead of) the declarative `filters` array.
+     */
+    filterSlot?: (context: TContext) => ReactNode;
   };
   detail: {
     loadingTitle: string;
@@ -147,6 +152,7 @@ export function createCrudFeaturePage<
 
     const columns = definition.list.columns(context);
     const filters = definition.list.filters?.(context) ?? [];
+    const filterSlot = definition.list.filterSlot?.(context);
     const breadcrumbsLabel = definition.detail.breadcrumbsLabel ?? definition.list.title;
 
     if (!recordId) {
@@ -160,6 +166,7 @@ export function createCrudFeaturePage<
           items={crud.list.items}
           meta={crud.list.meta}
           filters={filters}
+          {...(filterSlot ? { filterSlot } : {})}
           emptyMessage={definition.list.emptyMessage}
           onSearchChange={crud.list.setSearch}
           onFilterChange={crud.list.setFilter}

@@ -83,26 +83,16 @@ export function sortAndFilterAiTools(items: AiTool[], query: {
   sortDirection?: "asc" | "desc" | undefined;
   source?: AiTool["source"] | undefined;
   status?: AiTool["status"] | undefined;
-  surface?: "primary" | "advanced" | "raw" | undefined;
+  accessProfile?: AiTool["accessProfile"] | undefined;
 }) {
   const normalizedQuery = query.q?.trim().toLowerCase();
   return items
     .map(enrichAiTool)
     .filter((tool) => !query.status || tool.status === query.status)
     .filter((tool) => !query.source || tool.source === query.source)
+    .filter((tool) => !query.accessProfile || tool.accessProfile === query.accessProfile)
     .filter((tool) => !query.category || tool.category === query.category)
     .filter((tool) => !query.riskTier || tool.riskTier === query.riskTier)
-    .filter((tool) => {
-      if (query.surface === "raw") {
-        return tool.kind === "raw-adapter";
-      }
-
-      if (query.surface === "advanced") {
-        return true;
-      }
-
-      return tool.kind !== "raw-adapter";
-    })
     .filter((tool) => {
       if (!normalizedQuery) {
         return true;

@@ -185,6 +185,7 @@ function createSemanticFamilyDefinition(input: SemanticFamilyDefinitionInput): S
       kind: "semantic-family",
       status: "active",
       source: "system",
+      accessProfile: "standard",
       description: input.description,
       executorType: "builtin",
       builtinActionKey: input.builtinActionKey,

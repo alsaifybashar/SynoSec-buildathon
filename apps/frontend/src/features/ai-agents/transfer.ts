@@ -17,6 +17,6 @@ export const aiAgentTransfer = {
     status: agent.status,
     description: agent.description,
     systemPrompt: agent.systemPrompt,
-    toolIds: agent.toolIds
+    toolAccessMode: agent.toolAccessMode
   })
 } satisfies ResourceTransferConfig<AiAgent, CreateAiAgentBody>;

@@ -31,6 +31,11 @@ enum AiAgentStatus {
   archived
 }
 
+enum ToolAccessMode {
+  system
+  system_plus_custom
+}
+
 enum AiToolSource {
   system
   custom
@@ -41,6 +46,11 @@ enum AiToolStatus {
   inactive
   missing
   manual
+}
+
+enum ToolAccessProfile {
+  standard
+  shell
 }
 
 enum WorkflowStatus {
@@ -177,9 +187,9 @@ model AiAgent {
   status         AiAgentStatus
   description    String?
   systemPrompt   String          @map("system_prompt")
+  toolAccessMode ToolAccessMode  @default(system) @map("tool_access_mode")
   createdAt      DateTime        @default(now()) @map("created_at")
   updatedAt      DateTime        @updatedAt @map("updated_at")
-  tools          AiAgentTool[]
   workflowStages WorkflowStage[]
 
   @@index([name])
@@ -190,39 +200,27 @@ model AiAgent {
 }
 
 model AiTool {
-  id           String        @id
-  name         String
-  status       AiToolStatus
-  source       AiToolSource
-  description  String?
-  adapter      String?
-  binary       String?
-  category     String
-  riskTier     String        @map("risk_tier")
-  notes        String?
-  inputSchema  Json          @map("input_schema")
-  outputSchema Json          @map("output_schema")
-  createdAt    DateTime      @default(now()) @map("created_at")
-  updatedAt    DateTime      @updatedAt @map("updated_at")
-  agents       AiAgentTool[]
+  id            String            @id
+  name          String
+  status        AiToolStatus
+  source        AiToolSource
+  accessProfile ToolAccessProfile @default(standard) @map("access_profile")
+  description   String?
+  adapter       String?
+  binary        String?
+  category      String
+  riskTier      String            @map("risk_tier")
+  notes         String?
+  inputSchema   Json              @map("input_schema")
+  outputSchema  Json              @map("output_schema")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
 
   @@index([name])
   @@index([status, source, category])
   @@index([createdAt])
   @@index([updatedAt])
   @@map("ai_tools")
-}
-
-model AiAgentTool {
-  agentId String  @map("agent_id") @db.Uuid
-  toolId  String  @map("tool_id")
-  ord     Int
-  agent   AiAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  tool    AiTool  @relation(fields: [toolId], references: [id], onDelete: Cascade)
-
-  @@id([agentId, toolId])
-  @@index([toolId])
-  @@map("ai_agent_tools")
 }
 
 model Workflow {

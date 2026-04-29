@@ -1,5 +1,5 @@
-import { useId, useRef, useState, type ChangeEvent, isValidElement, startTransition, type MouseEvent, type ReactNode } from "react";
-import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Check, ChevronsLeft, ChevronsRight, Download, FileUp, Plus, Search, Trash2, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, isValidElement, startTransition, type MouseEvent, type ReactNode } from "react";
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Check, ChevronsLeft, ChevronsRight, Download, FileUp, Filter as FilterIcon, Minus, MoreHorizontal, Plus, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent } from "@/shared/ui/card";
@@ -24,12 +24,23 @@ export type ListPageColumn<T> = {
   className?: string;
 };
 
+export type ListPageFilterRenderProps = {
+  value: string | undefined;
+  onChange: (value: string | undefined) => void;
+};
+
 export type ListPageFilter = {
   id: string;
   label: string;
   placeholder: string;
   allLabel: string;
   options: Array<{ label: string; value: string }>;
+  /**
+   * Optional plug-in renderer. When provided, this replaces the default Select widget
+   * for the filter inside the filter panel — allowing custom controls (date pickers,
+   * multi-selects, etc.) while keeping the panel layout consistent.
+   */
+  render?: (props: ListPageFilterRenderProps) => ReactNode;
 };
 
 const CLEAR_FILTER_VALUE = "__all__";
@@ -59,6 +70,320 @@ function escapeCsv(value: string): string {
   return `"${value.replaceAll("\"", "\"\"")}"`;
 }
 
+function SelectionCheckbox({
+  checked,
+  indeterminate,
+  ariaLabel,
+  onChange,
+  onClick
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  ariaLabel: string;
+  onChange: (checked: boolean) => void;
+  onClick?: (event: MouseEvent<HTMLInputElement>) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const showIndeterminate = Boolean(indeterminate) && !checked;
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.indeterminate = showIndeterminate;
+    }
+  }, [showIndeterminate]);
+
+  const ariaChecked: boolean | "mixed" = showIndeterminate ? "mixed" : checked;
+  const filled = checked || showIndeterminate;
+
+  return (
+    <label className="relative inline-flex h-3.5 w-3.5 cursor-pointer items-center justify-center">
+      <input
+        ref={ref}
+        type="checkbox"
+        aria-label={ariaLabel}
+        aria-checked={ariaChecked}
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        {...(onClick ? { onClick } : {})}
+        className="peer sr-only"
+      />
+      <span
+        aria-hidden="true"
+        className={cn(
+          "flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border bg-background transition-colors",
+          "peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-1 peer-focus-visible:ring-offset-background",
+          filled
+            ? "border-primary bg-primary text-primary-foreground"
+            : "border-input hover:border-foreground/40"
+        )}
+      >
+        {showIndeterminate ? (
+          <Minus className="h-2.5 w-2.5" strokeWidth={3} />
+        ) : checked ? (
+          <Check className="h-2.5 w-2.5" strokeWidth={3} />
+        ) : null}
+      </span>
+    </label>
+  );
+}
+
+function ListPageBulkMenu({
+  recordLabel,
+  selectedCount,
+  onDeleteSelected,
+  onExportCsv,
+  onImportClick
+}: {
+  recordLabel: string;
+  selectedCount: number;
+  onDeleteSelected?: () => void;
+  onExportCsv: () => void;
+  onImportClick?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  function runItem(action: () => void) {
+    setOpen(false);
+    action();
+  }
+
+  return (
+    <div ref={containerRef} className="relative md:shrink-0">
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        className="h-9 w-9"
+        title="More actions"
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </Button>
+      {open ? (
+        <div
+          role="menu"
+          className="absolute left-0 top-[calc(100%+4px)] z-20 w-56 overflow-hidden rounded-md border border-border bg-popover py-1 text-xs shadow-md"
+        >
+          <p className="px-3 py-1.5 font-mono text-eyebrow uppercase tracking-[0.2em] text-muted-foreground">
+            Bulk actions
+          </p>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!onDeleteSelected || selectedCount === 0}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:text-muted-foreground/70 disabled:hover:bg-transparent"
+            title={
+              !onDeleteSelected
+                ? `Bulk delete is not available for ${recordLabel.toLowerCase()}s`
+                : selectedCount === 0
+                ? `Select ${recordLabel.toLowerCase()}s to enable bulk delete`
+                : `Delete ${selectedCount} selected ${recordLabel.toLowerCase()}${selectedCount === 1 ? "" : "s"}`
+            }
+            onClick={onDeleteSelected ? () => runItem(onDeleteSelected) : undefined}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete selected{selectedCount > 0 ? ` (${selectedCount})` : ""}
+          </button>
+          <div className="my-1 border-t border-border" />
+          <p className="px-3 py-1.5 font-mono text-eyebrow uppercase tracking-[0.2em] text-muted-foreground">
+            Download / Export
+          </p>
+          <button
+            type="button"
+            role="menuitem"
+            aria-label="Export CSV"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-accent"
+            onClick={() => runItem(onExportCsv)}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export CSV
+          </button>
+          {onImportClick ? (
+            <button
+              type="button"
+              role="menuitem"
+              aria-label="Import JSON"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-accent"
+              onClick={() => runItem(onImportClick)}
+            >
+              <FileUp className="h-3.5 w-3.5" />
+              Import JSON
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ListPageFilterMenu({
+  filters,
+  query,
+  onFilterChange,
+  filterSlot,
+  activeCount,
+  onClearAll
+}: {
+  filters: ListPageFilter[];
+  query: ListQueryState;
+  onFilterChange: (key: string, value: string | undefined) => void;
+  filterSlot?: ReactNode;
+  activeCount: number;
+  onClearAll: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  const hasFilters = filters.length > 0 || Boolean(filterSlot);
+
+  if (!hasFilters) {
+    return null;
+  }
+
+  return (
+    <div ref={containerRef} className="relative md:shrink-0">
+      <Button
+        type="button"
+        variant="outline"
+        className="h-9 gap-2 text-xs"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <FilterIcon className="h-3.5 w-3.5" />
+        Filters
+        {activeCount > 0 ? (
+          <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 font-mono text-[0.625rem] font-medium text-primary-foreground">
+            {activeCount}
+          </span>
+        ) : null}
+      </Button>
+      {open ? (
+        <div
+          role="dialog"
+          aria-label="Filters"
+          className="absolute right-0 top-[calc(100%+4px)] z-20 w-72 overflow-hidden rounded-[4px] border border-border bg-popover text-xs shadow-md md:w-80"
+        >
+          <div className="flex items-center justify-between border-b border-border px-3 py-2">
+            <p className="font-mono text-eyebrow uppercase tracking-[0.2em] text-muted-foreground">
+              Filters
+            </p>
+            {activeCount > 0 ? (
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  onClearAll();
+                }}
+              >
+                Clear all
+              </button>
+            ) : null}
+          </div>
+          <div className="max-h-[60vh] space-y-3 overflow-auto px-3 py-3">
+            {filters.map((filter) => {
+              const rawValue = query[filter.id];
+              const currentValue = typeof rawValue === "string" ? rawValue : undefined;
+
+              return (
+                <div key={filter.id} className="space-y-1.5">
+                  <label className="block font-mono text-eyebrow uppercase tracking-[0.18em] text-muted-foreground">
+                    {filter.label}
+                  </label>
+                  {filter.render ? (
+                    filter.render({
+                      value: currentValue,
+                      onChange: (value) => {
+                        startTransition(() => onFilterChange(filter.id, value));
+                      }
+                    })
+                  ) : (
+                    <Select
+                      value={currentValue ?? CLEAR_FILTER_VALUE}
+                      onValueChange={(value) => {
+                        startTransition(() =>
+                          onFilterChange(filter.id, value === CLEAR_FILTER_VALUE ? undefined : value)
+                        );
+                      }}
+                    >
+                      <SelectTrigger aria-label={filter.label} className="h-9 text-xs">
+                        <SelectValue placeholder={filter.placeholder} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={CLEAR_FILTER_VALUE}>{filter.allLabel}</SelectItem>
+                        {filter.options.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              );
+            })}
+            {filterSlot ? <div className="space-y-1.5">{filterSlot}</div> : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function ListPage<T extends { id: string }>({
   title,
   recordLabel,
@@ -68,6 +393,7 @@ export function ListPage<T extends { id: string }>({
   items,
   meta,
   filters = [],
+  filterSlot,
   emptyMessage,
   onSearchChange,
   onFilterChange,
@@ -92,6 +418,11 @@ export function ListPage<T extends { id: string }>({
   items: T[];
   meta: PaginatedResource<T>;
   filters?: ListPageFilter[];
+  /**
+   * Plug/slot for injecting custom filter UI into the filter panel,
+   * in addition to (or instead of) the declarative `filters` array.
+   */
+  filterSlot?: ReactNode;
   emptyMessage: string;
   onSearchChange: (value: string) => void;
   onFilterChange: (key: string, value: string | undefined) => void;
@@ -113,7 +444,108 @@ export function ListPage<T extends { id: string }>({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [exportingId, setExportingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const showRowActions = Boolean(onExportRowJson || onDeleteRow);
+  const selectableIds = items
+    .filter((row) => (onDeleteRow ? (canDeleteRow?.(row) ?? true) : true))
+    .map((row) => row.id);
+  const selectedOnPage = selectableIds.filter((id) => selectedIds.has(id));
+  const allSelectedOnPage = selectableIds.length > 0 && selectedOnPage.length === selectableIds.length;
+  const someSelectedOnPage = selectedOnPage.length > 0 && !allSelectedOnPage;
+
+  useEffect(() => {
+    setSelectedIds((current) => {
+      const visible = new Set(items.map((row) => row.id));
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of current) {
+        if (visible.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [items]);
+
+  function toggleRowSelection(id: string, checked: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleAllOnPage(checked: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        for (const id of selectableIds) {
+          next.add(id);
+        }
+      } else {
+        for (const id of selectableIds) {
+          next.delete(id);
+        }
+      }
+      return next;
+    });
+  }
+
+  async function handleBulkDelete() {
+    if (!onDeleteRow || selectedIds.size === 0 || bulkDeleting) {
+      return;
+    }
+
+    const targets = items.filter((row) => selectedIds.has(row.id) && (canDeleteRow?.(row) ?? true));
+    if (targets.length === 0) {
+      return;
+    }
+
+    const confirmed = typeof window !== "undefined"
+      ? window.confirm(`Delete ${targets.length} ${recordLabel.toLowerCase()}${targets.length === 1 ? "" : "s"}? This action cannot be undone.`)
+      : true;
+    if (!confirmed) {
+      return;
+    }
+
+    setBulkDeleting(true);
+    let succeeded = 0;
+    const failures: string[] = [];
+    for (const row of targets) {
+      try {
+        await onDeleteRow(row);
+        succeeded += 1;
+        setSelectedIds((current) => {
+          if (!current.has(row.id)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(row.id);
+          return next;
+        });
+      } catch (error) {
+        const label = getRowLabel?.(row) ?? row.id;
+        failures.push(`${label}: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
+    }
+    setBulkDeleting(false);
+
+    if (succeeded > 0) {
+      toast.success(`${succeeded} ${recordLabel.toLowerCase()}${succeeded === 1 ? "" : "s"} deleted`);
+    }
+    if (failures.length > 0) {
+      toast.error(`${failures.length} deletion${failures.length === 1 ? "" : "s"} failed`, {
+        description: failures.slice(0, 3).join("\n")
+      });
+    }
+  }
 
   function handleDefaultAddRecord() {
     toast("Coming soon", {
@@ -327,6 +759,11 @@ export function ListPage<T extends { id: string }>({
     );
   }
 
+  const activeFilterCount = useMemo(
+    () => filters.reduce((count, filter) => count + (typeof query[filter.id] === "string" ? 1 : 0), 0),
+    [filters, query]
+  );
+
   const pageLabel = meta.total === 0
     ? "0 results"
     : `${(meta.page - 1) * meta.pageSize + 1}-${Math.min(meta.page * meta.pageSize, meta.total)} of ${meta.total}`;
@@ -339,52 +776,28 @@ export function ListPage<T extends { id: string }>({
 
       <div className="sticky top-0 z-10 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="flex flex-col gap-2.5 px-3 py-2.5">
-          <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
-            <Button onClick={onAddRecord ?? handleDefaultAddRecord} className="h-9 text-sm">
-              <Plus className="h-4 w-4" />
-              Add {recordLabel}
-            </Button>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <ListPageBulkMenu
+              recordLabel={recordLabel}
+              selectedCount={selectedIds.size}
+              onExportCsv={handleExportExcel}
+              {...(onDeleteRow ? { onDeleteSelected: () => { void handleBulkDelete(); } } : {})}
+              {...(onImportJson
+                ? { onImportClick: () => importInputRef.current?.click() }
+                : {})}
+            />
+            {onImportJson ? (
+              <input
+                id={importInputId}
+                ref={importInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="sr-only"
+                onChange={handleImportChange}
+              />
+            ) : null}
 
-            <div className="ml-auto flex items-center gap-2">
-              {onImportJson ? (
-                <>
-                  <input
-                    id={importInputId}
-                    ref={importInputRef}
-                    type="file"
-                    accept="application/json,.json"
-                    className="sr-only"
-                    onChange={handleImportChange}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-9 w-9"
-                    title="Import JSON"
-                    aria-label="Import JSON"
-                    onClick={() => importInputRef.current?.click()}
-                  >
-                    <FileUp className="h-4 w-4" />
-                  </Button>
-                </>
-              ) : null}
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-9 w-9"
-                title="Export CSV"
-                aria-label="Export CSV"
-                onClick={handleExportExcel}
-              >
-                <Download className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3 md:flex-row md:items-center">
-            <div className="relative min-w-0 flex-1 md:max-w-sm">
+            <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query.q ?? ""}
@@ -397,38 +810,27 @@ export function ListPage<T extends { id: string }>({
               />
             </div>
 
-            <div className="flex flex-col gap-2 md:ml-auto md:flex-row">
-              {filters.map((filter) => (
-                <div key={filter.id} className="md:w-[9.375rem] md:shrink-0">
-                  {(() => {
-                    const selectedValue = typeof query[filter.id] === "string"
-                      ? String(query[filter.id])
-                      : CLEAR_FILTER_VALUE;
+            <ListPageFilterMenu
+              filters={filters}
+              query={query}
+              onFilterChange={onFilterChange}
+              {...(filterSlot ? { filterSlot } : {})}
+              activeCount={activeFilterCount}
+              onClearAll={() => {
+                startTransition(() => {
+                  for (const filter of filters) {
+                    if (typeof query[filter.id] === "string") {
+                      onFilterChange(filter.id, undefined);
+                    }
+                  }
+                });
+              }}
+            />
 
-                    return (
-                      <Select
-                        value={selectedValue}
-                        onValueChange={(value) => {
-                          startTransition(() => onFilterChange(filter.id, value === CLEAR_FILTER_VALUE ? undefined : value));
-                        }}
-                      >
-                        <SelectTrigger aria-label={filter.label} className="h-9 text-xs">
-                          <SelectValue placeholder={filter.placeholder} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={CLEAR_FILTER_VALUE}>{filter.allLabel}</SelectItem>
-                          {filter.options.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    );
-                  })()}
-                </div>
-              ))}
-            </div>
+            <Button onClick={onAddRecord ?? handleDefaultAddRecord} className="h-9 text-sm md:shrink-0">
+              <Plus className="h-4 w-4" />
+              Add {recordLabel}
+            </Button>
           </div>
         </div>
       </div>
@@ -449,6 +851,7 @@ export function ListPage<T extends { id: string }>({
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
+                      <TableHead className={cn("w-[1%] border-b border-b-border border-t border-t-border bg-muted/40")} />
                       {columns.map((column) => (
                         <TableHead key={column.id} className={cn("border-b border-b-border border-t border-t-border bg-muted/40 text-muted-foreground", TABLE_HEADER_TEXT_CLASSNAME, column.className)}>
                           {renderColumnHeader(column, true)}
@@ -463,6 +866,7 @@ export function ListPage<T extends { id: string }>({
                   </TableHeader>
                   <TableBody>
                     <TableRow className="hover:bg-transparent">
+                      <TableCell />
                       {columns.map((column, columnIndex) => (
                         <TableCell key={`${column.id}-loading`} className={column.className}>
                           {columnIndex === 0 ? (
@@ -494,13 +898,30 @@ export function ListPage<T extends { id: string }>({
           ) : (
             <>
               <div className="mx-3 grid gap-3 md:hidden">
-                {items.map((row) => (
+                {items.map((row) => {
+                  const rowSelected = selectedIds.has(row.id);
+                  const rowSelectable = onDeleteRow ? (canDeleteRow?.(row) ?? true) : true;
+                  const rowLabelForA11y = getRowLabel?.(row) ?? row.id;
+                  return (
                   <Card
                     key={row.id}
-                    className="cursor-pointer border-border/70 transition-colors duration-150 hover:border-primary/30 hover:bg-accent/20"
+                    data-state={rowSelected ? "selected" : undefined}
+                    {...(rowSelectable ? { "aria-selected": rowSelected } : {})}
+                    className={cn(
+                      "cursor-pointer border-border/70 transition-colors duration-150 hover:border-primary/30 hover:bg-accent/20",
+                      rowSelected && "border-primary/40 bg-accent/30"
+                    )}
                     onClick={() => (onRowClick ? onRowClick(row) : handleDefaultRowClick())}
                   >
                     <CardContent className="space-y-4 px-4 py-4">
+                      <div onClick={stopRowClick}>
+                        <SelectionCheckbox
+                          ariaLabel={`Select ${rowLabelForA11y}`}
+                          checked={rowSelected}
+                          onChange={(checked) => rowSelectable && toggleRowSelection(row.id, checked)}
+                          onClick={stopRowClick}
+                        />
+                      </div>
                       {columns.map((column) => (
                         <div key={column.id} className="space-y-1.5">
                           <p className="text-eyebrow font-medium uppercase tracking-[0.18em] text-muted-foreground">
@@ -518,13 +939,31 @@ export function ListPage<T extends { id: string }>({
                       ) : null}
                     </CardContent>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="hidden md:block">
-                <Table>
+                <Table aria-multiselectable={onDeleteRow ? true : undefined}>
                   <TableHeader>
-                    <TableRow className="hover:bg-transparent">
+                    <TableRow className="group/header hover:bg-transparent">
+                      <TableHead className={cn("w-[1%] border-b border-b-border border-t border-t-border bg-muted/40")}>
+                        <div
+                          className={cn(
+                            "flex items-center justify-center transition-opacity duration-150",
+                            allSelectedOnPage || someSelectedOnPage
+                              ? "opacity-100"
+                              : "opacity-0 group-hover/header:opacity-100 focus-within:opacity-100"
+                          )}
+                        >
+                          <SelectionCheckbox
+                            ariaLabel={`Select all ${recordLabel.toLowerCase()}s on this page`}
+                            checked={allSelectedOnPage}
+                            indeterminate={someSelectedOnPage}
+                            onChange={toggleAllOnPage}
+                          />
+                        </div>
+                      </TableHead>
                       {columns.map((column) => (
                         <TableHead key={column.id} className={cn("border-b border-b-border border-t border-t-border bg-muted/40 text-muted-foreground", TABLE_HEADER_TEXT_CLASSNAME, column.className)}>
                           {renderColumnHeader(column)}
@@ -538,14 +977,38 @@ export function ListPage<T extends { id: string }>({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {items.map((row) => (
+                    {items.map((row) => {
+                      const rowSelectable = onDeleteRow ? (canDeleteRow?.(row) ?? true) : true;
+                      const rowSelected = selectedIds.has(row.id);
+                      const rowLabelForA11y = getRowLabel?.(row) ?? row.id;
+                      return (
                       <TableRow
                         key={row.id}
+                        data-state={rowSelected ? "selected" : undefined}
+                        {...(rowSelectable ? { "aria-selected": rowSelected } : {})}
                         className={cn(
-                          "cursor-pointer border-l-2 border-l-transparent transition-colors duration-150 hover:border-l-primary hover:bg-accent/30"
+                          "group/row cursor-pointer border-l-2 border-l-transparent transition-colors duration-150 hover:border-l-primary hover:bg-accent/30",
+                          rowSelected && "border-l-primary bg-accent/30"
                         )}
                         onClick={() => (onRowClick ? onRowClick(row) : handleDefaultRowClick())}
                       >
+                        <TableCell className="w-[1%] align-middle text-xs" onClick={stopRowClick}>
+                          <div
+                            className={cn(
+                              "flex items-center justify-center transition-opacity duration-150",
+                              rowSelected
+                                ? "opacity-100"
+                                : "opacity-0 group-hover/row:opacity-100 focus-within:opacity-100"
+                            )}
+                          >
+                            <SelectionCheckbox
+                              ariaLabel={`Select ${rowLabelForA11y}`}
+                              checked={rowSelected}
+                              onChange={(checked) => rowSelectable && toggleRowSelection(row.id, checked)}
+                              onClick={stopRowClick}
+                            />
+                          </div>
+                        </TableCell>
                         {columns.map((column) => (
                           <TableCell key={column.id} className={cn("text-xs", column.className)}>
                             {column.cell(row)}
@@ -559,7 +1022,8 @@ export function ListPage<T extends { id: string }>({
                           </TableCell>
                         ) : null}
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>

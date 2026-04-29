@@ -181,7 +181,7 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(genericPentester?.systemPrompt).not.toContain("Do not expose private chain-of-thought");
     expect(genericPentester?.systemPrompt).not.toContain("report_finding is mandatory before complete_run");
     expect(genericPentester?.systemPrompt).not.toContain("raw pentest catalog");
-    expect(genericPentester?.toolIds.every((toolId) => toolId.startsWith("builtin-"))).toBe(true);
+    expect(genericPentester?.toolAccessMode).toBe("system");
   });
 
   it("seeds a bash PoC agent with only the single seeded bash command tool", () => {
@@ -210,7 +210,7 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(bashAgent?.systemPrompt).not.toContain("sqlmap");
     expect(bashAgent?.systemPrompt).not.toContain("wpscan");
     expect(countMatches(bashAgent?.systemPrompt ?? "", "Do not treat scanner-friendly issues as the main result")).toBe(1);
-    expect(bashAgent?.toolIds).toEqual(["seed-agent-bash-command"]);
+    expect(bashAgent?.toolAccessMode).toBe("system_plus_custom");
   });
 
   it("seeds a broad script agent with purpose-built direct seeded bash tools", () => {
@@ -231,13 +231,13 @@ describe("getSeededWorkflowDefinitions", () => {
     expect(broadScriptAgent?.systemPrompt).toContain("Do not invent those auth or approval surfaces.");
     expect(broadScriptAgent?.systemPrompt).toContain("Do not switch to invented `/login` or password-reset routes");
     expect(broadScriptAgent?.systemPrompt).toContain("Prefer one derived transition request using the observed artifact over repeating the same audit, crawl, or fetch on already-seen pages.");
-    expect(broadScriptAgent?.toolIds).toEqual(broadScriptToolIds);
+    expect(broadScriptAgent?.toolAccessMode).toBe("system_plus_custom");
     expect(directScriptToolIds).toContain("seed-agent-bash-command");
-    expect(broadScriptAgent?.toolIds).not.toContain("seed-agent-bash-command");
-    expect(broadScriptAgent?.toolIds.every((toolId) => toolId.startsWith("seed-"))).toBe(true);
-    expect(broadScriptAgent?.toolIds).not.toContain("builtin-log-progress");
-    expect(broadScriptAgent?.toolIds).not.toContain("builtin-report-finding");
-    expect(broadScriptAgent?.toolIds).not.toContain("builtin-complete-run");
+    expect(broadScriptToolIds).not.toContain("seed-agent-bash-command");
+    expect(broadScriptToolIds.every((toolId) => toolId.startsWith("seed-"))).toBe(true);
+    expect(broadScriptToolIds).not.toContain("builtin-log-progress");
+    expect(broadScriptToolIds).not.toContain("builtin-report-finding");
+    expect(broadScriptToolIds).not.toContain("builtin-complete-run");
     expect(broadScriptAgent?.systemPrompt).not.toContain("Available dependencies:");
     expect(countMatches(broadScriptAgent?.systemPrompt ?? "", "Do not treat scanner-friendly issues as the main result")).toBe(1);
   });

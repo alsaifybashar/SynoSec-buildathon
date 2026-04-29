@@ -8,14 +8,15 @@ import {
 import { type ResourceTransferConfig } from "@/shared/lib/resource-transfer";
 
 export const aiToolTransfer = {
-  table: "ai-tools",
-  route: apiRoutes.aiTools,
+  table: "tool-registry",
+  route: apiRoutes.toolRegistry,
   itemSchema: aiToolSchema,
   createBodySchema: createAiToolBodySchema,
   toCreateBody: (tool: AiTool): CreateAiToolBody => ({
     name: tool.name,
     status: tool.status,
     source: "custom",
+    accessProfile: tool.accessProfile,
     description: tool.description ?? "",
     executorType: "bash",
     bashSource: tool.bashSource ?? "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"imported tool\"}'",

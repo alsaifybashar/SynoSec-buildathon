@@ -29,6 +29,7 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     kind: "builtin-action",
     status: "active",
     source: "system",
+    accessProfile: "standard",
     description: "Persist a short operator-visible progress update in the workflow transcript. Use this before or after meaningful tool calls to explain the current action or decision in one concise sentence. Provide `message`. Returns acceptance only; it does not create evidence, findings, or attack-path links.",
     executorType: "builtin",
     builtinActionKey: "log_progress" as ToolBuiltinActionKey,
@@ -67,6 +68,7 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     kind: "builtin-action",
     status: "active",
     source: "system",
+    accessProfile: "standard",
     description: "Persist one incremental batch of workflow system-graph data. Use this after collecting evidence to submit normalized `resources`, `resourceRelationships`, `findings`, `findingRelationships`, and optional `paths` in a single payload. Provide stable ids so later batches can refine earlier entities without duplication. Every finding must include grounded `evidence`, every finding must attach to concrete `resourceIds`, and non-`related` finding relationships must include grounded `evidence`. Source-tool-only evidence is accepted only when it resolves to exactly one executed result in the current run; otherwise provide `toolRunRef`, `observationRef`, `artifactRef`, `traceEventId`, or `externalUrl`. Returns acceptance plus the ids merged from the batch. It does not complete the run.",
     executorType: "builtin",
     builtinActionKey: "report_system_graph_batch",
@@ -174,7 +176,7 @@ const lifecycleBuiltinAiTools: AiTool[] = [
         },
         paths: {
           type: "array",
-          description: "Optional higher-level attack path or chain groupings.",
+          description: "Optional higher-level attack path or attack-chain groupings.",
           items: {
             type: "object",
             additionalProperties: false,
@@ -211,6 +213,7 @@ const lifecycleBuiltinAiTools: AiTool[] = [
     kind: "builtin-action",
     status: "active",
     source: "system",
+    accessProfile: "standard",
     description: "Use this as the final workflow action after any evidence gathering or report_system_graph_batch calls you want to make. Provide only `summary`. Returns `{ accepted: true }` when the run is closed. It does not create findings or accept extra closeout fields.",
     executorType: "builtin",
     builtinActionKey: "complete_run",

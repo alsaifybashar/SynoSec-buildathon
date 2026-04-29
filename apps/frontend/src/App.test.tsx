@@ -75,19 +75,20 @@ describe("App", () => {
       {
         id: "httpx",
         name: "HTTPx",
+        kind: "raw-adapter",
         status: "active",
         source: "system",
+        accessProfile: "standard",
         description: null,
-        binary: "httpx",
         executorType: "bash",
+        builtinActionKey: null,
         bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'",
         capabilities: ["web-recon", "passive"],
         category: "web",
         riskTier: "passive",
-        notes: null,
-        sandboxProfile: "network-recon",
-        privilegeProfile: "read-only-network",
         timeoutMs: 30000,
+        coveredToolIds: [],
+        candidateToolIds: [],
         inputSchema: { type: "object", properties: {} },
         outputSchema: { type: "object", properties: {} },
         createdAt: "2026-04-12T12:00:00.000Z",
@@ -96,19 +97,20 @@ describe("App", () => {
       {
         id: "custom-browser-tool",
         name: "Browser MCP",
+        kind: "raw-adapter",
         status: "active",
         source: "custom",
+        accessProfile: "standard",
         description: "Internal browser automation bridge",
-        binary: null,
         executorType: "bash",
+        builtinActionKey: null,
         bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"browser bridge\"}'",
         capabilities: ["passive"],
         category: "utility",
         riskTier: "passive",
-        notes: "Wraps an MCP bridge",
-        sandboxProfile: "read-only-parser",
-        privilegeProfile: "read-only-network",
         timeoutMs: 10000,
+        coveredToolIds: [],
+        candidateToolIds: [],
         inputSchema: { type: "object", properties: {} },
         outputSchema: { type: "object", properties: {} },
         createdAt: "2026-04-12T12:00:00.000Z",
@@ -123,7 +125,7 @@ describe("App", () => {
         status: "active",
         description: "Primary recon worker",
         systemPrompt: "Enumerate the target and summarize the result.",
-        toolIds: ["httpx"],
+        toolAccessMode: "system",
         createdAt: "2026-04-12T12:00:00.000Z",
         updatedAt: "2026-04-12T12:00:00.000Z"
       }
@@ -413,10 +415,10 @@ describe("App", () => {
       if (url.startsWith("/api/ai-agents/") && method === "GET") {
         return new Response(JSON.stringify(agents[0]));
       }
-      if ((url === "/api/ai-tools" || url.startsWith("/api/ai-tools?")) && method === "GET") {
+      if ((url === "/api/tool-registry" || url.startsWith("/api/tool-registry?")) && method === "GET") {
         return new Response(JSON.stringify(createPaginatedPayload("tools", tools)));
       }
-      if (url.startsWith("/api/ai-tools/") && method === "GET") {
+      if (url.startsWith("/api/tool-registry/") && method === "GET") {
         const id = url.split("/").pop() ?? "";
         const tool = tools.find((candidate) => candidate.id === id);
         return tool
@@ -493,8 +495,8 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "AI Agents" }, { timeout: 10000 })).toBeInTheDocument();
     expect((await screen.findAllByText(runtimeLabel)).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getAllByRole("link", { name: "AI Tools" })[0]!);
-    expect(await screen.findByRole("heading", { name: "AI Tools" }, { timeout: 10000 })).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("link", { name: "Tool Registry" })[0]!);
+    expect(await screen.findByRole("heading", { name: "Tool Registry" }, { timeout: 10000 })).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("link", { name: "Workflows" })[0]!);
     expect(await screen.findByRole("heading", { name: "Workflows" }, { timeout: 10000 })).toBeInTheDocument();
@@ -528,7 +530,7 @@ describe("App", () => {
 
     expect(requestedUrls.filter((url) => url === "/api/ai-agents/67043e91-4017-47b8-ac3f-81eb19f51538").length).toBeLessThanOrEqual(3);
     expect(requestedUrls.filter((url) => url.startsWith("/api/ai-agents?")).length).toBeLessThanOrEqual(3);
-    expect(requestedUrls.filter((url) => url.startsWith("/api/ai-tools?")).length).toBeLessThanOrEqual(2);
+    expect(requestedUrls.filter((url) => url.startsWith("/api/tool-registry?")).length).toBeLessThanOrEqual(2);
   });
 
   it("opens the AI agent create page from the list add-record action", async () => {

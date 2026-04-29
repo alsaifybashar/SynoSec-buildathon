@@ -20,6 +20,8 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
     const where = {
       NOT: { id: { startsWith: "builtin-" } },
       ...(query.status ? { status: query.status } : {}),
+      ...(query.source ? { source: query.source } : {}),
+      ...(query.accessProfile ? { accessProfile: query.accessProfile } : {}),
       ...(query.category ? { category: query.category } : {}),
       ...(query.q
         ? {
@@ -58,6 +60,7 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
         name: encoded.name,
         status: encoded.status,
         source: "custom",
+        accessProfile: encoded.accessProfile,
         description: encoded.description,
         adapter: null,
         binary: null,
@@ -89,6 +92,7 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
         name: encoded.name ?? current.name,
         status: encoded.status ?? current.status,
         source: "custom",
+        accessProfile: encoded.accessProfile ?? current.accessProfile,
         description: encoded.description === undefined ? current.description : encoded.description,
         adapter: current.adapter,
         binary: current.binary,

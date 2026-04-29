@@ -47,7 +47,7 @@ export type AiAgentsQuery = {
   page: number;
   pageSize: number;
   q: string;
-  sortBy: "name" | "status" | "toolIds" | "createdAt" | "updatedAt";
+  sortBy: "name" | "status" | "toolAccessMode" | "createdAt" | "updatedAt";
   sortDirection: SortDirection;
   status: OptionalString;
   [key: string]: number | string | undefined;
@@ -59,7 +59,7 @@ export type AiToolsQuery = {
   q: string;
   sortBy: "name" | "kind" | "source" | "category" | "status" | "riskTier" | "createdAt" | "updatedAt";
   sortDirection: SortDirection;
-  surface: OptionalString;
+  accessProfile: OptionalString;
   source: OptionalString;
   category: OptionalString;
   status: OptionalString;

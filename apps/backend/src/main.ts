@@ -8,6 +8,7 @@ import { validateSeededToolDefinitions } from "@/prisma/seed-data/ai-builder-def
 
 const env = loadBackendEnv();
 const port = env.backendPort;
+const host = "0.0.0.0";
 
 validateSeededToolDefinitions();
 
@@ -104,8 +105,8 @@ async function bootstrap() {
   const server = http.createServer(app);
   let shuttingDown = false;
 
-  server.listen(port, () => {
-    console.log(`Backend listening on http://localhost:${port}`);
+  server.listen(port, host, () => {
+    console.log(`Backend listening on http://${host}:${port}`);
   });
 
   server.on("error", (error: NodeJS.ErrnoException) => {

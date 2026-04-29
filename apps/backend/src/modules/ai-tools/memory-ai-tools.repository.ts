@@ -23,7 +23,9 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
   async list(query: AiToolsListQuery): Promise<PaginatedResult<AiTool>> {
     const normalizedQuery = query.q?.trim().toLowerCase();
     const sorted = [...this.records.values()]
-      .map((tool) => ({ ...tool, source: "custom" as const }))
+      .map((tool) => ({ ...tool, source: "custom" as const, accessProfile: tool.accessProfile ?? "standard" as const }))
+      .filter((tool) => !query.source || tool.source === query.source)
+      .filter((tool) => !query.accessProfile || tool.accessProfile === query.accessProfile)
       .filter((tool) => !query.category || tool.category === query.category)
       .filter((tool) => {
         if (!normalizedQuery) {
@@ -56,7 +58,7 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
     }
 
     const tool = this.records.get(id);
-    return tool ? enrichAiTool({ ...tool, source: "custom" }) : null;
+    return tool ? enrichAiTool({ ...tool, source: "custom", accessProfile: tool.accessProfile ?? "standard" }) : null;
   }
 
   async create(input: CreateAiToolBody): Promise<AiTool> {
@@ -69,6 +71,7 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
       kind: "raw-adapter",
       status: encoded.status,
       source: "custom",
+      accessProfile: encoded.accessProfile,
       description: encoded.description,
       category: encoded.category,
       riskTier: encoded.riskTier,
@@ -119,6 +122,7 @@ export class MemoryAiToolsRepository implements AiToolsRepository {
       name: encoded.name ?? current.name,
       status: encoded.status ?? current.status,
       source: "custom",
+      accessProfile: encoded.accessProfile ?? current.accessProfile,
       description: encoded.description === undefined ? current.description : encoded.description,
       category: encoded.category ?? current.category,
       riskTier: encoded.riskTier ?? current.riskTier,

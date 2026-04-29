@@ -494,6 +494,7 @@ export const seededRoleDefinitions = [
     key: "generic-pentester" as const,
     name: "Wrapped Tool Family",
     description: "Default pentesting agent for capability-level workflow execution and attack-path reasoning.",
+    toolAccessMode: "system" as const,
     systemPrompt: buildCanonicalPrompt({
       roleAndGoal: [
         "Map how weaknesses may connect, identify plausible attack paths, and keep every linked vulnerability grounded in evidence or explicitly qualified uncertainty."
@@ -515,19 +516,12 @@ export const seededRoleDefinitions = [
         "If evidence does not support a vulnerability link or attack path, keep it out of findings, preserve the original uncertainty, and close with a qualified summary of the remaining hypotheses."
       ]
     }),
-    toolIds: [
-      "builtin-http-surface-assessment",
-      "builtin-network-service-enumeration",
-      "builtin-content-discovery",
-      "builtin-web-crawl-mapping",
-      "builtin-web-vulnerability-audit",
-      "builtin-sql-injection-validation"
-    ] as const
   },
   {
     key: "bash-poc-agent" as const,
     name: "Just Bash",
     description: "Proof-of-concept agent with a single seeded bash execution tool.",
+    toolAccessMode: "system_plus_custom" as const,
     systemPrompt: buildCanonicalPrompt({
       roleAndGoal: [
         "Evaluate the target’s cybersecurity with an attack-path-first approach.",
@@ -556,14 +550,12 @@ export const seededRoleDefinitions = [
       ],
       examples: operationalAttackPathExamples
     }),
-    toolIds: [
-      "seed-agent-bash-command"
-    ] as const
   },
   {
     key: "broad-script-agent" as const,
     name: "Individual Tools",
     description: "Broad seeded bash-tool agent for workflows that need direct script-backed tool coverage.",
+    toolAccessMode: "system_plus_custom" as const,
     systemPrompt: buildCanonicalPrompt({
       roleAndGoal: [
         "Evaluate the target’s cybersecurity with an attack-path-first approach using the approved direct script-backed tools exposed in this workflow.",
@@ -593,7 +585,6 @@ export const seededRoleDefinitions = [
       ],
       examples: operationalAttackPathExamples
     }),
-    toolIds: broadScriptToolIds
   }
 ] as const;
 
