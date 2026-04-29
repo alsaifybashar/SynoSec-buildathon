@@ -15,7 +15,7 @@ The core objective is to answer four questions for a target system:
 1. What reachable services, technologies, paths, and trust boundaries exist?
 2. Which security weaknesses are supported by concrete tool evidence?
 3. Which OSI layers were covered, partially covered, or not covered?
-4. Which findings can be combined into higher-impact escalation routes?
+4. Which findings can be combined into higher-impact attack chains?
 
 ## System Architecture
 
@@ -41,7 +41,7 @@ flowchart LR
 
     Broker --> Evidence[Tool runs, observations, findings]
     Evidence --> Store
-    Backend --> AttackMap[Attack map and escalation routes]
+    Backend --> AttackMap[Attack map and attack chains]
     AttackMap --> Frontend
 ```
 
@@ -52,7 +52,7 @@ flowchart LR
 - `apps/frontend`: React and Tailwind interface for targets, agents, tools, workflows, execution reports, and the attack map.
 - `apps/backend`: Express API, scan orchestration, workflow execution, AI-provider integration, tool brokerage, scan storage, and attack-chain correlation.
 - `apps/connector`: Worker process for executing tool jobs from a different network position than the backend.
-- `packages/contracts`: Shared TypeScript contracts and Zod schemas for scans, vulnerabilities, OSI coverage, tool runs, observations, workflow events, reports, and escalation routes.
+- `packages/contracts`: Shared TypeScript contracts and Zod schemas for scans, vulnerabilities, OSI coverage, tool runs, observations, workflow events, reports, and attack chains.
 - `scripts/tools`: Bash-backed tool implementations used by the broker and seeded AI-tool definitions.
 - `demos/vulnerable-app`: Controlled vulnerable target used as the general cyber range for safe validation.
 - `demos/full-stack-target`: Controlled full-stack target with UI, API, SQLite data, and two chained attack tracks.
@@ -112,13 +112,13 @@ sequenceDiagram
     end
     API->>LLM: Correlate confirmed findings
     LLM-->>API: Attack chains with impact narrative
-    API->>Graph: Add chain nodes and chain edges
+    API->>Graph: Add attack-chain nodes and attack-chain edges
     API-->>UI: Stream phases, tool events, reasoning, and final map
 ```
 
 ## Graph-Reasoning Agents
 
-SynoSec treats a scan as a reasoning graph rather than a flat list of scanner results. Graph nodes represent targets, tactics, findings, and chains. Edges represent discovery relationships or chain relationships. This allows the system to preserve how a result was reached, what evidence supports it, and how one weakness enables another.
+SynoSec treats a scan as a reasoning graph rather than a flat list of scanner results. Graph nodes represent different node kinds such as targets, tactics, findings, and attack chains. Edges represent discovery relationships or attack-chain relationships. This allows the system to preserve how a result was reached, what evidence supports it, and how one weakness enables another.
 
 ```mermaid
 flowchart TD
@@ -138,7 +138,7 @@ Graph reasoning is used in three ways:
 
 - Prioritization: The agent selects the next tool or phase based on current coverage, previously executed tools, observed services, and risk.
 - Expansion: Confirmed findings become new reasoning anchors for deeper or adjacent checks, such as privilege escalation, lateral movement, or exposed secrets.
-- Correlation: Multiple findings are evaluated together to identify escalation routes that have higher impact than any individual finding.
+- Correlation: Multiple findings are evaluated together to identify attack chains that have higher impact than any individual finding.
 
 The resulting attack map is not only a visualization layer. It is the working memory of the scan: a reviewable model of what was observed, what was inferred, and what relationships were established.
 
@@ -153,7 +153,7 @@ flowchart LR
     Observation --> Confidence[Confidence engine]
     Confidence --> Finding[Finding or vulnerability]
     Finding --> Coverage[OSI layer coverage]
-    Finding --> Route[Escalation route]
+    Finding --> Route[Attack chain]
     Coverage --> Report[Report and workflow trace]
     Route --> AttackMap[Attack map]
 ```
@@ -216,7 +216,7 @@ flowchart TD
     Backend --> Smoke[Smoke and evaluation flow]
     Smoke --> Evidence[Expected evidence: ports, headers, routes, findings]
     Evidence --> Coverage[Layer coverage and gaps]
-    Evidence --> Map[Attack map and chain correlation]
+    Evidence --> Map[Attack map and attack-chain correlation]
 ```
 
 Evaluation focuses on:
@@ -224,7 +224,7 @@ Evaluation focuses on:
 - Discovery accuracy: Whether open ports, services, headers, and known paths are detected.
 - Evidence quality: Whether findings cite concrete output rather than unsupported model claims.
 - Coverage quality: Whether each requested layer has an explicit status and gap statement.
-- Graph quality: Whether related findings are connected into plausible discovery or chain relationships.
+- Graph quality: Whether related findings are connected into plausible discovery or attack-chain relationships.
 - Failure transparency: Whether failed tools and incomplete checks remain visible in traces and reports.
 
 ## Data Flow
@@ -232,13 +232,13 @@ Evaluation focuses on:
 At runtime, a typical vulnerability discovery pass follows this path:
 
 1. The analyst defines an application, runtime, agent, target scope, requested OSI layers, and exploit allowance.
-2. The backend creates a scan and root tactic node.
+2. The backend creates a scan and root graph node.
 3. The tool selector ranks approved tools for the current layer coverage and scan phase.
 4. The agent requests a tool or the orchestrator executes a planned phase.
 5. The broker authorizes the request and dispatches it locally or through a connector.
 6. Tool output is persisted as a tool run and normalized into observations.
 7. The agent or orchestrator analyzes the evidence and submits vulnerabilities, coverage updates, or graph findings.
-8. Confirmed findings are used as anchors for deeper reasoning and chain correlation.
+8. Confirmed findings are used as anchors for deeper reasoning and attack-chain correlation.
 9. Reports, traces, coverage, and the attack map are exposed to the frontend.
 
 ## Getting Started
@@ -314,6 +314,8 @@ Key settings:
 - `TOOL_EXECUTION_MODE=connector` routes broker-approved tool runs through the connector control plane.
 - `CONNECTOR_RUN_MODE` supports dry-run, simulation, and execution modes and now defaults to `execute` in the repo-managed dev and production stacks.
 - Connectors now self-report installed binaries, and the backend derives exact supported seeded tool IDs before dispatch instead of relying on loose capability overlap.
+- `CONNECTOR_DOCKER_TARGET` selects the connector image profile. Local Docker defaults to `connector-dev-web`; VPS/prod defaults to `connector-prod-full`.
+- The connector image is now modular: `core`, `web`, `cloud`, `windows`, `forensics`, `reversing`, and `exploitation` layer on the same base runtime, while `full` preserves the prior all-tools shape.
 - `POST /api/connectors/test-dispatch` can validate broker-to-connector dispatch without starting a full scan.
 
 ### Production Deployment
@@ -327,6 +329,7 @@ GitHub Actions deploys to a VPS using `.github/workflows/deploy.yml` and the pro
 - `frontend` runs the production frontend build behind the host nginx reverse proxy.
 - `connector` stays on the private Docker network and polls the backend control plane.
 - `postgres` persists app data in a named Docker volume.
+- `CONNECTOR_DOCKER_TARGET=connector-prod-full` keeps the production stack on the compatibility image until you intentionally narrow it.
 
 Before using the deploy workflow, define these GitHub repository variables:
 
@@ -376,6 +379,7 @@ Post-deploy health checks now run on the VPS origin loopback endpoints instead o
 ## Connector testing
 
 The Docker stack now runs the same connector shape you can later deploy on a VPS.
+Script-only seeded tool changes still use the bind-mounted repo in local dev, so they do not require a connector image rebuild. Adding a binary-backed tool now means rebuilding only the owning connector profile image instead of the full toolchain.
 
 ## Repository Structure
 
@@ -399,10 +403,10 @@ docs/
 
 Additional project notes live under `docs/`:
 
-- `docs/features.md`: Active feature inventory and extension guidance.
-- `docs/requirements.md`: Security-stack and coverage requirements.
+- `docs/decisions.md`: Locked project decisions that should not be reopened casually.
 - `docs/defensive-loop-contract.md`: Defensive-loop behavior and contracts.
-- `docs/strategy-flow-terminology.md`: Naming conventions for strategy maps, tactics, and escalation routes.
+- `docs/features.md`: Active feature inventory and extension guidance.
+- `docs/strategy-flow-terminology.md`: Current product terminology for attack maps, graphs, nodes, tactics, and attack chains.
 - `docs/vulnerable-app-specification.md`: Local cyber range targets and intended vulnerability coverage.
 
 ## Security and Usage Boundaries
@@ -421,199 +425,64 @@ New tool integrations should be added as auditable, policy-aware capabilities:
 
 ## Tool Platform Architecture
 
-The tool platform is designed so the repo can grow from a handful of demo tools to hundreds of cataloged tools without turning the scan loop, seed data, or UI into a maintenance bottleneck.
+The tool platform is designed so the repo can grow from a small demo catalog to a larger evidence-collection surface without turning backend execution or seed data into a maintenance bottleneck.
 
-The current model has six pieces:
+The current model has four main pieces:
 
-1. A modular tool catalog in `apps/backend/src/workflow-engine/tools/catalog/`
-2. Modular seeded tool implementations in `scripts/tools/` and `apps/backend/prisma/seed-data/tools/`
-3. A runtime tool selector that pre-filters tools before they reach the model
-4. An opt-in agent-tool policy layer for automatic assignment
-5. Frontend list UX that remains usable at larger tool counts
-6. A steady-state workflow for adding new tools with minimal friction
+1. A modular catalog in `apps/backend/src/engine/tools/catalog/`
+2. Seeded tool definitions in `apps/backend/prisma/seed-data/tools/`
+3. Script implementations in `scripts/tools/`
+4. Runtime surfaces in `apps/backend/src/modules/ai-tools/` and `apps/backend/src/engine/workflow/`
 
-### Phase 1: Modular Tool Catalog
+### Catalog And Capability Metadata
 
 The canonical catalog lives under:
 
-- `apps/backend/src/workflow-engine/tools/catalog/types.ts`
-- `apps/backend/src/workflow-engine/tools/catalog/index.ts`
-- `apps/backend/src/workflow-engine/tools/catalog/<domain>.ts`
+- `apps/backend/src/engine/tools/catalog/types.ts`
+- `apps/backend/src/engine/tools/catalog/index.ts`
+- `apps/backend/src/engine/tools/catalog/<domain>.ts`
 
-Domains are split by capability area such as:
+Runtime capability inspection and duplicate-id validation live in:
 
-- `network.ts`
-- `web.ts`
-- `content.ts`
-- `subdomain.ts`
-- `dns.ts`
-- `password.ts`
-- `cloud.ts`
-- `kubernetes.ts`
-- `windows.ts`
-- `forensics.ts`
-- `reversing.ts`
-- `exploitation.ts`
-- `utility.ts`
+- `apps/backend/src/engine/tools/tool-catalog.ts`
 
-`tool-catalog.ts` still exposes the same public functions:
+The catalog is split by domain such as `network`, `web`, `content`, `subdomain`, `dns`, `password`, `cloud`, `kubernetes`, `windows`, `forensics`, `reversing`, `exploitation`, and `utility`.
 
-- `getToolCatalog()`
-- `getToolCapabilities()`
-- `isToolCatalogEntryAvailable()`
+### Seeded Implementations
 
-Every catalog entry now includes additional metadata used by the selector and future assignment logic:
-
-- `phase`
-- `osiLayers`
-- `tags`
-
-Current `phase` values:
-
-- `recon`
-- `enum`
-- `vuln-scan`
-- `exploit`
-- `post`
-- `report`
-- `utility`
-
-`tool-catalog.ts` also performs a duplicate ID guard at startup. Duplicate catalog IDs are treated as a hard error.
-
-### Phase 2: Modular Seed Architecture
-
-Seeded tools are no longer defined as one large file with inline bash factories.
-
-The implementation is split into:
+Concrete seeded tools are split across:
 
 - Shell assets in `scripts/tools/<category>/<tool>.sh`
-- Per-tool seed modules in `apps/backend/prisma/seed-data/tools/<category>/<tool>.ts`
-- An assembler in `apps/backend/prisma/seed-data/ai-builder-defaults.ts`
+- Seed modules in `apps/backend/prisma/seed-data/tools/<category>/<tool>.ts`
+- Seed assembly in `apps/backend/prisma/seed-data/ai-builder-defaults.ts`
 
-Each seed module exports one tool object with a lazy `bashSource` getter that reads the script from disk. Example pattern:
+This keeps executable logic in inspectable scripts while leaving the database seed layer responsible for metadata and registration.
 
-```ts
-export const httpReconTool = {
-  id: "seed-http-recon",
-  name: "HTTP Recon",
-  get bashSource() {
-    return loadSeedToolScript(import.meta.url, "scripts/tools/web/http-recon.sh");
-  }
-} as const;
-```
+### Runtime Surfaces
 
-Startup fail-fast behavior:
+The main runtime entry points are:
 
-- `apps/backend/src/main.ts` calls `validateSeededToolDefinitions()`
-- missing script files fail the backend immediately
-- `apps/backend/prisma/seed-data/tools/load-script.ts` resolves both source and built `dist/` layouts
-
-This means seeded tool definitions stay small and script logic lives in real `.sh` files where it is easier to inspect, test, and replace.
-
-### Phase 3: Tool Selector Layer
-
-The critical context-limit fix lives in:
-
-- `apps/backend/src/workflow-engine/tools/tool-selector.ts`
-
-The selector scores available tools before they are passed to the model. This prevents the workflow pipeline from dumping every approved tool into one model call.
-
-Selector inputs:
-
-- requested OSI layers
-- current layer coverage
-- already executed tool IDs
-- current findings
-- `allowActiveExploits`
-
-Scoring signals:
-
-- layer alignment
-- phase progression
-- risk tier gate
-- recency penalty
-
-Important behavior:
-
-- `controlled-exploit` tools are hard-gated when `allowActiveExploits === false`
-- recently used tools are penalized
-- if the top slice is all one category, the selector swaps in another category for diversity
-- catalog metadata is used when available; uncataloged tools default to `phase: "utility"` and `osiLayers: ["L7"]`
-
-Integration:
-
-- Anthropic loop: select once before building the evidence tool map
-- Local loop: re-select at the start of each iteration
-- lifecycle actions are always available and are never filtered:
-  - `report_finding`
-  - `update_layer_coverage`
-  - `submit_scan_completion`
-
-Main integration point:
-
+- `apps/backend/src/modules/ai-tools/tool-runtime.ts`
+- `apps/backend/src/modules/ai-tools/ai-tool-surface.ts`
 - `apps/backend/src/engine/workflow/workflow-execution.service.ts`
+- `apps/backend/src/engine/workflow/broker/tool-broker.ts`
 
-### Phase 4: Smart Agent-Tool Assignment
+The current backend also includes:
 
-Agent-tool auto-assignment is opt-in and lives in:
+- semantic-family tool definitions in `apps/backend/src/modules/ai-tools/semantic-family-tools.ts`
+- agent-to-tool resolution in `apps/backend/src/modules/ai-agents/agent-tool-resolver.ts`
+- tool execution config handling in `apps/backend/src/modules/ai-tools/tool-execution-config.ts`
 
-- `apps/backend/prisma/seed-data/agent-tool-policies.ts`
-- `apps/backend/src/features/modules/ai-agents/agent-tool-resolver.ts`
+### Adding A New Tool
 
-This layer exists to remove manual junction-table style maintenance as the tool count grows.
+The steady-state workflow for adding a tool is:
 
-How it works:
-
-- If no policy exists for an agent, behavior stays exactly as before: use `agent.toolIds`
-- If a policy exists, SynoSec:
-  - loads active tools
-  - starts from `pinnedToolIds`
-  - preserves explicit `agent.toolIds`
-  - adds policy-matched tools using catalog metadata such as category, risk tier, phase, and tags
-  - deduplicates the final set
-
-Current rollout status:
-
-- `AGENT_TOOL_POLICIES` is intentionally empty by default
-- policies are activated one agent at a time by adding an entry
-
-This keeps rollout safe while enabling future “new tool automatically appears for the right agent” behavior.
-
-### Phase 5: Frontend UX for Large Tool Sets
-
-The AI tools page has been updated to remain usable when the tool inventory grows:
-
-- file: `apps/frontend/src/pages/ai-tools-page.tsx`
-
-Current list UX improvements:
-
-- category filter
-- risk tier filter
-- compact colored risk badges:
-  - passive = green
-  - active = amber
-  - controlled-exploit = red
-- default page size of 50 for the tools page
-
-This is intentionally page-local behavior so the shared list component does not need to know about tool-specific grouping logic.
-
-### Phase 6: Adding a New Tool
-
-The steady-state workflow for adding a tool is now:
-
-1. Add a `ToolCatalogEntry` to the correct file in `apps/backend/src/workflow-engine/tools/catalog/`
-2. Include `phase`, `osiLayers`, and `tags`
-3. Add the implementation script in `scripts/tools/<category>/<tool-name>.sh`
-4. Add the seed module in `apps/backend/prisma/seed-data/tools/<category>/<tool-name>.ts`
-5. Import it into `apps/backend/prisma/seed-data/ai-builder-defaults.ts` and add it to `seededToolDefinitions`
-6. Run the seed upsert so the tool exists in the database
-7. If a policy later covers that category/phase/tag set, the tool becomes available automatically to the relevant agents
-
-The core goal is low-friction tool authoring:
-
-- write a `.sh` script
-- add a small metadata object
-- let the catalog, seed layer, selector, and policy system do the rest
+1. Add a `ToolCatalogEntry` to the correct file in `apps/backend/src/engine/tools/catalog/`.
+2. Add the implementation script in `scripts/tools/<category>/<tool-name>.sh`.
+3. Add the seed module in `apps/backend/prisma/seed-data/tools/<category>/<tool-name>.ts`.
+4. Import it into `apps/backend/prisma/seed-data/ai-builder-defaults.ts` and add it to `seededToolDefinitions`.
+5. Run the seed upsert so the tool exists in the database.
+6. Add or update tests for catalog exposure, compilation, and execution behavior.
 
 ## Developer Notes
 
@@ -622,7 +491,7 @@ The core goal is low-friction tool authoring:
 There are three different layers to keep straight:
 
 - Catalog metadata:
-  `apps/backend/src/workflow-engine/tools/catalog/`
+  `apps/backend/src/engine/tools/catalog/`
   This is capability metadata, installation checks, selection hints, and future assignment input.
 
 - Seeded tool implementations:
@@ -632,7 +501,7 @@ There are three different layers to keep straight:
 
 - Runtime execution config:
   Stored on the tool record and resolved through:
-  `apps/backend/src/features/modules/ai-tools/tool-execution-config.ts`
+  `apps/backend/src/modules/ai-tools/tool-execution-config.ts`
 
 If you change tool behavior, make sure you are editing the correct layer.
 
@@ -656,12 +525,10 @@ These tools are pre-configured with bash scripts in `scripts/tools/` and seeded 
 
 - Workflow execution loop:
   `apps/backend/src/engine/workflow/workflow-execution.service.ts`
-- Tool selector:
-  `apps/backend/src/workflow-engine/tools/tool-selector.ts`
 - Tool catalog entrypoint:
-  `apps/backend/src/workflow-engine/tools/tool-catalog.ts`
+  `apps/backend/src/engine/tools/tool-catalog.ts`
 - Agent tool resolver:
-  `apps/backend/src/features/modules/ai-agents/agent-tool-resolver.ts`
+  `apps/backend/src/modules/ai-agents/agent-tool-resolver.ts`
 - Seed assembler:
   `apps/backend/prisma/seed-data/ai-builder-defaults.ts`
 

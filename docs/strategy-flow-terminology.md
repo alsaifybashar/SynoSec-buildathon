@@ -1,59 +1,44 @@
-# Strategy Flow Terminology
+# Product Terminology
 
-This document records terminology choices for the strategy-flow domain so naming can stay consistent if that rename work resumes later.
+This document records the terminology the repo currently uses in product copy and core documentation. It reflects the README and the current codebase more closely than older rename plans.
 
-## Chosen Product Language
+## Current Product Language
 
-- Overall product voice: `Strategy Flow`
-- Replace `node` with `tactic`
-- Replace `graph` with `strategy map`
-- Replace `chain` with `escalation route`
+- Overall product voice: `attack map`, `workflow`, `finding`, `agent`, and `tool`
+- Keep `graph` and `node` language for reasoning structure and persisted relationships
+- Keep `attack chain` as the preferred product-facing term for multi-step impact
+- Treat `tactic` as a specific node kind or contract term, not the primary product noun
 - Remove `GRACE` terminology
 
-## Canonical Replacements
+## Preferred Usage
 
-Use these terms as the default vocabulary across product copy, contracts, API names, backend code, and tests.
+Use these terms by default in docs, demos, and operator-facing UI:
 
-| Old term | New term |
+| Prefer | Use for |
 | --- | --- |
-| graph | strategy map |
-| node | tactic |
-| child node | follow-up tactic |
-| root node | root tactic |
-| node status | tactic status |
-| node update event | tactic update event |
-| chain | escalation route |
-| chain link | escalation route link |
-| chain detection | escalation route detection |
-| graph analysis | strategy analysis |
-| DFS queue / DFS graph | tactic queue / strategy map |
+| attack map | The user-facing visualization and persisted security relationship view |
+| graph | The underlying reasoning structure, graph processing, or graph-shaped data |
+| node | The primary unit inside the graph, with different node kinds such as target, tactic, finding, and attack-chain node |
+| attack chain | A higher-impact path created by connecting multiple findings |
+| tactic | A specific scan work-item node kind used in scan contracts and some backend internals |
+| finding | Evidence-backed security observation or reported issue |
+| workflow | The bounded runtime path for agent execution and reporting |
 
 ## Naming Guidance
 
-- Prefer `strategy map` for anything that describes the persisted view of exploration state.
-- Prefer `tactic` for the concrete unit currently being evaluated, queued, linked, or persisted.
-- Prefer `follow-up tactic` for newly derived work from evidence.
-- Prefer `escalation route` for multi-step relationships between findings that imply progression or pivoting.
-- Prefer `strategy analysis` for the subsystem that prioritizes targets and infers escalation routes.
-
-## API And Contract Direction
-
-When the rename work resumes, the intended public naming is:
-
-- `ScanTactic`
-- `EscalationRoute`
-- `EscalationRouteLink`
-- `StrategyAnalysis`
-- websocket event `tactic_updated`
-- websocket event `escalation_route_detected`
-- websocket event `strategy_analysis_complete`
+- Prefer `attack map` when describing the product artifact users inspect.
+- Prefer `graph` when discussing implementation details, graph construction, graph edges, graph nodes, or graph analysis.
+- Prefer `node` when describing the general unit of graph state across different kinds.
+- Prefer `attack chain` in product copy when explaining how findings combine into larger impact.
+- Prefer `tactic` only where the contracts or code already model a specific persisted scan work-item node that way.
+- Avoid introducing new umbrella labels that compete with `attack map` or `workflow`.
 
 ## Explicit Non-Goals
 
-- Do not keep mixed terminology like `strategy graph`, `graph tactic`, or `GRACE routes`.
 - Do not preserve `GRACE` as a public-facing label.
-- Do not use `lead`, `step`, or `approach` as alternates for the persisted unit unless this decision is revisited.
+- Do not force a broad rename from `graph` to `strategy map`; the repo does not currently use that language consistently.
+- Do not force a broad rename from `chain` to some other label; `attack chain` is the preferred product language today.
 
 ## Status
 
-This is a terminology decision record only. It does not imply that the rename or Postgres migration has been completed.
+This is a current-state terminology record. It is meant to keep the docs aligned with the repo as it exists today, not to mandate a large naming migration.

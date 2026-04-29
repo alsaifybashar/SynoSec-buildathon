@@ -43,8 +43,8 @@ Use this structure when adding a new feature to the catalog:
 - Status: Active
 - Purpose: Provide the backend HTTP surface for health, targets, AI providers, AI agents, AI tools, workflows, execution reports, and related control-plane operations.
 - Value: Gives the frontend and developers stable endpoints for configuration, inspection, and platform management.
-- Main components: `apps/backend/src/platform/app`, route modules under `apps/backend/src/features/modules`, shared contracts in `packages/contracts`.
-- How it is tested: Route tests under `apps/backend/src/features/modules/**/*routes.test.ts` and contract validation tests in `packages/contracts/src/index.test.ts`.
+- Main components: `apps/backend/src/app`, route modules under `apps/backend/src/modules`, shared contracts in `packages/contracts`.
+- How it is tested: Route tests under `apps/backend/src/modules/**/*routes.test.ts` and contract validation tests in `packages/contracts/src/index.test.ts`.
 - Local validation: Run `pnpm --filter @synosec/backend test` or targeted route tests, then start the stack with `make docker-up`.
 - Contribution notes: Extend existing route modules and shared contracts together. Keep request and response schemas aligned with the contracts package. Backend API responses use centralized security-header middleware for defaults such as `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, and anti-framing headers; route-specific headers such as SSE streaming behavior should override only what they own.
 - Current limits or non-goals: Retired scan endpoints are not part of this active surface.
@@ -65,7 +65,7 @@ Use this structure when adding a new feature to the catalog:
 - Status: Active
 - Purpose: Track which seeded security tools are actually runnable on the worker and which seeded records are still placeholder-only.
 - Value: Prevents false confidence from a tool being present in the seeded catalog or installed on the machine without a real execution path behind it.
-- Main components: `apps/backend/prisma/seed-data/ai-builder-defaults.ts`, `apps/backend/src/features/modules/ai-tools/tool-execution-config.ts`, `scripts/tools/*.sh`.
+- Main components: `apps/backend/prisma/seed-data/ai-builder-defaults.ts`, `apps/backend/src/modules/ai-tools/tool-execution-config.ts`, `scripts/tools/*.sh`.
 - How it is tested: Manual worker validation by checking `PATH`, confirming the expected binary family, and running the shell wrappers with JSON payloads through `scripts/tools/run-tool.sh`.
 - Local validation: Confirm `bash`, `node`, `curl`, `httpx`, `katana`, `nmap`, `ffuf`, `nuclei`, and `sqlmap` resolve on `PATH`. Then exercise `scripts/tools/web/http-recon.sh`, `scripts/tools/content/web-crawl.sh`, `scripts/tools/network/service-scan.sh`, `scripts/tools/content/content-discovery.sh`, `scripts/tools/web/vuln-audit.sh`, and `scripts/tools/web/sql-injection-check.sh` with a minimal JSON payload that supplies `scriptArgs`.
 - Contribution notes: Treat dependency installation and seeded-tool implementation as separate concerns. The worker environment currently has the required binaries installed, including ProjectDiscovery `httpx`, `katana`, and `nuclei`, plus `ffuf`, `nmap`, and `sqlmap`. Before claiming a seeded tool is usable, verify both that the binary is available and that the seeded `bashSource` is wired to a real wrapper or execution script.
@@ -76,7 +76,7 @@ Use this structure when adding a new feature to the catalog:
 - Status: Active
 - Purpose: Evaluate the seeded AI tool defaults against the running local Qwen model in Ollama.
 - Value: Keeps the seeded tool catalog and role-to-tool assignments grounded in actual model behavior instead of static assumptions.
-- Main components: `apps/backend/prisma/seed-data/ai-builder-defaults.ts`, `apps/backend/src/workflows/evals`.
+- Main components: `apps/backend/prisma/seed-data/ai-builder-defaults.ts`, `apps/backend/src/modules/workflow-evals`.
 - How it is tested: Unit tests for response parsing plus live backend integration tests that call the local Ollama model and assert seeded tool selection.
 - Local validation: Ensure Ollama is running with `qwen3:1.7b`, then run `pnpm --filter @synosec/backend test`.
 - Contribution notes: Use the exported seeded definitions as the test source of truth. Keep live evaluation prompts deterministic and assert exact tool ids.
@@ -87,9 +87,9 @@ Use this structure when adding a new feature to the catalog:
 - Status: Active
 - Purpose: Accept agent-planned tool requests, enforce policy, execute through an approved transport, and turn results into evidence.
 - Value: Keeps planning separate from execution and preserves auditability, scope checks, and reproducibility.
-- Main components: `apps/backend/src/workflows/broker`, `apps/backend/src/workflows/tools`, `packages/contracts`.
-- How it is tested: Broker policy and broker execution tests in `apps/backend/src/workflows/broker/*.test.ts`.
-- Local validation: Run `pnpm --filter @synosec/backend exec vitest run src/broker/policy.test.ts src/broker/tool-broker.test.ts`.
+- Main components: `apps/backend/src/engine/workflow/broker`, `apps/backend/src/engine/tools`, `packages/contracts`.
+- How it is tested: Broker policy and broker execution tests in `apps/backend/src/engine/workflow/broker/*.test.ts`.
+- Local validation: Run `pnpm --filter @synosec/backend exec vitest run src/engine/workflow/broker/policy.test.ts src/engine/workflow/broker/tool-broker.test.ts`.
 - Contribution notes: Keep the broker as the control boundary. New execution behavior must still flow through policy authorization and structured `ToolRequest` and `ToolRun` types.
 - Current limits or non-goals: Do not bypass the broker with direct model-to-tool execution.
 
