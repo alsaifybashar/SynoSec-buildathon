@@ -402,7 +402,10 @@ describe("WorkflowDetailPage", () => {
 
   beforeEach(() => {
     eventSourceInstances = [];
-    vi.stubGlobal("scrollTo", vi.fn());
+    Object.defineProperty(window, "scrollTo", {
+      configurable: true,
+      value: vi.fn()
+    });
     Object.defineProperty(Element.prototype, "scrollIntoView", {
       configurable: true,
       value: vi.fn()

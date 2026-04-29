@@ -124,6 +124,34 @@ describe("WorkflowGraphPage", () => {
     expect(fetchJsonMock).toHaveBeenCalledTimes(3);
   });
 
+  it("stacks the graph map above the inspector until very wide screens", async () => {
+    const reportList: ListExecutionReportsResponse = {
+      reports: [reportSummary],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+      totalPages: 1
+    };
+    fetchJsonMock
+      .mockResolvedValueOnce(createLaunch("run-1"))
+      .mockResolvedValueOnce(reportList)
+      .mockResolvedValueOnce(reportDetail);
+
+    render(
+      <MemoryRouter>
+        <WorkflowGraphPage workflowId="70000000-0000-4000-8000-000000000002" />
+      </MemoryRouter>
+    );
+
+    const graph = await screen.findByLabelText("Execution report graph");
+    const graphShell = graph.closest("div.flex");
+
+    expect(graphShell?.className).toContain("flex-col");
+    expect(graphShell?.className).toContain("2xl:flex-row");
+    expect(graphShell?.lastElementChild?.className).toContain("border-t");
+    expect(graphShell?.lastElementChild?.className).toContain("2xl:border-l");
+  });
+
   it("falls back to findings graph when report is missing for latest run", async () => {
     const reportList: ListExecutionReportsResponse = {
       reports: [],

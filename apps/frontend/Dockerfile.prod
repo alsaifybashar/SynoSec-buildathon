@@ -9,6 +9,7 @@ COPY packages/contracts/package.json packages/contracts/tsconfig.json ./packages
 COPY packages/contracts/src ./packages/contracts/src
 COPY apps/frontend/package.json apps/frontend/tsconfig.json apps/frontend/tsconfig.app.json apps/frontend/postcss.config.js apps/frontend/tailwind.config.ts apps/frontend/vite.config.ts ./apps/frontend/
 COPY apps/frontend/index.html ./apps/frontend/index.html
+COPY apps/frontend/public ./apps/frontend/public
 COPY apps/frontend/src ./apps/frontend/src
 
 RUN pnpm install --frozen-lockfile

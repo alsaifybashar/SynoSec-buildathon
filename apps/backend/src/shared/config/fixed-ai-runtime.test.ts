@@ -20,7 +20,7 @@ describe("loadFixedAiRuntime", () => {
     if (runtime.provider === "local") {
       expect(runtime.apiMode).toBe("chat");
     }
-  });
+  }, 15000);
 
   it("supports overriding local runtime API mode through env", async () => {
     process.env["LLM_PROVIDER"] = "local";

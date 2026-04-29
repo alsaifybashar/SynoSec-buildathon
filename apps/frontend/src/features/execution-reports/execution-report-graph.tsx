@@ -863,7 +863,7 @@ export function ExecutionReportGraphMap({ graph }: { graph: ExecutionReportGraph
           No execution graph was persisted for this report.
         </div>
       ) : (
-        <div className="flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-background/70 xl:flex-row">
+        <div className="flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-background/70 2xl:flex-row">
           <div ref={ref} className="relative min-w-0 flex-1 bg-slate-950/95">
             <svg
               ref={svgRef}
@@ -1152,10 +1152,9 @@ export function ExecutionReportGraphMap({ graph }: { graph: ExecutionReportGraph
 
           <div
             className={cn(
-              "border-t border-border bg-background/70 p-4 xl:border-l xl:border-t-0",
-              "xl:w-[340px] xl:flex-shrink-0 xl:overflow-y-auto"
+              "border-t border-border bg-background/70 p-4 2xl:border-l 2xl:border-t-0",
+              "2xl:w-[340px] 2xl:flex-shrink-0 2xl:overflow-y-auto"
             )}
-            style={{ height: size.height }}
           >
             <NodeInspector node={selectedNode} onExpandCluster={toggleCluster} />
           </div>

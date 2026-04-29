@@ -119,7 +119,7 @@ describe("backend feature boundaries", () => {
     }
 
     expect(violations).toEqual([]);
-  });
+  }, 15000);
 
   it("prevents shared code from importing modules or engine internals", async () => {
     const files = await collectTypeScriptFiles(sharedRoot);

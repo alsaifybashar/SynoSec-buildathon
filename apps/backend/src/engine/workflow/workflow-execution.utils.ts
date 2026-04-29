@@ -187,7 +187,7 @@ type FindingDetailContext = {
   reproduction?: WorkflowFindingSubmission["reproduction"];
 };
 
-export function truncate(value: string, maxLength = 220) {
+export function truncate(value: string, maxLength = 500) {
   const trimmed = value.trim();
   if (trimmed.length <= maxLength) {
     return trimmed;
@@ -504,12 +504,43 @@ export function validateFindingEvidenceReferences(
   for (const [index, item] of finding.evidence.entries()) {
     const hasPersistedReference = Boolean(item.toolRunRef || item.observationRef || item.artifactRef || item.traceEventId);
     if (!hasPersistedReference) {
-      return `Evidence item ${index + 1} is missing a persisted evidence reference.`;
+      const sourceTool = item.sourceTool?.trim();
+      const matchingRuns = sourceTool
+        ? executedResults.filter((result) => result.toolName === sourceTool || result.toolId === sourceTool)
+        : [];
+      const candidateRuns = matchingRuns
+        .map((result) => `${result.toolName} toolRunRef=${result.toolRun.id}`)
+        .join(", ");
+      return matchingRuns.length > 1
+        ? `Evidence item ${index + 1} is ambiguous: sourceTool \`${sourceTool}\` matched multiple executed results in this run (${candidateRuns}). Replace sourceTool with toolRunRef or observationRef from exactly one persisted result.`
+        : matchingRuns.length === 1
+          ? `Evidence item ${index + 1} is missing a persisted evidence reference. Replace sourceTool \`${sourceTool}\` with toolRunRef=${matchingRuns[0]!.toolRun.id} or one of that run's observation refs.`
+          : sourceTool
+            ? `Evidence item ${index + 1} is missing a persisted evidence reference. Source tool \`${sourceTool}\` did not match any executed result in this run. Provide a valid toolRunRef, observationRef, artifactRef, or traceEventId.`
+            : `Evidence item ${index + 1} is missing a persisted evidence reference. Provide toolRunRef, observationRef, artifactRef, or traceEventId from a persisted result in this run.`;
     }
 
     const result = resolveEvidenceResult(item, executedResults);
     if (!result) {
-      return `Evidence item ${index + 1} does not map to an executed tool result.`;
+      if (item.toolRunRef) {
+        return `Evidence item ${index + 1} references unknown toolRunRef \`${item.toolRunRef}\`. Use a persisted toolRunRef from this run.`;
+      }
+      if (item.observationRef) {
+        return `Evidence item ${index + 1} references unknown observationRef \`${item.observationRef}\`. Use an observationRef emitted by an executed tool result in this run.`;
+      }
+      const sourceTool = item.sourceTool?.trim();
+      const matchingRuns = sourceTool
+        ? executedResults.filter((candidate) => candidate.toolName === sourceTool || candidate.toolId === sourceTool)
+        : [];
+      if (matchingRuns.length > 1) {
+        const candidateRuns = matchingRuns
+          .map((candidate) => `${candidate.toolName} toolRunRef=${candidate.toolRun.id}`)
+          .join(", ");
+        return `Evidence item ${index + 1} does not map to exactly one executed tool result. sourceTool \`${sourceTool}\` matched multiple runs (${candidateRuns}). Replace sourceTool with toolRunRef or observationRef from the intended run.`;
+      }
+      return sourceTool
+        ? `Evidence item ${index + 1} does not map to an executed tool result. sourceTool \`${sourceTool}\` did not resolve in this run.`
+        : `Evidence item ${index + 1} does not map to an executed tool result.`;
     }
   }
 

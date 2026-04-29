@@ -298,8 +298,8 @@ export function AttackPathsSection({
           {emptyMessage}
         </div>
       ) : (
-        <div className="grid gap-0 lg:grid-cols-[260px_1fr]">
-          <div className="h-[calc(100vh-14rem)] overflow-y-auto border-b border-border/40 lg:border-b-0 lg:border-r">
+        <div className="grid gap-0 lg:grid-cols-[260px_minmax(0,1fr)]">
+          <div className="border-b border-border/40 lg:border-b-0 lg:border-r">
             <ul className="divide-y divide-border/20">
               {attackPaths.paths.map((path, index) => {
                 const isSelected = selectedPath?.id === path.id;
@@ -334,7 +334,7 @@ export function AttackPathsSection({
           </div>
 
           {selectedPath ? (
-            <div className="h-[calc(100vh-14rem)] space-y-4 overflow-y-auto px-4 py-4 lg:px-5">
+            <div className="min-w-0 space-y-4 px-4 py-4 lg:px-5">
               <div>
                 <h3 className="text-base font-semibold text-foreground">{selectedPath.title}</h3>
                 <p className="mt-1.5 text-sm leading-6 text-foreground/90">{selectedPath.summary}</p>

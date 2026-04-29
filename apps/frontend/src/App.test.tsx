@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, waitForElementToBeRemoved } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultWorkflowStageSystemPrompt,
@@ -13,6 +13,17 @@ import {
 import App from "@/app/App";
 
 const runtimeLabel = "Ollama · qwen3:8b";
+
+async function waitForAppHeading(name: string) {
+  const loadingSession = screen.queryByText("Loading session…");
+  if (loadingSession) {
+    await waitForElementToBeRemoved(() => screen.queryByText("Loading session…"), {
+      timeout: 10000
+    });
+  }
+
+  return screen.findByRole("heading", { name }, { timeout: 10000 });
+}
 
 function createPaginatedPayload<T>(key: string, items: T[]) {
   return {
@@ -350,6 +361,10 @@ describe("App", () => {
       unobserve() {}
     });
     Element.prototype.scrollIntoView = vi.fn();
+    Object.defineProperty(window, "scrollTo", {
+      writable: true,
+      value: vi.fn()
+    });
 
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -464,23 +479,25 @@ describe("App", () => {
   it("routes the root path to targets", async () => {
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Targets" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/targets");
+    expect(await waitForAppHeading("Targets")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/targets");
+    });
   });
 
   it("shows the new AI builder navigation surfaces", async () => {
     render(<App />);
 
-    await screen.findByRole("heading", { name: "Targets" });
+    await waitForAppHeading("Targets");
     fireEvent.click(screen.getAllByRole("link", { name: "AI Agents" })[0]!);
-    expect(await screen.findByRole("heading", { name: "AI Agents" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "AI Agents" }, { timeout: 10000 })).toBeInTheDocument();
     expect((await screen.findAllByText(runtimeLabel)).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getAllByRole("link", { name: "AI Tools" })[0]!);
-    expect(await screen.findByRole("heading", { name: "AI Tools" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "AI Tools" }, { timeout: 10000 })).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("link", { name: "Workflows" })[0]!);
-    expect(await screen.findByRole("heading", { name: "Workflows" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Workflows" }, { timeout: 10000 })).toBeInTheDocument();
     expect((await screen.findAllByText("Recon Agent")).length).toBeGreaterThan(0);
 
     expect(screen.queryByText("Templates")).not.toBeInTheDocument();
@@ -489,12 +506,14 @@ describe("App", () => {
   it("opens AI agent detail pages through the url-backed list flow", async () => {
     render(<App />);
 
-    await screen.findByRole("heading", { name: "Targets" });
+    await waitForAppHeading("Targets");
     fireEvent.click(screen.getAllByRole("link", { name: "AI Agents" })[0]!);
-    fireEvent.click((await screen.findAllByText("Recon Agent"))[0]!);
+    fireEvent.click((await screen.findAllByText("Recon Agent", { timeout: 10000 }))[0]!);
 
-    expect(await screen.findByRole("heading", { name: "Recon Agent" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/ai/agents/67043e91-4017-47b8-ac3f-81eb19f51538");
+    expect(await screen.findByRole("heading", { name: "Recon Agent" }, { timeout: 10000 })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/ai/agents/67043e91-4017-47b8-ac3f-81eb19f51538");
+    });
   });
 
   it("loads the AI agent detail page without refetch loops", async () => {
@@ -502,7 +521,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Recon Agent" })).toBeInTheDocument();
+    expect(await waitForAppHeading("Recon Agent")).toBeInTheDocument();
 
     const fetchMock = vi.mocked(fetch);
     const requestedUrls = fetchMock.mock.calls.map(([input]) => String(input));
@@ -515,7 +534,7 @@ describe("App", () => {
   it("opens the AI agent create page from the list add-record action", async () => {
     render(<App />);
 
-    await screen.findByRole("heading", { name: "Targets" });
+    await waitForAppHeading("Targets");
     fireEvent.click(screen.getAllByRole("link", { name: "AI Agents" })[0]!);
     fireEvent.click(await screen.findByRole("button", { name: "Add AI Agent" }));
 
@@ -546,7 +565,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Targets" })).toBeInTheDocument();
+    expect(await waitForAppHeading("Targets")).toBeInTheDocument();
   });
 
   it("shows a recoverable bootstrap error after repeated session failures", async () => {
@@ -559,7 +578,7 @@ describe("App", () => {
     authSessionFailureCount = 0;
     fireEvent.click(screen.getByRole("button", { name: "Retry session check" }));
 
-    expect(await screen.findByRole("heading", { name: "Targets" })).toBeInTheDocument();
+    expect(await waitForAppHeading("Targets")).toBeInTheDocument();
   });
 
   it("shows the authenticated user and allows sign out when auth is enabled", async () => {

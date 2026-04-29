@@ -17,6 +17,8 @@ services:
   vulnerable-target:
     build:
       context: ./demos/vulnerable-app
+    container_name: synosec-target
+    hostname: synosec-target
     restart: unless-stopped
     environment:
       PORT: 8888
@@ -24,6 +26,8 @@ services:
   attack-path-target:
     build:
       context: ./demos/attack-path-target
+    container_name: synosec-attack-path-target
+    hostname: synosec-attack-path-target
     restart: unless-stopped
     environment:
       PORT: 8890
@@ -31,6 +35,8 @@ services:
   full-stack-target:
     build:
       context: ./demos/full-stack-target
+    container_name: synosec-full-stack-target
+    hostname: synosec-full-stack-target
     restart: unless-stopped
     environment:
       PORT: 8891

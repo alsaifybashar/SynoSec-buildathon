@@ -632,8 +632,8 @@ export function ExecutionReportFindingsView({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-0 lg:grid-cols-[280px_1fr]">
-        <div className="h-[calc(100vh-14rem)] overflow-y-auto border-b border-border/40 lg:border-b-0 lg:border-r">
+      <div className="grid gap-0 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="border-b border-border/40 lg:border-b-0 lg:border-r">
           <ul className="divide-y divide-border/20">
             {report.findings.map((finding, index) => (
               <li key={finding.id}>
@@ -648,7 +648,7 @@ export function ExecutionReportFindingsView({
           </ul>
         </div>
 
-        <div ref={inspectorRef} className="h-[calc(100vh-14rem)] overflow-y-auto px-5 py-5 lg:px-6">
+        <div ref={inspectorRef} className="min-w-0 px-5 py-5 lg:px-6">
           <FindingInspector
             report={report}
             finding={selected}

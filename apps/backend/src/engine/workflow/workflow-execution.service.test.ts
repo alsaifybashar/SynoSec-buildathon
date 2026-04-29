@@ -157,6 +157,53 @@ function makeFailingHttpProofTool() {
   };
 }
 
+async function submitGraphFinding(
+  reportSystemGraphBatch: { execute: (input: unknown) => Promise<any> },
+  input: {
+    id: string;
+    title: string;
+    evidence: Array<Record<string, unknown>>;
+    type?: string;
+    severity?: string;
+    confidence?: number | string;
+    target?: string | { host: string; url?: string };
+    impact?: string;
+    recommendation?: string;
+  }
+) {
+  const normalizedTarget = typeof input.target === "string"
+    ? { host: input.target }
+    : input.target ?? { host: "demo.local" };
+  const resourceId = `resource:${normalizedTarget.host}`;
+  const output = await reportSystemGraphBatch.execute({
+    resources: [{
+      id: resourceId,
+      kind: "host",
+      name: normalizedTarget.host
+    }],
+    findings: [{
+      id: input.id,
+      type: input.type,
+      title: input.title,
+      severity: input.severity,
+      confidence: input.confidence,
+      target: normalizedTarget,
+      evidence: input.evidence,
+      impact: input.impact,
+      recommendation: input.recommendation,
+      resourceIds: [resourceId]
+    }]
+  });
+
+  return {
+    accepted: true,
+    findingId: output.findingIds[0],
+    title: input.title,
+    severity: input.severity ?? "medium",
+    host: normalizedTarget.host
+  };
+}
+
 function makeSeededAgentBashCommandRuntimeTool() {
   return {
     id: agentBashCommandTool.id,
@@ -830,7 +877,8 @@ describe("WorkflowExecutionService", () => {
     expect(exposedToolNames).toContain("bash");
     expect(exposedToolNames).not.toContain("seed-agent-bash-command");
     expect(exposedToolNames).toContain("log_progress");
-    expect(exposedToolNames).toContain("report_finding");
+    expect(exposedToolNames).toContain("report_system_graph_batch");
+    expect(exposedToolNames).not.toContain("report_finding");
     expect(exposedToolNames).toContain("complete_run");
     const toolContextEvent = createdRuns[0]!.events.find((event) => event.title === "Tool context");
     const toolContextBody = typeof toolContextEvent?.payload["body"] === "string"
@@ -1270,6 +1318,8 @@ describe("WorkflowExecutionService", () => {
     expect(toolContextBody).toContain("complete_run: Finish the workflow run last");
     expect(toolContextBody).toContain("Provide only `summary`.");
     expect(toolContextBody).toContain("report_system_graph_batch:");
+    expect(toolContextBody).toContain("Prefer toolRunRef or observationRef");
+    expect(toolContextBody).toContain("Use workflow enums for resource kinds and finding types instead of free-form labels.");
     expect(toolContextBody).not.toContain("report_attack_vector:");
     expect(toolContextBody).not.toContain("deep_analysis");
 
@@ -1281,6 +1331,7 @@ describe("WorkflowExecutionService", () => {
     expect(systemPromptEvent?.detail).toContain("Execution URL: http://localhost:3000/");
     expect(systemPromptEvent?.detail).toContain("Workflow execution contract:");
     expect(systemPromptEvent?.detail).toContain("Run evidence tools first, submit evidence-backed resources, findings, and relationships with report_system_graph_batch, and call complete_run last.");
+    expect(systemPromptEvent?.detail).toContain("Evidence-backed submissions must use persisted evidence references from earlier tool runs");
     expect(systemPromptEvent?.detail).not.toContain("call report_attack_vector");
     expect(systemPromptEvent?.detail).toContain("complete_run accepts only `summary`.");
     expect(systemPromptEvent?.detail).toContain("complete_run closes the workflow run and does not create findings.");
@@ -1507,8 +1558,8 @@ describe("WorkflowExecutionService", () => {
         const toolOutput = await options.tools["custom-http-proof"].execute({
           baseUrl: "http://localhost:3000/admin"
         });
-        const secondFinding = await options.tools.report_finding.execute({
-          mode: "finding",
+        await submitGraphFinding(options.tools.report_system_graph_batch, {
+          id: "finding-admin-panel",
           type: "service_exposure",
           title: "Admin Panel Reachable",
           severity: "medium",
@@ -1604,8 +1655,8 @@ describe("WorkflowExecutionService", () => {
         const toolOutput = await options.tools["custom-http-proof"].execute({
           baseUrl: "http://localhost:3000/admin"
         });
-        const firstFinding = await options.tools.report_finding.execute({
-          mode: "finding",
+        await submitGraphFinding(options.tools.report_system_graph_batch, {
+          id: "finding-admin-panel",
           type: "service_exposure",
           title: "Admin Panel Reachable",
           severity: "medium",
@@ -1619,8 +1670,8 @@ describe("WorkflowExecutionService", () => {
           impact: "The admin panel is reachable from the assessed surface.",
           recommendation: "Restrict access to trusted operators."
         });
-        const secondFinding = await options.tools.report_finding.execute({
-          mode: "finding",
+        await submitGraphFinding(options.tools.report_system_graph_batch, {
+          id: "finding-admin-auth",
           type: "auth_weakness",
           title: "Admin Exposure Enables Authentication Attack",
           severity: "high",
@@ -1660,7 +1711,7 @@ describe("WorkflowExecutionService", () => {
     expect(createdRuns[0]!.events.some((event) => event.title === "Run completion accepted")).toBe(true);
   });
 
-  it("accepts report_finding mode attack_vector submissions between existing findings", async () => {
+  it("accepts attack_vector submissions between existing graph-batch findings", async () => {
     const baseWorkflow = makeWorkflow();
     const workflow = makeWorkflow({
       stages: [{
@@ -1684,8 +1735,8 @@ describe("WorkflowExecutionService", () => {
         const toolOutput = await options.tools["custom-http-proof"].execute({
           baseUrl: "http://localhost:3000/admin"
         });
-        const firstFinding = await options.tools.report_finding.execute({
-          mode: "finding",
+        const firstFinding = await submitGraphFinding(options.tools.report_system_graph_batch, {
+          id: "finding-admin-panel",
           type: "service_exposure",
           title: "Admin Panel Reachable",
           severity: "medium",
@@ -1699,8 +1750,8 @@ describe("WorkflowExecutionService", () => {
           impact: "The admin panel is reachable from the assessed surface.",
           recommendation: "Restrict access to trusted operators."
         });
-        const secondFinding = await options.tools.report_finding.execute({
-          mode: "finding",
+        const secondFinding = await submitGraphFinding(options.tools.report_system_graph_batch, {
+          id: "finding-admin-auth",
           type: "auth_weakness",
           title: "Weak Authentication on Admin Surface",
           severity: "high",
@@ -1785,8 +1836,8 @@ describe("WorkflowExecutionService", () => {
         await options.tools["custom-http-proof"].execute({
           baseUrl: "http://localhost:3000/admin"
         });
-        const firstFinding = await options.tools.report_finding.execute({
-          mode: "finding",
+        const firstFinding = await submitGraphFinding(options.tools.report_system_graph_batch, {
+          id: "finding-admin-panel",
           type: "service_exposure",
           title: "Admin Panel Reachable",
           severity: "medium",
@@ -1799,8 +1850,8 @@ describe("WorkflowExecutionService", () => {
           impact: "The admin panel is reachable from the assessed surface.",
           recommendation: "Restrict access to trusted operators."
         });
-        const secondFinding = await options.tools.report_finding.execute({
-          mode: "finding",
+        const secondFinding = await submitGraphFinding(options.tools.report_system_graph_batch, {
+          id: "finding-admin-auth",
           type: "auth_weakness",
           title: "Weak Authentication on Admin Surface",
           severity: "high",
@@ -1832,7 +1883,7 @@ describe("WorkflowExecutionService", () => {
           attackVectorIds: [expect.any(String)]
         });
         await options.tools.complete_run.execute({
-          summary: "Normalized report_finding payloads were accepted."
+          summary: "Normalized graph-batch payloads were accepted."
         });
         yield {
           type: "finish",
@@ -1871,8 +1922,8 @@ describe("WorkflowExecutionService", () => {
         const toolOutput = await options.tools["custom-http-proof"].execute({
           baseUrl: "http://localhost:3000/admin"
         });
-        const firstFinding = await options.tools.report_finding.execute({
-          mode: "finding",
+        const firstFinding = await submitGraphFinding(options.tools.report_system_graph_batch, {
+          id: "finding-admin-panel",
           type: "service_exposure",
           title: "Admin Panel Reachable",
           severity: "medium",
@@ -1886,8 +1937,8 @@ describe("WorkflowExecutionService", () => {
           impact: "The admin panel is reachable from the assessed surface.",
           recommendation: "Restrict access to trusted operators."
         });
-        const secondFinding = await options.tools.report_finding.execute({
-          mode: "finding",
+        const secondFinding = await submitGraphFinding(options.tools.report_system_graph_batch, {
+          id: "finding-admin-auth",
           type: "auth_weakness",
           title: "Weak Authentication on Admin Surface",
           severity: "high",
@@ -1961,8 +2012,8 @@ describe("WorkflowExecutionService", () => {
         const toolOutput = await options.tools["custom-http-proof"].execute({
           baseUrl: "http://localhost:3000/admin"
         });
-        const firstFinding = await options.tools.report_finding.execute({
-          mode: "finding",
+        const firstFinding = await submitGraphFinding(options.tools.report_system_graph_batch, {
+          id: "finding-admin-panel",
           type: "service_exposure",
           title: "Admin Panel Reachable",
           severity: "medium",
@@ -1976,8 +2027,8 @@ describe("WorkflowExecutionService", () => {
           impact: "The admin panel is reachable from the assessed surface.",
           recommendation: "Restrict access to trusted operators."
         });
-        const secondFinding = await options.tools.report_finding.execute({
-          mode: "finding",
+        const secondFinding = await submitGraphFinding(options.tools.report_system_graph_batch, {
+          id: "finding-admin-auth",
           type: "auth_weakness",
           title: "Weak Authentication on Admin Surface",
           severity: "high",
@@ -2064,6 +2115,63 @@ describe("WorkflowExecutionService", () => {
         });
         await options.tools.complete_run.execute({
           summary: "Duplicate ids were rejected before completion."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({
+      workflow,
+      aiToolById: {
+        "custom-http-proof": makeCustomHttpProofTool()
+      }
+    });
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+  });
+
+  it("returns an actionable ambiguity error when sourceTool matches multiple executed results", async () => {
+    const workflow = makeWorkflow({
+      stages: [{
+        ...makeWorkflow().stages[0]!,
+        allowedToolIds: ["custom-http-proof"]
+      }]
+    });
+
+    streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<any> }> }) => ({
+      fullStream: (async function* () {
+        await options.tools["custom-http-proof"].execute({
+          baseUrl: "http://localhost:3000/admin"
+        });
+        await options.tools["custom-http-proof"].execute({
+          baseUrl: "http://localhost:3000/admin?repeat=1"
+        });
+        await expect(options.tools.report_system_graph_batch.execute({
+          resources: [{
+            id: "resource:demo.local",
+            kind: "host",
+            name: "demo.local"
+          }],
+          findings: [{
+            id: "finding-admin-panel",
+            title: "Admin Panel Reachable",
+            resourceIds: ["resource:demo.local"],
+            evidence: [{
+              sourceTool: "custom-http-proof",
+              quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel"
+            }]
+          }]
+        })).rejects.toThrow(/matched multiple executed results|Replace sourceTool with toolRunRef or observationRef/);
+        await options.tools.complete_run.execute({
+          summary: "Ambiguous sourceTool evidence was rejected."
         });
         yield {
           type: "finish",
@@ -2433,7 +2541,8 @@ describe("WorkflowExecutionService", () => {
           }]
         })).rejects.toMatchObject({
           status: 400,
-          message: expect.stringContaining("Finding relationship rel_admin_authbypass_enables evidence[0] could not be grounded")
+          message: expect.stringContaining("Finding relationship rel_admin_authbypass_enables evidence[0] could not be grounded"),
+          userFriendlyMessage: expect.stringContaining("Add a persisted evidence reference")
         });
         await options.tools.complete_run.execute({
           summary: "Ungrounded relationship evidence was rejected."
@@ -2453,6 +2562,99 @@ describe("WorkflowExecutionService", () => {
         "custom-http-proof": makeCustomHttpProofTool()
       }
     });
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+  });
+
+  it("returns actionable repair hints for invalid system graph batches", async () => {
+    const workflow = makeWorkflow();
+
+    streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<any> }> }) => ({
+      fullStream: (async function* () {
+        await expect(options.tools.report_system_graph_batch.execute({
+          resources: [{
+            id: "res_db_creds",
+            kind: "credential",
+            name: "Database Credentials",
+            evidence: [{
+              sourceTool: "bash",
+              quote: "DB credentials: admin:CorpNet@2019!"
+            }]
+          }],
+          findings: [{
+            id: "find_disclosure",
+            type: "information_disclosure",
+            title: "Sensitive data disclosure",
+            evidence: [{
+              sourceTool: "bash",
+              quote: "passwordHash exposed"
+            }]
+          }]
+        })).rejects.toMatchObject({
+          status: 400,
+          message: expect.stringContaining("resources.0.kind"),
+          userFriendlyMessage: expect.stringContaining("resources.0.kind: use one of")
+        });
+        await expect(options.tools.report_system_graph_batch.execute({
+          resources: [{
+            id: "res_db_creds",
+            kind: "credential",
+            name: "Database Credentials",
+            evidence: [{
+              sourceTool: "bash",
+              quote: "DB credentials: admin:CorpNet@2019!"
+            }]
+          }],
+          findings: [{
+            id: "find_disclosure",
+            type: "information_disclosure",
+            title: "Sensitive data disclosure",
+            evidence: [{
+              sourceTool: "bash",
+              quote: "passwordHash exposed"
+            }]
+          }]
+        })).rejects.toMatchObject({
+          userFriendlyMessage: expect.stringContaining("resources.0.evidence.0: add one persisted evidence reference")
+        });
+        await expect(options.tools.report_system_graph_batch.execute({
+          resources: [{
+            id: "res_db_creds",
+            kind: "credential",
+            name: "Database Credentials",
+            evidence: [{
+              sourceTool: "bash",
+              quote: "DB credentials: admin:CorpNet@2019!"
+            }]
+          }],
+          findings: [{
+            id: "find_disclosure",
+            type: "information_disclosure",
+            title: "Sensitive data disclosure",
+            evidence: [{
+              sourceTool: "bash",
+              quote: "passwordHash exposed"
+            }]
+          }]
+        })).rejects.toMatchObject({
+          userFriendlyMessage: expect.stringContaining("findings.0.type: use one of")
+        });
+        await options.tools.complete_run.execute({
+          summary: "Invalid system graph batch repair hints were returned."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({ workflow });
     await service.startRun(workflow.id);
 
     await vi.waitFor(() => {
@@ -2484,8 +2686,8 @@ describe("WorkflowExecutionService", () => {
         const toolOutput = await options.tools["custom-http-proof"].execute({
           baseUrl: "http://localhost:3000/admin"
         });
-        const firstFinding = await options.tools.report_finding.execute({
-          mode: "finding",
+        const firstFinding = await submitGraphFinding(options.tools.report_system_graph_batch, {
+          id: "finding-admin-panel",
           type: "service_exposure",
           title: "Admin Panel Reachable",
           severity: "medium",
@@ -2499,8 +2701,8 @@ describe("WorkflowExecutionService", () => {
           impact: "The admin panel is reachable from the assessed surface.",
           recommendation: "Restrict access to trusted operators."
         });
-        const secondFinding = await options.tools.report_finding.execute({
-          mode: "finding",
+        const secondFinding = await submitGraphFinding(options.tools.report_system_graph_batch, {
+          id: "finding-admin-auth",
           type: "auth_weakness",
           title: "Admin Exposure Enables Authentication Attack",
           severity: "high",
@@ -2595,7 +2797,7 @@ describe("WorkflowExecutionService", () => {
     expect(createdRuns[0]!.events.find((event) => event.title === "README coverage assertions")).toBeUndefined();
   });
 
-  it("emits a dedicated report_finding tool result summary", async () => {
+  it("emits a dedicated report_system_graph_batch tool result summary for one finding", async () => {
     const workflow = makeWorkflow({
       stages: [{
         ...makeWorkflow().stages[0]!,
@@ -2610,31 +2812,46 @@ describe("WorkflowExecutionService", () => {
         });
         yield {
           type: "tool-call",
-          toolCallId: "call-report-finding",
-          toolName: "report_finding",
+          toolCallId: "call-report-system-graph-batch",
+          toolName: "report_system_graph_batch",
           input: {
-            mode: "finding",
-            type: "other",
-            title: "SQL Injection Authentication Bypass",
-            severity: "high",
-            confidence: 0.98,
-            target: { host: "demo.local" },
-            evidence: [{
-              sourceTool: "custom-http-proof",
-              quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-              toolRunRef: toolOutput.id
+            resources: [{
+              id: "resource:demo.local",
+              kind: "host",
+              name: "demo.local"
             }],
-            impact: "Authentication bypass is possible.",
-            recommendation: "Parameterize the query."
+            findings: [{
+              id: "finding-auth-bypass",
+              type: "other",
+              title: "SQL Injection Authentication Bypass",
+              severity: "high",
+              confidence: 0.98,
+              target: { host: "demo.local" },
+              resourceIds: ["resource:demo.local"],
+              evidence: [{
+                sourceTool: "custom-http-proof",
+                quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
+                toolRunRef: toolOutput.id
+              }],
+              impact: "Authentication bypass is possible.",
+              recommendation: "Parameterize the query."
+            }]
           }
         };
-        const output = await options.tools.report_finding.execute({
-          mode: "finding",
+        const output = await options.tools.report_system_graph_batch.execute({
+          resources: [{
+            id: "resource:demo.local",
+            kind: "host",
+            name: "demo.local"
+          }],
+          findings: [{
+            id: "finding-auth-bypass",
           type: "other",
           title: "SQL Injection Authentication Bypass",
           severity: "high",
           confidence: 0.98,
           target: { host: "demo.local" },
+            resourceIds: ["resource:demo.local"],
           evidence: [{
             sourceTool: "custom-http-proof",
             quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
@@ -2642,11 +2859,12 @@ describe("WorkflowExecutionService", () => {
           }],
           impact: "Authentication bypass is possible.",
           recommendation: "Parameterize the query."
+          }]
         });
         yield {
           type: "tool-result",
-          toolCallId: "call-report-finding",
-          toolName: "report_finding",
+          toolCallId: "call-report-system-graph-batch",
+          toolName: "report_system_graph_batch",
           output
         };
         await options.tools.complete_run.execute({
@@ -2711,13 +2929,13 @@ describe("WorkflowExecutionService", () => {
       expect(createdRuns[0]?.status).toBe("completed");
     });
 
-    const toolResult = createdRuns[0]!.events.find((event) => event.type === "tool_result" && event.payload["toolName"] === "report_finding");
+    const toolResult = createdRuns[0]!.events.find((event) => event.type === "tool_result" && event.payload["toolName"] === "report_system_graph_batch");
     expect(toolResult?.summary).toBe("Recorded HIGH finding: SQL Injection Authentication Bypass on demo.local.");
     expect(toolResult?.detail).toContain("\"title\": \"SQL Injection Authentication Bypass\"");
     expect(toolResult?.detail).toContain("\"host\": \"demo.local\"");
   });
 
-  it("accepts sparse report_finding payloads and summary-only completion", async () => {
+  it("accepts sparse report_system_graph_batch finding payloads and summary-only completion", async () => {
     const workflow = makeWorkflow({
       stages: [{
         ...makeWorkflow().stages[0]!,
@@ -2730,8 +2948,8 @@ describe("WorkflowExecutionService", () => {
         const toolOutput = await options.tools["custom-http-proof"].execute({
           baseUrl: "http://localhost:3000/admin"
         });
-        await options.tools.report_finding.execute({
-          mode: "finding",
+        await submitGraphFinding(options.tools.report_system_graph_batch, {
+          id: "finding-admin-panel",
           title: "Admin Panel Reachable",
           evidence: [{
             sourceTool: "custom-http-proof",
@@ -2773,7 +2991,7 @@ describe("WorkflowExecutionService", () => {
     expect(createdRuns[0]!.events.some((event) => event.title === "Run completion accepted")).toBe(true);
   });
 
-  it("accepts JSON-string report_finding payloads", async () => {
+  it("accepts JSON-string report_system_graph_batch payloads", async () => {
     const workflow = makeWorkflow({
       stages: [{
         ...makeWorkflow().stages[0]!,
@@ -2786,27 +3004,32 @@ describe("WorkflowExecutionService", () => {
         const toolOutput = await options.tools["custom-http-proof"].execute({
           baseUrl: "http://localhost:3000/admin"
         });
-        const result = await options.tools.report_finding.execute(JSON.stringify({
-          mode: "finding",
-          type: "content_discovery",
-          title: "Admin Panel Reachable",
-          severity: "medium",
-          confidence: 0.9,
-          target: { host: "demo.local", url: "http://localhost:3000/admin" },
-          evidence: [{
-            sourceTool: "custom-http-proof",
-            quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
-            toolRunRef: toolOutput.id
+        const result = await options.tools.report_system_graph_batch.execute(JSON.stringify({
+          resources: [{
+            id: "resource:demo.local",
+            kind: "host",
+            name: "demo.local"
           }],
-          impact: "The admin panel is directly reachable.",
-          recommendation: "Restrict access to trusted operators."
+          findings: [{
+            id: "finding-admin-panel",
+            type: "content_discovery",
+            title: "Admin Panel Reachable",
+            severity: "medium",
+            confidence: 0.9,
+            target: { host: "demo.local", url: "http://localhost:3000/admin" },
+            resourceIds: ["resource:demo.local"],
+            evidence: [{
+              sourceTool: "custom-http-proof",
+              quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
+              toolRunRef: toolOutput.id
+            }],
+            impact: "The admin panel is directly reachable.",
+            recommendation: "Restrict access to trusted operators."
+          }]
         }));
         expect(result).toMatchObject({
           accepted: true,
-          findingId: expect.any(String),
-          title: "Admin Panel Reachable",
-          severity: "medium",
-          host: "demo.local"
+          findingIds: ["finding-admin-panel"]
         });
         await options.tools.complete_run.execute({
           summary: "Finding recorded from string payload."
@@ -2874,6 +3097,67 @@ describe("WorkflowExecutionService", () => {
     expect(findingEvent).toBeDefined();
     const finding = findingEvent?.payload["finding"] as { title?: string } | undefined;
     expect(finding?.title).toBe("Admin Panel Reachable");
+  });
+
+  it("warns when complete_run summary mentions a finding that failed reporting", async () => {
+    const workflow = makeWorkflow({
+      stages: [{
+        ...makeWorkflow().stages[0]!,
+        allowedToolIds: ["custom-http-proof"]
+      }]
+    });
+
+    streamTextMock.mockImplementation((options: { tools: Record<string, { execute: (input: unknown) => Promise<any> }> }) => ({
+      fullStream: (async function* () {
+        const toolOutput = await options.tools["custom-http-proof"].execute({
+          baseUrl: "http://localhost:3000/admin"
+        });
+        await expect(options.tools.report_system_graph_batch.execute({
+          resources: [{
+            id: "resource:demo.local",
+            kind: "host",
+            name: "demo.local"
+          }],
+          findings: [{
+            id: "finding-sensitive-data",
+            title: "Sensitive Data Exposure",
+            severity: "medium",
+            target: { host: "demo.local" },
+            resourceIds: ["resource:demo.local"],
+            evidence: [{
+              sourceTool: "custom-http-proof",
+              quote: "URL: http://localhost:3000/admin\nStatus: 200\nSnippet: Administrator Control Panel",
+              toolRunRef: `${toolOutput.id}-missing`
+            }]
+          }]
+        })).rejects.toThrow(/unknown toolRunRef/i);
+        await options.tools.complete_run.execute({
+          summary: "The assessment found Sensitive Data Exposure."
+        });
+        yield {
+          type: "finish",
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+        };
+      })()
+    }));
+
+    const { service, createdRuns } = createService({
+      workflow,
+      aiToolById: {
+        "custom-http-proof": makeCustomHttpProofTool()
+      }
+    });
+    await service.startRun(workflow.id);
+
+    await vi.waitFor(() => {
+      expect(createdRuns[0]?.status).toBe("completed");
+    });
+
+    const warningEvent = createdRuns[0]!.events.find((event) => event.title === "Completion summary warning");
+    expect(warningEvent?.summary).toBe("Completion summary included unsupported finding claims.");
+    expect(warningEvent?.detail).toContain("Sensitive Data Exposure");
   });
 
   it("persists failed tool results that only appear in the next model step transcript", async () => {

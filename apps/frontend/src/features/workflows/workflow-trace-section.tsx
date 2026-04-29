@@ -1047,50 +1047,52 @@ function FindingsRail({
   }
 
   return (
-    <aside className="space-y-3 lg:sticky lg:top-6">
-      {metadata.length > 0 ? (
-        <DetailMetadataPanel
-          title="Metadata"
-          hint="Workflow identity, linked resources, and current run state for this Duplex session."
-          compact
-          className="rounded-xl border-border/80 bg-card px-4 py-4"
-        >
-          <div className="mt-0 grid gap-x-4 gap-y-2 sm:grid-cols-2">
-            {metadata.map((item) => (
-              <DetailSidebarItem key={item.label} label={item.label} compact {...(item.hint ? { hint: item.hint } : {})}>
-                {item.value}
-              </DetailSidebarItem>
-            ))}
+    <aside className="order-1 self-start 2xl:order-2 2xl:sticky 2xl:top-6">
+      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-1">
+        {metadata.length > 0 ? (
+          <DetailMetadataPanel
+            title="Metadata"
+            hint="Workflow identity, linked resources, and current run state for this Duplex session."
+            compact
+            className="rounded-xl border-border/80 bg-card px-4 py-4"
+          >
+            <div className="mt-0 grid gap-x-4 gap-y-2 sm:grid-cols-2">
+              {metadata.map((item) => (
+                <DetailSidebarItem key={item.label} label={item.label} compact {...(item.hint ? { hint: item.hint } : {})}>
+                  {item.value}
+                </DetailSidebarItem>
+              ))}
+            </div>
+          </DetailMetadataPanel>
+        ) : null}
+        {showViewSelector ? (
+          <div className="rounded-xl border border-border/80 bg-card px-4 py-4">
+            <div className="mb-2 px-3 font-mono text-eyebrow font-medium uppercase tracking-[0.3em] text-muted-foreground">
+              Artifacts
+            </div>
+            <div className="grid gap-1">
+              {VIEW_OPTIONS.map((option) => {
+                const active = option.id === selectedView;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => onSelectView(option.id)}
+                    className={cn(
+                      "relative flex w-full items-center rounded-none px-3 py-2 text-left text-sm font-medium leading-none transition-colors",
+                      active
+                        ? "bg-muted text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))] before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-primary before:content-['']"
+                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </DetailMetadataPanel>
-      ) : null}
-      {showViewSelector ? (
-        <div className="rounded-xl border border-border/80 bg-card px-4 py-4">
-          <div className="mb-2 px-3 font-mono text-eyebrow font-medium uppercase tracking-[0.3em] text-muted-foreground">
-            Artifacts
-          </div>
-          <div className="grid gap-1">
-            {VIEW_OPTIONS.map((option) => {
-              const active = option.id === selectedView;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => onSelectView(option.id)}
-                  className={cn(
-                    "relative flex w-full items-center rounded-none px-3 py-2 text-left text-sm font-medium leading-none transition-colors",
-                    active
-                      ? "bg-muted text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))] before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-primary before:content-['']"
-                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                  )}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </aside>
   );
 }
@@ -1351,8 +1353,8 @@ export function WorkflowTraceSection({
   }
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-      <div className="min-w-0">{mainContent}</div>
+    <section className="grid items-start gap-6 2xl:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="order-2 min-w-0 2xl:order-1">{mainContent}</div>
 
       <FindingsRail
         metadata={metadataItems}

@@ -864,6 +864,8 @@ export const workflowExecutionContractHeading = "Workflow execution contract:";
 export const defaultWorkflowExecutionContract = [
   workflowExecutionContractHeading,
   "Run evidence tools first, submit evidence-backed resources, findings, and relationships with report_system_graph_batch, and call complete_run last.",
+  "Evidence-backed submissions must use persisted evidence references from earlier tool runs, such as toolRunRef, observationRef, artifactRef, traceEventId, or externalUrl.",
+  "Do not mention a finding in the final summary unless report_system_graph_batch accepted it.",
   "complete_run accepts only `summary`.",
   "complete_run closes the workflow run and does not create findings.",
   "End every run explicitly with complete_run."
