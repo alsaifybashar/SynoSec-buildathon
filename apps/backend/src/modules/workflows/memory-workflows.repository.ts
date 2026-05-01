@@ -36,6 +36,11 @@ function compareStartedAtDescending(left: { startedAt: string }, right: { starte
   return Date.parse(right.startedAt) - Date.parse(left.startedAt);
 }
 
+/**
+ * Test-only in-memory implementation of WorkflowsRepository.
+ * Production code wires {@link PrismaWorkflowsRepository} via
+ * {@link createWorkflowsRepositoryFromEnvironment}.
+ */
 export class MemoryWorkflowsRepository implements WorkflowsRepository {
   private readonly workflows = new Map<string, Workflow>();
   private readonly launches = new Map<string, WorkflowLaunch>();

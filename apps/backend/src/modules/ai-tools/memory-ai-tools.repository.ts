@@ -11,6 +11,11 @@ import { enrichAiTool } from "./ai-tool-surface.js";
 import { getBuiltinAiTool, isBuiltinAiToolId, mergeAndPaginateAiTools, rejectBuiltinAiToolMutation } from "./builtin-ai-tools.js";
 import { encodeCreateToolInput, encodeUpdateToolInput, mapToolExecutionFields, stripExecutionConfig } from "./tool-execution-config.js";
 
+/**
+ * Test-only in-memory implementation of AiToolsRepository.
+ * Production code wires {@link PrismaAiToolsRepository} via
+ * {@link createAiToolsRepositoryFromEnvironment}.
+ */
 export class MemoryAiToolsRepository implements AiToolsRepository {
   private readonly records = new Map<string, AiTool>();
 
