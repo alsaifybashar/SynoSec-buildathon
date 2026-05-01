@@ -3,7 +3,6 @@ import { Download, Eye, EyeOff, Pencil, Square, Workflow as WorkflowIcon } from 
 import { toast } from "sonner";
 import {
   apiRoutes,
-  type AiAgent,
   type ExecutionReportDetail,
   type ListExecutionReportsResponse,
   type UpdateWorkflowBody,
@@ -25,14 +24,12 @@ export function WorkflowDetailPage({
   workflowId,
   workflowNameHint,
   onNavigateToList,
-  onNavigateToEdit,
-  onNavigateToAgent
+  onNavigateToEdit
 }: {
   workflowId?: string;
   workflowNameHint?: string;
   onNavigateToList: () => void;
   onNavigateToEdit?: (id: string, label?: string) => void;
-  onNavigateToAgent?: (id: string) => void;
 }) {
   const [showFullDetails, setShowFullDetails] = useState(false);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
@@ -44,7 +41,6 @@ export function WorkflowDetailPage({
   const [promptSaveError, setPromptSaveError] = useState<string | null>(null);
   const [detailReloadToken, setDetailReloadToken] = useState(0);
   const [workflowOverride, setWorkflowOverride] = useState<Workflow | null>(null);
-  const [agentOverride, setAgentOverride] = useState<AiAgent | null>(null);
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const context = useWorkflowDefinitionContext();
   const workflowDetail = useResourceDetail(workflowsResource, workflowId ?? null, detailReloadToken);
@@ -65,12 +61,6 @@ export function WorkflowDetailPage({
   }, [workflowDetail]);
 
   const workflow = workflowDetail.state === "loaded" ? (workflowOverride ?? workflowDetail.item) : null;
-  const effectiveAgents = useMemo(
-    () => agentOverride
-      ? context.agents.map((item) => (item.id === agentOverride.id ? agentOverride : item))
-      : context.agents,
-    [agentOverride, context.agents]
-  );
   const [executionReport, setExecutionReport] = useState<ExecutionReportDetail | null>(null);
   const {
     currentLaunch,
@@ -128,23 +118,7 @@ export function WorkflowDetailPage({
     };
   }, [completedRunId]);
 
-  const workflowAgent = workflow
-    ? (agentOverride?.id === workflow.agentId ? agentOverride : context.agentLookup[workflow.agentId] ?? null)
-    : null;
-  const workflowProvidedToolIds = workflow?.allowedToolIds ?? [];
-  const inheritedAgentToolIds = workflowAgent
-    ? context.tools
-        .filter((tool) => {
-          if (tool.status !== "active") {
-            return false;
-          }
-          if (workflowAgent.toolAccessMode === "system") {
-            return tool.source === "system" && tool.accessProfile === "standard";
-          }
-          return tool.accessProfile === "standard" || tool.accessProfile === "shell";
-        })
-        .map((tool) => tool.id)
-    : [];
+  const primaryStage = workflow?.stages[0] ?? null;
   const targetTabs = useMemo(() => context.targets.map((target) => ({
     target,
     summary: currentLaunch?.runs.find((item) => item.targetId === target.id) ?? null,
@@ -152,16 +126,19 @@ export function WorkflowDetailPage({
   })), [context.targets, currentLaunch]);
   const activeTarget = targetTabs.find((item) => item.target.id === selectedTargetId)?.target ?? null;
   const approvedToolCount = workflow
-    ? (workflowProvidedToolIds.length > 0 ? workflowProvidedToolIds.length : inheritedAgentToolIds.length)
+    ? new Set(workflow.stages.flatMap((stage) => stage.allowedToolIds)).size
     : 0;
   const visibleToolNames = useMemo(() => {
     if (!workflow) {
       return [];
     }
 
-    const visibleToolIds = workflowProvidedToolIds.length > 0 ? workflowProvidedToolIds : inheritedAgentToolIds;
-    return visibleToolIds.map((toolId) => context.toolLookup[toolId] ?? toolId);
-  }, [context.toolLookup, inheritedAgentToolIds, workflow, workflowProvidedToolIds]);
+    const visibleToolIds = new Set(workflow.stages.flatMap((stage) => stage.allowedToolIds));
+    if (visibleToolIds.size === 0) {
+      return context.tools.filter((tool) => tool.status === "active").map((tool) => tool.name);
+    }
+    return [...visibleToolIds].map((toolId) => context.toolLookup[toolId] ?? toolId);
+  }, [context.toolLookup, context.tools, workflow]);
 
   useEffect(() => {
     if (targetTabs.length === 0) {
@@ -194,7 +171,7 @@ export function WorkflowDetailPage({
     }
 
     setPromptDraft({
-      ...splitWorkflowPromptSections(workflow.stageSystemPrompt)
+      ...splitWorkflowPromptSections(primaryStage?.stageSystemPrompt ?? "")
     });
     setPromptSaveError(null);
     setShowPromptEditor(true);
@@ -218,8 +195,7 @@ export function WorkflowDetailPage({
 
     const nextStageSystemPrompt = joinWorkflowPromptSections(promptDraft);
 
-    const workflowChanged =
-      nextStageSystemPrompt !== workflow.stageSystemPrompt;
+    const workflowChanged = nextStageSystemPrompt !== (primaryStage?.stageSystemPrompt ?? "");
 
     if (!workflowChanged) {
       setShowPromptEditor(false);
@@ -242,7 +218,9 @@ export function WorkflowDetailPage({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            stageSystemPrompt: nextStageSystemPrompt
+            stages: workflow.stages.map((stage, index) => index === 0
+              ? { ...stage, stageSystemPrompt: nextStageSystemPrompt }
+              : stage)
           } satisfies UpdateWorkflowBody)
         });
         workflowSaved = true;
@@ -385,7 +363,6 @@ export function WorkflowDetailPage({
           workflow={loadedWorkflow}
           activeTarget={activeTarget}
           targets={context.targets}
-          agents={effectiveAgents}
           tools={context.tools}
           run={currentRun}
           running={runPending || currentRun?.status === "running"}
@@ -406,7 +383,6 @@ export function WorkflowDetailPage({
       <PromptEditModal
         open={showPromptEditor}
         workflow={workflow}
-        agent={workflowAgent}
         target={activeTarget}
         draft={promptDraft}
         saving={promptSavePending}

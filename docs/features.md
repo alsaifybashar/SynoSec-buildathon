@@ -52,11 +52,11 @@ Use this structure when adding a new feature to the catalog:
 ### AI Builder Defaults
 
 - Status: Active
-- Purpose: Seed the default AI builder records for providers, agents, and tools directly into the database.
+- Purpose: Seed the default workflow and tool records directly into the database.
 - Value: Makes starter configurations portable, inspectable, and editable through the live CRUD surfaces instead of runtime-generated code defaults.
-- Main components: `apps/backend/prisma/seed.ts`, Prisma AI models, builder routes and UI pages.
-- How it is tested: Seed execution against local Postgres plus targeted provider/agent/tool route tests.
-- Local validation: Run `pnpm --filter @synosec/backend prisma:seed`, then verify `/api/ai-providers`, `/api/ai-agents`, and `/api/ai-tools` return the seeded records.
+- Main components: `apps/backend/prisma/seed.ts`, Prisma workflow/tool models, and workflow/tool UI pages.
+- How it is tested: Seed execution against local Postgres plus targeted workflow/tool route tests.
+- Local validation: Run `pnpm --filter @synosec/backend prisma:seed`, then verify `/api/workflows` and `/api/ai-tools` return the seeded records.
 - Contribution notes: Add or adjust starter records only through the seed path. Do not reintroduce runtime auto-population for builder defaults. Keep a clear distinction between a seeded tool record existing in the database and that tool having a real executable implementation.
 - Current limits or non-goals: Seeded defaults are starter records, not immutable system resources. A seeded record is only runnable when its stored execution config is present and valid; the runtime no longer masks missing config by silently borrowing execution settings from repo defaults.
 

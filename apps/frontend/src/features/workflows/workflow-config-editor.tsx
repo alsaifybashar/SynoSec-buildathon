@@ -1,7 +1,12 @@
-import { Check } from "lucide-react";
-import type { AiAgent, AiTool, ExecutionKind, ToolAccessMode, WorkflowStatus } from "@synosec/contracts";
-import { definedFieldError, type WorkflowFormValues } from "@/features/workflows/workflow-form";
-import { DetailField, DetailFieldGroup } from "@/shared/components/detail-page";
+import { Plus, Trash2 } from "lucide-react";
+import type { AiTool, ExecutionKind, WorkflowStatus } from "@synosec/contracts";
+import {
+  createEmptyStageFormValues,
+  definedFieldError,
+  type WorkflowFormValues,
+  type WorkflowStageFormValues
+} from "@/features/workflows/workflow-form";
+import { DetailField, DetailFieldGroup, DetailFormCard } from "@/shared/components/detail-page";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
@@ -20,60 +25,41 @@ export const workflowExecutionKindLabels: Record<ExecutionKind, string> = {
 const workflowFieldHints = {
   executionKind: "Choose how this workflow executes within the standard workflow engine.",
   preRunEvidenceEnabled: "Run the fixed pre-run evidence bundle before the first model turn. If enabled, any pre-run failure aborts the workflow run.",
-  agent: "The linked AI agent provides the model, provider, and default registry visibility used by this workflow.",
-  systemPrompt: "This workflow-owned instruction layer is sent on every run before the engine-appended target context and runtime contract.",
-  allowedTools: "Select a narrower registry subset for this workflow. If nothing is selected, the workflow inherits every registry entry visible through the linked agent mode."
+  allowedTools: "If no tools are selected for a stage, that stage can use all eligible active workflow tools."
 } as const;
 
-function resolveVisibleTools(toolAccessMode: ToolAccessMode, tools: AiTool[]) {
-  return tools.filter((tool) => {
-    if (tool.status !== "active") {
-      return false;
-    }
-    if (toolAccessMode === "system") {
-      return tool.source === "system" && tool.accessProfile === "standard";
-    }
-    return tool.accessProfile === "standard" || tool.accessProfile === "shell";
-  });
+function getEligibleTools(tools: AiTool[]) {
+  return tools
+    .filter((tool) => tool.status === "active")
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function updateStage(
+  stages: WorkflowStageFormValues[],
+  index: number,
+  patch: Partial<WorkflowStageFormValues>
+) {
+  return stages.map((stage, currentIndex) => currentIndex === index ? { ...stage, ...patch } : stage);
 }
 
 export function WorkflowConfigEditor({
   formValues,
   errors,
-  agents,
-  agentLookup,
   tools,
   toolLookup,
   onFieldChange
 }: {
   formValues: WorkflowFormValues;
   errors: Record<string, string>;
-  agents: AiAgent[];
-  agentLookup: Record<string, AiAgent>;
   tools: AiTool[];
   toolLookup: Record<string, string>;
   onFieldChange: <Key extends keyof WorkflowFormValues>(field: Key, value: WorkflowFormValues[Key]) => void;
 }) {
-  const selectedAgent = agentLookup[formValues.agentId];
-  const inheritedToolIds = selectedAgent ? resolveVisibleTools(selectedAgent.toolAccessMode, tools).map((tool) => tool.id) : [];
-  const workflowProvidedToolIds = formValues.allowedToolIds;
-  const effectiveToolIds = workflowProvidedToolIds.length > 0 ? workflowProvidedToolIds : inheritedToolIds;
-  const workflowActions = ["Complete run", "Fail run"];
-
-  function normalizeAllowedToolIds(nextAgentId: string) {
-    const nextAgent = agentLookup[nextAgentId];
-    const nextInheritedToolIds = nextAgent ? resolveVisibleTools(nextAgent.toolAccessMode, tools).map((tool) => tool.id) : [];
-    if (formValues.allowedToolIds.length === 0) {
-      return [];
-    }
-
-    const filtered = formValues.allowedToolIds.filter((toolId) => nextInheritedToolIds.includes(toolId));
-    return [...new Set(filtered)];
-  }
+  const eligibleTools = getEligibleTools(tools);
 
   return (
-    <>
-      <DetailFieldGroup title="Workflow Configuration" className="bg-card/70">
+    <DetailFormCard>
+      <DetailFieldGroup title="Workflow Configuration">
         <DetailField label="Name" required hint="Operator-facing workflow name shown in the run launcher and reports." {...definedFieldError(errors["name"])}>
           <Input value={formValues.name} onChange={(event) => onFieldChange("name", event.target.value)} aria-label="Name" />
         </DetailField>
@@ -90,156 +76,122 @@ export function WorkflowConfigEditor({
           </Select>
         </DetailField>
         <DetailField label="Pre-run evidence bundle" hint={workflowFieldHints.preRunEvidenceEnabled}>
-          <label className="flex items-center gap-3 rounded-[4px] border border-input bg-background px-3 py-2 text-xs text-foreground">
-            <input
-              type="checkbox"
-              checked={formValues.preRunEvidenceEnabled}
-              onChange={(event) => onFieldChange("preRunEvidenceEnabled", event.target.checked)}
-              aria-label="Pre-run evidence bundle"
-            />
-            <span>{formValues.preRunEvidenceEnabled ? "Enabled by default" : "Disabled by default"}</span>
-          </label>
+          <Select
+            value={formValues.preRunEvidenceEnabled ? "enabled" : "disabled"}
+            onValueChange={(value) => onFieldChange("preRunEvidenceEnabled", value === "enabled")}
+          >
+            <SelectTrigger aria-label="Pre-run evidence bundle">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="disabled">Disabled by default</SelectItem>
+              <SelectItem value="enabled">Enabled by default</SelectItem>
+            </SelectContent>
+          </Select>
         </DetailField>
         <DetailField label="Description" hint="Optional internal summary of what this workflow is intended to do." className="md:col-span-2">
           <Textarea value={formValues.description} onChange={(event) => onFieldChange("description", event.target.value)} aria-label="Description" rows={4} />
         </DetailField>
       </DetailFieldGroup>
 
-      <DetailFieldGroup title="Execution Contract" className="bg-card/70">
-        <DetailField label="Agent" required hint={workflowFieldHints.agent} {...definedFieldError(errors["agentId"])}>
-          <Select value={formValues.agentId} onValueChange={(value) => {
-            if (value === formValues.agentId) {
-              return;
-            }
-
-            const normalizedAllowedToolIds = normalizeAllowedToolIds(value);
-            onFieldChange("agentId", value);
-            if (
-              normalizedAllowedToolIds.length !== formValues.allowedToolIds.length
-              || normalizedAllowedToolIds.some((toolId, index) => toolId !== formValues.allowedToolIds[index])
-            ) {
-              onFieldChange("allowedToolIds", normalizedAllowedToolIds);
-            }
-          }}>
-            <SelectTrigger aria-label="Agent">
-              <SelectValue placeholder="Select agent" />
-            </SelectTrigger>
-            <SelectContent>
-              {agents.map((agentOption) => (
-                <SelectItem key={agentOption.id} value={agentOption.id}>{agentOption.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </DetailField>
-        <DetailField
-          label="System prompt"
-          required
-          hint={workflowFieldHints.systemPrompt}
-          className="md:col-span-2"
-          {...definedFieldError(errors["systemPrompt"])}
-        >
-          <Textarea
-            value={formValues.systemPrompt}
-            onChange={(event) => onFieldChange("systemPrompt", event.target.value)}
-            aria-label="System prompt"
-            rows={12}
-          />
-        </DetailField>
-        <DetailField label="Linked agent" hint="The linked agent still controls the provider/model and default tool grants for the workflow." className="md:col-span-2">
-          <div className="space-y-2 rounded-xl border border-border bg-background/40 p-4">
-            <p className="text-xs leading-6 text-foreground">{selectedAgent?.name ?? "Select an agent to inspect its execution settings."}</p>
-            <p className="text-xs text-muted-foreground">
-              Workflow runs no longer inherit prompt text from the agent.
-            </p>
-          </div>
-        </DetailField>
-        <DetailField label="Allowed tools" hint={workflowFieldHints.allowedTools} className="md:col-span-2">
-          <div className="space-y-3 rounded-xl border border-border bg-background/40 p-4">
-            <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
-              <p className="text-xs font-medium text-foreground">Workflow capability grants</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                This workflow-level capability surface is counted separately from the linked agent&apos;s persisted grants.
-              </p>
-              <p className="mt-2 text-sm text-foreground">
-                {workflowProvidedToolIds.length > 0
-                  ? `${workflowProvidedToolIds.length} workflow-provided capabilit${workflowProvidedToolIds.length === 1 ? "y" : "ies"}`
-                  : "No workflow-level capability surface selected. This workflow will inherit persisted agent grants instead."}
-              </p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
-              <p className="text-xs font-medium text-foreground">Linked agent persisted capability grants</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                These are the capability grants stored on the agent itself.
-              </p>
-              <p className="mt-2 text-sm text-foreground">
-                {inheritedToolIds.length} persisted grant{inheritedToolIds.length === 1 ? "" : "s"}
-              </p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
-              <p className="text-xs font-medium text-foreground">
-                {formValues.allowedToolIds.length === 0
-                  ? "Mode: inherit all agent capabilities"
-                  : `Mode: restricted to ${formValues.allowedToolIds.length} selected capabilit${formValues.allowedToolIds.length === 1 ? "y" : "ies"}`}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Click a capability to allow it for this workflow. If none are selected, the workflow uses every granted capability on the agent. Built-in workflow actions remain engine-provided.
-              </p>
-            </div>
-            {workflowProvidedToolIds.length > 0 ? (
-              <p className="text-sm text-foreground">
-                Workflow-provided capabilities: {workflowProvidedToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ")}
-              </p>
-            ) : null}
-            <p className="text-sm text-foreground">
-              Persisted agent grants: {inheritedToolIds.length > 0 ? inheritedToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ") : "None"}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {inheritedToolIds.length > 0 ? inheritedToolIds.map((toolId) => {
-                const restricted = formValues.allowedToolIds.length > 0;
-                const active = restricted ? formValues.allowedToolIds.includes(toolId) : true;
-                return (
+      <DetailFieldGroup title="Stages">
+        <div className="md:col-span-2 space-y-4">
+          {formValues.stages.map((stage, index) => {
+            const effectiveToolIds = stage.allowedToolIds.length > 0 ? stage.allowedToolIds : eligibleTools.map((tool) => tool.id);
+            return (
+              <section key={stage.id ?? `${stage.label}-${index}`} className="space-y-4 rounded-2xl border border-border/70 bg-background/40 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Stage {index + 1}</p>
+                    <p className="text-sm text-muted-foreground">This stage owns its prompt, objective, and capability grants.</p>
+                  </div>
                   <Button
-                    key={toolId}
                     type="button"
-                    variant={active ? "default" : "outline"}
-                    className="h-auto min-h-8 px-3 py-2 text-[0.7rem]"
-                    onClick={() => onFieldChange(
-                      "allowedToolIds",
-                      restricted && active
-                        ? formValues.allowedToolIds.filter((id) => id !== toolId)
-                        : [...new Set([...formValues.allowedToolIds, toolId])]
-                    )}
+                    variant="outline"
+                    onClick={() => onFieldChange("stages", formValues.stages.filter((_, currentIndex) => currentIndex !== index))}
+                    disabled={formValues.stages.length <= 1}
                   >
-                    <span className="flex items-center gap-2">
-                      {active ? <Check className="h-3.5 w-3.5" /> : <span className="h-3.5 w-3.5 rounded-full border border-current/40" />}
-                      <span>{toolLookup[toolId] ?? toolId}</span>
-                      <span className="rounded-full border border-current/20 px-1.5 py-0.5 text-[0.58rem] uppercase tracking-[0.14em]">
-                        {active ? "Allowed" : "Not allowed"}
-                      </span>
-                    </span>
+                    <Trash2 className="h-4 w-4" />
+                    Remove
                   </Button>
-                );
-              }) : <p className="text-sm text-muted-foreground">No tools are assigned to this agent.</p>}
-            </div>
-            <p className="text-sm text-foreground">
-              Effective capabilities for this workflow: {effectiveToolIds.length > 0 ? effectiveToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ") : "None"}
-            </p>
-            <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
-              <p className="text-xs font-medium text-foreground">Built-in workflow actions</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                These lifecycle actions are always provided by the workflow engine and are not agent-managed AI tools.
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {workflowActions.map((action) => (
-                  <span key={action} className="inline-flex items-center rounded-full border border-border/70 bg-card px-2.5 py-1 font-mono text-[0.62rem] uppercase tracking-[0.14em] text-foreground/85">
-                    {action}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        </DetailField>
+                </div>
+
+                <DetailField label="Label" required {...definedFieldError(errors[`stages.${index}.label`])}>
+                  <Input
+                    value={stage.label}
+                    onChange={(event) => onFieldChange("stages", updateStage(formValues.stages, index, { label: event.target.value }))}
+                    aria-label={`Stage ${index + 1} label`}
+                  />
+                </DetailField>
+
+                <DetailField label="Objective" required {...definedFieldError(errors[`stages.${index}.objective`])}>
+                  <Textarea
+                    value={stage.objective}
+                    onChange={(event) => onFieldChange("stages", updateStage(formValues.stages, index, { objective: event.target.value }))}
+                    aria-label={`Stage ${index + 1} objective`}
+                    rows={3}
+                  />
+                </DetailField>
+
+                <DetailField label="System prompt" required {...definedFieldError(errors[`stages.${index}.systemPrompt`])}>
+                  <Textarea
+                    value={stage.systemPrompt}
+                    onChange={(event) => onFieldChange("stages", updateStage(formValues.stages, index, { systemPrompt: event.target.value }))}
+                    aria-label={`Stage ${index + 1} system prompt`}
+                    rows={10}
+                  />
+                </DetailField>
+
+                <DetailField label="Allowed tools" hint={workflowFieldHints.allowedTools}>
+                  <div className="space-y-3 rounded-xl border border-border/70 bg-background/70 p-4">
+                    <p className="text-sm text-foreground">
+                      {stage.allowedToolIds.length > 0
+                        ? `${stage.allowedToolIds.length} stage-selected tool${stage.allowedToolIds.length === 1 ? "" : "s"}`
+                        : "No explicit tool restriction. This stage can use all eligible active workflow tools."}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {eligibleTools.map((tool) => {
+                        const active = stage.allowedToolIds.length === 0 || stage.allowedToolIds.includes(tool.id);
+                        const restricted = stage.allowedToolIds.length > 0;
+                        return (
+                          <Button
+                            key={tool.id}
+                            type="button"
+                            variant={active ? "default" : "outline"}
+                            className="h-auto min-h-8 px-3 py-2 text-[0.7rem]"
+                            onClick={() => onFieldChange(
+                              "stages",
+                              updateStage(formValues.stages, index, {
+                                allowedToolIds: restricted && active
+                                  ? stage.allowedToolIds.filter((id) => id !== tool.id)
+                                  : [...new Set([...stage.allowedToolIds, tool.id])]
+                              })
+                            )}
+                          >
+                            {tool.name}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Effective tools: {effectiveToolIds.map((toolId) => toolLookup[toolId] ?? toolId).join(", ")}
+                    </p>
+                  </div>
+                </DetailField>
+              </section>
+            );
+          })}
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onFieldChange("stages", [...formValues.stages, createEmptyStageFormValues(formValues.stages.length)])}
+          >
+            <Plus className="h-4 w-4" />
+            Add Stage
+          </Button>
+        </div>
       </DetailFieldGroup>
-    </>
+    </DetailFormCard>
   );
 }

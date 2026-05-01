@@ -7,7 +7,6 @@ import {
 } from "./scan-core.js";
 import { observationSchema, toolExecutionPublicResultSchema } from "./tooling.js";
 import {
-  type AiAgent,
   type AiTool,
   type Workflow,
   type WorkflowReportSystemGraphBatchSubmission,
@@ -35,7 +34,11 @@ export const workflowTranscriptSystemMessageSchema = z.object({
   createdAt: z.string().datetime(),
   title: z.string().min(1),
   summary: z.string().min(1),
-  body: z.string().nullable()
+  body: z.string().nullable(),
+  sections: z.array(z.object({
+    title: z.string().min(1),
+    body: z.string().min(1)
+  })).default([])
 });
 export type WorkflowTranscriptSystemMessage = z.infer<typeof workflowTranscriptSystemMessageSchema>;
 
@@ -505,17 +508,18 @@ function createSystemMessage(event: WorkflowTraceEvent): WorkflowTranscriptSyste
     id: event.id,
     ord: event.ord,
     createdAt: event.createdAt,
-    title: isPreRunPhase ? "Initial scanning" : (getPayloadString(payload, "title") ?? event.title),
+    title: isPreRunPhase ? "Scan preamble" : (getPayloadString(payload, "title") ?? event.title),
     summary: getPayloadString(payload, "summary") ?? event.summary,
     body: getPayloadString(payload, "body")
       ?? getPayloadString(payload, "fullPrompt")
-      ?? event.detail
+      ?? event.detail,
+    sections: []
   };
 }
 
 function createPreRunToolResultMessage(event: WorkflowTraceEvent): WorkflowTranscriptSystemMessage {
   const payload = event.payload ?? {};
-  const toolName = getPayloadString(payload, "toolName") ?? "Initial scanning tool";
+  const toolName = getPayloadString(payload, "toolName") ?? "Scan preamble tool";
   const summary = getPayloadString(payload, "summary")
     ?? getPayloadString(payload, "outputPreview")
     ?? event.summary;
@@ -529,9 +533,10 @@ function createPreRunToolResultMessage(event: WorkflowTraceEvent): WorkflowTrans
     id: event.id,
     ord: event.ord,
     createdAt: event.createdAt,
-    title: "Initial scanning",
+    title: "Scan preamble",
     summary: `${toolName}: ${summary}`,
-    body: body ? `${toolName}\n\n${body}` : toolName
+    body: body ? `${toolName}\n\n${body}` : toolName,
+    sections: []
   };
 }
 
@@ -541,20 +546,24 @@ function isPromptSystemMessage(event: WorkflowTraceEvent) {
 
 function mergePromptMessages(events: WorkflowTraceEvent[]): WorkflowTranscriptSystemMessage {
   const firstEvent = events[0]!;
-  const renderedParts = events
+  const renderedSections = events
     .map((event) => {
       const payload = event.payload ?? {};
       const promptKind = getPayloadString(payload, "promptKind") ?? "system";
-      const label = promptKind === "task" ? "Task prompt" : "System prompt";
+      const label = getPayloadString(payload, "promptSectionTitle")
+        ?? (promptKind === "task" ? "Task prompt" : "System prompt");
       const body = getPayloadString(payload, "body")
         ?? getPayloadString(payload, "fullPrompt")
         ?? event.detail
         ?? "";
       const sourceLabel = getPayloadString(payload, "promptSourceLabel");
       const decoratedBody = sourceLabel ? `${body}\n\nSource: ${sourceLabel}`.trimEnd() : body;
-      return `${label}\n\n${decoratedBody}`.trimEnd();
+      return {
+        title: label,
+        body: decoratedBody.trim()
+      };
     })
-    .filter((part) => part.trim().length > 0);
+    .filter((section) => section.body.length > 0);
 
   return {
     kind: "system_message",
@@ -563,7 +572,8 @@ function mergePromptMessages(events: WorkflowTraceEvent[]): WorkflowTranscriptSy
     createdAt: firstEvent.createdAt,
     title: "Prompt context",
     summary: "Persisted the exact system and task prompt context for this run.",
-    body: renderedParts.join("\n\n")
+    body: renderedSections.map((section) => `${section.title}\n\n${section.body}`.trimEnd()).join("\n\n"),
+    sections: renderedSections
   };
 }
 
@@ -681,20 +691,15 @@ function normalizeLegacyVerification(event: WorkflowTraceEvent) {
   };
 }
 
-export function getWorkflowAgentId(workflow: Workflow) {
-  return workflow.agentId;
-}
+export function getWorkflowStageLabel(workflow: Workflow, workflowStageId: string | null | undefined) {
+  if (workflowStageId) {
+    const matchingStage = workflow.stages.find((stage) => stage.id === workflowStageId);
+    if (matchingStage) {
+      return matchingStage.label;
+    }
+  }
 
-export function getWorkflowObjective(workflow: Workflow) {
-  return workflow.objective;
-}
-
-export function getWorkflowAllowedToolIds(workflow: Workflow) {
-  return Array.isArray(workflow.allowedToolIds) ? workflow.allowedToolIds : [];
-}
-
-export function getWorkflowAgentName(workflow: Workflow, agents: AiAgent[]) {
-  return agents.find((agent) => agent.id === workflow.agentId)?.name ?? "Unknown agent";
+  return workflow.stages[0]?.label ?? "Workflow stage";
 }
 
 export function getToolLookup(tools: AiTool[]) {
@@ -813,7 +818,6 @@ export function buildWorkflowRunReport(run: WorkflowRun | null): WorkflowRunRepo
 export function buildWorkflowTranscript(input: {
   workflow: Workflow;
   run: WorkflowRun | null;
-  agents: AiAgent[];
   toolLookup: Record<string, string>;
   running: boolean;
 }): WorkflowTranscriptProjection {
@@ -821,7 +825,6 @@ export function buildWorkflowTranscript(input: {
     return { items: [], findings: [] };
   }
 
-  const agentName = getWorkflowAgentName(input.workflow, input.agents);
   const items: WorkflowTranscriptItem[] = [];
   const findings: WorkflowFindingsRailItem[] = [];
   const orderedEvents = input.run.events.slice().sort((left, right) => left.ord - right.ord);
@@ -873,7 +876,7 @@ export function buildWorkflowTranscript(input: {
           id: event.id,
           ord: event.ord,
           createdAt: event.createdAt,
-          agentName
+          agentName: getWorkflowStageLabel(input.workflow, event.workflowStageId)
         });
         continue;
       }
@@ -896,7 +899,7 @@ export function buildWorkflowTranscript(input: {
         id: event.id,
         ord: event.ord,
         createdAt: event.createdAt,
-        agentName
+        agentName: getWorkflowStageLabel(input.workflow, event.workflowStageId)
       });
       continue;
     }
@@ -915,7 +918,7 @@ export function buildWorkflowTranscript(input: {
         id: `turn:${event.id}`,
         ord: event.ord,
         createdAt: event.createdAt,
-        agentName
+        agentName: getWorkflowStageLabel(input.workflow, event.workflowStageId)
       });
     }
 
@@ -941,7 +944,7 @@ export function buildWorkflowTranscript(input: {
         id: event.id,
         ord: event.ord,
         createdAt: event.createdAt,
-        agentName
+        agentName: getWorkflowStageLabel(input.workflow, event.workflowStageId)
       });
       currentTurn.summary = event.summary;
       currentTurn.body = getPayloadString(payload, "rawModelOutput") ?? event.detail;

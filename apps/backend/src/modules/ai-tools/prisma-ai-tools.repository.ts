@@ -18,7 +18,10 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
 
   async list(query: AiToolsListQuery): Promise<PaginatedResult<AiTool>> {
     const where = {
-      NOT: { id: { startsWith: "builtin-" } },
+      NOT: [
+        { id: { startsWith: "builtin-" } },
+        { id: { startsWith: "native-" } }
+      ],
       ...(query.status ? { status: query.status } : {}),
       ...(query.source ? { source: query.source } : {}),
       ...(query.accessProfile ? { accessProfile: query.accessProfile } : {}),
@@ -46,6 +49,10 @@ export class PrismaAiToolsRepository implements AiToolsRepository {
     const builtin = getBuiltinAiTool(id);
     if (builtin) {
       return enrichAiTool(builtin);
+    }
+
+    if (id.startsWith("native-")) {
+      return null;
     }
 
     const tool = await this.prisma.aiTool.findUnique({ where: { id } });

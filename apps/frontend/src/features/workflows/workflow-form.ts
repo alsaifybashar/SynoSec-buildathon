@@ -6,27 +6,45 @@ import {
   type WorkflowStatus
 } from "@synosec/contracts";
 
+export type WorkflowStageFormValues = {
+  id?: string;
+  label: string;
+  objective: string;
+  systemPrompt: string;
+  allowedToolIds: string[];
+};
+
 export type WorkflowFormValues = {
   name: string;
   status: WorkflowStatus;
   executionKind: ExecutionKind;
   preRunEvidenceEnabled: boolean;
   description: string;
-  agentId: string;
-  systemPrompt: string;
-  allowedToolIds: string[];
+  stages: WorkflowStageFormValues[];
 };
 
-export function createEmptyFormValues(defaultAgentId = ""): WorkflowFormValues {
+function createStageObjective(label: string) {
+  return `Complete the ${label} stage using allowed tools and structured reporting.`;
+}
+
+export function createEmptyStageFormValues(index: number): WorkflowStageFormValues {
+  const label = `Stage ${index + 1}`;
+  return {
+    label,
+    objective: createStageObjective(label),
+    systemPrompt: defaultWorkflowStageSystemPrompt,
+    allowedToolIds: []
+  };
+}
+
+export function createEmptyFormValues(): WorkflowFormValues {
   return {
     name: "",
     status: "draft",
     executionKind: "workflow",
     preRunEvidenceEnabled: false,
     description: "",
-    agentId: defaultAgentId,
-    systemPrompt: defaultWorkflowStageSystemPrompt,
-    allowedToolIds: []
+    stages: [createEmptyStageFormValues(0)]
   };
 }
 
@@ -37,9 +55,16 @@ export function toWorkflowFormValues(workflow: Workflow): WorkflowFormValues {
     executionKind: workflow.executionKind ?? "workflow",
     preRunEvidenceEnabled: workflow.preRunEvidenceEnabled,
     description: workflow.description ?? "",
-    agentId: workflow.agentId,
-    systemPrompt: workflow.stageSystemPrompt,
-    allowedToolIds: workflow.allowedToolIds
+    stages: workflow.stages
+      .slice()
+      .sort((left, right) => left.ord - right.ord)
+      .map((stage) => ({
+        id: stage.id,
+        label: stage.label,
+        objective: stage.objective,
+        systemPrompt: stage.stageSystemPrompt,
+        allowedToolIds: stage.allowedToolIds
+      }))
   };
 }
 
@@ -50,37 +75,40 @@ export function toWorkflowRequestBody(values: WorkflowFormValues): CreateWorkflo
     executionKind: values.executionKind,
     preRunEvidenceEnabled: values.preRunEvidenceEnabled,
     description: values.description.trim() || null,
-    agentId: values.agentId,
-    objective: "Run the configured workflow using the linked agent, allowed tools, and structured reporting.",
-    stageSystemPrompt: values.systemPrompt.trim(),
-    allowedToolIds: values.allowedToolIds,
-    requiredEvidenceTypes: [],
-    findingPolicy: {
-      taxonomy: "typed-core-v1",
-      allowedTypes: [
-        "service_exposure",
-        "content_discovery",
-        "missing_security_header",
-        "tls_weakness",
-        "injection_signal",
-        "auth_weakness",
-        "sensitive_data_exposure",
-        "misconfiguration",
-        "other"
-      ]
-    },
-    completionRule: {
-      requireStageResult: true,
-      requireToolCall: false,
-      allowEmptyResult: true,
-      minFindings: 0,
-      requireReachableSurface: false,
-      requireEvidenceBackedWeakness: false,
-      requireOsiCoverageStatus: false,
-      requireChainedFindings: false
-    },
-    resultSchemaVersion: 1,
-    handoffSchema: null
+    stages: values.stages.map((stage, index) => ({
+      ...(stage.id ? { id: stage.id } : {}),
+      label: stage.label.trim() || `Stage ${index + 1}`,
+      objective: stage.objective.trim() || createStageObjective(stage.label.trim() || `Stage ${index + 1}`),
+      stageSystemPrompt: stage.systemPrompt.trim(),
+      allowedToolIds: stage.allowedToolIds,
+      requiredEvidenceTypes: [],
+      findingPolicy: {
+        taxonomy: "typed-core-v1",
+        allowedTypes: [
+          "service_exposure",
+          "content_discovery",
+          "missing_security_header",
+          "tls_weakness",
+          "injection_signal",
+          "auth_weakness",
+          "sensitive_data_exposure",
+          "misconfiguration",
+          "other"
+        ]
+      },
+      completionRule: {
+        requireStageResult: true,
+        requireToolCall: false,
+        allowEmptyResult: true,
+        minFindings: 0,
+        requireReachableSurface: false,
+        requireEvidenceBackedWeakness: false,
+        requireOsiCoverageStatus: false,
+        requireChainedFindings: false
+      },
+      resultSchemaVersion: 1,
+      handoffSchema: null
+    }))
   };
 }
 
@@ -90,12 +118,21 @@ export function validateWorkflowForm(values: WorkflowFormValues) {
   if (!values.name.trim()) {
     errors["name"] = "Name is required.";
   }
-  if (!values.agentId) {
-    errors["agentId"] = "Agent is required.";
+  if (values.stages.length === 0) {
+    errors["stages"] = "At least one stage is required.";
   }
-  if (!values.systemPrompt.trim()) {
-    errors["systemPrompt"] = "System prompt is required.";
-  }
+
+  values.stages.forEach((stage, index) => {
+    if (!stage.label.trim()) {
+      errors[`stages.${index}.label`] = "Stage label is required.";
+    }
+    if (!stage.objective.trim()) {
+      errors[`stages.${index}.objective`] = "Stage objective is required.";
+    }
+    if (!stage.systemPrompt.trim()) {
+      errors[`stages.${index}.systemPrompt`] = "System prompt is required.";
+    }
+  });
 
   return errors;
 }

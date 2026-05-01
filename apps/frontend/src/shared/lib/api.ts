@@ -59,7 +59,6 @@ function inferRequestContext(url: string, init?: RequestInit): RequestContext {
   const resource = resourceMatch?.[1] ?? "resource";
   const labels: Record<string, { singular: string; plural: string }> = {
     targets: { singular: "Target", plural: "Targets" },
-    "ai-agents": { singular: "AI agent", plural: "AI agents" },
     "tool-registry": { singular: "Tool Registry entry", plural: "Tool Registry entries" },
     workflows: { singular: "Workflow", plural: "Workflows" },
     "workflow-runs": { singular: "Workflow run", plural: "Workflow runs" },

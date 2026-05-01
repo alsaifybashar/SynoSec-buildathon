@@ -35,7 +35,7 @@
     --sidebar-accent: 200 10% 38%;
     --sidebar-accent-foreground: 40 24% 96%;
     --sidebar-primary: 188 62% 62%;
-    --radius: 1rem;
+    --radius: 0.5rem;
   }
 
   :root[data-theme="dark"] {
@@ -69,7 +69,7 @@
     --sidebar-accent: 222 22% 13%;
     --sidebar-accent-foreground: 210 33% 96%;
     --sidebar-primary: 188 79% 68%;
-    --radius: 1rem;
+    --radius: 0.5rem;
   }
 
 

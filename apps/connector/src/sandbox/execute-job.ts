@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import type {
+  ConnectorActionBatch,
   ConnectorSupportSubject,
   ConnectorExecutionJob,
   ConnectorExecutionResult,
@@ -11,6 +12,7 @@ import type {
   Severity
 } from "@synosec/contracts";
 import { evaluateConnectorToolSupport } from "@synosec/contracts";
+import { executeConnectorActionBatch } from "./execute-actions.js";
 
 interface SandboxExecutionOptions {
   allowedCapabilities: ConnectorRegistrationRequest["allowedCapabilities"];
@@ -37,7 +39,7 @@ interface BashObservation {
 function validateSandboxedJob(
   job: ConnectorExecutionJob,
   options: SandboxExecutionOptions
-): ConnectorExecutionResult | { bashSource: string } {
+): ConnectorExecutionResult | { bashSource: string } | { actionBatch: ConnectorActionBatch } {
   const support = evaluateConnectorToolSupport(toConnectorSupportSubject(job), {
     allowedCapabilities: options.allowedCapabilities,
     allowedSandboxProfiles: options.allowedSandboxProfiles,
@@ -49,8 +51,29 @@ function validateSandboxedJob(
       output: "",
       exitCode: 1,
       observations: [],
+      actionResults: [],
       statusReason: support.statusReason
     };
+  }
+
+  if (job.request.executorType === "native-ts") {
+    const actionBatch = job.request.parameters["actionBatch"];
+    if (
+      !actionBatch
+      || typeof actionBatch !== "object"
+      || !("actions" in actionBatch)
+      || !Array.isArray(actionBatch.actions)
+    ) {
+      return {
+        output: "",
+        exitCode: 1,
+        observations: [],
+        actionResults: [],
+        statusReason: "Structured connector action batch is required for native connector execution."
+      };
+    }
+
+    return { actionBatch: actionBatch as ConnectorActionBatch };
   }
 
   const bashSource = typeof job.request.parameters["bashSource"] === "string"
@@ -62,6 +85,7 @@ function validateSandboxedJob(
       output: "",
       exitCode: 1,
       observations: [],
+      actionResults: [],
       statusReason: "Structured bash source is required for connector execution."
     };
   }
@@ -76,6 +100,16 @@ export async function executeSandboxedConnectorJob(
   const validated = validateSandboxedJob(job, options);
   if ("output" in validated) {
     return validated;
+  }
+
+  if ("actionBatch" in validated) {
+    const result = await executeConnectorActionBatch(validated.actionBatch.actions);
+    return {
+      output: "",
+      exitCode: 0,
+      observations: [],
+      actionResults: result.actionResults
+    };
   }
 
   return executeStructuredCommand(
@@ -97,6 +131,7 @@ function toConnectorSupportSubject(job: ConnectorExecutionJob): ConnectorSupport
   return {
     ...(job.request.toolId ? { toolId: job.request.toolId } : {}),
     tool: job.request.tool,
+    executorType: job.request.executorType,
     capabilities: job.request.capabilities,
     sandboxProfile: job.request.sandboxProfile,
     privilegeProfile: job.request.privilegeProfile,
@@ -168,6 +203,7 @@ async function executeStructuredCommand(
         output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
         exitCode: 124,
         observations: [],
+        actionResults: [],
         statusReason: `Connector command timed out after ${timeoutMs}ms.`
       });
     }, timeoutMs);
@@ -194,6 +230,7 @@ async function executeStructuredCommand(
         output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
         exitCode: 1,
         observations: [],
+        actionResults: [],
         statusReason: error.message
       });
     });
@@ -223,6 +260,7 @@ async function executeStructuredCommand(
           observations: Array.isArray(parsed.observations)
             ? parsed.observations.map((observation, index) => normalizeObservation(job, observation, index))
             : [],
+          actionResults: [],
           ...(parsed.statusReason ? { statusReason: parsed.statusReason } : {})
         });
       } catch (error) {
@@ -230,6 +268,7 @@ async function executeStructuredCommand(
           output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
           exitCode: code ?? 1,
           observations: [],
+          actionResults: [],
           statusReason: `Connector bash tool emitted invalid JSON output: ${error instanceof Error ? error.message : String(error)}`
         });
       }
@@ -246,6 +285,7 @@ async function executeStructuredCommand(
         output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
         exitCode: 1,
         observations: [],
+        actionResults: [],
         statusReason: error.message
       });
     });

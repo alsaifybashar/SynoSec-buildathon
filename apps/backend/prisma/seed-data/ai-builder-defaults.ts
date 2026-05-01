@@ -84,12 +84,12 @@ import {
 
 export const localApplicationId = "5ecf4a8e-df5f-4945-a7e1-230ef43eac80";
 export const localFullStackApplicationId = "b21f6edc-6524-4d67-9f3a-8b5dfef6f6f7";
+export const localJuiceShopApplicationId = "f6a6fe9c-853f-4f4e-8c81-91bb1de31755";
 export const portfolioApplicationId = "1f92a3d7-4f70-4950-b750-9bf74c6f3591";
 export const securePentApplicationId = "4d8e9e0a-bfd4-4b24-8fb9-8656b511a2b8";
 export const osiSingleAgentWorkflowId = "8b57f0e7-1dd7-4d6a-8db5-c4ff7be80a21";
 export const attackVectorPlanningWorkflowId = "9b59b237-c956-44db-aab0-a46b9f4bf8b3";
 export const bashSingleToolWorkflowId = "6b8d087e-43bc-48d8-8e66-a167f8d9f5cb";
-export const broadScriptToolWorkflowId = "4c62c117-1826-4c91-81cb-f66b4a28b880";
 export const portfolioEvidenceGraphWorkflowId = "5edb1601-27cf-4a87-b7d4-a50873f5d985";
 
 const defaultWorkflowStagePrompts = {
@@ -319,7 +319,7 @@ const workflowBuiltinActionToolIds = [
   "builtin-complete-run"
 ] as const;
 
-export type SeededRoleKey = "generic-pentester" | "bash-poc-agent" | "broad-script-agent";
+export type SeededRoleKey = "generic-pentester" | "bash-poc-agent";
 
 function withConstraintProfile<
   T extends {
@@ -477,8 +477,6 @@ export const directScriptToolIds = seededToolDefinitions
   .filter((tool) => tool.executorType === "bash" && tool.bashSource.trim().length > 0)
   .map((tool) => tool.id);
 
-export const broadScriptToolIds = directScriptToolIds.filter((toolId) => toolId !== "seed-agent-bash-command");
-
 export function validateSeededToolDefinitions() {
   for (const tool of seededToolDefinitions) {
     const bashSource = tool.bashSource;
@@ -550,48 +548,12 @@ export const seededRoleDefinitions = [
       ],
       examples: operationalAttackPathExamples
     }),
-  },
-  {
-    key: "broad-script-agent" as const,
-    name: "Individual Tools",
-    description: "Broad seeded bash-tool agent for workflows that need direct script-backed tool coverage.",
-    toolAccessMode: "system_plus_custom" as const,
-    systemPrompt: buildCanonicalPrompt({
-      roleAndGoal: [
-        "Evaluate the target’s cybersecurity with an attack-path-first approach using the approved direct script-backed tools exposed in this workflow.",
-        "Identify whether multiple lower-severity weaknesses can be chained to reach a protected asset, privileged action, sensitive secret, account or session, internal service, or production-impacting capability."
-      ],
-      scopeAndSafety: [
-        "Use only the approved direct script-backed tools exposed in this workflow.",
-        "Choose the narrowest approved tool that fits the current hypothesis and do not ask for raw tool access, alternate execution paths, or brand-specific substitutions.",
-        "When the approved tool is `bash`, you may invoke installed binaries available in the execution environment through shell commands when they materially help validate the current hypothesis.",
-        "When public data exposes identifiers, tokens, emails, nonces, workspace names, case references, or build ids, derive the exact next request those artifacts are most likely to unlock before broad guessing.",
-        "Do not invent unsupported endpoint families such as `/promote` or `/validate` unless the application exposed them directly through routes, hints, forms, links, scripts, or observed responses.",
-        "Do not treat a failed tool call as successful by switching paths silently.",
-        "Do not treat scanner-friendly issues as the main result unless you prove concrete downstream impact."
-      ],
-      evidenceAndReporting: [
-        "Validate each reported finding with concrete request and response evidence.",
-        "Validate attack vectors by proving that output from one step is accepted by the next step.",
-        "Prefer completed chains over isolated findings, but do not invent missing transitions.",
-        "Prefer one concrete transition validation over repeated fetches of already-seen pages, and only repeat a request when a changed method, parameter, body, header, or artifact meaningfully tests the hypothesis.",
-        "For each strong finding, include the role it plays in the attack path and include attack vectors between existing finding ids when one finding enables another.",
-        "Report meaningful progress, evidence-backed findings, and final completion through the workflow management tools."
-      ],
-      blockedOrFailed: [
-        "If a suspected chain cannot be completed, report what was proven, what blocked completion, and what uncertainty remains without inventing missing steps.",
-        "Stop probing unsupported routes after route-not-found style errors if no source evidence points there.",
-        "Preserve original tool failures."
-      ],
-      examples: operationalAttackPathExamples
-    }),
   }
 ] as const;
 
 export const seededAgentIds = {
   "anthropic:generic-pentester": "4c526f02-d11c-4e01-aeb4-a84f271ec3bc",
-  "anthropic:bash-poc-agent": "56e647a5-3fa2-4c52-a937-61b17f88bc9d",
-  "anthropic:broad-script-agent": "4f0af3e7-2057-403f-b938-b33dce55e5a3"
+  "anthropic:bash-poc-agent": "56e647a5-3fa2-4c52-a937-61b17f88bc9d"
 } as const;
 
 export function seededAgentId(roleKey: SeededRoleKey) {
@@ -670,55 +632,6 @@ export function getSeededWorkflowDefinitions() {
           allowedToolIds: [
             ...workflowBuiltinActionToolIds,
             "seed-agent-bash-command"
-          ],
-          requiredEvidenceTypes: [],
-          findingPolicy: {
-            taxonomy: "typed-core-v1",
-            allowedTypes: [
-              "service_exposure",
-              "content_discovery",
-              "missing_security_header",
-              "tls_weakness",
-              "injection_signal",
-              "auth_weakness",
-              "sensitive_data_exposure",
-              "misconfiguration",
-              "other"
-            ]
-          },
-          completionRule: {
-            requireStageResult: true,
-            requireToolCall: true,
-            allowEmptyResult: false,
-            minFindings: 0,
-            requireReachableSurface: false,
-            requireEvidenceBackedWeakness: false,
-            requireOsiCoverageStatus: false,
-            requireChainedFindings: false
-          },
-          resultSchemaVersion: 1,
-          handoffSchema: null
-        }
-      ]
-    },
-    {
-      id: broadScriptToolWorkflowId,
-      name: "Broad Script Tool Workflow",
-      status: "active" as const,
-      executionKind: "workflow" as const,
-      description: "Workflow with broad direct script-backed tool access plus built-in workflow reporting and completion actions.",
-      stages: [
-        {
-          id: "9a4ad0d1-4f62-40ef-8655-a74b93d58b17",
-          label: "Broad Script Execution",
-          agentId: seededAgentId("broad-script-agent"),
-          objective:
-            "Complete the task using the approved direct script-backed tools. Prefer purpose-built seeded tools, preserve failures with their original context, and use workflow management tools for progress, findings, and completion.",
-          ...defaultWorkflowStagePrompts,
-          stageSystemPrompt: bashAttackPathStagePrompt,
-          allowedToolIds: [
-            ...workflowBuiltinActionToolIds,
-            ...broadScriptToolIds
           ],
           requiredEvidenceTypes: [],
           findingPolicy: {

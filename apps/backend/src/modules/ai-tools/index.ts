@@ -1,4 +1,5 @@
 export { runAiTool } from "./ai-tool-runner.js";
+export { resolveWorkflowStageTools } from "./ai-tool-surface.js";
 export { registerAiToolCapabilityRoutes } from "./ai-tools.routes.js";
 export { registerAiToolsRoutes } from "./ai-tools.routes.js";
 export type { AiToolsRepository } from "./ai-tools.repository.js";

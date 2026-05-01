@@ -52,7 +52,6 @@ function mapWorkflowStageRow(row: WorkflowStageRow) {
   return {
     id: row.id,
     label: row.label,
-    agentId: row.agentId,
     ord: row.ord,
     ...contract
   };
@@ -64,12 +63,9 @@ export function mapWorkflowRow(
   }
 ): Workflow {
   const orderedStages = row.stages.sort((left, right) => left.ord - right.ord);
-  const primaryStage = orderedStages[0];
-  if (!primaryStage) {
+  if (orderedStages.length === 0) {
     throw new Error(`Workflow ${row.id} is missing a persisted stage contract.`);
   }
-
-  const primaryContract = mapWorkflowStageRow(primaryStage);
 
   return {
     id: row.id,
@@ -78,15 +74,6 @@ export function mapWorkflowRow(
     executionKind: normalizeWorkflowExecutionKind(row.executionKind, row.id),
     preRunEvidenceEnabled: row.preRunEvidenceEnabled,
     description: row.description,
-    agentId: primaryContract.agentId,
-    objective: primaryContract.objective,
-    stageSystemPrompt: primaryContract.stageSystemPrompt,
-    allowedToolIds: primaryContract.allowedToolIds,
-    requiredEvidenceTypes: primaryContract.requiredEvidenceTypes,
-    findingPolicy: primaryContract.findingPolicy,
-    completionRule: primaryContract.completionRule,
-    resultSchemaVersion: primaryContract.resultSchemaVersion,
-    handoffSchema: primaryContract.handoffSchema,
     stages: orderedStages.map(mapWorkflowStageRow),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()

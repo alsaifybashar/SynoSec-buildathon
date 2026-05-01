@@ -62,14 +62,13 @@ function computeWorkflowLaunchStatus(runs: Array<{ status: WorkflowRun["status"]
 }
 
 function toWorkflowStageCreateManyInput(
-  stage: { id?: string; label: string; agentId: string } & Record<string, unknown>,
+  stage: { id?: string | undefined; label: string } & Record<string, unknown>,
   index: number
 ): Prisma.WorkflowStageCreateManyWorkflowInput {
   const contract = normalizeWorkflowStageContract(stage);
   return {
     id: stage.id ?? randomUUID(),
     label: stage.label,
-    agentId: stage.agentId,
     ord: index,
     objective: contract.objective,
     stageSystemPrompt: contract.stageSystemPrompt,
@@ -129,8 +128,6 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
   }
 
   async create(input: CreateWorkflowBody): Promise<Workflow> {
-    await this.assertAgentReferences([input.agentId]);
-
     const workflow = await this.prisma.workflow.create({
       data: {
         id: randomUUID(),
@@ -142,13 +139,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
         applicationId: null,
         stages: {
           createMany: {
-            data: [toWorkflowStageCreateManyInput({
-              label: "Pipeline",
-              agentId: input.agentId,
-              objective: input.objective,
-              stageSystemPrompt: input.stageSystemPrompt,
-              allowedToolIds: input.allowedToolIds
-            }, 0)]
+            data: input.stages.map((stage, index) => toWorkflowStageCreateManyInput(stage, index))
           }
         }
       }
@@ -171,20 +162,25 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
       return null;
     }
 
-    const currentPrimaryStage = current.stages.sort((left, right) => left.ord - right.ord)[0];
-    if (!currentPrimaryStage) {
+    const orderedStages = current.stages.sort((left, right) => left.ord - right.ord);
+    if (orderedStages.length === 0) {
       throw new RequestError(400, "Workflow is missing its persisted execution contract.");
     }
-    const nextStage = {
-      id: currentPrimaryStage.id,
-      label: "Pipeline",
-      agentId: input.agentId ?? currentPrimaryStage.agentId,
-      objective: input.objective ?? currentPrimaryStage.objective ?? "Run the configured pipeline with the linked agent and approved tools.",
-      stageSystemPrompt: input.stageSystemPrompt ?? (currentPrimaryStage as { stageSystemPrompt?: string | null }).stageSystemPrompt,
-      allowedToolIds: input.allowedToolIds ?? (Array.isArray(currentPrimaryStage.allowedToolIds) ? currentPrimaryStage.allowedToolIds.map(String) : [])
-    };
-
-    await this.assertAgentReferences([nextStage.agentId]);
+    const nextStages = input.stages
+      ? input.stages
+      : orderedStages.map((stage) => ({
+          id: stage.id,
+          label: stage.label,
+          objective: stage.objective ?? undefined,
+          stageSystemPrompt: (stage as { stageSystemPrompt?: string | null }).stageSystemPrompt ?? undefined,
+          taskPromptTemplate: (stage as { taskPromptTemplate?: string | null }).taskPromptTemplate ?? undefined,
+          allowedToolIds: Array.isArray(stage.allowedToolIds) ? stage.allowedToolIds.map(String) : [],
+          requiredEvidenceTypes: Array.isArray(stage.requiredEvidenceTypes) ? stage.requiredEvidenceTypes.map(String) : [],
+          findingPolicy: stage.findingPolicy as Record<string, unknown> | undefined,
+          completionRule: stage.completionRule as Record<string, unknown> | undefined,
+          resultSchemaVersion: stage.resultSchemaVersion,
+          handoffSchema: stage.handoffSchema as Record<string, unknown> | null | undefined
+        }));
 
     const workflow = await this.prisma.$transaction(async (transaction) => {
       await transaction.workflowStage.deleteMany({
@@ -204,14 +200,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
           applicationId: current.applicationId,
           stages: {
             createMany: {
-              data: [toWorkflowStageCreateManyInput({
-                label: nextStage.label,
-                agentId: nextStage.agentId,
-                ...(nextStage.id ? { id: nextStage.id } : {}),
-                objective: nextStage.objective,
-                stageSystemPrompt: nextStage.stageSystemPrompt,
-                allowedToolIds: nextStage.allowedToolIds
-              }, 0)]
+              data: nextStages.map((stage, index) => toWorkflowStageCreateManyInput(stage, index))
             }
           }
         }
@@ -254,7 +243,7 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
             ? { stageSystemPrompt: (stage as { stageSystemPrompt?: string | null }).stageSystemPrompt }
             : {}),
           ...(Array.isArray(stage.allowedToolIds) ? { allowedToolIds: stage.allowedToolIds.map(String) } : {})
-        }, fallbackToolIdsByAgentId[stage.agentId] ?? []);
+        }, fallbackToolIdsByAgentId[stage.id] ?? []);
 
         await transaction.workflowStage.update({
           where: { id: stage.id },
@@ -453,16 +442,6 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
 
     await this.refreshLaunchState(updated.workflowLaunchId);
     return mapWorkflowRunRow(updated as Parameters<typeof mapWorkflowRunRow>[0]);
-  }
-
-  private async assertAgentReferences(agentIds: string[]) {
-    const agents = await this.prisma.aiAgent.findMany({ where: { id: { in: agentIds } } });
-
-    if (agents.length !== new Set(agentIds).size) {
-      const knownIds = new Set(agents.map((agent) => agent.id));
-      const missingId = agentIds.find((agentId) => !knownIds.has(agentId));
-      throw new RequestError(400, `AI agent not found: ${missingId}`);
-    }
   }
 
   private async refreshLaunchState(workflowLaunchId: string) {

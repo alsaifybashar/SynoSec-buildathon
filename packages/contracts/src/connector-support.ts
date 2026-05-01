@@ -1,5 +1,5 @@
-import type { ConnectorRegistrationRequest } from "./tooling.js";
-import type { ToolPrivilegeProfile, ToolSandboxProfile } from "./resources.js";
+import type { ConnectorRegistrationRequest, ToolPrivilegeProfile, ToolSandboxProfile } from "./tooling.js";
+import { connectorActionBatchSchema } from "./tooling.js";
 
 export const KNOWN_SCRIPT_BINARIES = [
   "amass",
@@ -167,6 +167,7 @@ const commandCheckPattern = /command -v\s+([^\s>]+)\s*>/g;
 export interface ConnectorSupportSubject {
   toolId?: string;
   tool: string;
+  executorType?: "bash" | "native-ts";
   capabilities: string[];
   sandboxProfile: ToolSandboxProfile;
   privilegeProfile: ToolPrivilegeProfile;
@@ -187,6 +188,8 @@ export interface ConnectorToolSupportResult {
   requiredBinaries: string[];
   missingBinaries: string[];
 }
+
+const allowedNativeActionKinds = new Set(["http_request"]);
 
 export function extractRequiredBinariesFromBashSource(bashSource: string): string[] {
   const matches = [...bashSource.matchAll(commandCheckPattern)].map((match) => match[1]?.trim()).filter(Boolean) as string[];
@@ -227,6 +230,37 @@ export function evaluateConnectorToolSupport(
   const bashSource = typeof subject.parameters["bashSource"] === "string"
     ? subject.parameters["bashSource"]
     : null;
+  const executorType = subject.executorType ?? "bash";
+
+  if (executorType === "native-ts") {
+    const batch = connectorActionBatchSchema.safeParse(subject.parameters["actionBatch"]);
+    if (!batch.success) {
+      return {
+        supported: false,
+        statusReason: "Structured connector action batch is required for native connector execution.",
+        requiredBinaries: [],
+        missingBinaries: []
+      };
+    }
+
+    const disallowedKinds = [...new Set(batch.data.actions
+      .map((action) => String(action.kind))
+      .filter((kind) => !allowedNativeActionKinds.has(kind)))];
+    if (disallowedKinds.length > 0) {
+      return {
+        supported: false,
+        statusReason: `Action kinds ${disallowedKinds.join(", ")} are not allowed by this connector.`,
+        requiredBinaries: [],
+        missingBinaries: []
+      };
+    }
+
+    return {
+      supported: true,
+      requiredBinaries: [],
+      missingBinaries: []
+    };
+  }
 
   if (!bashSource) {
     return {

@@ -67,7 +67,7 @@ function AppShell() {
           <p className="mt-2 text-sm leading-6 text-muted-foreground">{auth.message}</p>
           <button
             type="button"
-            className="mt-4 inline-flex items-center justify-center rounded-[4px] border border-border/70 bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+            className="mt-4 inline-flex items-center justify-center rounded-sm border border-border/70 bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
             onClick={() => {
               void bootstrapAuthSession().catch((error) => {
                 toast.error("Session check failed", {

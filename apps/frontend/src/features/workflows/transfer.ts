@@ -18,14 +18,18 @@ export const workflowTransfer = {
     executionKind: workflow.executionKind,
     preRunEvidenceEnabled: workflow.preRunEvidenceEnabled,
     description: workflow.description,
-    agentId: workflow.agentId,
-    objective: workflow.objective,
-    stageSystemPrompt: workflow.stageSystemPrompt,
-    allowedToolIds: workflow.allowedToolIds,
-    requiredEvidenceTypes: workflow.requiredEvidenceTypes,
-    findingPolicy: workflow.findingPolicy,
-    completionRule: workflow.completionRule,
-    resultSchemaVersion: workflow.resultSchemaVersion,
-    handoffSchema: workflow.handoffSchema
+    stages: workflow.stages.map((stage) => ({
+      id: stage.id,
+      label: stage.label,
+      objective: stage.objective,
+      stageSystemPrompt: stage.stageSystemPrompt,
+      taskPromptTemplate: stage.taskPromptTemplate,
+      allowedToolIds: stage.allowedToolIds,
+      requiredEvidenceTypes: stage.requiredEvidenceTypes,
+      findingPolicy: stage.findingPolicy,
+      completionRule: stage.completionRule,
+      resultSchemaVersion: stage.resultSchemaVersion,
+      handoffSchema: stage.handoffSchema
+    }))
   })
 } satisfies ResourceTransferConfig<Workflow, CreateWorkflowBody>;

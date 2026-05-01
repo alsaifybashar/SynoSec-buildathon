@@ -1,7 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, isValidElement, startTransition, type MouseEvent, type ReactNode } from "react";
-import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Check, ChevronsLeft, ChevronsRight, Download, FileUp, Filter as FilterIcon, Minus, MoreHorizontal, Plus, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Check, ChevronsLeft, ChevronsRight, Download, FileUp, Filter as FilterIcon, MoreHorizontal, Plus, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/shared/ui/button";
+import { Checkbox } from "@/shared/ui/checkbox";
 import { Card, CardContent } from "@/shared/ui/card";
 import { Input } from "@/shared/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
@@ -83,47 +84,14 @@ function SelectionCheckbox({
   onChange: (checked: boolean) => void;
   onClick?: (event: MouseEvent<HTMLInputElement>) => void;
 }) {
-  const ref = useRef<HTMLInputElement>(null);
-  const showIndeterminate = Boolean(indeterminate) && !checked;
-
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.indeterminate = showIndeterminate;
-    }
-  }, [showIndeterminate]);
-
-  const ariaChecked: boolean | "mixed" = showIndeterminate ? "mixed" : checked;
-  const filled = checked || showIndeterminate;
-
   return (
-    <label className="relative inline-flex h-3.5 w-3.5 cursor-pointer items-center justify-center">
-      <input
-        ref={ref}
-        type="checkbox"
-        aria-label={ariaLabel}
-        aria-checked={ariaChecked}
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-        {...(onClick ? { onClick } : {})}
-        className="peer sr-only"
-      />
-      <span
-        aria-hidden="true"
-        className={cn(
-          "flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border bg-background transition-colors",
-          "peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-1 peer-focus-visible:ring-offset-background",
-          filled
-            ? "border-primary bg-primary text-primary-foreground"
-            : "border-input hover:border-foreground/40"
-        )}
-      >
-        {showIndeterminate ? (
-          <Minus className="h-2.5 w-2.5" strokeWidth={3} />
-        ) : checked ? (
-          <Check className="h-2.5 w-2.5" strokeWidth={3} />
-        ) : null}
-      </span>
-    </label>
+    <Checkbox
+      checked={checked}
+      indeterminate={indeterminate ?? false}
+      onCheckedChange={onChange}
+      aria-label={ariaLabel}
+      {...(onClick ? { onClick } : {})}
+    />
   );
 }
 
@@ -316,7 +284,7 @@ function ListPageFilterMenu({
         <div
           role="dialog"
           aria-label="Filters"
-          className="absolute right-0 top-[calc(100%+4px)] z-20 w-72 overflow-hidden rounded-[4px] border border-border bg-popover text-xs shadow-md md:w-80"
+          className="absolute right-0 top-[calc(100%+4px)] z-20 w-72 overflow-hidden rounded-sm border border-border bg-popover text-xs shadow-md md:w-80"
         >
           <div className="flex items-center justify-between border-b border-border px-3 py-2">
             <p className="font-mono text-eyebrow uppercase tracking-[0.2em] text-muted-foreground">
@@ -402,6 +370,7 @@ export function ListPage<T extends { id: string }>({
   onPageSizeChange,
   onRetry,
   onAddRecord,
+  showAddRecord = true,
   onRowClick,
   onImportJson,
   getRowLabel,
@@ -431,6 +400,7 @@ export function ListPage<T extends { id: string }>({
   onPageSizeChange: (pageSize: number) => void;
   onRetry: () => void;
   onAddRecord?: () => void;
+  showAddRecord?: boolean;
   onRowClick?: (row: T) => void;
   onImportJson?: (file: File) => void | Promise<void>;
   getRowLabel?: (row: T) => string;
@@ -774,7 +744,7 @@ export function ListPage<T extends { id: string }>({
     <div className="space-y-3 pb-6">
       <PageHeader title={title} breadcrumbs={["Start", title]} />
 
-      <div className="sticky top-0 z-10 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+      <div className="sticky top-0 z-10 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="flex flex-col gap-2.5 px-3 py-2.5">
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
             <ListPageBulkMenu
@@ -827,10 +797,12 @@ export function ListPage<T extends { id: string }>({
               }}
             />
 
-            <Button onClick={onAddRecord ?? handleDefaultAddRecord} className="h-9 text-sm md:shrink-0">
-              <Plus className="h-4 w-4" />
-              Add {recordLabel}
-            </Button>
+            {showAddRecord ? (
+              <Button onClick={onAddRecord ?? handleDefaultAddRecord} className="h-9 text-sm md:shrink-0">
+                <Plus className="h-4 w-4" />
+                Add {recordLabel}
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -1028,7 +1000,7 @@ export function ListPage<T extends { id: string }>({
                 </Table>
               </div>
 
-              <div className="grid gap-4 border-t border-border/70 px-4 py-4 text-xs text-muted-foreground md:px-6 md:grid-cols-3 md:items-center">
+              <div className="grid gap-4 border-t border-border/70 px-3 py-4 text-xs text-muted-foreground md:grid-cols-3 md:items-center">
                 <div className="flex flex-wrap items-center justify-start gap-3">
                   <div className="w-full shrink-0 md:w-[9.375rem]">
                     <Select

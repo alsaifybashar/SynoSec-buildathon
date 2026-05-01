@@ -1,6 +1,5 @@
 import {
   AppWindow,
-  Bot,
   FileSearch,
   Route,
   ScrollText,
@@ -10,7 +9,6 @@ import {
 
 export type NavigationId =
   | "targets"
-  | "ai-agents"
   | "ai-tools"
   | "execution-constraints"
   | "workflows"
@@ -41,7 +39,6 @@ export type NavigationTreeEntry =
 
 export type CrudNavigationId =
   | "targets"
-  | "ai-agents"
   | "ai-tools"
   | "execution-constraints"
   | "workflows";
@@ -70,13 +67,6 @@ export const crudRouteConfigs: Record<CrudNavigationId, CrudRouteConfig> = {
     createPath: "/targets/new",
     detailPath: "/targets/:targetId",
     paramName: "targetId"
-  },
-  "ai-agents": {
-    id: "ai-agents",
-    listPath: "/ai/agents",
-    createPath: "/ai/agents/new",
-    detailPath: "/ai/agents/:agentId",
-    paramName: "agentId"
   },
   "ai-tools": {
     id: "ai-tools",
@@ -133,12 +123,6 @@ export const navigationTree: NavigationTreeEntry[] = [
           label: "Targets",
           path: crudRouteConfigs.targets.listPath,
           icon: AppWindow
-        }),
-        createNavigationItem({
-          id: "ai-agents",
-          label: "AI Agents",
-          path: crudRouteConfigs["ai-agents"].listPath,
-          icon: Bot
         }),
         createNavigationItem({
           id: "ai-tools",

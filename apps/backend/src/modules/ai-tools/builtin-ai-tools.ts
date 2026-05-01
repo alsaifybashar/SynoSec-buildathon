@@ -2,6 +2,7 @@ import type { AiTool, AiToolsListQuery, ToolBuiltinActionKey } from "@synosec/co
 import { RequestError } from "@/shared/http/request-error.js";
 import { paginateItems, type PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import { sortAndFilterAiTools } from "./ai-tool-surface.js";
+import { builtinNativeAiTools } from "./native-tools/index.js";
 import { getSemanticFamilyBuiltinAiTools } from "./semantic-family-tools.js";
 
 const builtinTimestamp = "2026-04-25T00:00:00.000Z";
@@ -246,6 +247,7 @@ const lifecycleBuiltinAiTools: AiTool[] = [
 
 const builtinAiTools: AiTool[] = [
   ...lifecycleBuiltinAiTools,
+  ...builtinNativeAiTools,
   ...getSemanticFamilyBuiltinAiTools()
 ];
 

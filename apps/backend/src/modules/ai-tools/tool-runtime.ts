@@ -4,6 +4,10 @@ import { RequestError } from "@/shared/http/request-error.js";
 import type { AiToolsRepository } from "./ai-tools.repository.js";
 import { compileToolRequestFromDefinition, type CompileInput } from "./tool-definition.compiler.js";
 import {
+  getNativeToolImplementation,
+  type NativeToolImplementation
+} from "./native-tools/index.js";
+import {
   derivePrivilegeProfile,
   deriveSandboxProfile,
   type ToolExecutionFields
@@ -11,7 +15,17 @@ import {
 
 export type ResolvedAiTool = {
   tool: AiTool;
-  runtime: ToolExecutionFields | null;
+  runtime: ToolExecutionFields | NativeToolRuntimeFields | null;
+};
+
+export type NativeToolRuntimeFields = {
+  executorType: "native-ts";
+  implementation: NativeToolImplementation;
+  sandboxProfile: ReturnType<typeof deriveSandboxProfile>;
+  privilegeProfile: ReturnType<typeof derivePrivilegeProfile>;
+  timeoutMs: AiTool["timeoutMs"];
+  capabilities: string[];
+  constraintProfile?: AiTool["constraintProfile"];
 };
 
 type ToolCapabilityInspector = () => Promise<ToolCapabilitiesResponse>;
@@ -20,7 +34,24 @@ function normalizeName(value: string) {
   return value.trim().toLowerCase();
 }
 
-function getRuntime(tool: AiTool): ToolExecutionFields | null {
+function getRuntime(tool: AiTool): ToolExecutionFields | NativeToolRuntimeFields | null {
+  if (tool.executorType === "native-ts") {
+    const implementation = getNativeToolImplementation(tool.id);
+    if (!implementation) {
+      return null;
+    }
+
+    return {
+      executorType: "native-ts",
+      implementation,
+      sandboxProfile: deriveSandboxProfile(tool.riskTier),
+      privilegeProfile: derivePrivilegeProfile(tool.riskTier),
+      timeoutMs: tool.timeoutMs,
+      capabilities: [...tool.capabilities],
+      ...(tool.constraintProfile ? { constraintProfile: tool.constraintProfile } : {})
+    };
+  }
+
   if (tool.executorType !== "bash" || !tool.bashSource) {
     return null;
   }
@@ -91,6 +122,13 @@ export class ToolRuntime {
       throw new RequestError(400, `${resolved.tool.name} is a built-in action and cannot be compiled for bash execution.`, {
         code: "AI_TOOL_BUILTIN_NOT_RUNNABLE",
         userFriendlyMessage: "Built-in AI tools cannot be run through bash execution."
+      });
+    }
+
+    if (resolved.runtime.executorType !== "bash") {
+      throw new RequestError(400, `${resolved.tool.name} is a native TypeScript tool and cannot be compiled for bash execution.`, {
+        code: "AI_TOOL_NATIVE_NOT_COMPILABLE",
+        userFriendlyMessage: "Native AI tools do not compile to bash."
       });
     }
 

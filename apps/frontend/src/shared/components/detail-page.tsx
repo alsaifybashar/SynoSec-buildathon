@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from "react";
-import { ArrowLeft, Check, Download, Undo2 } from "lucide-react";
+import { ArrowLeft, Check, Download, HelpCircle, Undo2 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
+import { cn } from "@/shared/lib/utils";
 import { PageHeader } from "@/shared/components/page-header";
 import { Spinner } from "@/shared/ui/spinner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
@@ -162,6 +163,28 @@ export function DetailPage({
   );
 }
 
+export function DetailFormCard({
+  className,
+  children
+}: {
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      className={[
+        "rounded-sm border border-border/60 bg-card/40 px-5",
+        "[&>section:first-child>p:first-child]:pt-3",
+        className
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {children}
+    </section>
+  );
+}
+
 export function DetailFieldGroup({
   title,
   className,
@@ -172,17 +195,13 @@ export function DetailFieldGroup({
   children: ReactNode;
 }) {
   return (
-    <section
-      className={["-mx-1 grid gap-5 border-l border-border/60 py-3 pl-6 pr-6 lg:grid-cols-2", className]
-        .filter(Boolean)
-        .join(" ")}
-    >
+    <section className={className}>
       {title ? (
-        <p className="col-span-full font-mono text-eyebrow font-medium uppercase tracking-[0.3em] text-muted-foreground">
+        <p className="border-b border-border/50 pb-2 pt-6 font-mono text-eyebrow font-medium uppercase tracking-[0.2em] text-muted-foreground sm:pl-[calc(9rem+1.5rem)]">
           {title}
         </p>
       ) : null}
-      {children}
+      <div className="flex flex-col">{children}</div>
     </section>
   );
 }
@@ -191,7 +210,6 @@ export function DetailMetadataPanel({
   title = "Metadata",
   hint,
   className,
-  compact = false,
   children
 }: {
   title?: string;
@@ -201,8 +219,8 @@ export function DetailMetadataPanel({
   children: ReactNode;
 }) {
   return (
-    <aside className={["rounded-md border border-border/60 bg-card/40 p-5", className].filter(Boolean).join(" ")}>
-      <div className={[compact ? "mb-2.5" : "mb-4", "flex items-center gap-1.5 font-mono text-eyebrow font-medium uppercase tracking-[0.3em] text-muted-foreground"].join(" ")}>
+    <aside className={["group px-1", className].filter(Boolean).join(" ")}>
+      <div className="mb-3 flex items-center gap-1.5 font-mono text-eyebrow font-medium uppercase tracking-[0.2em] text-muted-foreground">
         <span>{title}</span>
         {hint ? (
           <TooltipProvider delayDuration={150}>
@@ -215,7 +233,7 @@ export function DetailMetadataPanel({
           </TooltipProvider>
         ) : null}
       </div>
-      <div className={compact ? "space-y-2.5" : "space-y-4"}>{children}</div>
+      <div className="flex flex-col">{children}</div>
     </aside>
   );
 }
@@ -223,7 +241,6 @@ export function DetailMetadataPanel({
 export function DetailSidebarItem({
   label,
   hint,
-  compact = false,
   children
 }: {
   label: string;
@@ -232,8 +249,8 @@ export function DetailSidebarItem({
   children: ReactNode;
 }) {
   return (
-    <div className={compact ? "space-y-0.5" : "space-y-1"}>
-      <div className={[compact ? "text-[0.62rem]" : "text-eyebrow", "flex items-center gap-1.5 font-mono font-medium uppercase tracking-[0.3em] text-muted-foreground"].join(" ")}>
+    <div className="group space-y-1 border-t border-border/40 py-2.5 first:border-t-0 first:pt-0">
+      <div className="flex items-center gap-1.5 font-mono text-[0.62rem] font-medium uppercase tracking-[0.16em] text-muted-foreground">
         <span>{label}</span>
         {hint ? (
           <TooltipProvider delayDuration={150}>
@@ -246,7 +263,7 @@ export function DetailSidebarItem({
           </TooltipProvider>
         ) : null}
       </div>
-      <div className={compact ? "text-[0.72rem] leading-5 text-foreground" : "text-xs text-foreground"}>{children}</div>
+      <div className="text-[0.78rem] leading-5 text-foreground">{children}</div>
     </div>
   );
 }
@@ -260,13 +277,13 @@ export const DetailHintTrigger = forwardRef<HTMLButtonElement, ButtonHTMLAttribu
       ref={ref}
       type="button"
       className={[
-        "inline-flex items-center font-mono text-xs font-semibold uppercase tracking-[0.18em] text-primary/80 transition hover:text-primary focus-visible:text-primary focus-visible:outline-none",
+        "inline-flex h-3.5 w-3.5 items-center justify-center text-muted-foreground/60 opacity-0 transition group-hover:opacity-100 hover:text-primary focus-visible:opacity-100 focus-visible:text-primary focus-visible:outline-none",
         className
       ].filter(Boolean).join(" ")}
       aria-label={`Show guidance for ${label}`}
       {...props}
     >
-      ?
+      <HelpCircle className="h-3.5 w-3.5" />
     </button>
   );
 });
@@ -277,6 +294,7 @@ export function DetailField({
   hint,
   error,
   className,
+  align = "start",
   children
 }: {
   label: string;
@@ -284,14 +302,27 @@ export function DetailField({
   hint?: string;
   error?: string;
   className?: string;
+  align?: "start" | "center";
   children: ReactNode;
 }) {
+  const alignmentClass = align === "center" ? "sm:items-center" : "sm:items-start";
+  const labelTopPadding = align === "center" ? "" : "pt-2";
   return (
-    <div className={className ? `block space-y-1.5 ${className}` : "block space-y-1.5"}>
-      <div className="flex items-center gap-1.5 font-mono text-eyebrow font-medium uppercase tracking-[0.28em] text-muted-foreground">
-        <span>
-          {label}
-          {required ? <span className="ml-1 text-destructive">*</span> : null}
+    <div
+      className={[
+        "group grid gap-2 border-b border-border/40 py-3.5 last:border-b-0 sm:grid-cols-[9rem_1fr] sm:gap-6",
+        alignmentClass,
+        className
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <div className={cn("flex items-center gap-1.5 font-mono text-[0.7rem] font-normal uppercase tracking-[0.05em] text-muted-foreground", labelTopPadding)}>
+        <span className="inline-flex items-baseline gap-1">
+          <span>{label}</span>
+          {required ? (
+            <span aria-hidden className="text-[0.7em] leading-none text-destructive/80">*</span>
+          ) : null}
         </span>
         {hint ? (
           <TooltipProvider delayDuration={150}>
@@ -304,8 +335,10 @@ export function DetailField({
           </TooltipProvider>
         ) : null}
       </div>
-      {children}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      <div className="min-w-0 space-y-1.5">
+        {children}
+        {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      </div>
     </div>
   );
 }
@@ -330,7 +363,7 @@ export function DetailLoadingState({
       onSave={() => {}}
       onDismiss={() => {}}
     >
-      <div className="rounded-xl border border-border/70 bg-card/70 px-4 py-6">
+      <div className="rounded-sm border border-border/60 bg-card/40 px-4 py-6">
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
           <Spinner className="h-4 w-4 text-muted-foreground" />
           <span>{message}</span>

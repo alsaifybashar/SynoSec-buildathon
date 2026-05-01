@@ -8,7 +8,6 @@ export function createRouteServices(dependencies: Pick<
   AppDependencies,
   | "targetsRepository"
   | "executionConstraintsRepository"
-  | "aiAgentsRepository"
   | "aiToolsRepository"
   | "workflowsRepository"
 >) {
@@ -16,7 +15,6 @@ export function createRouteServices(dependencies: Pick<
   const workflowRunEvaluationService = new WorkflowRunEvaluationService(
     dependencies.workflowsRepository,
     dependencies.targetsRepository,
-    dependencies.aiAgentsRepository,
     dependencies.aiToolsRepository,
     executionReportsService
   );

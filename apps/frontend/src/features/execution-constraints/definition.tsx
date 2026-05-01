@@ -8,9 +8,10 @@ import { Plus, Trash2 } from "lucide-react";
 import { executionConstraintTransfer } from "@/features/execution-constraints/transfer";
 import { executionConstraintsResource } from "@/features/execution-constraints/resource";
 import type { CrudFeatureDefinition } from "@/shared/crud/crud-feature";
-import { DetailField, DetailFieldGroup, DetailSidebarItem } from "@/shared/components/detail-page";
+import { DetailField, DetailFieldGroup, DetailFormCard, DetailSidebarItem } from "@/shared/components/detail-page";
 import type { ExecutionConstraintsQuery } from "@/shared/lib/resource-client";
 import { Button } from "@/shared/ui/button";
+import { Checkbox } from "@/shared/ui/checkbox";
 import { Input } from "@/shared/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
 import { Textarea } from "@/shared/ui/textarea";
@@ -166,9 +167,9 @@ function renderToggleField(
   hint?: string
 ) {
   return (
-    <DetailField label={label} {...(hint ? { hint } : {})}>
-      <label className="flex items-center gap-3 rounded-[4px] border border-border px-3 py-2 text-sm text-foreground">
-        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} aria-label={label} />
+    <DetailField label={label} align="center" {...(hint ? { hint } : {})}>
+      <label className="inline-flex items-center gap-2.5 text-sm text-foreground">
+        <Checkbox checked={checked} onCheckedChange={onChange} aria-label={label} />
         <span>{checked ? "Enabled" : "Disabled"}</span>
       </label>
     </DetailField>
@@ -232,8 +233,8 @@ export const executionConstraintsDefinition: CrudFeatureDefinition<
       </>
     ),
     renderContent: ({ item, formValues, errors, handleFieldChange }) => (
-      <>
-        <DetailFieldGroup title="Constraint" className="bg-card/70">
+      <DetailFormCard>
+        <DetailFieldGroup title="Constraint">
           <DetailField label="Name" required hint="Short policy label used in operator reviews and workflow gates." {...definedString(errors["name"] as string | undefined)}>
             <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
           </DetailField>
@@ -260,7 +261,7 @@ export const executionConstraintsDefinition: CrudFeatureDefinition<
           </DetailField>
         </DetailFieldGroup>
 
-        <DetailFieldGroup title="Documentation" className="bg-card/70">
+        <DetailFieldGroup title="Documentation">
           <DetailField
             label="Provider documentation URLs"
             hint="Paste provider pentesting, bug bounty, or white-hat policy URLs. Add as many sources as needed."
@@ -304,7 +305,7 @@ export const executionConstraintsDefinition: CrudFeatureDefinition<
                 </div>
               ))}
               {!item || item.documentationUrls.length === 0 ? null : (
-                <div className="rounded-[4px] border border-border/60 bg-card/40 px-3 py-2 text-xs text-muted-foreground">
+                <div className="rounded-sm border border-border/60 bg-card/40 px-3 py-2 text-xs text-muted-foreground">
                   Saved sources:
                   {" "}
                   {item.documentationUrls.map((url) => (
@@ -318,7 +319,7 @@ export const executionConstraintsDefinition: CrudFeatureDefinition<
           </DetailField>
         </DetailFieldGroup>
 
-        <DetailFieldGroup title="Policy Checklist" className="bg-card/70">
+        <DetailFieldGroup title="Policy Checklist">
           {renderToggleField(
             "Deny provider-owned targets",
             formValues.denyProviderOwnedTargets,
@@ -384,7 +385,7 @@ export const executionConstraintsDefinition: CrudFeatureDefinition<
             />
           </DetailField>
         </DetailFieldGroup>
-      </>
+      </DetailFormCard>
     )
   }
 };

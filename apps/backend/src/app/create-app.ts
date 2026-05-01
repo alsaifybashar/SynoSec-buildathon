@@ -10,7 +10,6 @@ import { createErrorHandler } from "@/shared/http/error-handler.js";
 import { createRequestLogger, shouldEnableRequestLogging } from "@/shared/http/request-logger.js";
 import { registerRoutes } from "@/app/register-routes.js";
 import type { ExecutionConstraintsRepository } from "@/modules/execution-constraints/index.js";
-import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
 import type { TargetsRepository } from "@/modules/targets/index.js";
 import type { WorkflowsRepository } from "@/modules/workflows/index.js";
@@ -18,7 +17,6 @@ import type { WorkflowsRepository } from "@/modules/workflows/index.js";
 export type AppDependencies = {
   targetsRepository: TargetsRepository;
   executionConstraintsRepository: ExecutionConstraintsRepository;
-  aiAgentsRepository: AiAgentsRepository;
   aiToolsRepository: AiToolsRepository;
   workflowsRepository: WorkflowsRepository;
 };

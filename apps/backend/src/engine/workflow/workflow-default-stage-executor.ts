@@ -55,6 +55,11 @@ import {
   verifyFindingEvidence
 } from "./workflow-execution.utils.js";
 import { createWorkflowReportedAttackVector, createWorkflowReportedFinding } from "./workflow-finding-factory.js";
+import {
+  buildFirstApplicationScanSummary,
+  buildFirstApplicationScanToolInput,
+  resolveFirstApplicationScanTools
+} from "./first-application-scan.js";
 import type {
   ExecutedToolResult,
   PipelineTerminalState,
@@ -71,11 +76,20 @@ import { createLanguageModelFromRuntime } from "./language-model-factory.js";
 
 const DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS = 120_000;
 const MODEL_STREAM_IDLE_TIMEOUT_ENV = "WORKFLOW_MODEL_STREAM_IDLE_TIMEOUT_MS";
-const PRE_RUN_EVIDENCE_TOOL_IDS = [
-  "seed-http-recon",
-  "seed-web-crawl",
-  "seed-nmap-scan"
-] as const;
+const LOCAL_WORKFLOW_EXECUTION_CONTRACT = [
+  workflowExecutionContractHeading,
+  "Run evidence tools first, then persist evidence-backed resources, findings, relationships, and attack paths incrementally with report_resource, report_finding, report_relationship, and report_attack_path, and call complete_run last.",
+  "Evidence-backed submissions must use persisted evidence references from earlier tool runs, such as toolRunRef, observationRef, artifactRef, traceEventId, or externalUrl.",
+  "Do not mention a finding in the final summary unless a reporting tool accepted it.",
+  "complete_run accepts only `summary`.",
+  "complete_run closes the workflow run and does not create findings.",
+  "End every run explicitly with complete_run."
+].join("\n");
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
   private readonly broker: ToolBroker;
   private static readonly TARGET_CONTEXT_SUFFIX = [
@@ -95,7 +109,8 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
 
   async run(context: WorkflowStageExecutionContext): Promise<WorkflowStageExecutionOutcome> {
     const { workflow, run, stage, targetRecord, constraintSet } = context;
-    const { agent, runtime, target, tools, excludedTools } = await this.preflight.loadStageDependencies(stage, targetRecord, constraintSet, workflow.executionKind);
+    const { runtime, target, tools, excludedTools } = await this.preflight.loadStageDependencies(stage, targetRecord, constraintSet, workflow.executionKind);
+    const stageActorId = stage.id;
 
     let currentRun = run;
     const appendEvent = async (
@@ -149,14 +164,21 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       targetDisplayUrl: target.displayBaseUrl ?? target.baseUrl
     });
     const workflowOwnsExecutionContract = renderedStageSystemPrompt.includes(workflowExecutionContractHeading);
+    const executionContract = runtime.provider === "local"
+      ? LOCAL_WORKFLOW_EXECUTION_CONTRACT
+      : defaultWorkflowExecutionContract;
     const baseSystemPrompt = [
       renderedStageSystemPrompt,
       targetContextPrompt,
-      workflowOwnsExecutionContract ? null : defaultWorkflowExecutionContract
+      workflowOwnsExecutionContract ? null : executionContract
     ].filter((part): part is string => typeof part === "string" && part.trim().length > 0).join("\n\n");
     const builtinLifecycleToolNames = new Set([
       "log_progress",
       "report_system_graph_batch",
+      "report_resource",
+      "report_finding",
+      "report_relationship",
+      "report_attack_path",
       "complete_run"
     ]);
     const exposedToolName = (tool: { id: string; executorType: string }) => {
@@ -191,7 +213,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             const brokerResult = await this.broker.executeRequests({
               scan,
               tacticId: workflow.id,
-              agentId: agent.id,
+              agentId: stageActorId,
               requests: [request],
               constraintSet,
               toolLookup: {
@@ -247,6 +269,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               }]
             };
             executedResults.push(result);
+            const evidenceRefs = buildAvailableEvidenceRefs(result);
 
             return {
               id: toolRun.id,
@@ -258,7 +281,9 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               outputPreview: result.outputPreview,
               observations: result.publicObservations,
               totalObservations: result.totalObservations,
-              truncated: result.truncated
+              truncated: result.truncated,
+              availableEvidenceRefs: evidenceRefs,
+              evidenceRefBlock: formatAvailableEvidenceRefsBlock(evidenceRefs)
             };
           }
         });
@@ -287,11 +312,16 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             target,
             scan,
             tacticId: workflow.id,
-            agentId: agent.id,
+            agentId: stageActorId,
             constraintSet
           }, rawInput);
           executedResults.push(familyExecution.result);
-          return familyExecution.response;
+          const evidenceRefs = buildAvailableEvidenceRefs(familyExecution.result);
+          return {
+            ...(typeof familyExecution.response === "object" && familyExecution.response !== null ? familyExecution.response as Record<string, unknown> : { output: familyExecution.response }),
+            availableEvidenceRefs: evidenceRefs,
+            evidenceRefBlock: formatAvailableEvidenceRefsBlock(evidenceRefs)
+          };
         }
       });
     }
@@ -305,6 +335,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       title: string;
       lastError: string;
     }>();
+    let acceptedReportingActionCount = 0;
 
     const toolContext = this.formatToolContextSections([
       {
@@ -318,14 +349,23 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         title: "Built-in actions",
         tools: [
           { name: "log_progress", description: "Persist a short operator-visible progress update in the workflow transcript. Use this before or after meaningful tool calls to explain the current action or decision in one concise sentence. Provide `message`. Returns acceptance only; it does not create evidence, findings, or attack-path links." },
-          { name: "report_system_graph_batch", description: buildReportSystemGraphBatchDescription(stage) },
+          ...(runtime.provider === "local"
+            ? [
+                { name: "report_resource", description: buildReportResourceDescription() },
+                { name: "report_finding", description: buildReportFindingDescription() },
+                { name: "report_relationship", description: buildReportRelationshipDescription(stage) },
+                { name: "report_attack_path", description: buildReportAttackPathDescription(stage) }
+              ]
+            : [
+                { name: "report_system_graph_batch", description: buildReportSystemGraphBatchDescription(stage) }
+              ]),
           { name: "complete_run", description: buildCompleteRunDescription(stage) }
         ]
       }
     ]);
 
     const scan = createWorkflowScan(currentRun, constraintSet, target);
-    await this.ensureWorkflowScan(scan, targetRecord.id, agent.id);
+    await this.ensureWorkflowScan(scan, targetRecord.id, stageActorId);
     const executedResults: ExecutedToolResult[] = [];
     const preRunResults: ExecutedToolResult[] = [];
     const reportedSystemGraph = getWorkflowReportedSystemGraph(currentRun);
@@ -383,11 +423,11 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     const normalizeJsonRecord = <TValue extends Record<string, unknown>>(value: TValue) => JSON.parse(JSON.stringify(value)) as TValue;
     const preRunEvidenceEnabled = currentRun.preRunEvidenceEnabled;
     const preRunSummary = preRunEvidenceEnabled
-      ? await this.executePreRunEvidenceBundle({
+      ? await this.executeScanPreamble({
         workflow,
         currentRun,
         stage,
-        agentId: agent.id,
+        agentId: stageActorId,
         target,
         constraintSet,
         scan,
@@ -401,18 +441,30 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     await appendEvent("system_message", "completed", {
       title: "Rendered system prompt",
       summary: workflowOwnsExecutionContract
-        ? "Persisted the exact system prompt delivered to the workflow model, including workflow-owned execution contract text and engine-generated target context."
-        : "Persisted the exact system prompt delivered to the workflow model, including engine-generated target and runtime contract context.",
-      body: systemPrompt,
+        ? "Persisted the workflow-owned system prompt section delivered to the workflow model, including workflow-owned execution contract text and engine-generated target context."
+        : "Persisted the workflow-owned system prompt section delivered to the workflow model, including engine-generated target and runtime contract context.",
+      body: baseSystemPrompt,
       messageKind: "prompt",
       promptKind: "system",
       promptSourceLabel: workflowOwnsExecutionContract
         ? "Workflow-owned editable system prompt including the workflow execution contract, plus engine-generated target context."
         : "Workflow-owned editable system prompt plus engine-generated target context and runtime contract.",
-      promptCharCount: systemPrompt.length,
-      fullPrompt: systemPrompt,
+      promptCharCount: baseSystemPrompt.length,
+      fullPrompt: baseSystemPrompt,
       ...(preRunEvidenceEnabled ? { preRunEvidenceEnabled: true } : {})
-    }, "Rendered system prompt", "Persisted the exact system prompt delivered to the workflow model.", systemPrompt);
+    }, "Rendered system prompt", "Persisted the workflow-owned system prompt section delivered to the workflow model.", baseSystemPrompt);
+
+    if (preRunSummary) {
+      await appendEvent("system_message", "completed", {
+        title: "Rendered scan preamble prompt section",
+        summary: "Persisted the automatic scan preamble section appended to the system prompt before the first model turn.",
+        body: preRunSummary,
+        messageKind: "prompt",
+        promptKind: "system",
+        promptSectionTitle: "Scan preamble",
+        promptCharCount: preRunSummary.length
+      }, "Rendered scan preamble prompt section", "Persisted the automatic scan preamble section appended to the system prompt before the first model turn.", preRunSummary);
+    }
 
     if (toolContext) {
       await appendEvent("system_message", "completed", {
@@ -514,6 +566,64 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           host: finding.target.host
         }, null, 2)
       };
+    };
+    const formatResourceResult = (rawOutput: unknown) => {
+      if (!rawOutput || typeof rawOutput !== "object" || Array.isArray(rawOutput)) {
+        return null;
+      }
+      const output = rawOutput as Record<string, unknown>;
+      const resourceIds = Array.isArray(output["resourceIds"])
+        ? output["resourceIds"].filter((entry): entry is string => typeof entry === "string")
+        : [];
+      if (resourceIds.length !== 1) {
+        return null;
+      }
+      const resource = reportedResources.get(resourceIds[0]!);
+      if (!resource) {
+        return null;
+      }
+      return {
+        summary: `Recorded resource: ${resource.name} (${resource.kind}).`,
+        detail: JSON.stringify(resource, null, 2)
+      };
+    };
+    const formatRelationshipResult = (rawOutput: unknown) => {
+      if (!rawOutput || typeof rawOutput !== "object" || Array.isArray(rawOutput)) {
+        return null;
+      }
+      const output = rawOutput as Record<string, unknown>;
+      const relationshipIds = Array.isArray(output["relationshipIds"])
+        ? output["relationshipIds"].filter((entry): entry is string => typeof entry === "string")
+        : [];
+      if (relationshipIds.length === 1) {
+        const resourceRelationship = reportedResourceRelationships.get(relationshipIds[0]!);
+        if (resourceRelationship) {
+          return {
+            summary: `Recorded resource relationship: ${resourceRelationship.kind} from ${resourceRelationship.sourceResourceId} to ${resourceRelationship.targetResourceId}.`,
+            detail: JSON.stringify(resourceRelationship, null, 2)
+          };
+        }
+        const findingRelationship = reportedFindingRelationships.get(relationshipIds[0]!);
+        if (findingRelationship) {
+          return {
+            summary: `Recorded finding relationship: ${findingRelationship.kind} from ${findingRelationship.sourceFindingId} to ${findingRelationship.targetFindingId}.`,
+            detail: JSON.stringify(findingRelationship, null, 2)
+          };
+        }
+      }
+      const pathIds = Array.isArray(output["pathIds"])
+        ? output["pathIds"].filter((entry): entry is string => typeof entry === "string")
+        : [];
+      if (pathIds.length === 1) {
+        const path = reportedPaths.get(pathIds[0]!);
+        if (path) {
+          return {
+            summary: `Recorded attack path: ${path.title}.`,
+            detail: JSON.stringify(path, null, 2)
+          };
+        }
+      }
+      return null;
     };
 
     const appendAcceptedCompleteRunToolResult = async (toolCallId: string, rawStreamPartType: string) => {
@@ -737,6 +847,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       validationStatus: z.enum(["unverified", "suspected", "single_source", "cross_validated", "reproduced", "blocked", "rejected"]).optional()
     });
     const reportFindingToolInputSchema = z.object({
+      id: z.string().min(1).optional(),
       mode: z.literal("finding").optional(),
       type: z.enum(["service_exposure", "content_discovery", "missing_security_header", "tls_weakness", "injection_signal", "auth_weakness", "sensitive_data_exposure", "misconfiguration", "other"]).optional(),
       title: z.string().min(1).optional(),
@@ -752,6 +863,8 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       impact: z.string().min(1).optional(),
       recommendation: z.string().min(1).optional(),
       validationStatus: z.enum(["unverified", "suspected", "single_source", "cross_validated", "reproduced", "blocked", "rejected"]).optional(),
+      resourceId: z.string().min(1).optional(),
+      resourceIds: z.array(z.string().min(1)).optional(),
       cwe: z.string().min(1).optional(),
       mitreId: z.string().min(1).optional(),
       owasp: z.string().min(1).optional(),
@@ -778,6 +891,47 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     ), {
       message: "Workflow finding evidence requires at least one evidence reference."
     });
+    const reportResourceToolInputSchema = z.object({
+      id: z.string().min(1),
+      kind: workflowReportedResourceKindSchema,
+      customKind: z.string().min(1).optional(),
+      name: z.string().min(1),
+      summary: z.string().min(1).optional(),
+      evidence: z.array(resourceEvidenceToolInputSchema).optional(),
+      tags: z.array(z.string().min(1)).optional()
+    }).strict();
+    const reportRelationshipToolInputSchema = z.discriminatedUnion("relationshipType", [
+      z.object({
+        relationshipType: z.literal("resource"),
+        id: z.string().min(1),
+        kind: workflowReportedResourceRelationshipKindSchema,
+        customKind: z.string().min(1).optional(),
+        sourceResourceId: z.string().min(1),
+        targetResourceId: z.string().min(1),
+        summary: z.string().min(1),
+        evidence: z.array(relaxedFindingEvidenceToolInputSchema).optional()
+      }).strict(),
+      z.object({
+        relationshipType: z.literal("finding"),
+        id: z.string().min(1),
+        kind: z.enum(["enables", "derived_from", "related", "lateral_movement"]),
+        sourceFindingId: z.string().min(1),
+        targetFindingId: z.string().min(1),
+        summary: z.string().min(1),
+        impact: z.string().min(1).optional(),
+        confidence: coerceNumericString(z.number().min(0).max(1)).optional(),
+        validationStatus: z.enum(["unverified", "suspected", "single_source", "cross_validated", "reproduced", "blocked", "rejected"]).optional(),
+        evidence: z.array(relaxedFindingEvidenceToolInputSchema).optional()
+      }).strict()
+    ]);
+    const reportAttackPathToolInputSchema = z.object({
+      id: z.string().min(1),
+      title: z.string().min(1),
+      summary: z.string().min(1).optional(),
+      severity: z.enum(["info", "low", "medium", "high", "critical"]).optional(),
+      resourceIds: z.array(z.string().min(1)).optional(),
+      findingIds: z.array(z.string().min(1)).optional()
+    }).strict();
     const reportAttackVectorsToolInputSchema = z.object({
       attackVectors: z.array(relaxedAttackVectorSubmissionToolInputSchema).min(1)
     }).strict();
@@ -1249,6 +1403,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       await appendEvent("system_graph_reported", "completed", {
         batch: persistedBatch
       }, "System graph batch reported", `Merged ${persistedBatch.resources.length} resources, ${persistedBatch.findings.length} findings, and ${persistedBatch.findingRelationships.length + persistedBatch.resourceRelationships.length} relationships.`, JSON.stringify(persistedBatch, null, 2));
+      acceptedReportingActionCount += 1;
 
       for (const finding of persistedFindings) {
         await appendEvent("finding_reported", "completed", {
@@ -1293,6 +1448,83 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             source: "log_progress"
           }, "Agent progress update", truncate(message, 80), message);
           return { accepted: true };
+        }
+      }),
+      report_resource: createSdkTool({
+        description: buildReportResourceDescription(),
+        inputSchema: reportResourceToolInputSchema,
+        execute: async (rawInput) => {
+          const resource = parseWorkflowToolInput(reportResourceToolInputSchema, rawInput, "System graph batch submission");
+          return submitSystemGraphBatch({
+            resources: [resource]
+          });
+        }
+      }),
+      report_finding: createSdkTool({
+        description: buildReportFindingDescription(),
+        inputSchema: reportFindingToolInputSchema,
+        execute: async (rawInput) => {
+          try {
+            rejectUnsupportedFindingFields(rawInput);
+            const finding = parseWorkflowToolInput(reportFindingToolInputSchema, rawInput, "Finding submission");
+            const output = await submitSystemGraphBatch({
+              findings: [{
+                ...finding,
+                id: finding.id?.trim() || `finding:${randomUUID()}`
+              }]
+            });
+            const acceptedTitles = output.findingIds
+              .map((findingId) => reportedFindings.get(findingId)?.title)
+              .filter((title): title is string => Boolean(title));
+            clearAcceptedFindingClaims(acceptedTitles);
+            return output;
+          } catch (error) {
+            collectFailedFindingClaims(rawInput, error);
+            throw error;
+          }
+        }
+      }),
+      report_relationship: createSdkTool({
+        description: buildReportRelationshipDescription(stage),
+        inputSchema: reportRelationshipToolInputSchema,
+        execute: async (rawInput) => {
+          const relationship = parseWorkflowToolInput(reportRelationshipToolInputSchema, rawInput, "System graph batch submission");
+          if (relationship.relationshipType === "resource") {
+            return submitSystemGraphBatch({
+              resourceRelationships: [{
+                id: relationship.id,
+                kind: relationship.kind,
+                customKind: relationship.customKind,
+                sourceResourceId: relationship.sourceResourceId,
+                targetResourceId: relationship.targetResourceId,
+                summary: relationship.summary,
+                evidence: relationship.evidence
+              }]
+            });
+          }
+          return submitSystemGraphBatch({
+            findingRelationships: [{
+              id: relationship.id,
+              kind: relationship.kind,
+              sourceFindingId: relationship.sourceFindingId,
+              targetFindingId: relationship.targetFindingId,
+              summary: relationship.summary,
+              impact: relationship.impact,
+              confidence: relationship.confidence,
+              validationStatus: relationship.validationStatus,
+              evidence: relationship.evidence
+            }]
+          });
+        }
+      }),
+      report_attack_path: createSdkTool({
+        description: buildReportAttackPathDescription(stage),
+        inputSchema: reportAttackPathToolInputSchema,
+        execute: async (rawInput) => {
+          const path = parseWorkflowToolInput(reportAttackPathToolInputSchema, rawInput, "System graph batch submission");
+          return submitSystemGraphBatch({
+            paths: [path]
+          });
         }
       }),
       report_system_graph_batch: createSdkTool({
@@ -1352,6 +1584,40 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           const completion = z.object({
             summary: z.string().min(1)
           }).strict().parse(rawInput);
+          if (executedResults.length === 0 || acceptedReportingActionCount === 0) {
+            const missingSteps = [
+              ...(executedResults.length === 0
+                ? ["Run at least one evidence tool before complete_run."]
+                : []),
+              ...(acceptedReportingActionCount === 0
+                ? ["Submit at least one accepted reporting action before complete_run."]
+                : [])
+            ];
+            const detail = [
+              "complete_run was rejected because the workflow contract has not been satisfied yet.",
+              "",
+              ...missingSteps,
+              "",
+              "Expected order:",
+              "1. Run evidence tools.",
+              runtime.provider === "local"
+                ? "2. Submit evidence-backed resources, findings, relationships, or attack paths with report_resource, report_finding, report_relationship, or report_attack_path."
+                : "2. Submit evidence-backed resources, findings, or relationships with report_system_graph_batch.",
+              "3. Call complete_run once as the final action."
+            ].join("\n");
+            await appendEvent("verification", "failed", {
+              messageKind: "challenge",
+              action: "complete_run_prerequisites_missing",
+              summary: "complete_run rejected until evidence collection and graph reporting are completed.",
+              missingSteps
+            }, "Run completion rejected", "complete_run rejected until evidence collection and graph reporting are completed.", detail);
+            return {
+              accepted: false,
+              error: runtime.provider === "local"
+                ? "complete_run requires at least one evidence tool result and one accepted reporting action in this run."
+                : "complete_run requires at least one evidence tool result and one accepted report_system_graph_batch in this run."
+            };
+          }
           const unsupportedClaims = findUnsupportedSummaryClaims(completion.summary, reportedFindings, failedReportedFindingClaims);
           if (unsupportedClaims.length > 0) {
             const detail = [
@@ -1386,6 +1652,21 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         }
       })
     };
+    const workflowSystemTools = runtime.provider === "local"
+      ? {
+          log_progress: systemTools.log_progress,
+          report_resource: systemTools.report_resource,
+          report_finding: systemTools.report_finding,
+          report_relationship: systemTools.report_relationship,
+          report_attack_path: systemTools.report_attack_path,
+          complete_run: systemTools.complete_run
+        }
+      : {
+          log_progress: systemTools.log_progress,
+          report_system_graph_batch: systemTools.report_system_graph_batch,
+          report_attack_vectors: systemTools.report_attack_vectors,
+          complete_run: systemTools.complete_run
+        };
 
     const modelProviderOptions = this.getModelProviderOptions(runtime);
     const result = streamText({
@@ -1394,9 +1675,10 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       prompt: "Proceed.",
       tools: {
         ...evidenceTools,
-        ...systemTools
+        ...workflowSystemTools
       },
       ...(modelProviderOptions === undefined ? {} : { providerOptions: modelProviderOptions }),
+      ...(runtime.provider === "local" ? { temperature: 0 } : {}),
       stopWhen: stepCountIs(100),
       abortSignal: abortController.signal
     });
@@ -1537,6 +1819,10 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
               ? formatFindingResult(part.output)
               : part.toolName === "report_system_graph_batch"
                 ? formatSystemGraphBatchResult(part.output)
+                : part.toolName === "report_resource"
+                  ? formatResourceResult(part.output)
+                  : part.toolName === "report_relationship" || part.toolName === "report_attack_path"
+                    ? formatRelationshipResult(part.output)
                 : null;
             const partIsError = typeof part.isError === "boolean" && part.isError;
             const completeRunRejected = part.toolName === "complete_run"
@@ -1576,6 +1862,16 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             }, `${part.toolName} returned`, outputPreview, outputDetail, undefined, {
               rawStreamPartType: part.type
             });
+            if (matchingResult) {
+              const evidenceRefBlock = buildAvailableEvidenceRefsBlock(matchingResult);
+              await appendEvent("system_message", "completed", {
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                availableEvidenceRefs: evidenceRefBlock.refs
+              }, `Available evidence refs for ${part.toolName}`, `Persisted exact evidence references for ${part.toolName}.`, evidenceRefBlock.text, undefined, {
+                rawStreamPartType: "tool-evidence-refs"
+              });
+            }
             break;
           }
           case "tool-error": {
@@ -1704,6 +2000,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           complete_run: systemTools.complete_run
         },
         ...(recoveryProviderOptions === undefined ? {} : { providerOptions: recoveryProviderOptions }),
+        ...(runtime.provider === "local" ? { temperature: 0 } : {}),
         stopWhen: stepCountIs(2),
         abortSignal: abortController.signal
       });
@@ -1866,7 +2163,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     };
   }
 
-  private async executePreRunEvidenceBundle(
+  private async executeScanPreamble(
     input: {
       workflow: Workflow;
       currentRun: WorkflowRun;
@@ -1892,18 +2189,24 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     preRunResults: ExecutedToolResult[],
     executedResults: ExecutedToolResult[]
   ) {
-    const bundleTools = await Promise.all(
-      PRE_RUN_EVIDENCE_TOOL_IDS.map(async (toolId) => {
-        const tool = await this.ports.aiToolsRepository.getById(toolId);
-        if (!tool) {
-          throw new RequestError(500, `Pre-run evidence tool is missing: ${toolId}.`);
+    const registryPage = await this.ports.aiToolsRepository.list({
+      page: 1,
+      pageSize: 500,
+      q: "",
+      sortBy: "name",
+      sortDirection: "asc"
+    });
+    const plannedTools = resolveFirstApplicationScanTools(registryPage.items, input.target);
+    if (plannedTools.length === 0) {
+      throw new RequestError(
+        400,
+        "Automatic scan preamble is enabled, but no eligible scanning tools are available for generic target-based execution.",
+        {
+          code: "WORKFLOW_SCAN_PREAMBLE_UNAVAILABLE",
+          userFriendlyMessage: "Automatic scan preamble could not start because no eligible scanning tools were available."
         }
-        if (tool.executorType !== "bash" || !tool.bashSource) {
-          throw new RequestError(500, `Pre-run evidence tool is not runnable through bash execution: ${tool.name}.`);
-        }
-        return tool;
-      })
-    );
+      );
+    }
 
     await input.appendEvent(
       "system_message",
@@ -1911,24 +2214,32 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       {
         phase: "pre_run",
         enabled: true,
-        toolIds: bundleTools.map((tool) => tool.id)
+        toolIds: plannedTools.map((entry) => entry.tool.id),
+        plannedRoles: plannedTools.map((entry) => ({
+          toolId: entry.tool.id,
+          toolName: entry.tool.name,
+          role: entry.role,
+          family: entry.family
+        }))
       },
-      "Pre-run evidence bundle started",
-      `Running ${bundleTools.length} pre-run evidence tool${bundleTools.length === 1 ? "" : "s"} before the first model turn.`,
-      bundleTools.map((tool) => `${tool.name} (${tool.id})`).join("\n")
+      "Scan preamble started",
+      `Running ${plannedTools.length} automatic scan tool${plannedTools.length === 1 ? "" : "s"} before the first model turn.`,
+      plannedTools.map((entry) => `${entry.tool.name} (${entry.role})`).join("\n")
     );
 
-    for (const tool of bundleTools) {
+    let failedToolCount = 0;
+    for (const entry of plannedTools) {
+      const tool = entry.tool;
       try {
-        const result = await this.executeStructuredBashTool({
+        const result = await this.executeStructuredTool({
           tool,
           workflow: input.workflow,
           agentId: input.agentId,
           target: input.target,
           constraintSet: input.constraintSet,
           scan: input.scan,
-          toolInput: this.buildPreRunToolInput(tool, input.target),
-          justification: `Pre-run evidence collection for workflow ${input.workflow.name} before the first model turn.`
+          toolInput: buildFirstApplicationScanToolInput(tool, input.target),
+          justification: `Automatic scan preamble collection for workflow ${input.workflow.name} before the first model turn.`
         });
         preRunResults.push(result);
         executedResults.push(result);
@@ -1938,6 +2249,8 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
           "completed",
           {
             phase: "pre_run",
+            role: entry.role,
+            family: entry.family,
             toolName: result.toolName,
             toolId: result.toolId,
             toolRunId: result.toolRun.id,
@@ -1948,59 +2261,72 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
             commandPreview: result.commandPreview,
             ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode })
           },
-          `Pre-run tool completed: ${tool.name}`,
+          `Scan preamble tool completed: ${tool.name}`,
           result.outputPreview,
           result.fullOutput
         );
       } catch (error) {
+        failedToolCount += 1;
         const message = error instanceof Error ? error.message : String(error);
         await input.appendEvent(
           "system_message",
           "failed",
           {
             phase: "pre_run",
+            role: entry.role,
+            family: entry.family,
             toolId: tool.id,
             toolName: tool.name,
             message
           },
-          `Pre-run tool failed: ${tool.name}`,
+          `Scan preamble tool failed: ${tool.name}`,
           message,
           message
         );
-        throw error;
       }
     }
 
-    const summary = this.buildPreRunEvidencePromptSection(preRunResults);
+    if (preRunResults.length === 0) {
+      await input.appendEvent(
+        "system_message",
+        failedToolCount > 0 ? "failed" : "completed",
+        {
+          phase: "pre_run",
+          title: "Scan preamble summary",
+          body: "No scan preamble tools produced successful evidence.",
+          succeededToolCount: 0,
+          failedToolCount
+        },
+        "Scan preamble summary",
+        "No automatic scan tools produced successful evidence before the first model turn.",
+        failedToolCount > 0 ? `Failed tools: ${failedToolCount}.` : null
+      );
+      return null;
+    }
+
+    const summary = buildFirstApplicationScanSummary(input.target, preRunResults);
     await input.appendEvent(
       "system_message",
       "completed",
       {
         phase: "pre_run",
-        title: "Pre-run evidence summary",
-        body: summary
+        title: "Scan preamble summary",
+        body: summary.promptSection,
+        succeededToolCount: preRunResults.length,
+        failedToolCount,
+        groupedObservationCount: summary.groupedObservationCount,
+        keyFindingCount: summary.keyFindingCount,
+        excerptCount: summary.excerptCount
       },
-      "Pre-run evidence summary",
-      `Prepared ${preRunResults.length} pre-run evidence result${preRunResults.length === 1 ? "" : "s"} for the first model turn.`,
-      summary
+      "Scan preamble summary",
+      `Prepared ${preRunResults.length} automatic scan result${preRunResults.length === 1 ? "" : "s"} for the first model turn.`,
+      summary.promptSection
     );
 
-    return summary;
+    return summary.promptSection;
   }
 
-  private buildPreRunToolInput(tool: AiTool, target: StageExecutionTarget) {
-    return tool.id === "seed-nmap-scan"
-      ? {
-          target: target.host,
-          baseUrl: target.baseUrl
-        }
-      : {
-          target: target.host,
-          baseUrl: target.baseUrl
-        };
-  }
-
-  private async executeStructuredBashTool(input: {
+  private async executeStructuredTool(input: {
     tool: AiTool;
     workflow: Workflow;
     agentId: string;
@@ -2020,7 +2346,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     });
     const constraintDecision = authorizeToolAgainstConstraints(input.constraintSet, input.tool, request);
     if (!constraintDecision.allowed) {
-      throw new RequestError(400, `Pre-run evidence tool ${input.tool.name} is not compatible with the active target constraints: ${constraintDecision.reason}`);
+      throw new RequestError(400, `Scan preamble tool ${input.tool.name} is not compatible with the active target constraints: ${constraintDecision.reason}`);
     }
 
     const brokerResult = await this.broker.executeRequests({
@@ -2040,14 +2366,14 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     if (toolRun.status !== "completed") {
       throw new RequestError(
         400,
-        `${input.tool.name} failed during pre-run evidence collection: ${toolRun.statusReason ?? toolRun.output ?? toolRun.status}.`
+        `${input.tool.name} failed during scan preamble collection: ${toolRun.statusReason ?? toolRun.output ?? toolRun.status}.`
       );
     }
 
     const publicResult = compactToolExecutionResult({
       toolRunId: toolRun.id,
       toolId: input.tool.id,
-      toolName: input.tool.id,
+      toolName: input.tool.name,
       status: toolRun.status,
       outputPreview: firstNonBlankString(
         brokerResult.observations[0]?.summary,
@@ -2060,7 +2386,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
 
     return {
       toolId: input.tool.id,
-      toolName: input.tool.id,
+      toolName: input.tool.name,
       toolInput: input.toolInput,
       toolRequest: request,
       toolRun,
@@ -2088,31 +2414,6 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         selected: true
       }]
     };
-  }
-
-  private buildPreRunEvidencePromptSection(results: ExecutedToolResult[]) {
-    const lines = [
-      "Pre-run evidence:",
-      "Use these observed facts as prior context before taking any tool actions."
-    ];
-
-    for (const result of results) {
-      const observations = result.publicObservations.length > 0
-        ? result.publicObservations
-        : [{
-            summary: result.outputPreview,
-            confidence: 0.5
-          }];
-      for (const observation of observations) {
-        const confidence = typeof observation.confidence === "number"
-          ? observation.confidence.toFixed(2)
-          : "0.50";
-        lines.push(`- Observation: ${observation.summary}`);
-        lines.push(`  Confidence: ${confidence}. Source: ${result.toolName}. Ref: ${result.toolRun.id}.`);
-      }
-    }
-
-    return lines.join("\n");
   }
 
   private renderPromptTemplate(
@@ -2164,6 +2465,14 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
   }
 
   private getModelProviderOptions(runtime: FixedAiRuntime) {
+    if (runtime.provider === "local") {
+      return {
+        openai: {
+          temperature: 0
+        }
+      };
+    }
+
     if (runtime.provider !== "anthropic" || !runtime.promptCachingEnabled) {
       return undefined;
     }
@@ -2676,8 +2985,79 @@ function buildReportSystemGraphBatchDescription(stage: WorkflowStage) {
   return lines.join(" ");
 }
 
+function buildReportResourceDescription() {
+  return [
+    "Persist one resource at a time.",
+    "Use this after evidence collection to record a host, service, application, endpoint, datastore, or other concrete resource with a stable id.",
+    "Provide grounded evidence when you need to prove the resource exists or matters.",
+    "Reuse the same id on later calls to refine the same resource."
+  ].join(" ");
+}
+
+function buildReportFindingDescription() {
+  return [
+    "Persist one finding at a time.",
+    "Every finding must include grounded evidence and must attach to one or more concrete resource ids with `resourceId` or `resourceIds`.",
+    "Prefer exact persisted evidence refs such as toolRunRef or observationRef instead of guessing ids.",
+    "Reuse the same finding id to refine an existing finding; omit id to let the runtime create one."
+  ].join(" ");
+}
+
+function buildReportRelationshipDescription(stage: WorkflowStage) {
+  const lines = [
+    "Persist one relationship at a time.",
+    "Use relationshipType `resource` for resource topology edges and `finding` for finding-to-finding attack-vector edges.",
+    "Non-`related` finding relationships must be grounded in persisted evidence."
+  ];
+  if (stage.completionRule.requireChainedFindings) {
+    lines.push("This stage requires chained findings, so prefer explicit finding relationships when one finding enables or derives another.");
+  }
+  return lines.join(" ");
+}
+
+function buildReportAttackPathDescription(stage: WorkflowStage) {
+  const lines = [
+    "Persist one attack path grouping at a time.",
+    "Use this only after the referenced resources or findings already exist.",
+    "Every attack path should reference concrete resourceIds or findingIds rather than free-form prose."
+  ];
+  if (stage.handoffSchema) {
+    lines.push("Keep ids consistent with any final handoff summary.");
+  }
+  return lines.join(" ");
+}
+
 function buildCompleteRunDescription(_stage: WorkflowStage) {
   return "Finish the workflow run last. Provide only `summary`. This action closes the workflow run and does not create findings.";
+}
+
+function buildAvailableEvidenceRefs(result: ExecutedToolResult) {
+  return {
+    toolRunRef: result.toolRun.id,
+    toolName: result.toolName,
+    observationRefs: result.observationKeys,
+    artifactRefs: [result.toolRun.id],
+    traceEventId: null as string | null
+  };
+}
+
+function formatAvailableEvidenceRefsBlock(refs: ReturnType<typeof buildAvailableEvidenceRefs>) {
+  return [
+    "Available evidence refs:",
+    `toolRunRef: ${refs.toolRunRef}`,
+    `toolName: ${refs.toolName}`,
+    `observationRefs: ${refs.observationRefs.length > 0 ? refs.observationRefs.join(", ") : "(none)"}`,
+    `artifactRefs: ${refs.artifactRefs.length > 0 ? refs.artifactRefs.join(", ") : "(none)"}`,
+    "Reuse these exact refs in later report_* calls. Do not invent ids."
+  ].join("\n");
+}
+
+function buildAvailableEvidenceRefsBlock(result: ExecutedToolResult) {
+  const refs = buildAvailableEvidenceRefs(result);
+  return {
+    refs,
+    text: formatAvailableEvidenceRefsBlock(refs)
+  };
 }
 
 function extractFindingClaims(rawInput: unknown): string[] {
@@ -2685,8 +3065,17 @@ function extractFindingClaims(rawInput: unknown): string[] {
   if (!normalized || typeof normalized !== "object" || Array.isArray(normalized)) {
     return [];
   }
-  const findings = Array.isArray((normalized as Record<string, unknown>)["findings"])
-    ? (normalized as Record<string, unknown>)["findings"] as Array<Record<string, unknown>>
+  const normalizedRecord = normalized as Record<string, unknown>;
+  const directTitleValue = normalizedRecord["title"];
+  const directTitle = typeof directTitleValue === "string"
+    ? directTitleValue.trim()
+    : "";
+  if (directTitle.length > 0) {
+    return [directTitle];
+  }
+  const findingsValue = normalizedRecord["findings"];
+  const findings = Array.isArray(findingsValue)
+    ? findingsValue as Array<Record<string, unknown>>
     : [];
   return findings
     .map((finding) => typeof finding["title"] === "string" ? finding["title"].trim() : "")

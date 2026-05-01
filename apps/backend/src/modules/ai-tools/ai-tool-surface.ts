@@ -13,6 +13,26 @@ function isSemanticFamily(tool: AiTool) {
   return tool.kind === "semantic-family" || tool.capabilities.includes("semantic-family");
 }
 
+export function isRegistryVisibleAiTool(tool: AiTool) {
+  return classifyAiToolKind(tool) !== "raw-adapter";
+}
+
+export function isEligibleWorkflowTool(tool: AiTool) {
+  return tool.status === "active" && isRegistryVisibleAiTool(tool);
+}
+
+export function resolveWorkflowStageTools(allTools: AiTool[], allowedToolIds: string[]) {
+  const eligibleTools = allTools.filter(isEligibleWorkflowTool);
+  if (allowedToolIds.length === 0) {
+    return eligibleTools;
+  }
+
+  const eligibleById = new Map(eligibleTools.map((tool) => [tool.id, tool] as const));
+  return allowedToolIds
+    .map((toolId) => eligibleById.get(toolId) ?? null)
+    .filter((tool): tool is AiTool => Boolean(tool));
+}
+
 export function classifyAiToolKind(tool: AiTool): AiTool["kind"] {
   if (tool.executorType === "builtin") {
     return isSemanticFamily(tool) ? "semantic-family" : "builtin-action";
@@ -24,7 +44,8 @@ export function classifyAiToolKind(tool: AiTool): AiTool["kind"] {
 function summarizeRawTool(tool: AiTool): AiToolRuntimeStateSummary {
   const cataloged = catalogToolIds.has(tool.id);
   const installed = cataloged;
-  const executable = tool.executorType === "bash" && tool.bashSource != null && tool.bashSource.trim().length > 0;
+  const executable = tool.executorType === "native-ts"
+    || (tool.executorType === "bash" && tool.bashSource != null && tool.bashSource.trim().length > 0);
 
   return {
     cataloged,

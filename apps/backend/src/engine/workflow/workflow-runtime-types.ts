@@ -20,7 +20,6 @@ import type {
 } from "@synosec/contracts";
 import type { ToolRuntime } from "@/modules/ai-tools/index.js";
 import type { ExecutionReportsService } from "@/modules/execution-reports/index.js";
-import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
 import type { AiToolsRepository } from "@/modules/ai-tools/index.js";
 import type { TargetsRepository } from "@/modules/targets/index.js";
 import type { WorkflowsRepository } from "@/modules/workflows/workflows.repository.js";
@@ -38,7 +37,6 @@ export interface WorkflowArtifactReader {
 export interface WorkflowRuntimePorts {
   workflowsRepository: WorkflowsRepository;
   targetsRepository: TargetsRepository;
-  aiAgentsRepository: AiAgentsRepository;
   aiToolsRepository: AiToolsRepository;
   toolRuntime: ToolRuntime;
   workflowRunStream: WorkflowRunStream;
@@ -70,7 +68,6 @@ export type StageExecutionTarget = {
 };
 
 export type StageDependencies = {
-  agent: NonNullable<Awaited<ReturnType<AiAgentsRepository["getById"]>>>;
   runtime: FixedAiRuntime;
   target: StageExecutionTarget;
   tools: AiTool[];

@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { defaultWorkflowExecutionContract, workflowExecutionContractHeading, type Workflow, type AiAgent, type Target } from "@synosec/contracts";
+import { defaultWorkflowExecutionContract, workflowExecutionContractHeading, type Workflow, type Target } from "@synosec/contracts";
 import { Button } from "@/shared/ui/button";
 import { Textarea } from "@/shared/ui/textarea";
 
@@ -44,7 +44,6 @@ export function joinWorkflowPromptSections(draft: PromptEditDraft) {
 export function PromptEditModal({
   open,
   workflow,
-  agent,
   target,
   draft,
   saving,
@@ -56,7 +55,6 @@ export function PromptEditModal({
 }: {
   open: boolean;
   workflow: Workflow | null;
-  agent: AiAgent | null;
   target: Target | null;
   draft: PromptEditDraft;
   saving: boolean;
@@ -171,8 +169,8 @@ export function PromptEditModal({
                   <dd className="mt-1 text-foreground">{workflow.executionKind ?? "workflow"}</dd>
                 </div>
                 <div>
-                  <dt className="font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">Linked agent</dt>
-                  <dd className="mt-1 text-foreground">{agent?.name ?? "Unknown agent"}</dd>
+                  <dt className="font-mono text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground">Editable stage</dt>
+                  <dd className="mt-1 text-foreground">{workflow.stages[0]?.label ?? "Unknown stage"}</dd>
                 </div>
               </dl>
             </section>

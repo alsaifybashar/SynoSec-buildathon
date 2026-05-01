@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getWorkflowRunContextTokenEstimate, getWorkflowRunModelStepCount, type AiAgent, type AiTool, type AttackPathSummary, type ExecutionReportDetail, type Observation, type Target as WorkflowTarget, type Workflow, type WorkflowRun, type WorkflowRunEvaluationResponse } from "@synosec/contracts";
+import { getWorkflowRunContextTokenEstimate, getWorkflowRunModelStepCount, type AiTool, type AttackPathSummary, type ExecutionReportDetail, type Observation, type Target as WorkflowTarget, type Workflow, type WorkflowRun, type WorkflowRunEvaluationResponse } from "@synosec/contracts";
 import { AlertTriangle, ChevronRight, LoaderCircle, Radio, Target } from "lucide-react";
 import { AttackPathsSection } from "@/features/attack-paths/attack-paths-section";
 import { ExecutionReportFindingsView } from "@/features/execution-reports/findings-table-view";
@@ -11,7 +11,6 @@ import { DetailMetadataPanel, DetailSidebarItem } from "@/shared/components/deta
 import {
   buildWorkflowTranscript,
   getToolLookup,
-  getWorkflowAllowedToolIds,
   type FindingsRailItem,
   type TranscriptProjection
 } from "@/features/workflows/workflow-trace";
@@ -300,20 +299,11 @@ function createWorkflowBuiltinToolSegment(): StructuredToolSegment["tools"] {
   ];
 }
 
-function buildStructuredToolSegment(workflow: Workflow, agent: AiAgent | null, tools: AiTool[]): StructuredToolSegment {
-  const effectiveToolIds = workflow.allowedToolIds.length > 0
-    ? workflow.allowedToolIds
-    : tools
-        .filter((tool) => {
-          if (!agent || tool.status !== "active") {
-            return false;
-          }
-          if (agent.toolAccessMode === "system") {
-            return tool.source === "system" && tool.accessProfile === "standard";
-          }
-          return tool.accessProfile === "standard" || tool.accessProfile === "shell";
-        })
-        .map((tool) => tool.id);
+function buildStructuredToolSegment(workflow: Workflow, tools: AiTool[]): StructuredToolSegment {
+  const stageToolIds = new Set(workflow.stages.flatMap((stage) => stage.allowedToolIds));
+  const effectiveToolIds = stageToolIds.size > 0
+    ? [...stageToolIds]
+    : tools.filter((tool) => tool.status === "active").map((tool) => tool.id);
   const toolLookup = new Map(tools.map((tool) => [tool.id, tool]));
   const reconstructedTools = effectiveToolIds
     .map((toolId) => toolLookup.get(toolId))
@@ -338,7 +328,6 @@ function buildDuplexAtoms(input: {
   workflow: Workflow;
   run: WorkflowRun | null;
   transcript: TranscriptProjection;
-  agent: AiAgent | null;
   tools: AiTool[];
   findingsById: Map<string, FindingsRailItem>;
   errors: string[];
@@ -404,8 +393,20 @@ function buildDuplexAtoms(input: {
           kind: "tool-context",
           label: "Structured tool segment",
           meta: compactDate(item.createdAt),
-          structuredToolSegment: buildStructuredToolSegment(input.workflow, input.agent, input.tools)
+          structuredToolSegment: buildStructuredToolSegment(input.workflow, input.tools)
         });
+        continue;
+      }
+
+      if (item.sections.length > 0) {
+        atoms.push(...item.sections.map((section, index) => ({
+          key: `${item.id}:section:${index}`,
+          side: "right" as const,
+          kind: "system-prompt" as const,
+          label: section.title,
+          body: section.body,
+          meta: compactDate(item.createdAt)
+        })));
         continue;
       }
 
@@ -1128,7 +1129,6 @@ export function WorkflowTraceSection({
   workflow: Workflow | null;
   activeTarget: WorkflowTarget | null;
   targets: WorkflowTarget[];
-  agents: AiAgent[];
   tools: AiTool[];
   run: WorkflowRun | null;
   running: boolean;
@@ -1163,11 +1163,10 @@ export function WorkflowTraceSection({
     return buildWorkflowTranscript({
       workflow,
       run,
-      agents,
       toolLookup,
       running
     });
-  }, [workflow, run, agents, toolLookup, running]);
+  }, [workflow, run, toolLookup, running]);
   const effectiveTranscript = transcript ?? derivedTranscript;
   const effectiveAttackPaths = attackPaths ?? { venues: [], vectors: [], paths: [] };
   const findingsById = useMemo(
@@ -1188,10 +1187,6 @@ export function WorkflowTraceSection({
     () => effectiveTranscript.findings.filter((finding) => !citedFindingIds.has(finding.id)),
     [effectiveTranscript, citedFindingIds]
   );
-  const agent = useMemo(
-    () => workflow ? agents.find((item) => item.id === workflow.agentId) ?? null : null,
-    [workflow, agents]
-  );
   const metadataItems = useMemo<MetadataItem[]>(() => {
     return [
       { label: "Evaluation", value: formatWorkflowEvaluation(workflowEvaluation ?? null), hint: WORKFLOW_METADATA_HINTS.evaluation },
@@ -1209,12 +1204,11 @@ export function WorkflowTraceSection({
       workflow,
       run,
       transcript: effectiveTranscript,
-      agent,
       tools,
       findingsById,
       errors: errorMessages
     }).filter((atom) => atom.kind !== "finding");
-  }, [workflow, run, effectiveTranscript, agent, findingsById, errorMessages]);
+  }, [workflow, run, effectiveTranscript, tools, findingsById, errorMessages]);
   const pendingToolAtom = useMemo(
     () => atoms.slice().reverse().find((atom) => atom.kind === "tool-call" && !atom.status) ?? null,
     [atoms]
@@ -1290,7 +1284,7 @@ export function WorkflowTraceSection({
       <div className="relative h-[38rem] overflow-hidden rounded-xl border bg-card/30">
         <div
           ref={transcriptRef}
-          className="h-full overflow-y-auto"
+          className="duplex-scroll h-full overflow-y-auto"
           style={{
             maskImage:
               "linear-gradient(to bottom, transparent 0, black 4rem, black calc(100% - 4rem), transparent 100%)",
@@ -1385,6 +1379,11 @@ export function WorkflowTraceSection({
           to { opacity: 1; transform: none; filter: blur(0); }
         }
         .duplex-entry { animation: duplex-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+        .duplex-scroll { scrollbar-width: thin; scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent; }
+        .duplex-scroll::-webkit-scrollbar { width: 6px; }
+        .duplex-scroll::-webkit-scrollbar-track { background: transparent; }
+        .duplex-scroll::-webkit-scrollbar-thumb { background-color: hsl(var(--muted-foreground) / 0.3); border-radius: 9999px; }
+        .duplex-scroll::-webkit-scrollbar-thumb:hover { background-color: hsl(var(--muted-foreground) / 0.55); }
         @keyframes duplex-dot { 0%, 80%, 100% { opacity: 0.25 } 40% { opacity: 1 } }
         .duplex-typing span { animation: duplex-dot 1.1s infinite; }
         .duplex-typing span:nth-child(2) { animation-delay: 0.15s; }

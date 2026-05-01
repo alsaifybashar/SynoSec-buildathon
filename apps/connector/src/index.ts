@@ -154,6 +154,7 @@ export async function executeConnectorJob(
       output: "",
       exitCode: 1,
       observations: [],
+      actionResults: [],
       statusReason: support.statusReason
     };
   }
@@ -163,13 +164,15 @@ export async function executeConnectorJob(
       return {
         output: `dry-run: ${job.toolRun.commandPreview}`,
         exitCode: 0,
-        observations: []
+        observations: [],
+        actionResults: []
       };
     case "simulate":
       return {
         output: `simulate: ${job.toolRun.commandPreview}`,
         exitCode: 0,
-        observations: []
+        observations: [],
+        actionResults: []
       };
     case "execute":
       return executeSandboxedConnectorJob(job, options);
@@ -186,6 +189,7 @@ function toConnectorSupportSubject(job: ConnectorExecutionJob): ConnectorSupport
   return {
     ...(job.request.toolId ? { toolId: job.request.toolId } : {}),
     tool: job.request.tool,
+    executorType: job.request.executorType,
     capabilities: job.request.capabilities,
     sandboxProfile: job.request.sandboxProfile,
     privilegeProfile: job.request.privilegeProfile,

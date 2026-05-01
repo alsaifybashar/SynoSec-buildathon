@@ -1,9 +1,10 @@
-import { localDemoTargetDefaults, localFullStackTargetDefaults } from "@synosec/contracts";
+import { localDemoTargetDefaults, localFullStackTargetDefaults, localJuiceShopTargetDefaults } from "@synosec/contracts";
 import { Prisma, PrismaClient } from "@prisma/client";
 import {
   getSeededWorkflowDefinitions,
   localApplicationId,
   localFullStackApplicationId,
+  localJuiceShopApplicationId,
   osiSingleAgentWorkflowId,
   portfolioApplicationId,
   portfolioEvidenceGraphWorkflowId,
@@ -61,10 +62,11 @@ async function main() {
 
   await prisma.application.deleteMany({
     where: {
-      id: { notIn: [localApplicationId, localFullStackApplicationId, portfolioApplicationId, securePentApplicationId] },
+      id: { notIn: [localApplicationId, localFullStackApplicationId, localJuiceShopApplicationId, portfolioApplicationId, securePentApplicationId] },
       name: {
         in: [
           "Local Attack Path Target",
+          "Local Juice Shop Target",
           "Nils Wickman Portfolio",
           "SecurePent",
           "Operator Portal",
@@ -112,6 +114,27 @@ async function main() {
       name: "Local Full Stack Target",
       baseUrl: localFullStackTargetDefaults.hostUrl,
       executionBaseUrl: localFullStackTargetDefaults.internalUrl,
+      environment: "development",
+      status: "active",
+      lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
+    }
+  });
+
+  await prisma.application.upsert({
+    where: { id: localJuiceShopApplicationId },
+    update: {
+      name: "Local Juice Shop Target",
+      baseUrl: localJuiceShopTargetDefaults.hostUrl,
+      executionBaseUrl: localJuiceShopTargetDefaults.internalUrl,
+      environment: "development",
+      status: "active",
+      lastScannedAt: new Date("2026-04-12T12:00:00.000Z")
+    },
+    create: {
+      id: localJuiceShopApplicationId,
+      name: "Local Juice Shop Target",
+      baseUrl: localJuiceShopTargetDefaults.hostUrl,
+      executionBaseUrl: localJuiceShopTargetDefaults.internalUrl,
       environment: "development",
       status: "active",
       lastScannedAt: new Date("2026-04-12T12:00:00.000Z")

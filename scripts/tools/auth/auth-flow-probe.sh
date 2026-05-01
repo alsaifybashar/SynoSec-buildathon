@@ -118,6 +118,13 @@ function expectedFieldsPresent(body, fields) {
   return fields.filter((field) => body.includes(String(field)));
 }
 
+function authSuccessSignal(body) {
+  const normalized = String(body || "").toLowerCase();
+  const negativeSignal = /error|invalid|denied|failed|failure|required|missing|unauthorized|forbidden/.test(normalized);
+  const positiveSignal = /success|authenticated|welcome|sessiontoken|access_token|id_token|refresh_token/.test(normalized);
+  return positiveSignal && !negativeSignal;
+}
+
 (async () => {
   const observations = [];
   if (validationTargets.length > 0) {
@@ -218,6 +225,18 @@ function expectedFieldsPresent(body, fields) {
     unknownSamples.push(await submit({ [usernameField]: unknownUser, [passwordField]: `wrong-unknown-${i}` }));
   }
 
+  const weakPasswordAttempt = await submit({ [usernameField]: knownUser, [passwordField]: "password" });
+  const allAttempts = [...invalidAttempts, ...knownSamples, ...unknownSamples, weakPasswordAttempt];
+  if (allAttempts.some((attempt) => attempt.statusCode === 0)) {
+    const first = allAttempts.find((attempt) => attempt.statusCode === 0);
+    console.log(JSON.stringify({
+      output: `Auth flow probe could not reach ${loginUrl}: ${first?.body || "request failed"}`,
+      statusReason: "Login endpoint was unreachable during auth flow probe",
+      commandPreview: `auth-flow-probe ${loginUrl}`
+    }));
+    process.exit(64);
+  }
+
   const knownAvg = average(knownSamples.map((item) => item.durationMs));
   const unknownAvg = average(unknownSamples.map((item) => item.durationMs));
   const timingDelta = Math.abs(knownAvg - unknownAvg);
@@ -248,8 +267,7 @@ function expectedFieldsPresent(body, fields) {
     });
   }
 
-  const weakPasswordAttempt = await submit({ [usernameField]: knownUser, [passwordField]: "password" });
-  if (weakPasswordAttempt.statusCode >= 200 && weakPasswordAttempt.statusCode < 300 && /success|token|authenticated|welcome/i.test(weakPasswordAttempt.body)) {
+  if (weakPasswordAttempt.statusCode >= 200 && weakPasswordAttempt.statusCode < 300 && authSuccessSignal(weakPasswordAttempt.body)) {
     observations.push({
       key: `auth-flow:${loginUrl}:weak-password`,
       title: "Login flow accepted a weak password candidate",

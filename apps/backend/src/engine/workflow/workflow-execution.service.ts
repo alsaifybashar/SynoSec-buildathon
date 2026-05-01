@@ -6,21 +6,29 @@ import { WorkflowRuntimeService } from "./workflow-runtime.js";
 import { WorkflowRunLauncher } from "./workflow-run-launcher.js";
 import { WorkflowRunScheduler } from "./workflow-run-scheduler.js";
 
+export type WorkflowRunSchedulerPort = Pick<WorkflowRunScheduler, "schedule">;
+export type WorkflowSessionRunnerPort = Pick<ExecutionSessionRunner, "runWorkflow">;
+
+type WorkflowExecutionServiceOptions = {
+  scheduler?: WorkflowRunSchedulerPort;
+  sessionRunner?: WorkflowSessionRunnerPort;
+};
+
 export class WorkflowExecutionService implements WorkflowExecutionEngine {
   private readonly runtime: WorkflowRuntimeService;
   private readonly launcher: WorkflowRunLauncher;
-  private readonly sessionRunner: ExecutionSessionRunner;
-  private readonly scheduler: WorkflowRunScheduler;
+  private readonly sessionRunner: WorkflowSessionRunnerPort;
+  private readonly scheduler: WorkflowRunSchedulerPort;
   private readonly ports: WorkflowRuntimePorts;
 
-  constructor(ports: WorkflowRuntimePorts) {
+  constructor(ports: WorkflowRuntimePorts, options: WorkflowExecutionServiceOptions = {}) {
     this.ports = ports;
     this.runtime = new WorkflowRuntimeService(ports);
     this.launcher = new WorkflowRunLauncher(this.runtime);
-    this.sessionRunner = new ExecutionSessionRunner({
+    this.sessionRunner = options.sessionRunner ?? new ExecutionSessionRunner({
       workflowExecutor: this.runtime
     });
-    this.scheduler = new WorkflowRunScheduler();
+    this.scheduler = options.scheduler ?? new WorkflowRunScheduler();
   }
 
   async startRun(workflowId: string, input: StartWorkflowRunBody = {}): Promise<WorkflowLaunch> {

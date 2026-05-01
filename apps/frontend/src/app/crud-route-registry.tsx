@@ -1,5 +1,4 @@
 import type { ComponentType } from "react";
-import { AiAgentsPage } from "@/features/ai-agents/page";
 import { AiToolsPage } from "@/features/ai-tools/page";
 import { ExecutionConstraintsPage } from "@/features/execution-constraints/page";
 import { TargetsPage } from "@/features/targets/page";
@@ -22,12 +21,6 @@ export const crudRouteRegistry: CrudRouteRegistryEntry[] = [
     component: TargetsPage as ComponentType<Record<string, unknown>>,
     detailIdProp: "targetId",
     detailLabelProp: "targetNameHint"
-  },
-  {
-    id: "ai-agents",
-    component: AiAgentsPage as ComponentType<Record<string, unknown>>,
-    detailIdProp: "agentId",
-    detailLabelProp: "agentNameHint"
   },
   {
     id: "ai-tools",
@@ -55,7 +48,4 @@ export const legacyCrudRedirects = [
   { path: "/applications", redirectTo: crudRouteConfigs.targets.listPath },
   { path: "/applications/new", redirectTo: crudRouteConfigs.targets.createPath },
   { path: "/applications/:applicationId", section: "targets", legacyParamName: "applicationId" },
-  { path: "/ai-agents", redirectTo: crudRouteConfigs["ai-agents"].listPath },
-  { path: "/ai-agents/new", redirectTo: crudRouteConfigs["ai-agents"].createPath },
-  { path: "/ai-agents/:agentId", section: "ai-agents", legacyParamName: "agentId" },
 ] as const;

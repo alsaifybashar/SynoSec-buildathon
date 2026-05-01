@@ -1,6 +1,10 @@
 import type { ConnectorExecutionResult, ToolRequest, ToolRun } from "@synosec/contracts";
 import { executeScriptedTool, type ScriptExecutionResult } from "@/engine/tools/script-executor.js";
 import { connectorControlPlane } from "@/integrations/connectors/control-plane.js";
+import {
+  executeConnectorActionBatch,
+  summarizeConnectorActionResults
+} from "./connector-actions.js";
 
 export interface ToolExecutionInput {
   scanId: string;
@@ -16,6 +20,7 @@ export interface ToolExecutionOutput extends ScriptExecutionResult {
   leasedAt?: string;
   leaseExpiresAt?: string;
   statusReason?: string;
+  actionResults?: ConnectorExecutionResult["actionResults"];
 }
 
 export interface ToolExecutionTransport {
@@ -27,6 +32,22 @@ export class LocalToolExecutionTransport implements ToolExecutionTransport {
   readonly dispatchMode = "local" as const;
 
   async execute(input: ToolExecutionInput): Promise<ToolExecutionOutput> {
+    if (input.request.executorType === "native-ts") {
+      const batch = input.request.parameters["actionBatch"];
+      if (!batch || typeof batch !== "object" || !("actions" in batch) || !Array.isArray(batch.actions)) {
+        throw new Error(`Native tool ${input.request.toolId ?? input.request.tool} is missing an action batch.`);
+      }
+
+      const result = await executeConnectorActionBatch(batch.actions as never[]);
+      return {
+        observations: [],
+        output: summarizeConnectorActionResults(result.actionResults),
+        exitCode: 0,
+        actionResults: result.actionResults,
+        dispatchMode: this.dispatchMode
+      };
+    }
+
     const result = await executeScriptedTool({
       scanId: input.scanId,
       tacticId: input.tacticId,
@@ -66,6 +87,7 @@ function mapConnectorExecutionResult(
     output: result.output,
     exitCode: result.exitCode,
     observations: result.observations,
+    actionResults: result.actionResults,
     dispatchMode: "connector",
     connectorId: metadata.connectorId,
     leasedAt: metadata.leasedAt,

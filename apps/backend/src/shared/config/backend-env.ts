@@ -20,6 +20,15 @@ function parseAllowedEmails(value: string | undefined) {
     .filter(Boolean);
 }
 
+function normalizeOptionalEnv(value: string | undefined) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function defaultCookieSecure() {
   const backendEnv = process.env["BACKEND_ENV"] ?? process.env["NODE_ENV"] ?? "development";
   return backendEnv.toLowerCase() === "production";
@@ -217,15 +226,15 @@ export function loadBackendEnv(): BackendEnv {
     databaseUrl: process.env["DATABASE_URL"],
     frontendUrl: process.env["FRONTEND_URL"],
     llmProvider: process.env["LLM_PROVIDER"] ?? "anthropic",
-    anthropicApiKey: process.env["ANTHROPIC_API_KEY"],
+    anthropicApiKey: normalizeOptionalEnv(process.env["ANTHROPIC_API_KEY"]),
     llmAnthropicModel:
-      process.env["CLAUDE_MODEL"]
-      ?? process.env["LLM_ANTHROPIC_MODEL"]
+      normalizeOptionalEnv(process.env["CLAUDE_MODEL"])
+      ?? normalizeOptionalEnv(process.env["LLM_ANTHROPIC_MODEL"])
       ?? "claude-haiku-4-5",
     anthropicPromptCachingEnabled: parseBoolean(process.env["ANTHROPIC_PROMPT_CACHING_ENABLED"], true),
     anthropicPromptCachingTtl: process.env["ANTHROPIC_PROMPT_CACHING_TTL"] ?? "1h",
-    llmLocalBaseUrl: process.env["LLM_LOCAL_BASE_URL"],
-    llmLocalModel: process.env["LLM_LOCAL_MODEL"],
+    llmLocalBaseUrl: normalizeOptionalEnv(process.env["LLM_LOCAL_BASE_URL"]),
+    llmLocalModel: normalizeOptionalEnv(process.env["LLM_LOCAL_MODEL"]),
     llmLocalOpenAiApiMode: process.env["LLM_LOCAL_OPENAI_API_MODE"] ?? "chat",
     toolExecutionMode: process.env["TOOL_EXECUTION_MODE"] ?? "local",
     connectorSharedToken: process.env["CONNECTOR_SHARED_TOKEN"],

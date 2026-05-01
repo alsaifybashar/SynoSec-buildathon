@@ -26,6 +26,7 @@ import {
   createToolExecutionTransport,
   type ToolExecutionTransport
 } from "@/integrations/connectors/transport.js";
+import { getNativeToolImplementation } from "@/modules/ai-tools/native-tools/index.js";
 
 interface BrokerOptions {
   broadcast: (event: WsEvent) => void;
@@ -233,7 +234,39 @@ export class ToolBroker {
           request: scopedRequest
         });
 
-        for (const observation of adapterResult.observations) {
+        const executionResult = scopedRequest.executorType === "native-ts"
+          ? (() => {
+              const implementation = scopedRequest.toolId ? getNativeToolImplementation(scopedRequest.toolId) : null;
+              if (!implementation) {
+                throw new Error(`No native tool implementation is registered for ${scopedRequest.toolId ?? scopedRequest.tool}.`);
+              }
+
+              const parsed = implementation.parse(
+                adapterResult.actionResults ?? [],
+                implementation.parseInput(scopedRequest.parameters["toolInput"]),
+                {
+                  request: scopedRequest,
+                  toolRun,
+                  scanId: input.scan.id,
+                  tacticId: input.tacticId
+                }
+              );
+
+              return {
+                observations: parsed.observations,
+                output: adapterResult.output,
+                exitCode: parsed.exitCode,
+                statusReason: parsed.statusReason ?? adapterResult.statusReason
+              };
+            })()
+          : {
+              observations: adapterResult.observations,
+              output: adapterResult.output,
+              exitCode: adapterResult.exitCode,
+              statusReason: adapterResult.statusReason
+            };
+
+        for (const observation of executionResult.observations) {
           confidenceEngine.registerObservation(observation, input.scan.id);
           evidenceStore.addObservation(observation);
           observations.push(observation);
@@ -248,7 +281,7 @@ export class ToolBroker {
           });
         }
 
-        const runFailed = adapterResult.exitCode !== 0;
+        const runFailed = executionResult.exitCode !== 0;
         const completedToolRun: ToolRun = {
           ...toolRun,
           ...(adapterResult.connectorId ? { connectorId: adapterResult.connectorId } : {}),
@@ -256,9 +289,9 @@ export class ToolBroker {
           ...(adapterResult.leaseExpiresAt ? { leaseExpiresAt: adapterResult.leaseExpiresAt } : {}),
           status: runFailed ? "failed" : "completed",
           completedAt: new Date().toISOString(),
-          output: adapterResult.output,
-          exitCode: adapterResult.exitCode,
-          ...(adapterResult.statusReason ? { statusReason: adapterResult.statusReason } : {})
+          output: executionResult.output,
+          exitCode: executionResult.exitCode,
+          ...(executionResult.statusReason ? { statusReason: executionResult.statusReason } : {})
         };
         evidenceStore.updateToolRun(completedToolRun);
         toolRuns[toolRuns.length - 1] = completedToolRun;
@@ -268,8 +301,8 @@ export class ToolBroker {
           toolRunId: completedToolRun.id,
           stage: "execution",
           title: `${scopedRequest.tool} ${runFailed ? "failed" : "completed"}`,
-          summary: `${runFailed ? "Finished" : "Completed"} ${scopedRequest.tool} against ${scopedRequest.target}${scopedRequest.port !== undefined ? `:${scopedRequest.port}` : ""} with exit code ${adapterResult.exitCode}.`,
-          detail: adapterResult.output
+          summary: `${runFailed ? "Finished" : "Completed"} ${scopedRequest.tool} against ${scopedRequest.target}${scopedRequest.port !== undefined ? `:${scopedRequest.port}` : ""} with exit code ${executionResult.exitCode}.`,
+          detail: executionResult.output
         });
       } catch (error: unknown) {
         const reason = error instanceof Error ? error.message : String(error);

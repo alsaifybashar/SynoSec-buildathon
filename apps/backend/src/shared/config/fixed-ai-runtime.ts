@@ -8,6 +8,15 @@ const DEFAULT_ANTHROPIC_PROMPT_CACHING_TTL = "1h";
 const DEFAULT_LOCAL_MODEL = "qwen3:8b";
 const DEFAULT_LOCAL_BASE_URL = "http://localhost:11434/v1";
 
+function normalizeOptionalEnv(value: string | undefined) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 const configuredRuntimeEnvSchema = z.object({
   provider: runtimeProviderSchema.default("anthropic"),
   anthropicApiKey: z.string().trim().min(1).optional(),
@@ -48,15 +57,15 @@ export function formatRuntimeLabel(providerName: string, model: string) {
 export function loadFixedAiRuntime(): FixedAiRuntime {
   const env = configuredRuntimeEnvSchema.parse({
     provider: process.env["LLM_PROVIDER"] ?? "anthropic",
-    anthropicApiKey: process.env["ANTHROPIC_API_KEY"],
+    anthropicApiKey: normalizeOptionalEnv(process.env["ANTHROPIC_API_KEY"]),
     anthropicModel:
-      process.env["CLAUDE_MODEL"]
-      ?? process.env["LLM_ANTHROPIC_MODEL"]
+      normalizeOptionalEnv(process.env["CLAUDE_MODEL"])
+      ?? normalizeOptionalEnv(process.env["LLM_ANTHROPIC_MODEL"])
       ?? DEFAULT_ANTHROPIC_MODEL,
     anthropicPromptCachingEnabled: parsePromptCachingEnabled(process.env["ANTHROPIC_PROMPT_CACHING_ENABLED"]),
     anthropicPromptCachingTtl: process.env["ANTHROPIC_PROMPT_CACHING_TTL"] ?? DEFAULT_ANTHROPIC_PROMPT_CACHING_TTL,
-    localBaseUrl: normalizeLocalBaseUrl(process.env["LLM_LOCAL_BASE_URL"] ?? DEFAULT_LOCAL_BASE_URL),
-    localModel: process.env["LLM_LOCAL_MODEL"] ?? DEFAULT_LOCAL_MODEL,
+    localBaseUrl: normalizeLocalBaseUrl(normalizeOptionalEnv(process.env["LLM_LOCAL_BASE_URL"]) ?? DEFAULT_LOCAL_BASE_URL),
+    localModel: normalizeOptionalEnv(process.env["LLM_LOCAL_MODEL"]) ?? DEFAULT_LOCAL_MODEL,
     localOpenAiApiMode: process.env["LLM_LOCAL_OPENAI_API_MODE"] ?? "chat"
   });
 

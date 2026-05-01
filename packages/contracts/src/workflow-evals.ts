@@ -18,7 +18,9 @@ export type WorkflowEvaluationExpectation = z.infer<typeof workflowEvaluationExp
 
 export const workflowEvaluationTargetPackSchema = z.enum([
   "vulnerable-app",
-  "full-stack-target"
+  "full-stack-target",
+  "juice-shop",
+  "auth-lab"
 ]);
 export type WorkflowEvaluationTargetPack = z.infer<typeof workflowEvaluationTargetPackSchema>;
 
@@ -31,6 +33,8 @@ export const workflowEvaluationAvailableSchema = z.object({
   summary: z.string().min(1),
   subscores: z.array(workflowEvaluationSubscoreSchema).min(1),
   explanation: z.array(z.string().min(1)).default([]),
+  totalExpectations: z.number().int().min(1).optional(),
+  unmetExpectationsTruncatedCount: z.number().int().min(0).optional(),
   matchedExpectations: z.array(workflowEvaluationExpectationSchema).default([]),
   unmetExpectations: z.array(workflowEvaluationExpectationSchema).default([])
 });

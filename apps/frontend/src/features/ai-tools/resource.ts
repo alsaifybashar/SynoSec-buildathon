@@ -5,9 +5,9 @@ export const aiToolsResource = createResourceClient<AiTool, AiToolsQuery, ListAi
   path: apiRoutes.toolRegistry,
   dataKey: "tools",
   capabilities: {
-    canCreate: true,
-    canUpdate: (tool) => tool.source !== "system",
-    canDelete: (tool) => tool.source !== "system"
+    canCreate: false,
+    canUpdate: () => false,
+    canDelete: () => false
   },
   defaultQuery: {
     page: 1,

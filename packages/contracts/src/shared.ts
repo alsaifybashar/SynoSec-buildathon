@@ -6,7 +6,6 @@ export const apiRoutes = {
   authLogout: "/api/auth/logout",
   authSession: "/api/auth/session",
   targets: "/api/targets",
-  aiAgents: "/api/ai-agents",
   toolRegistry: "/api/tool-registry",
   executionConstraints: "/api/execution-constraints",
   workflows: "/api/workflows",
@@ -66,6 +65,15 @@ export const localFullStackTargetDefaults = {
   internalUrl: "http://synosec-full-stack-target:8891",
   hostUrl: "http://localhost:8891",
   hostGatewayTarget: "host.docker.internal:8891"
+} as const;
+
+export const localJuiceShopTargetDefaults = {
+  internalHost: "synosec-juice-shop-target",
+  port: 3000,
+  internalTarget: "synosec-juice-shop-target:3000",
+  internalUrl: "http://synosec-juice-shop-target:3000",
+  hostUrl: "http://localhost:3000",
+  hostGatewayTarget: "host.docker.internal:3000"
 } as const;
 
 export const healthResponseSchema = z.object({

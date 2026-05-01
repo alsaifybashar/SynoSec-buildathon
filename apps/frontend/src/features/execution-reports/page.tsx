@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { AttackPathsSection } from "@/features/attack-paths/attack-paths-section";
 import { useResourceDetail } from "@/shared/hooks/use-resource-detail";
 import { useResourceList } from "@/shared/hooks/use-resource-list";
-import { DetailFieldGroup, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
+import { DetailFieldGroup, DetailFormCard, DetailLoadingState, DetailPage, DetailSidebarItem } from "@/shared/components/detail-page";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Button } from "@/shared/ui/button";
@@ -81,7 +81,7 @@ function scrollToToolActivity(toolRunRef: string) {
 
 function ToolActivitySection({ report }: { report: ExecutionReportDetail }) {
   return (
-    <DetailFieldGroup title="Tool Activity" className="bg-card/70">
+    <DetailFieldGroup title="Tool Activity">
       <div className="col-span-full space-y-3">
         <SectionTitleWithHint
           title="Persisted tool activity"
@@ -278,23 +278,25 @@ async function deleteReport(id: string) {
         summary={report.attackPathExecutiveSummary}
         emptyMessage="No linked attack paths were derived for this report. Standalone findings remain available below."
       />
-      <DetailFieldGroup title="Findings" className="bg-card/70">
-        <div className="col-span-full">
-          <ExecutionReportFindingsView report={report} onJumpToToolActivity={scrollToToolActivity} />
-        </div>
-      </DetailFieldGroup>
-      <DetailFieldGroup title="Executive Summary" className="bg-card/70">
-        <div className="col-span-full space-y-3">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS_COMPACT}>
-            {report.executiveSummary}
-          </ReactMarkdown>
-          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-            <span className="rounded-full border border-border/70 px-2 py-1">{report.sourceLabel}</span>
-            <span className="rounded-full border border-border/70 px-2 py-1">{report.targetLabel}</span>
+      <DetailFormCard>
+        <DetailFieldGroup title="Findings">
+          <div className="col-span-full">
+            <ExecutionReportFindingsView report={report} onJumpToToolActivity={scrollToToolActivity} />
           </div>
-        </div>
-      </DetailFieldGroup>
-      <ToolActivitySection report={report} />
+        </DetailFieldGroup>
+        <DetailFieldGroup title="Executive Summary">
+          <div className="col-span-full space-y-3">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS_COMPACT}>
+              {report.executiveSummary}
+            </ReactMarkdown>
+            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+              <span className="rounded-full border border-border/70 px-2 py-1">{report.sourceLabel}</span>
+              <span className="rounded-full border border-border/70 px-2 py-1">{report.targetLabel}</span>
+            </div>
+          </div>
+        </DetailFieldGroup>
+        <ToolActivitySection report={report} />
+      </DetailFormCard>
     </DetailPage>
   );
 }

@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { createPaginatedResponseSchema, executionKindSchema, jsonSchemaObjectSchema, paginatedMetaSchema, resourceListQuerySchema } from "./shared.js";
-import { toolCapabilityTagSchema, toolCategorySchema, toolRiskTierSchema } from "./tooling.js";
+import {
+  toolCapabilityTagSchema,
+  toolCategorySchema,
+  toolPrivilegeProfileSchema,
+  toolRequestExecutorTypeSchema,
+  toolRiskTierSchema,
+  toolSandboxProfileSchema
+} from "./tooling.js";
 
 export const targetEnvironmentSchema = z.enum(["production", "staging", "development"]);
 export type TargetEnvironment = z.infer<typeof targetEnvironmentSchema>;
@@ -166,7 +173,10 @@ export type AiToolStatus = z.infer<typeof aiToolStatusSchema>;
 export const toolRegistryEntryStatusSchema = aiToolStatusSchema;
 export type ToolRegistryEntryStatus = z.infer<typeof toolRegistryEntryStatusSchema>;
 
-export const toolExecutorTypeSchema = z.enum(["bash", "builtin"]);
+export const toolExecutorTypeSchema = z.union([
+  toolRequestExecutorTypeSchema,
+  z.literal("builtin")
+]);
 export type ToolExecutorType = z.infer<typeof toolExecutorTypeSchema>;
 
 export const aiToolKindSchema = z.enum(["builtin-action", "semantic-family", "raw-adapter"]);
@@ -215,21 +225,6 @@ export const toolBuiltinActionKeySchema = z.enum([
   "local_shell_probe"
 ]);
 export type ToolBuiltinActionKey = z.infer<typeof toolBuiltinActionKeySchema>;
-
-export const toolSandboxProfileSchema = z.enum([
-  "network-recon",
-  "read-only-parser",
-  "active-recon",
-  "controlled-exploit-lab"
-]);
-export type ToolSandboxProfile = z.infer<typeof toolSandboxProfileSchema>;
-
-export const toolPrivilegeProfileSchema = z.enum([
-  "read-only-network",
-  "active-network",
-  "controlled-exploit"
-]);
-export type ToolPrivilegeProfile = z.infer<typeof toolPrivilegeProfileSchema>;
 
 export const toolConstraintTargetKindSchema = z.enum(["host", "domain", "url", "cidr"]);
 export type ToolConstraintTargetKind = z.infer<typeof toolConstraintTargetKindSchema>;
@@ -293,6 +288,10 @@ export const toolRegistryEntrySchema = z.object({
       });
     }
 
+    return;
+  }
+
+  if (value.executorType === "native-ts") {
     return;
   }
 
@@ -428,49 +427,6 @@ export const updateToolRegistryEntryBodySchema = toolRegistryEntryBodyBaseSchema
 export type UpdateToolRegistryEntryBody = z.infer<typeof updateToolRegistryEntryBodySchema>;
 export const updateAiToolBodySchema = updateToolRegistryEntryBodySchema;
 export type UpdateAiToolBody = UpdateToolRegistryEntryBody;
-
-export const aiAgentStatusSchema = z.enum(["draft", "active", "archived"]);
-export type AiAgentStatus = z.infer<typeof aiAgentStatusSchema>;
-
-export const toolAccessModeSchema = z.enum(["system", "system_plus_custom"]);
-export type ToolAccessMode = z.infer<typeof toolAccessModeSchema>;
-
-export const aiAgentSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1),
-  status: aiAgentStatusSchema,
-  description: z.string().nullable(),
-  systemPrompt: z.string().min(1),
-  toolAccessMode: toolAccessModeSchema.default("system"),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
-});
-export type AiAgent = z.infer<typeof aiAgentSchema>;
-
-export const aiAgentsListQuerySchema = resourceListQuerySchema.extend({
-  status: aiAgentStatusSchema.optional(),
-  sortBy: z.enum(["name", "status", "toolAccessMode", "createdAt", "updatedAt"]).optional()
-});
-export type AiAgentsListQuery = z.infer<typeof aiAgentsListQuerySchema>;
-
-export const listAiAgentsResponseSchema = createPaginatedResponseSchema("agents", aiAgentSchema);
-export type ListAiAgentsResponse = z.infer<typeof listAiAgentsResponseSchema>;
-
-const aiAgentBodyBaseSchema = z.object({
-  name: z.string().trim().min(1),
-  status: aiAgentStatusSchema,
-  description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
-  systemPrompt: z.string().min(1),
-  toolAccessMode: toolAccessModeSchema.default("system")
-});
-
-export const createAiAgentBodySchema = aiAgentBodyBaseSchema;
-export type CreateAiAgentBody = z.infer<typeof createAiAgentBodySchema>;
-
-export const updateAiAgentBodySchema = aiAgentBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
-  message: "At least one field is required."
-});
-export type UpdateAiAgentBody = z.infer<typeof updateAiAgentBodySchema>;
 
 export const workflowStatusSchema = z.enum(["draft", "active", "archived"]);
 export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
@@ -952,7 +908,6 @@ export type WorkflowStageResult = z.infer<typeof workflowStageResultSchema>;
 export const workflowStageSchema = z.object({
   id: z.string().uuid(),
   label: z.string().min(1),
-  agentId: z.string().uuid(),
   ord: z.number().int().min(0),
   objective: z.string().min(1),
   stageSystemPrompt: z.string().min(1),
@@ -985,29 +940,7 @@ export const workflowSchema = z.object({
   executionKind: executionKindSchema.optional(),
   preRunEvidenceEnabled: z.boolean().default(false),
   description: z.string().nullable(),
-  agentId: z.string().uuid(),
-  objective: z.string().min(1),
-  stageSystemPrompt: z.string().min(1),
-  taskPromptTemplate: z.string().min(1).optional(),
-  allowedToolIds: z.array(z.string().min(1)).default([]),
-  requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
-  findingPolicy: workflowStageFindingPolicySchema.default({
-    taxonomy: "typed-core-v1",
-    allowedTypes: allWorkflowFindingTypes
-  }),
-  completionRule: workflowStageCompletionRuleSchema.default({
-    requireStageResult: true,
-    requireToolCall: false,
-    allowEmptyResult: true,
-    minFindings: 0,
-    requireReachableSurface: false,
-    requireEvidenceBackedWeakness: false,
-    requireOsiCoverageStatus: false,
-    requireChainedFindings: false
-  }),
-  resultSchemaVersion: z.number().int().min(1).default(1),
-  handoffSchema: z.union([jsonSchemaObjectSchema, z.null()]).default(null),
-  stages: z.array(workflowStageSchema).default([]),
+  stages: z.array(workflowStageSchema).min(1),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 });
@@ -1015,7 +948,7 @@ export type Workflow = z.infer<typeof workflowSchema>;
 
 export const workflowsListQuerySchema = resourceListQuerySchema.extend({
   status: workflowStatusSchema.optional(),
-  sortBy: z.enum(["name", "status", "agentId", "createdAt", "updatedAt"]).optional()
+  sortBy: z.enum(["name", "status", "createdAt", "updatedAt"]).optional()
 });
 export type WorkflowsListQuery = z.infer<typeof workflowsListQuerySchema>;
 
@@ -1025,7 +958,6 @@ export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
 const workflowStageBodySchema = z.object({
   id: z.string().uuid().optional(),
   label: z.string().trim().min(1),
-  agentId: z.string().uuid(),
   objective: z.string().trim().min(1),
   stageSystemPrompt: z.string().trim().min(1),
   taskPromptTemplate: z.string().trim().min(1).optional(),
@@ -1056,28 +988,7 @@ const workflowBodyBaseSchema = z.object({
   executionKind: executionKindSchema.optional(),
   preRunEvidenceEnabled: z.boolean().default(false),
   description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
-  agentId: z.string().uuid(),
-  objective: z.string().trim().min(1),
-  stageSystemPrompt: z.string().trim().min(1),
-  taskPromptTemplate: z.string().trim().min(1).optional(),
-  allowedToolIds: z.array(z.string().min(1)).default([]),
-  requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
-  findingPolicy: workflowStageFindingPolicySchema.default({
-    taxonomy: "typed-core-v1",
-    allowedTypes: allWorkflowFindingTypes
-  }),
-  completionRule: workflowStageCompletionRuleSchema.default({
-    requireStageResult: true,
-    requireToolCall: false,
-    allowEmptyResult: true,
-    minFindings: 0,
-    requireReachableSurface: false,
-    requireEvidenceBackedWeakness: false,
-    requireOsiCoverageStatus: false,
-    requireChainedFindings: false
-  }),
-  resultSchemaVersion: z.number().int().min(1).default(1),
-  handoffSchema: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
+  stages: z.array(workflowStageBodySchema).min(1)
 });
 
 export const createWorkflowBodySchema = workflowBodyBaseSchema;

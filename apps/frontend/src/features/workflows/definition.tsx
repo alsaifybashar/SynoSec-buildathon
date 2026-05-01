@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { apiRoutes, type Workflow } from "@synosec/contracts";
 import { useWorkflowDefinitionContext, type WorkflowDefinitionContext } from "@/features/workflows/context";
 import { WorkflowConfigEditor, workflowStatusLabels } from "@/features/workflows/workflow-config-editor";
@@ -32,36 +31,8 @@ export const workflowsDefinition: CrudFeatureDefinition<
   resource: workflowsResource,
   transfer: workflowTransfer,
   useContext: useWorkflowDefinitionContext,
-  useSetup: ({ recordId, context, formValues, setFormValues, setInitialValues }) => {
-    useEffect(() => {
-      if (recordId !== "new") {
-        return;
-      }
-
-      const nextAgentId = formValues.agentId || context.defaultAgentId;
-
-      if (nextAgentId === formValues.agentId) {
-        return;
-      }
-
-      const nextValues = {
-        ...formValues,
-        agentId: nextAgentId
-      };
-      setFormValues(nextValues);
-      setInitialValues((current) => ({
-        ...current,
-        agentId: nextAgentId
-      }));
-    }, [
-      context.defaultAgentId,
-      formValues,
-      recordId,
-      setFormValues,
-      setInitialValues
-    ]);
-  },
-  createEmptyFormValues: (context) => createEmptyFormValues(context.defaultAgentId),
+  useSetup: () => {},
+  createEmptyFormValues: () => createEmptyFormValues(),
   toFormValues: toWorkflowFormValues,
   parseRequestBody: (formValues) => {
     const errors = validateWorkflowForm(formValues);
@@ -80,7 +51,7 @@ export const workflowsDefinition: CrudFeatureDefinition<
     emptyMessage: "No workflows have been configured yet.",
     columns: (context) => [
       { id: "name", header: "Name", cell: (row) => <span className="font-medium text-foreground">{row.name}</span> },
-      { id: "agentId", header: "Agent", cell: (row) => <span className="text-muted-foreground">{context.agentLookup[row.agentId]?.name ?? "Unknown"}</span> }
+      { id: "stages", header: "Stages", cell: (row) => <span className="text-muted-foreground">{row.stages.length}</span> }
     ],
     filters: () => []
   },
@@ -91,25 +62,8 @@ export const workflowsDefinition: CrudFeatureDefinition<
     renderSidebar: ({ item, context }) => (
       <>
         <DetailSidebarItem label="Status">{workflowStatusLabels[item.status]}</DetailSidebarItem>
-        <DetailSidebarItem label="Agent">{context.agentLookup[item.agentId]?.name ?? "Unknown"}</DetailSidebarItem>
-        <DetailSidebarItem label="Workflow surface">
-          {item.allowedToolIds.length}
-        </DetailSidebarItem>
-        <DetailSidebarItem label="Agent mode">
-          {context.agentLookup[item.agentId]?.toolAccessMode ?? "system"}
-        </DetailSidebarItem>
-        <DetailSidebarItem label="Effective tools">
-          {item.allowedToolIds.length > 0 ? item.allowedToolIds.length : context.tools.filter((tool) => {
-            const agent = context.agentLookup[item.agentId];
-            if (!agent || tool.status !== "active") {
-              return false;
-            }
-            if (agent.toolAccessMode === "system") {
-              return tool.source === "system" && tool.accessProfile === "standard";
-            }
-            return tool.accessProfile === "standard" || tool.accessProfile === "shell";
-          }).length}
-        </DetailSidebarItem>
+        <DetailSidebarItem label="Stages">{item.stages.length}</DetailSidebarItem>
+        <DetailSidebarItem label="Eligible tools">{context.tools.filter((tool) => tool.status === "active").length}</DetailSidebarItem>
         <DetailSidebarItem label="Updated">{formatTimestamp(item.updatedAt)}</DetailSidebarItem>
       </>
     ),
@@ -117,8 +71,6 @@ export const workflowsDefinition: CrudFeatureDefinition<
       <WorkflowConfigEditor
         formValues={formValues}
         errors={errors as Record<string, string>}
-        agents={context.agents}
-        agentLookup={context.agentLookup}
         tools={context.tools}
         toolLookup={context.toolLookup}
         onFieldChange={handleFieldChange}

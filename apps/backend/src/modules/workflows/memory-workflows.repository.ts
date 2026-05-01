@@ -11,7 +11,6 @@ import {
 } from "@synosec/contracts";
 import { paginateItems, type PaginatedResult } from "@/shared/pagination/paginated-result.js";
 import { RequestError } from "@/shared/http/request-error.js";
-import type { AiAgentsRepository } from "@/modules/ai-agents/index.js";
 import type { TargetsRepository } from "@/modules/targets/index.js";
 import type { WorkflowRunStatePatch, WorkflowsRepository } from "./workflows.repository.js";
 import { normalizeWorkflowStageContract } from "./workflow-stage-contract.js";
@@ -44,7 +43,6 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
 
   constructor(
     private readonly targetsRepository: TargetsRepository,
-    private readonly aiAgentsRepository: AiAgentsRepository,
     seed: Workflow[] = [],
     seedRuns: WorkflowRun[] = []
   ) {
@@ -91,15 +89,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
   }
 
   async create(input: CreateWorkflowBody): Promise<Workflow> {
-    const agentId = input.agentId;
-    await this.assertAgentReferences([agentId]);
     const timestamp = new Date().toISOString();
-    const normalizedContract = normalizeWorkflowStageContract({
-      label: "Pipeline",
-      objective: input.objective,
-      stageSystemPrompt: input.stageSystemPrompt,
-      allowedToolIds: input.allowedToolIds
-    });
     const workflow: Workflow = {
       id: randomUUID(),
       name: input.name,
@@ -107,22 +97,12 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       executionKind: input.executionKind,
       preRunEvidenceEnabled: input.preRunEvidenceEnabled,
       description: input.description,
-      agentId,
-      objective: normalizedContract.objective,
-      stageSystemPrompt: normalizedContract.stageSystemPrompt,
-      allowedToolIds: normalizedContract.allowedToolIds,
-      requiredEvidenceTypes: [],
-      findingPolicy: normalizedContract.findingPolicy,
-      completionRule: normalizedContract.completionRule,
-      resultSchemaVersion: normalizedContract.resultSchemaVersion,
-      handoffSchema: normalizedContract.handoffSchema,
-      stages: [{
-        id: randomUUID(),
-        label: "Pipeline",
-        agentId,
-        ord: 0,
-        ...normalizedContract
-      }],
+      stages: input.stages.map((stage, ord) => ({
+        id: stage.id ?? randomUUID(),
+        label: stage.label,
+        ord,
+        ...normalizeWorkflowStageContract(stage)
+      })),
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -137,15 +117,6 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       return null;
     }
 
-    await this.assertAgentReferences([input.agentId ?? current.agentId]);
-
-    const nextStageContract = normalizeWorkflowStageContract({
-      label: "Pipeline",
-      objective: input.objective ?? current.objective,
-      stageSystemPrompt: input.stageSystemPrompt ?? current.stageSystemPrompt,
-      allowedToolIds: input.allowedToolIds ?? current.allowedToolIds
-    });
-
     const updated: Workflow = {
       ...current,
       name: input.name ?? current.name,
@@ -153,22 +124,12 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       executionKind: input.executionKind ?? current.executionKind,
       preRunEvidenceEnabled: input.preRunEvidenceEnabled ?? current.preRunEvidenceEnabled,
       description: input.description === undefined ? current.description : input.description,
-      agentId: input.agentId ?? current.agentId,
-      objective: nextStageContract.objective,
-      stageSystemPrompt: nextStageContract.stageSystemPrompt,
-      allowedToolIds: nextStageContract.allowedToolIds,
-      requiredEvidenceTypes: current.requiredEvidenceTypes ?? [],
-      findingPolicy: current.findingPolicy ?? nextStageContract.findingPolicy,
-      completionRule: current.completionRule ?? nextStageContract.completionRule,
-      resultSchemaVersion: current.resultSchemaVersion ?? nextStageContract.resultSchemaVersion,
-      handoffSchema: current.handoffSchema ?? nextStageContract.handoffSchema,
-      stages: [{
-        id: current.stages[0]?.id ?? randomUUID(),
-        label: "Pipeline",
-        agentId: input.agentId ?? current.agentId,
-        ord: 0,
-        ...nextStageContract
-      }],
+      stages: (input.stages ?? current.stages).map((stage, ord) => ({
+        id: stage.id ?? randomUUID(),
+        label: stage.label,
+        ord,
+        ...normalizeWorkflowStageContract(stage)
+      })),
       updatedAt: new Date().toISOString()
     };
 
@@ -188,15 +149,12 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
 
     const updated: Workflow = {
       ...current,
-      objective: current.objective,
-      stageSystemPrompt: current.stageSystemPrompt,
-      allowedToolIds: fallbackToolIdsByAgentId[current.agentId] ?? current.allowedToolIds,
       stages: current.stages.map((stage) => {
         const contract = normalizeWorkflowStageContract({
           label: stage.label,
           objective: stage.objective,
           stageSystemPrompt: stage.stageSystemPrompt,
-          allowedToolIds: fallbackToolIdsByAgentId[stage.agentId] ?? stage.allowedToolIds,
+          allowedToolIds: fallbackToolIdsByAgentId[stage.id] ?? stage.allowedToolIds,
           requiredEvidenceTypes: stage.requiredEvidenceTypes,
           findingPolicy: stage.findingPolicy,
           completionRule: stage.completionRule,
@@ -351,16 +309,6 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
     this.updateLaunchStateForRun(normalizedRun.workflowLaunchId, normalizedRun);
     return normalizedRun;
   }
-
-  private async assertAgentReferences(agentIds: string[]) {
-    for (const agentId of agentIds) {
-      const agent = await this.aiAgentsRepository.getById(agentId);
-      if (!agent) {
-        throw new RequestError(400, `AI agent not found: ${agentId}`);
-      }
-    }
-  }
-
   private updateLaunchStateForRun(launchId: string, run: WorkflowRun) {
     const launch = this.launches.get(launchId);
     if (!launch) {

@@ -1,12 +1,26 @@
 import { z } from "zod";
 import { findingSchema, osiLayerSchema, scanScopeSchema, severitySchema } from "./scan-core.js";
-import { toolPrivilegeProfileSchema, toolSandboxProfileSchema } from "./resources.js";
 
 export const toolRiskTierSchema = z.enum(["passive", "active", "controlled-exploit"]);
 export type ToolRiskTier = z.infer<typeof toolRiskTierSchema>;
 
 export const toolCapabilityTagSchema = z.string().trim().min(1);
 export type ToolCapabilityTag = z.infer<typeof toolCapabilityTagSchema>;
+
+export const toolSandboxProfileSchema = z.enum([
+  "network-recon",
+  "read-only-parser",
+  "active-recon",
+  "controlled-exploit-lab"
+]);
+export type ToolSandboxProfile = z.infer<typeof toolSandboxProfileSchema>;
+
+export const toolPrivilegeProfileSchema = z.enum([
+  "read-only-network",
+  "active-network",
+  "controlled-exploit"
+]);
+export type ToolPrivilegeProfile = z.infer<typeof toolPrivilegeProfileSchema>;
 
 export const toolCategorySchema = z.enum([
   "topology",
@@ -50,10 +64,98 @@ export type ToolCapabilitiesResponse = z.infer<typeof toolCapabilitiesResponseSc
 export const toolRunStatusSchema = z.enum(["pending", "running", "completed", "failed", "denied"]);
 export type ToolRunStatus = z.infer<typeof toolRunStatusSchema>;
 
+export const toolRequestExecutorTypeSchema = z.enum(["bash", "native-ts"]);
+export type ToolRequestExecutorType = z.infer<typeof toolRequestExecutorTypeSchema>;
+
+const jsonPrimitiveSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+const jsonValueSchema: z.ZodType<unknown> = z.lazy(() => z.union([
+  jsonPrimitiveSchema,
+  z.array(jsonValueSchema),
+  z.record(jsonValueSchema)
+]));
+
+const httpHeaderValueSchema = z.union([z.string(), z.array(z.string())]);
+const connectorHttpResponseBindingSchema = z.object({
+  name: z.string().trim().min(1),
+  source: z.enum(["header", "body_regex"]),
+  headerName: z.string().trim().min(1).optional(),
+  pattern: z.string().trim().min(1).optional(),
+  groupIndex: z.number().int().min(0).default(1),
+  required: z.boolean().default(true)
+}).superRefine((value, ctx) => {
+  if (value.source === "header" && !value.headerName) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "headerName is required when source=header.",
+      path: ["headerName"]
+    });
+  }
+
+  if (value.source === "body_regex" && !value.pattern) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "pattern is required when source=body_regex.",
+      path: ["pattern"]
+    });
+  }
+});
+export type ConnectorHttpResponseBinding = z.infer<typeof connectorHttpResponseBindingSchema>;
+
+export const connectorHttpRequestActionSchema = z.object({
+  kind: z.literal("http_request"),
+  id: z.string().min(1),
+  url: z.string().url(),
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]).default("GET"),
+  headers: z.record(z.string(), httpHeaderValueSchema).default({}),
+  query: z.record(z.string(), z.string()).default({}),
+  formBody: z.record(z.string(), z.string()).optional(),
+  jsonBody: z.record(jsonValueSchema).optional(),
+  timeoutMs: z.number().int().min(1).max(300000).default(30000),
+  maxResponseBytes: z.number().int().min(1).max(1024 * 1024).default(32768),
+  followRedirects: z.boolean().default(true),
+  captureBody: z.boolean().default(true),
+  captureHeaders: z.boolean().default(true),
+  delayMs: z.number().int().min(0).max(60000).default(0),
+  responseBindings: z.array(connectorHttpResponseBindingSchema).default([])
+});
+export type ConnectorHttpRequestAction = z.infer<typeof connectorHttpRequestActionSchema>;
+
+export const connectorActionSchema = z.discriminatedUnion("kind", [
+  connectorHttpRequestActionSchema
+]);
+export type ConnectorAction = z.infer<typeof connectorActionSchema>;
+
+export const connectorActionBatchSchema = z.object({
+  actions: z.array(connectorActionSchema).min(1)
+});
+export type ConnectorActionBatch = z.infer<typeof connectorActionBatchSchema>;
+
+export const connectorHttpRequestActionResultSchema = z.object({
+  kind: z.literal("http_request"),
+  actionId: z.string().min(1),
+  ok: z.boolean(),
+  statusCode: z.number().int().min(0),
+  headers: z.record(z.string(), httpHeaderValueSchema).default({}),
+  body: z.string().default(""),
+  durationMs: z.number().int().min(0),
+  networkError: z.string().optional()
+});
+export type ConnectorHttpRequestActionResult = z.infer<typeof connectorHttpRequestActionResultSchema>;
+
+export const connectorActionResultSchema = z.discriminatedUnion("kind", [
+  connectorHttpRequestActionResultSchema
+]);
+export type ConnectorActionResult = z.infer<typeof connectorActionResultSchema>;
+
+export const connectorActionExecutionResultSchema = z.object({
+  actionResults: z.array(connectorActionResultSchema).default([])
+});
+export type ConnectorActionExecutionResult = z.infer<typeof connectorActionExecutionResultSchema>;
+
 export const toolRequestSchema = z.object({
   toolId: z.string().min(1).optional(),
   tool: z.string().min(1),
-  executorType: z.literal("bash").default("bash"),
+  executorType: toolRequestExecutorTypeSchema.default("bash"),
   capabilities: z.array(toolCapabilityTagSchema).default([]),
   target: z.string().min(1),
   port: z.number().int().optional(),
@@ -63,13 +165,7 @@ export const toolRequestSchema = z.object({
   justification: z.string().min(1),
   sandboxProfile: toolSandboxProfileSchema,
   privilegeProfile: toolPrivilegeProfileSchema,
-  parameters: z.record(z.union([
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.array(z.string()),
-    z.record(z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]))
-  ])).default({})
+  parameters: z.record(jsonValueSchema).default({})
 }).superRefine((value, ctx) => {
   if (!value.toolId) {
     return;
@@ -77,29 +173,51 @@ export const toolRequestSchema = z.object({
   if (value.capabilities.length === 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "At least one capability tag is required for bash tool execution.",
+      message: `At least one capability tag is required for ${value.executorType} tool execution.`,
       path: ["capabilities"]
     });
   }
-  if (typeof value.parameters["bashSource"] !== "string") {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Bash source is required in structured parameters for bash tool execution.",
-      path: ["parameters", "bashSource"]
-    });
-  }
+
   if (typeof value.parameters["commandPreview"] !== "string") {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Command preview is required in structured parameters for bash tool execution.",
+      message: `Command preview is required in structured parameters for ${value.executorType} tool execution.`,
       path: ["parameters", "commandPreview"]
     });
   }
-  if (typeof value.parameters["toolInput"] !== "object" || Array.isArray(value.parameters["toolInput"])) {
+
+  if (value.executorType === "bash") {
+    if (typeof value.parameters["bashSource"] !== "string") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Bash source is required in structured parameters for bash tool execution.",
+        path: ["parameters", "bashSource"]
+      });
+    }
+    if (typeof value.parameters["toolInput"] !== "object" || value.parameters["toolInput"] == null || Array.isArray(value.parameters["toolInput"])) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Structured tool input is required for bash tool execution.",
+        path: ["parameters", "toolInput"]
+      });
+    }
+    return;
+  }
+
+  if (typeof value.parameters["toolInput"] !== "object" || value.parameters["toolInput"] == null || Array.isArray(value.parameters["toolInput"])) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Structured tool input is required for bash tool execution.",
+      message: "Structured tool input is required for native tool execution.",
       path: ["parameters", "toolInput"]
+    });
+  }
+
+  const batchResult = connectorActionBatchSchema.safeParse(value.parameters["actionBatch"]);
+  if (!batchResult.success) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Connector action batch is required for native tool execution.",
+      path: ["parameters", "actionBatch"]
     });
   }
 });
@@ -112,7 +230,7 @@ export const toolRunSchema = z.object({
   agentId: z.string(),
   toolId: z.string().optional(),
   tool: z.string(),
-  executorType: z.literal("bash").default("bash"),
+  executorType: toolRequestExecutorTypeSchema.default("bash"),
   capabilities: z.array(toolCapabilityTagSchema).default([]),
   target: z.string(),
   port: z.number().int().optional(),
@@ -257,6 +375,7 @@ export const connectorExecutionResultSchema = z.object({
   output: z.string(),
   exitCode: z.number().int(),
   observations: z.array(z.lazy(() => internalObservationSchema)).default([]),
+  actionResults: z.array(connectorActionResultSchema).default([]),
   statusReason: z.string().optional(),
   connectorId: z.string().optional()
 });

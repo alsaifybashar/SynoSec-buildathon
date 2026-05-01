@@ -1,7 +1,6 @@
 export {
   buildWorkflowTranscript,
   getToolLookup,
-  getWorkflowAllowedToolIds,
   type WorkflowFindingsRailItem as FindingsRailItem,
   type WorkflowLiveModelOutput as LiveModelOutput,
   type WorkflowTranscriptAssistantTurnDetail as AssistantTurnDetail,

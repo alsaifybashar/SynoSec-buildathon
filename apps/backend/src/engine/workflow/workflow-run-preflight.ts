@@ -1,7 +1,7 @@
 import type { AiTool, Workflow, WorkflowStage } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
-import { resolveAgentTools } from "@/modules/ai-agents/index.js";
 import { derivePrivilegeProfile, deriveSandboxProfile } from "@/modules/ai-tools/tool-execution-config.js";
+import { resolveWorkflowStageTools } from "@/modules/ai-tools/index.js";
 import {
   authorizeToolAgainstConstraints,
   resolveEffectiveExecutionConstraints,
@@ -48,7 +48,7 @@ export class WorkflowRunPreflight implements WorkflowPreflightReader {
     }
 
     for (const stage of orderedStages) {
-      if (!stage.id || !stage.agentId || !stage.label || !stage.objective) {
+      if (!stage.id || !stage.label || !stage.objective) {
         throw new RequestError(400, "Workflow stage contract is invalid.");
       }
     }
@@ -62,10 +62,6 @@ export class WorkflowRunPreflight implements WorkflowPreflightReader {
     constraintSet: EffectiveExecutionConstraintSet,
     executionKind: Workflow["executionKind"]
   ): Promise<StageDependencies> {
-    const agent = await this.ports.aiAgentsRepository.getById(stage.agentId);
-    if (!agent) {
-      throw new RequestError(400, "Workflow agent not found.");
-    }
     const runtime = this.loadRuntimeForExecution(executionKind);
 
     const executionBaseUrl = targetRecord.executionBaseUrl?.trim()
@@ -86,17 +82,7 @@ export class WorkflowRunPreflight implements WorkflowPreflightReader {
       sortBy: "name",
       sortDirection: "asc"
     });
-    const visibleTools = resolveAgentTools(agent, registryPage.items);
-    const visibleToolIds = new Set(visibleTools.map((tool) => tool.id));
-    const tools = stage.allowedToolIds.length > 0
-      ? (
-          await Promise.all(
-            stage.allowedToolIds
-              .filter((toolId) => visibleToolIds.has(toolId))
-              .map(async (toolId) => this.ports.aiToolsRepository.getById(toolId))
-          )
-        ).filter((candidate): candidate is AiTool => Boolean(candidate))
-      : visibleTools;
+    const tools = resolveWorkflowStageTools(registryPage.items, stage.allowedToolIds);
 
     const excludedTools: StageDependencies["excludedTools"] = [];
     let compatibleTools = tools;
@@ -150,7 +136,6 @@ export class WorkflowRunPreflight implements WorkflowPreflightReader {
     }
 
     return {
-      agent,
       runtime,
       target,
       tools: compatibleTools,

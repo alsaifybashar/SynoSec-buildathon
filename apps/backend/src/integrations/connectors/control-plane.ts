@@ -11,6 +11,7 @@ import type {
   ToolRun
 } from "@synosec/contracts";
 import { evaluateConnectorToolSupport } from "@synosec/contracts";
+import { getBuiltinAiTools } from "@/modules/ai-tools/builtin-ai-tools.js";
 import { seededToolDefinitions } from "@/shared/seed-data/ai-builder-defaults.js";
 import { RequestError } from "@/shared/http/request-error.js";
 
@@ -64,6 +65,7 @@ function toConnectorSupportSubject(request: ToolRequest): ConnectorSupportSubjec
   return {
     ...(request.toolId ? { toolId: request.toolId } : {}),
     tool: request.tool,
+    executorType: request.executorType,
     capabilities: request.capabilities,
     sandboxProfile: request.sandboxProfile,
     privilegeProfile: request.privilegeProfile,
@@ -72,10 +74,11 @@ function toConnectorSupportSubject(request: ToolRequest): ConnectorSupportSubjec
 }
 
 function computeSupportedToolIds(connector: Omit<ConnectorDescriptor, "supportedToolIds">): string[] {
-  return seededToolDefinitions
-    .filter((tool) => evaluateConnectorToolSupport({
+  const runnableSystemTools = [
+    ...seededToolDefinitions.map((tool) => ({
       toolId: tool.id,
       tool: tool.name,
+      executorType: "bash" as const,
       capabilities: [...tool.capabilities],
       sandboxProfile: tool.sandboxProfile,
       privilegeProfile: tool.privilegeProfile,
@@ -84,14 +87,48 @@ function computeSupportedToolIds(connector: Omit<ConnectorDescriptor, "supported
         commandPreview: tool.name,
         toolInput: {}
       }
-    }, {
+    })),
+    ...getBuiltinAiTools()
+      .filter((tool) => tool.executorType === "native-ts")
+      .map((tool) => ({
+        toolId: tool.id,
+        tool: tool.name,
+        executorType: "native-ts" as const,
+        capabilities: [...tool.capabilities],
+        sandboxProfile: tool.riskTier === "active" ? "active-recon" as const : "network-recon" as const,
+        privilegeProfile: tool.riskTier === "active" ? "active-network" as const : "read-only-network" as const,
+        parameters: {
+          commandPreview: tool.name,
+          toolInput: {},
+          actionBatch: {
+            actions: [{
+              kind: "http_request",
+              id: "support-check",
+              url: "https://example.com/login",
+              method: "POST",
+              headers: {},
+              query: {},
+              formBody: { username: "u", password: "p" },
+              timeoutMs: 1000,
+              maxResponseBytes: 1024,
+              followRedirects: true,
+              captureBody: true,
+              captureHeaders: true
+            }]
+          }
+        }
+      }))
+  ];
+
+  return runnableSystemTools
+    .filter((tool) => evaluateConnectorToolSupport(tool, {
       allowedCapabilities: connector.allowedCapabilities,
       allowedSandboxProfiles: connector.allowedSandboxProfiles,
       allowedPrivilegeProfiles: connector.allowedPrivilegeProfiles,
       installedBinaries: connector.installedBinaries,
       enforceInstalledBinaries: false
     }).supported)
-    .map((tool) => tool.id)
+    .map((tool) => tool.toolId)
     .sort((left, right) => left.localeCompare(right));
 }
 

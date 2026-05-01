@@ -25,17 +25,6 @@ enum ExecutionConstraintKind {
   workflow_gate
 }
 
-enum AiAgentStatus {
-  draft
-  active
-  archived
-}
-
-enum ToolAccessMode {
-  system
-  system_plus_custom
-}
-
 enum AiToolSource {
   system
   custom
@@ -181,24 +170,6 @@ model ApplicationConstraintBinding {
   @@map("application_constraint_bindings")
 }
 
-model AiAgent {
-  id             String          @id @db.Uuid
-  name           String
-  status         AiAgentStatus
-  description    String?
-  systemPrompt   String          @map("system_prompt")
-  toolAccessMode ToolAccessMode  @default(system) @map("tool_access_mode")
-  createdAt      DateTime        @default(now()) @map("created_at")
-  updatedAt      DateTime        @updatedAt @map("updated_at")
-  workflowStages WorkflowStage[]
-
-  @@index([name])
-  @@index([status])
-  @@index([createdAt])
-  @@index([updatedAt])
-  @@map("ai_agents")
-}
-
 model AiTool {
   id            String            @id
   name          String
@@ -263,7 +234,6 @@ model WorkflowLaunch {
 model WorkflowStage {
   id                    String               @id @db.Uuid
   workflowId            String               @map("workflow_id") @db.Uuid
-  agentId               String               @map("agent_id") @db.Uuid
   label                 String
   ord                   Int
   objective             String?
@@ -276,12 +246,10 @@ model WorkflowStage {
   resultSchemaVersion   Int                  @default(1) @map("result_schema_version")
   handoffSchema         Json?                @map("handoff_schema")
   workflow              Workflow             @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  agent                 AiAgent              @relation(fields: [agentId], references: [id], onDelete: Restrict)
   traceEntries          WorkflowTraceEntry[]
   traceEvents           WorkflowTraceEvent[]
 
   @@unique([workflowId, ord])
-  @@index([agentId])
   @@index([workflowId])
   @@map("workflow_stages")
 }
@@ -317,8 +285,6 @@ model WorkflowTraceEntry {
   workflowStageId     String                   @map("workflow_stage_id") @db.Uuid
   stepIndex           Int                      @map("step_index")
   stageLabel          String                   @map("stage_label")
-  agentId             String                   @map("agent_id") @db.Uuid
-  agentName           String                   @map("agent_name")
   status              WorkflowTraceEntryStatus
   selectedToolIds     Json                     @map("selected_tool_ids")
   toolSelectionReason String                   @map("tool_selection_reason")

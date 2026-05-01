@@ -19,7 +19,7 @@ import { useResourceDetail } from "@/shared/hooks/use-resource-detail";
 import { useResourceList } from "@/shared/hooks/use-resource-list";
 import { type ResourceClient, type AiToolsQuery } from "@/shared/lib/resource-client";
 import { exportResourceRecords, importResourceRecords } from "@/shared/lib/resource-transfer";
-import { DetailField, DetailFieldGroup, DetailLoadingState, DetailPage } from "@/shared/components/detail-page";
+import { DetailField, DetailFieldGroup, DetailFormCard, DetailLoadingState, DetailPage } from "@/shared/components/detail-page";
 import { ListPage, type ListPageColumn, type ListPageFilter } from "@/shared/components/list-page";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -278,7 +278,7 @@ function CollapsibleSection({
   summary?: string;
 }) {
   return (
-    <section className="rounded-[4px] border border-border/70 bg-card/50">
+    <section className="rounded-sm border border-border/70 bg-card/50">
       <button
         type="button"
         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
@@ -576,7 +576,8 @@ export function AiToolsPage({
           onPageChange={toolList.setPage}
           onPageSizeChange={toolList.setPageSize}
           onRetry={toolList.refetch}
-          onAddRecord={onNavigateToCreate}
+          showAddRecord={canCreateTool}
+          {...(canCreateTool ? { onAddRecord: onNavigateToCreate } : {})}
           onRowClick={(row) => onNavigateToDetail(row.id, row.name)}
           onImportJson={handleImportJson}
           getRowLabel={(row) => row.name}
@@ -624,7 +625,8 @@ export function AiToolsPage({
       {...(!isCreateMode && tool?.source !== "system" ? { onExportJson: handleExportJson } : {})}
     >
       <section className="space-y-4">
-        <DetailFieldGroup title="Definition" className="bg-card/70">
+        <DetailFormCard>
+        <DetailFieldGroup title="Definition">
           <DetailField label="Name" required {...definedString(errors.name)}>
             <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" disabled={!isToolEditable} />
           </DetailField>
@@ -685,7 +687,7 @@ export function AiToolsPage({
         </DetailFieldGroup>
 
         {tool ? (
-          <DetailFieldGroup title="Capability Runtime" className="bg-card/70">
+          <DetailFieldGroup title="Capability Runtime">
             <DetailField label="Availability">
               <Input
                 value={[
@@ -706,11 +708,13 @@ export function AiToolsPage({
             </DetailField>
           </DetailFieldGroup>
         ) : null}
+        </DetailFormCard>
 
         {!isBuiltinTool ? (
           <>
             <div className={cn("grid gap-4", isToolRunnable && tool ? "xl:grid-cols-[minmax(0,1.6fr)_minmax(22rem,1fr)]" : "")}>
-              <DetailFieldGroup title="Source Code" className="bg-card/70">
+              <DetailFormCard>
+              <DetailFieldGroup title="Source Code">
                 <DetailField label="Bash source" required className="md:col-span-2" {...definedString(errors.bashSource)}>
                   <BashEditor
                     value={formValues.bashSource}
@@ -721,9 +725,11 @@ export function AiToolsPage({
                   />
                 </DetailField>
               </DetailFieldGroup>
+              </DetailFormCard>
 
               {isToolRunnable && tool ? (
-                <DetailFieldGroup title="Run Tool" className="bg-card/70">
+                <DetailFormCard>
+                <DetailFieldGroup title="Run Tool">
                   <DetailField label="Input JSON" className="md:col-span-2">
                     <Textarea
                       value={runInputText}
@@ -742,7 +748,7 @@ export function AiToolsPage({
                     <Button type="button" onClick={() => void handleRunTool()} disabled={runningTool}>{runningTool ? "Running…" : "Run Tool"}</Button>
                   </div>
                   <div className={cn(
-                    "md:col-span-2 rounded-[4px] border p-4",
+                    "md:col-span-2 rounded-sm border p-4",
                     runError
                       ? "border-destructive/30 bg-destructive/10"
                       : runResult
@@ -762,20 +768,21 @@ export function AiToolsPage({
                     ) : null}
                   </div>
                 </DetailFieldGroup>
+                </DetailFormCard>
               ) : null}
             </div>
           </>
         ) : null}
 
         {isBuiltinTool && tool ? (
-          <div className="rounded-[4px] border border-border/70 bg-background/70 p-4">
+          <div className="rounded-sm border border-border/70 bg-background/70 p-4">
             <p className="font-mono text-[0.58rem] uppercase tracking-[0.28em] text-muted-foreground">Built-in action</p>
             <p className="mt-2 text-sm text-foreground">{describeBuiltinAction(tool) ?? "Built-in action provided by a backend execution engine."}</p>
           </div>
         ) : null}
 
         {isToolRunnable && tool ? null : (
-          <div className="rounded-[4px] border border-border/70 bg-background/70 p-4 text-sm text-muted-foreground">
+          <div className="rounded-sm border border-border/70 bg-background/70 p-4 text-sm text-muted-foreground">
             {isBuiltinTool
               ? "Built-in tools do not expose a runnable shell test console here."
               : "Save a runnable bash tool to use the test console."}

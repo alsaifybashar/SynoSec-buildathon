@@ -129,7 +129,7 @@ export function LoginPage({
         <CardContent className="space-y-4">
           {state === "loading" ? (
             <div className="flex items-center justify-center">
-              <div className="flex items-center gap-3 rounded-[4px] border border-border/70 bg-background px-4 py-3 text-sm font-medium">
+              <div className="flex items-center gap-3 rounded-sm border border-border/70 bg-background px-4 py-3 text-sm font-medium">
                 <Spinner className="h-4 w-4" />
                 <span>Loading Google sign-in…</span>
               </div>
@@ -137,7 +137,7 @@ export function LoginPage({
           ) : null}
           <div ref={buttonRef} className="flex min-h-12 items-center justify-center" />
           {message ? (
-            <p className="rounded-[4px] border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <p className="rounded-sm border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               {message}
             </p>
           ) : null}

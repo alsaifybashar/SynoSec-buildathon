@@ -2,6 +2,7 @@ import {
   apiRoutes,
   localDemoTargetDefaults,
   localFullStackTargetDefaults,
+  localJuiceShopTargetDefaults,
   type CreateTargetBody,
   type Target,
   type TargetEnvironment,
@@ -11,7 +12,7 @@ import { Info } from "lucide-react";
 import { targetsResource } from "@/features/targets/resource";
 import { targetTransfer } from "@/features/targets/transfer";
 import type { CrudFeatureDefinition } from "@/shared/crud/crud-feature";
-import { DetailField, DetailFieldGroup, DetailSidebarItem } from "@/shared/components/detail-page";
+import { DetailField, DetailFieldGroup, DetailFormCard, DetailSidebarItem } from "@/shared/components/detail-page";
 import type { TargetsQuery } from "@/shared/lib/resource-client";
 import { Input } from "@/shared/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select";
@@ -154,6 +155,15 @@ const seededTargetCatalog = [
       "Recovery token exchange creates finance-manager sessions",
       "Finance export requires chained invoice approval or manager session"
     ]
+  },
+  {
+    hostUrl: localJuiceShopTargetDefaults.hostUrl,
+    vulnerabilities: [
+      "Broad OWASP Juice Shop challenge surface with intentionally insecure workflows",
+      "Multiple auth, access control, injection, and data exposure paths",
+      "Built-in score board and challenge model for repeatable lab validation",
+      "Pinned official Docker image for controlled local-only testing"
+    ]
   }
 ] as const;
 
@@ -287,8 +297,8 @@ export const targetsDefinition: CrudFeatureDefinition<
       </>
     ),
     renderContent: ({ formValues, errors, handleFieldChange }) => (
-      <>
-        <DetailFieldGroup title="General" className="bg-card/70">
+      <DetailFormCard>
+        <DetailFieldGroup title="General">
           <DetailField label="Name" required hint="Operator-facing target label used across workflows and reports." {...definedString(errors["name"] as string | undefined)}>
             <Input value={formValues.name} onChange={(event) => handleFieldChange("name", event.target.value)} aria-label="Name" />
           </DetailField>
@@ -314,7 +324,7 @@ export const targetsDefinition: CrudFeatureDefinition<
           </DetailField>
         </DetailFieldGroup>
 
-        <DetailFieldGroup title="Configuration" className="bg-card/70">
+        <DetailFieldGroup title="Configuration">
           <DetailField label="Environment" required hint="Use the environment that best matches the target surface operators are allowed to assess.">
             <Select value={formValues.environment} onValueChange={(value: TargetEnvironment) => handleFieldChange("environment", value)}>
               <SelectTrigger aria-label="Environment" className="w-fit min-w-[10rem] max-w-[12rem]">
@@ -339,7 +349,7 @@ export const targetsDefinition: CrudFeatureDefinition<
             />
           </DetailField>
         </DetailFieldGroup>
-      </>
+      </DetailFormCard>
     )
   }
 };
