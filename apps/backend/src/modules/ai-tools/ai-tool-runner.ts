@@ -265,8 +265,23 @@ export async function runAiTool(toolRuntime: ToolRuntime, toolId: string, rawInp
     const actionBatch = resolved.runtime.implementation.plan(parsedInput, { tool });
     const firstAction = actionBatch.actions[0];
     const previewTarget = firstAction?.kind === "http_request"
-      ? new URL(firstAction["url"]).pathname || "/"
-      : executionTarget.target;
+      ? new URL(firstAction.url).pathname || "/"
+      : firstAction?.kind === "dns_query"
+        ? `${firstAction.recordType} ${firstAction.name}`
+        : firstAction?.kind === "tcp_connect"
+          ? `${firstAction.host}:${firstAction.port}`
+          : firstAction?.kind === "tls_handshake"
+            ? `${firstAction.host}:${firstAction.port}`
+            : executionTarget.target;
+    const previewVerb = firstAction?.kind === "http_request"
+      ? firstAction.method
+      : firstAction?.kind === "dns_query"
+        ? "DNS"
+        : firstAction?.kind === "tcp_connect"
+          ? "TCP"
+          : firstAction?.kind === "tls_handshake"
+            ? "TLS"
+            : "EXEC";
     request = {
       toolId: tool.id,
       tool: tool.name,
@@ -281,7 +296,7 @@ export async function runAiTool(toolRuntime: ToolRuntime, toolId: string, rawInp
       privilegeProfile: resolved.runtime.privilegeProfile,
       parameters: {
         timeoutMs: resolved.runtime.timeoutMs,
-        commandPreview: `${tool.id} ${firstAction?.kind === "http_request" ? firstAction["method"] : "EXEC"} ${previewTarget} x${actionBatch.actions.length} bounded requests`,
+        commandPreview: `${tool.id} ${previewVerb} ${previewTarget} x${actionBatch.actions.length} bounded requests`,
         toolInput: normalizedToolInput,
         actionBatch
       }

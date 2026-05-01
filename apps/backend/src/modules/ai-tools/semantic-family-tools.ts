@@ -1,49 +1,18 @@
 import type { AiTool, ToolBuiltinActionKey, ToolConstraintProfile } from "@synosec/contracts";
 
-const builtinTimestamp = "2026-04-26T00:00:00.000Z";
+const builtinTimestamp = "2026-05-01T00:00:00.000Z";
 
 type FamilyInputField =
-  | "target"
+  | "targetUrl"
   | "baseUrl"
   | "url"
   | "startUrl"
-  | "port"
-  | "loginUrl"
-  | "token"
-  | "hash"
-  | "hashes"
-  | "hashType"
-  | "method"
-  | "mode"
-  | "filePath"
-  | "passphrase"
-  | "module"
-  | "username"
-  | "password"
-  | "candidateUsernames"
-  | "candidatePasswords"
-  | "credentialCandidates"
-  | "service"
-  | "protocol"
-  | "provider"
-  | "account"
-  | "profile"
-  | "cluster"
-  | "namespace"
-  | "options"
-  | "candidateEndpoints"
-  | "candidateParameters"
-  | "validationTargets"
+  | "host"
+  | "domain"
+  | "ports"
   | "candidatePorts"
-  | "candidateDomains"
-  | "knownSubdomains"
-  | "maxEndpoints"
-  | "maxRequests"
-  | "maxPorts"
-  | "maxResults"
-  | "maxAttempts"
-  | "notes"
-  | "hypotheses";
+  | "targets"
+  | "endpoints";
 
 type SemanticFamilyDefinitionInput = {
   builtinActionKey: ToolBuiltinActionKey;
@@ -55,8 +24,8 @@ type SemanticFamilyDefinitionInput = {
   timeoutMs: number;
   constraintProfile: ToolConstraintProfile;
   requiredInputFields?: FamilyInputField[];
-  coveredToolIds: string[];
-  candidateToolIds: string[];
+  candidateToolId: string;
+  inputSchema: Record<string, unknown>;
 };
 
 export type SemanticFamilyDefinition = {
@@ -68,121 +37,25 @@ export type SemanticFamilyDefinition = {
 
 const commonFamilyOutputSchema = {
   type: "object",
+  additionalProperties: false,
   properties: {
     id: { type: "string" },
     summary: { type: "string" }
   },
-  required: [
-    "id",
-    "summary"
-  ]
-} as const;
-
-const commonFamilyInputProperties = {
-  target: { type: "string" },
-  baseUrl: { type: "string" },
-  url: { type: "string" },
-  startUrl: { type: "string" },
-  port: { type: "number" },
-  loginUrl: { type: "string" },
-  token: { type: "string" },
-  hash: { type: "string" },
-  hashes: {
-    type: "array",
-    items: { type: "string" }
-  },
-  hashType: { type: "string" },
-  method: { type: "string" },
-  mode: { type: "number" },
-  filePath: { type: "string" },
-  passphrase: { type: "string" },
-  module: { type: "string" },
-  username: { type: "string" },
-  password: { type: "string" },
-  service: { type: "string" },
-  protocol: { type: "string" },
-  provider: { type: "string" },
-  account: { type: "string" },
-  profile: { type: "string" },
-  cluster: { type: "string" },
-  namespace: { type: "string" },
-  options: { type: "object" },
-  candidateUsernames: {
-    type: "array",
-    items: { type: "string" }
-  },
-  candidatePasswords: {
-    type: "array",
-    items: { type: "string" }
-  },
-  credentialCandidates: {
-    type: "array",
-    items: { type: "object" }
-  },
-  candidateEndpoints: {
-    type: "array",
-    items: { type: "string" }
-  },
-  candidateParameters: {
-    type: "array",
-    items: { type: "string" }
-  },
-  validationTargets: {
-    type: "array",
-    items: { type: "object" }
-  },
-  candidatePorts: {
-    type: "array",
-    items: { type: "number" }
-  },
-  candidateDomains: {
-    type: "array",
-    items: { type: "string" }
-  },
-  knownSubdomains: {
-    type: "array",
-    items: { type: "string" }
-  },
-  maxEndpoints: { type: "number" },
-  maxRequests: { type: "number" },
-  maxPorts: { type: "number" },
-  maxResults: { type: "number" },
-  maxAttempts: { type: "number" },
-  notes: { type: "string" },
-  hypotheses: { type: "string" }
+  required: ["id", "summary"]
 } as const;
 
 function builtinToolId(actionKey: ToolBuiltinActionKey) {
   return `builtin-${actionKey.replaceAll("_", "-")}`;
 }
 
-function createConstraintProfile(input: {
-  mutationClass: ToolConstraintProfile["mutationClass"];
-  networkBehavior: ToolConstraintProfile["networkBehavior"];
-  targetKinds: ToolConstraintProfile["targetKinds"];
-  supportsHostAllowlist?: boolean;
-  supportsPathExclusions?: boolean;
-  supportsRateLimit?: boolean;
-  enforced?: boolean;
-}) {
-  return {
-    enforced: input.enforced ?? true,
-    targetKinds: input.targetKinds,
-    networkBehavior: input.networkBehavior,
-    mutationClass: input.mutationClass,
-    supportsHostAllowlist: input.supportsHostAllowlist ?? false,
-    supportsPathExclusions: input.supportsPathExclusions ?? false,
-    supportsRateLimit: input.supportsRateLimit ?? false
-  } satisfies ToolConstraintProfile;
-}
-
 function createSemanticFamilyDefinition(input: SemanticFamilyDefinitionInput): SemanticFamilyDefinition {
-  const requiredInputFields = input.requiredInputFields ?? [];
+  const candidateToolIds = [input.candidateToolId];
   return {
     tool: {
       id: builtinToolId(input.builtinActionKey),
       name: input.name,
-      kind: "semantic-family",
+      kind: "builtin-action",
       status: "active",
       source: "system",
       accessProfile: "standard",
@@ -194,795 +67,390 @@ function createSemanticFamilyDefinition(input: SemanticFamilyDefinitionInput): S
       category: input.category,
       riskTier: input.riskTier,
       timeoutMs: input.timeoutMs,
-      coveredToolIds: [...input.coveredToolIds],
-      candidateToolIds: [...input.candidateToolIds],
+      coveredToolIds: candidateToolIds,
+      candidateToolIds,
       constraintProfile: input.constraintProfile,
-      inputSchema: {
-        type: "object",
-        properties: commonFamilyInputProperties,
-        required: requiredInputFields
-      },
+      inputSchema: input.inputSchema,
       outputSchema: commonFamilyOutputSchema,
       createdAt: builtinTimestamp,
       updatedAt: builtinTimestamp
     },
-    requiredInputFields,
-    coveredToolIds: [...input.coveredToolIds],
-    candidateToolIds: [...input.candidateToolIds]
+    requiredInputFields: input.requiredInputFields ?? [],
+    coveredToolIds: candidateToolIds,
+    candidateToolIds
   };
 }
 
 export const semanticFamilyDefinitions: SemanticFamilyDefinition[] = [
   createSemanticFamilyDefinition({
     builtinActionKey: "http_surface_assessment",
-    name: "HTTP Surface Assessment",
-    description: "Assess a known HTTP or HTTPS surface without crawling, path guessing, or exploit validation. Use this first for web targets to collect reachability, status, redirects, headers, cookies, titles, versions, build IDs, and auth/session hints. Provide `baseUrl`, `url`, or `target`; optionally include candidate endpoints to focus the check. Returns observations suitable for evidence quotes and follow-on attack-path reasoning.",
+    name: "Assess HTTP Surface",
+    description: "Assess one explicit HTTP or HTTPS target for reachability, redirects, headers, cookies, title text, and light fingerprint hints. Use this when you need a bounded first look at a known web surface before crawling or validation. Provide `targetUrl`, `baseUrl`, or `url`, and optionally `followRedirects` when redirect behavior itself is part of the evidence. Returns grounded observations only from the fetched response and clearly states what was actually observed. It does not prove hidden routes, authenticated behavior, or broad application coverage.",
     category: "web",
     riskTier: "passive",
-    capabilities: ["semantic-family", "web", "http-surface", "passive"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
-      networkBehavior: "outbound-read",
+    capabilities: ["http-surface", "web", "passive", "builtin-active-function"],
+    timeoutMs: 30000,
+    constraintProfile: {
+      enforced: true,
       targetKinds: ["host", "domain", "url"],
-      supportsHostAllowlist: true
-    }),
-    coveredToolIds: [
-      "seed-httpx",
-      "seed-http-recon",
-      "seed-http-headers",
-      "seed-whatweb"
-    ],
-    candidateToolIds: [
-      "seed-http-recon",
-      "seed-httpx",
-      "seed-http-headers",
-      "seed-whatweb"
-    ]
+      networkBehavior: "outbound-read",
+      mutationClass: "none",
+      supportsHostAllowlist: true,
+      supportsPathExclusions: false,
+      supportsRateLimit: true
+    },
+    candidateToolId: "native-http-surface-assessment",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        targetUrl: { type: "string" },
+        baseUrl: { type: "string" },
+        url: { type: "string" },
+        followRedirects: { type: "boolean" }
+      },
+      required: []
+    }
   }),
   createSemanticFamilyDefinition({
     builtinActionKey: "web_crawl_mapping",
-    name: "Web Crawl Mapping",
-    description: "Map reachable in-scope URLs for a confirmed web target by controlled crawling and passive archive expansion. Use this after HTTP surface assessment when you need routes, forms, linked pages, or candidate endpoints for later validation. Provide `baseUrl`, `startUrl`, or `target`; optionally bound with `candidateEndpoints`, `maxEndpoints`, or notes. Do not use for brute-force path guessing or vulnerability confirmation.",
-    category: "content",
+    name: "Map Web Entry Point",
+    description: "Map one explicit web entrypoint with a tight request budget by collecting the page itself and optional crawl hints such as `robots.txt`. Use this when you need bounded discovery of links, forms, and scripts from a known URL instead of broad traversal. Provide `startUrl` or `baseUrl`, and optionally `includeRobots` when crawl hints matter. Returns only the page elements and crawl hints actually observed in fetched content. It does not perform a deep crawl, prove full site coverage, or bypass access controls.",
+    category: "web",
     riskTier: "passive",
-    capabilities: ["semantic-family", "web-crawl", "passive"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "content-enumeration",
-      networkBehavior: "outbound-read",
+    capabilities: ["web-crawl", "web", "passive", "builtin-active-function"],
+    timeoutMs: 30000,
+    constraintProfile: {
+      enforced: true,
       targetKinds: ["host", "domain", "url"],
+      networkBehavior: "outbound-read",
+      mutationClass: "none",
       supportsHostAllowlist: true,
-      supportsPathExclusions: true,
+      supportsPathExclusions: false,
       supportsRateLimit: true
-    }),
-    coveredToolIds: [
-      "seed-web-crawl",
-      "seed-katana",
-      "seed-hakrawler",
-      "seed-gau",
-      "seed-waybackurls"
-    ],
-    candidateToolIds: [
-      "seed-web-crawl",
-      "seed-katana",
-      "seed-hakrawler",
-      "seed-gau",
-      "seed-waybackurls"
-    ]
+    },
+    candidateToolId: "native-web-crawl-mapping",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        startUrl: { type: "string" },
+        baseUrl: { type: "string" },
+        includeRobots: { type: "boolean" }
+      },
+      required: []
+    }
   }),
   createSemanticFamilyDefinition({
     builtinActionKey: "content_discovery",
-    name: "Content Discovery",
-    description: "Discover likely hidden paths, panels, API routes, and addressable content on a known web target with bounded path guessing. Use this when content enumeration is in scope and passive crawling is insufficient. Provide `baseUrl` or `target`; optionally steer with candidate endpoints, max limits, and notes. Returns status-backed content observations, not vulnerability proof by itself.",
+    name: "Validate Candidate Paths",
+    description: "Validate a bounded candidate-path list against one explicit base URL. Use this when you already have concrete path candidates or you want the strict default set, and need grounded confirmation of which routes respond. Provide `baseUrl`, and optionally `candidatePaths` or `method` if HEAD is sufficient. Returns only the candidate paths that actually produced a non-404 response. It does not brute-force large wordlists, infer hidden content beyond the supplied list, or prove authorization bypass.",
     category: "content",
     riskTier: "active",
-    capabilities: ["semantic-family", "content-discovery", "active-recon"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "content-enumeration",
-      networkBehavior: "outbound-active",
+    capabilities: ["content-discovery", "web", "active-recon", "builtin-active-function"],
+    timeoutMs: 30000,
+    constraintProfile: {
+      enforced: true,
       targetKinds: ["host", "domain", "url"],
+      networkBehavior: "outbound-active",
+      mutationClass: "content-enumeration",
       supportsHostAllowlist: true,
       supportsPathExclusions: true,
       supportsRateLimit: true
-    }),
-    coveredToolIds: [
-      "seed-content-discovery",
-      "seed-dirb-scan",
-      "seed-gobuster-scan",
-      "seed-ffuf-scan",
-      "seed-dirsearch",
-      "seed-feroxbuster"
-    ],
-    candidateToolIds: [
-      "seed-content-discovery",
-      "seed-dirsearch",
-      "seed-feroxbuster",
-      "seed-gobuster-scan",
-      "seed-ffuf-scan",
-      "seed-dirb-scan"
-    ]
+    },
+    requiredInputFields: ["baseUrl"],
+    candidateToolId: "native-content-discovery",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        baseUrl: { type: "string" },
+        candidatePaths: { type: "array", items: { type: "string" } },
+        method: { type: "string", enum: ["GET", "HEAD"] }
+      },
+      required: ["baseUrl"]
+    }
   }),
   createSemanticFamilyDefinition({
     builtinActionKey: "parameter_discovery",
-    name: "Parameter Discovery",
-    description: "Discover likely query or body parameters on known candidate endpoints without claiming exploitability. Use this before injection or XSS validation when you need parameter names or request shapes. Provide `baseUrl`, `url`, or `candidateEndpoints`; optionally include notes or max limits. Returns parameter observations that should be validated by a separate vulnerability action.",
-    category: "web",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "parameter-discovery", "passive"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "content-enumeration",
-      networkBehavior: "outbound-read",
-      targetKinds: ["host", "domain", "url"],
-      supportsHostAllowlist: true,
-      supportsPathExclusions: true,
-      supportsRateLimit: true
-    }),
-    coveredToolIds: [
-      "seed-arjun",
-      "seed-paramspider"
-    ],
-    candidateToolIds: [
-      "seed-arjun",
-      "seed-paramspider"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "web_vulnerability_audit",
-    name: "Web Vulnerability Audit",
-    description: "Validate plausible web weaknesses and misconfigurations on a concrete candidate surface after reconnaissance. Use this for targeted checks of known-signature issues, risky exposed behavior, or configuration problems. Provide `baseUrl` or `target`; steer with `candidateEndpoints`, `candidateParameters`, `validationTargets`, `hypotheses`, or notes. Returns evidence-backed validation observations; do not use for initial discovery.",
+    name: "Probe Candidate Parameters",
+    description: "Probe explicit endpoints for candidate parameter acceptance or reflection with one bounded test value per named parameter. Use this when you already know the endpoints and candidate parameter names and need grounded evidence of reflection or response changes. Provide `endpoints` with the exact URL, method, candidate parameters, and any baseline query or body fields required by the request. Returns only the reflection or response deltas actually observed during those requests. It does not crawl for new endpoints, fuzz arbitrary names, or prove exploitability.",
     category: "web",
     riskTier: "active",
-    capabilities: ["semantic-family", "web-vuln-audit", "active-recon"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
+    capabilities: ["param-discovery", "web", "active-recon", "builtin-active-function"],
+    timeoutMs: 30000,
+    constraintProfile: {
+      enforced: true,
+      targetKinds: ["host", "domain", "url"],
+      networkBehavior: "outbound-active",
       mutationClass: "active-validation",
-      networkBehavior: "outbound-active",
-      targetKinds: ["host", "domain", "url"],
       supportsHostAllowlist: true,
       supportsPathExclusions: true,
       supportsRateLimit: true
-    }),
-    coveredToolIds: [
-      "seed-vuln-audit",
-      "seed-nikto-scan",
-      "seed-nuclei",
-      "seed-burp-suite"
-    ],
-    candidateToolIds: [
-      "seed-vuln-audit",
-      "seed-nuclei",
-      "seed-nikto-scan"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "sql_injection_validation",
-    name: "SQL Injection Validation",
-    description: "Validate SQL injection signals on approved endpoints, parameters, or structured validation targets. Use this only after recon has produced a concrete candidate URL, parameter, or hypothesis and controlled-exploit checks are in scope. Provide `baseUrl`, `url`, `candidateParameters`, or `validationTargets`. Returns payload and response evidence; do not use for broad crawling or generic discovery.",
-    category: "web",
-    riskTier: "controlled-exploit",
-    capabilities: ["semantic-family", "sqli", "controlled-exploit"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "exploit",
-      networkBehavior: "outbound-active",
-      targetKinds: ["host", "domain", "url"],
-      supportsHostAllowlist: true,
-      supportsPathExclusions: true,
-      supportsRateLimit: true
-    }),
-    coveredToolIds: [
-      "seed-sql-injection-check",
-      "seed-sqlmap-scan"
-    ],
-    candidateToolIds: [
-      "seed-sql-injection-check",
-      "seed-sqlmap-scan"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "xss_validation",
-    name: "XSS Validation",
-    description: "Validate reflected or parameter-driven XSS sinks on known endpoints and parameters. Use this after parameter or crawl evidence identifies a candidate sink. Provide `baseUrl`, `url`, `candidateEndpoints`, `candidateParameters`, or validation notes. Returns payload, reflection, and response observations suitable for suspected or confirmed findings; do not use for content discovery.",
-    category: "web",
-    riskTier: "active",
-    capabilities: ["semantic-family", "xss", "active-recon"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "active-validation",
-      networkBehavior: "outbound-active",
-      targetKinds: ["host", "domain", "url"],
-      supportsHostAllowlist: true,
-      supportsPathExclusions: true,
-      supportsRateLimit: true
-    }),
-    coveredToolIds: [
-      "seed-dalfox"
-    ],
-    candidateToolIds: [
-      "seed-dalfox"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "wordpress_assessment",
-    name: "WordPress Assessment",
-    description: "Assess a confirmed WordPress target for core version, plugin, theme, user, and configuration weaknesses. Use this only after HTTP evidence indicates WordPress. Provide `baseUrl` or `target`; optionally include notes about known paths or hypotheses. Returns WordPress-specific observations and evidence; do not use for non-WordPress web applications.",
-    category: "web",
-    riskTier: "active",
-    capabilities: ["semantic-family", "wordpress", "active-recon"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "active-validation",
-      networkBehavior: "outbound-active",
-      targetKinds: ["host", "domain", "url"],
-      supportsHostAllowlist: true,
-      supportsPathExclusions: true,
-      supportsRateLimit: true
-    }),
-    coveredToolIds: [
-      "seed-wpscan"
-    ],
-    candidateToolIds: [
-      "seed-wpscan"
-    ]
+    },
+    requiredInputFields: ["endpoints"],
+    candidateToolId: "native-parameter-discovery",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        endpoints: { type: "array", items: { type: "object" } }
+      },
+      required: ["endpoints"]
+    }
   }),
   createSemanticFamilyDefinition({
     builtinActionKey: "auth_flow_assessment",
-    name: "Auth Flow Assessment",
-    description: "Assess known authentication or session endpoints for weak controls. Use this when login, token, or session behavior is in scope and you have a specific auth surface. Provide `baseUrl`, `loginUrl`, `url`, or `target`; optionally add expected behavior, candidate endpoints, or notes. Returns observations about artifact acceptance, response differences, rate-limit gaps, timing signals, and weak-password acceptance.",
+    name: "Assess Authentication Flow",
+    description: "Assess one explicit authentication flow for missing rate limits, user-enumeration signals, timing-oracle leakage, or artifact acceptance, using only bounded native requests. Use this when you have a specific login endpoint, application base URL, or artifact-validation target set and need grounded auth-control evidence. Provide the same concrete fields used by the underlying auth flow runtime, such as `targetUrl`, `targetKind`, login request details, or `artifactValidationTargets`. Returns only the auth weaknesses and flow observations that were actually observed during the run. It does not crawl broadly, brute-force accounts, or imply exploitability beyond the collected evidence.",
     category: "auth",
     riskTier: "active",
-    capabilities: ["semantic-family", "auth", "session", "active-recon"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "active-validation",
-      networkBehavior: "outbound-active",
+    capabilities: ["auth", "session", "active-recon", "builtin-active-function"],
+    timeoutMs: 60000,
+    constraintProfile: {
+      enforced: true,
       targetKinds: ["host", "domain", "url"],
+      networkBehavior: "outbound-active",
+      mutationClass: "active-validation",
+      supportsHostAllowlist: true,
+      supportsPathExclusions: false,
+      supportsRateLimit: true
+    },
+    candidateToolId: "native-auth-flow-probe",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        mode: { type: "string", enum: ["login-probe", "artifact-validation"] },
+        targetUrl: { type: "string" },
+        targetKind: { type: "string", enum: ["login-endpoint", "app-base"] },
+        usernameField: { type: "string" },
+        passwordField: { type: "string" },
+        requestEncoding: { type: "string", enum: ["form", "json"] },
+        requestHeaders: { type: "object", additionalProperties: { type: "string" } },
+        preflightRequest: { type: "object" },
+        csrf: { type: "object" },
+        artifactValidationTargets: { type: "array", items: { type: "object" } },
+        knownUser: { type: "string" },
+        unknownUser: { type: "string" },
+        weakPasswordCandidates: { type: "array", items: { type: "string" } },
+        successRedirectPath: { type: "string" },
+        successBodyStrings: { type: "array", items: { type: "string" } },
+        successHeaderKeys: { type: "array", items: { type: "string" } },
+        rateLimitAttemptCount: { type: "number" },
+        oracleSampleCount: { type: "number" },
+        paceMs: { type: "number" },
+        baselineRepeats: { type: "number" }
+      },
+      required: []
+    }
+  }),
+  createSemanticFamilyDefinition({
+    builtinActionKey: "sql_injection_validation",
+    name: "Validate SQL Injection Signals",
+    description: "Validate explicit parameters for likely SQL-injection behavior using deterministic baseline and quote-based test payloads. Use this when you already know the exact endpoint and parameter to test and need bounded confirmation of SQL error leakage or strong response divergence. Provide `targets` with the URL, method, parameter, and any baseline query or body fields required by the request shape. Returns only the SQL error evidence or deterministic response changes that were actually observed. It does not dump data, authenticate past controls, or prove full exploitability.",
+    category: "web",
+    riskTier: "active",
+    capabilities: ["sqli", "web", "active-validation", "builtin-active-function"],
+    timeoutMs: 30000,
+    constraintProfile: {
+      enforced: true,
+      targetKinds: ["host", "domain", "url"],
+      networkBehavior: "outbound-active",
+      mutationClass: "active-validation",
       supportsHostAllowlist: true,
       supportsPathExclusions: true,
       supportsRateLimit: true
-    }),
-    coveredToolIds: [
-      "seed-auth-flow-probe"
-    ],
-    candidateToolIds: [
-      "seed-auth-flow-probe"
-    ]
+    },
+    requiredInputFields: ["targets"],
+    candidateToolId: "native-sql-injection-validation",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        targets: { type: "array", items: { type: "object" } }
+      },
+      required: ["targets"]
+    }
   }),
   createSemanticFamilyDefinition({
-    builtinActionKey: "token_analysis",
-    name: "Token Analysis",
-    description: "Analyze a supplied token offline for unsafe algorithms, key IDs, missing or risky claims, role-like authorization artifacts, weak HMAC secrets, and session lifetime signals. Provide `token`. Returns decoded-token and validation observations. This action does not replay tokens online or prove server-side authorization bypass.",
-    category: "auth",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "auth", "jwt", "offline-analysis"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
-      networkBehavior: "none",
-      targetKinds: ["host", "domain", "url"]
-    }),
-    requiredInputFields: ["token"],
-    coveredToolIds: [
-      "seed-jwt-analyzer"
-    ],
-    candidateToolIds: [
-      "seed-jwt-analyzer"
-    ]
+    builtinActionKey: "xss_validation",
+    name: "Validate Reflected Input",
+    description: "Validate explicit parameters for simple reflected-input exposure with a bounded marker payload. Use this when you already know the exact endpoint and parameter to test and need confirmation that untrusted input is reflected into the response body. Provide `targets` with the URL, method, parameter, and any baseline query or body fields required by the request shape. Returns only the reflections that were actually observed in the response body. It does not execute JavaScript, prove stored or DOM-based XSS, or perform general fuzzing.",
+    category: "web",
+    riskTier: "active",
+    capabilities: ["xss", "web", "active-validation", "builtin-active-function"],
+    timeoutMs: 30000,
+    constraintProfile: {
+      enforced: true,
+      targetKinds: ["host", "domain", "url"],
+      networkBehavior: "outbound-active",
+      mutationClass: "active-validation",
+      supportsHostAllowlist: true,
+      supportsPathExclusions: true,
+      supportsRateLimit: true
+    },
+    requiredInputFields: ["targets"],
+    candidateToolId: "native-xss-validation",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        targets: { type: "array", items: { type: "object" } }
+      },
+      required: ["targets"]
+    }
   }),
   createSemanticFamilyDefinition({
     builtinActionKey: "network_host_discovery",
-    name: "Network Host Discovery",
-    description: "Discover reachable ports and services on an approved host to establish network attack surface. Use this before protocol-specific enumeration or validation. Provide `target`; optionally include candidate ports or max limits. Returns port and service observations. Do not use for web path discovery, subdomain expansion, or exploit validation.",
+    name: "Check Host Reachability",
+    description: "Check one explicit host and a bounded candidate port list for direct TCP reachability. Use this when you need grounded evidence of which common ports accept connections before deeper service probing. Provide `host`, and optionally `candidatePorts` or `timeoutMs` when the default bounded list is not appropriate. Returns only the connection outcomes that were actually observed for the tested ports. It does not identify application-layer services or prove what is behind a reachable port.",
     category: "network",
     riskTier: "passive",
-    capabilities: ["semantic-family", "network", "host-discovery", "passive"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
+    capabilities: ["network", "port-scan", "passive", "builtin-active-function"],
+    timeoutMs: 30000,
+    constraintProfile: {
+      enforced: true,
+      targetKinds: ["host", "domain"],
       networkBehavior: "outbound-read",
-      targetKinds: ["host", "domain", "cidr"],
-      supportsHostAllowlist: true
-    }),
-    coveredToolIds: [
-      "seed-service-scan",
-      "seed-rustscan",
-      "seed-masscan",
-      "seed-autorecon"
-    ],
-    candidateToolIds: [
-      "seed-service-scan",
-      "seed-rustscan",
-      "seed-masscan",
-      "seed-autorecon"
-    ]
+      mutationClass: "none",
+      supportsHostAllowlist: true,
+      supportsPathExclusions: false,
+      supportsRateLimit: true
+    },
+    requiredInputFields: ["host"],
+    candidateToolId: "native-network-host-discovery",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        host: { type: "string" },
+        candidatePorts: { type: "array", items: { type: "number" } },
+        timeoutMs: { type: "number" }
+      },
+      required: ["host"]
+    }
   }),
   createSemanticFamilyDefinition({
     builtinActionKey: "network_service_enumeration",
-    name: "Network Service Enumeration",
-    description: "Enumerate known or candidate services on explicit ports to collect banners, versions, protocol hints, and service metadata. Use this after host discovery or when a specific port is already known. Provide `target`, `port`, or `candidatePorts`. Returns service evidence for correlation and follow-on checks; do not use for broad vulnerability exploitation.",
+    name: "Enumerate Known Services",
+    description: "Enumerate explicit TCP services on a known host by connecting to bounded ports and capturing any immediate banner or protocol hint. Use this after host discovery when you already know which ports are worth examining and need grounded evidence of likely service identity. Provide `host` and explicit `ports`, and optionally `send` or `timeoutMs` when a light probe is needed to elicit a banner. Returns only the banners and protocol hints actually observed during those connections. It does not complete full protocol negotiation, run exploit checks, or scan beyond the supplied ports.",
     category: "network",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "network", "service-enumeration", "passive"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
-      networkBehavior: "outbound-read",
+    riskTier: "active",
+    capabilities: ["service-enum", "network", "active-recon", "builtin-active-function"],
+    timeoutMs: 30000,
+    constraintProfile: {
+      enforced: true,
       targetKinds: ["host", "domain"],
-      supportsHostAllowlist: true
-    }),
-    coveredToolIds: [
-      "seed-nmap-scan",
-      "seed-ncat-probe",
-      "seed-netcat-probe",
-      "seed-service-fingerprint"
-    ],
-    candidateToolIds: [
-      "seed-nmap-scan",
-      "seed-service-fingerprint",
-      "seed-ncat-probe",
-      "seed-netcat-probe"
-    ]
+      networkBehavior: "outbound-active",
+      mutationClass: "active-validation",
+      supportsHostAllowlist: true,
+      supportsPathExclusions: false,
+      supportsRateLimit: true
+    },
+    requiredInputFields: ["host", "ports"],
+    candidateToolId: "native-network-service-enumeration",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        host: { type: "string" },
+        ports: { type: "array", items: { type: "number" } },
+        send: { type: "string" },
+        timeoutMs: { type: "number" }
+      },
+      required: ["host", "ports"]
+    }
   }),
   createSemanticFamilyDefinition({
     builtinActionKey: "tls_posture_audit",
-    name: "TLS Posture Audit",
-    description: "Audit TLS posture for a known host and port. Use this when HTTPS, STARTTLS, or TLS-enabled services are suspected and you need protocol, cipher, certificate, expiry, trust, or plaintext-transport evidence. Provide `target` and optionally `port` or candidate ports. Returns TLS observations; do not use for non-TLS service enumeration.",
+    name: "Audit TLS Posture",
+    description: "Audit the TLS handshake posture of one explicit host and port by collecting the negotiated protocol, cipher, and peer certificate metadata. Use this when you need grounded transport-security evidence for a known TLS listener before interpreting higher-level web findings. Provide `host`, and optionally `port`, `serverName`, or `timeoutMs` when SNI or non-default ports are required. Returns only the handshake metadata that was actually negotiated with the target. It does not grade every compliance requirement, test every cipher suite, or prove client-side hostname validation.",
     category: "network",
     riskTier: "passive",
-    capabilities: ["semantic-family", "tls", "passive"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
+    capabilities: ["tls", "network", "passive", "builtin-active-function"],
+    timeoutMs: 30000,
+    constraintProfile: {
+      enforced: true,
+      targetKinds: ["host", "domain"],
       networkBehavior: "outbound-read",
-      targetKinds: ["host", "domain", "url"],
-      supportsHostAllowlist: true
-    }),
-    coveredToolIds: [
-      "seed-tls-audit"
-    ],
-    candidateToolIds: [
-      "seed-tls-audit"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "network_topology_mapping",
-    name: "Network Topology Mapping",
-    description: "Map adjacent hosts, inferred subnets, gateway-facing ports, and trust-boundary signals around an approved target. Use this when attack-path reasoning needs topology context or lateral-movement preconditions. Provide `target` or CIDR-like context where in scope. Returns topology observations, not vulnerability proof.",
-    category: "topology",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "topology", "passive"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
       mutationClass: "none",
-      networkBehavior: "outbound-read",
-      targetKinds: ["host", "domain", "cidr"],
-      supportsHostAllowlist: true
-    }),
-    coveredToolIds: [
-      "seed-network-segment-map"
-    ],
-    candidateToolIds: [
-      "seed-network-segment-map"
-    ]
+      supportsHostAllowlist: true,
+      supportsPathExclusions: false,
+      supportsRateLimit: true
+    },
+    requiredInputFields: ["host"],
+    candidateToolId: "native-tls-posture-audit",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        host: { type: "string" },
+        port: { type: "number" },
+        serverName: { type: "string" },
+        timeoutMs: { type: "number" }
+      },
+      required: ["host"]
+    }
   }),
   createSemanticFamilyDefinition({
     builtinActionKey: "subdomain_discovery",
-    name: "Subdomain Discovery",
-    description: "Discover likely subdomains for an in-scope domain through passive and bounded expansion. Use this before host, HTTP, or service assessment when the initial target is a domain. Provide `target` or `domain`; optionally include known subdomains, candidate domains, or max results. Returns hostname observations; do not use for single-host validation.",
+    name: "Discover Bounded Subdomains",
+    description: "Discover bounded subdomain candidates for one explicit parent domain using DNS lookups and optional direct HTTP reachability checks. Use this when you need grounded confirmation of likely subdomains from a strict candidate set rather than passive OSINT collection or brute force. Provide `domain`, and optionally custom `candidateLabels` or disable `includeHttpChecks` when DNS-only evidence is enough. Returns only subdomains that actually resolved or responded to HTTP(S) during the run. It does not enumerate the full namespace or prove ownership of every discovered hostname.",
     category: "subdomain",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "subdomain", "passive"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
-      networkBehavior: "outbound-read",
+    riskTier: "active",
+    capabilities: ["subdomain-discovery", "dns", "web", "active-recon", "builtin-active-function"],
+    timeoutMs: 30000,
+    constraintProfile: {
+      enforced: true,
       targetKinds: ["domain"],
-      supportsHostAllowlist: true
-    }),
-    coveredToolIds: [
-      "seed-subfinder",
-      "seed-theharvester",
-      "seed-amass-enum",
-      "seed-sublist3r-enum"
-    ],
-    candidateToolIds: [
-      "seed-subfinder",
-      "seed-theharvester",
-      "seed-amass-enum",
-      "seed-sublist3r-enum"
-    ]
+      networkBehavior: "outbound-active",
+      mutationClass: "active-validation",
+      supportsHostAllowlist: true,
+      supportsPathExclusions: false,
+      supportsRateLimit: true
+    },
+    requiredInputFields: ["domain"],
+    candidateToolId: "native-subdomain-discovery",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        domain: { type: "string" },
+        candidateLabels: { type: "array", items: { type: "string" } },
+        includeHttpChecks: { type: "boolean" }
+      },
+      required: ["domain"]
+    }
   }),
   createSemanticFamilyDefinition({
     builtinActionKey: "dns_enumeration",
-    name: "DNS Enumeration",
-    description: "Enumerate DNS records and DNS-adjacent exposure for an in-scope domain. Use this to collect A, AAAA, MX, TXT, NS, CNAME, brute-force, or zone-transfer-adjacent clues before host validation. Provide `target` or `domain`. Returns DNS observations; do not treat DNS discovery alone as exploit confirmation.",
+    name: "Enumerate DNS Records",
+    description: "Enumerate deterministic DNS record sets for one explicit domain. Use this when you need grounded A, AAAA, MX, NS, SOA, TXT, or CAA evidence for a known domain without relying on external passive data sources. Provide `domain`, and optionally narrow or expand `recordTypes` within the supported bounded set. Returns only the record answers and response codes actually observed from DNS resolution. It does not brute-force names, derive hidden zones, or prove service reachability on the returned hosts.",
     category: "dns",
     riskTier: "passive",
-    capabilities: ["semantic-family", "dns", "passive"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
-      networkBehavior: "outbound-read",
+    capabilities: ["dns", "passive", "builtin-active-function"],
+    timeoutMs: 30000,
+    constraintProfile: {
+      enforced: true,
       targetKinds: ["domain"],
-      supportsHostAllowlist: true
-    }),
-    coveredToolIds: [
-      "seed-dnsenum",
-      "seed-fierce"
-    ],
-    candidateToolIds: [
-      "seed-dnsenum",
-      "seed-fierce"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "credential_format_identification",
-    name: "Credential Format Identification",
-    description: "Identify likely hash or cipher formats from supplied material before choosing an offline cracking or decoding approach. Provide `hash`, `hashes`, or candidate text. Returns format hypotheses and confidence signals; it does not crack passwords or decrypt content.",
-    category: "password",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "password", "identification", "offline-analysis"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
-      networkBehavior: "none",
-      targetKinds: ["host", "domain", "url"]
-    }),
-    coveredToolIds: [
-      "seed-hash-identifier",
-      "seed-cipher-identifier"
-    ],
-    candidateToolIds: [
-      "seed-hash-identifier",
-      "seed-cipher-identifier"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "online_credential_attack",
-    name: "Online Credential Attack",
-    description: "Run bounded online credential validation against an explicitly approved service. Use only when weak-credential testing is authorized and rate limits are understood. Provide `target`, service or protocol context, candidate usernames/passwords, and max attempts where available. Returns attempt evidence and observations; do not use for discovery or unbounded brute forcing.",
-    category: "password",
-    riskTier: "active",
-    capabilities: ["semantic-family", "password", "online-attack", "active-recon"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "active-validation",
-      networkBehavior: "outbound-active",
-      targetKinds: ["host", "domain", "url"],
-      supportsHostAllowlist: true,
-      supportsRateLimit: true
-    }),
-    coveredToolIds: [
-      "seed-hydra",
-      "seed-medusa",
-      "seed-patator"
-    ],
-    candidateToolIds: [
-      "seed-hydra",
-      "seed-medusa",
-      "seed-patator"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "offline_password_cracking",
-    name: "Offline Password Cracking",
-    description: "Perform offline password cracking or recovery against captured hash material inside the authorized lab boundary. Provide `hash`, `hashes`, and optional `hashType` or mode. Returns cracking attempt output and observations. It does not contact the target service and should not be used for online login attempts.",
-    category: "password",
-    riskTier: "controlled-exploit",
-    capabilities: ["semantic-family", "password", "offline-cracking", "controlled-exploit"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "exploit",
-      networkBehavior: "none",
-      targetKinds: ["host", "domain", "url"]
-    }),
-    requiredInputFields: ["hash"],
-    coveredToolIds: [
-      "seed-hashcat-crack",
-      "seed-john-the-ripper",
-      "seed-ophcrack"
-    ],
-    candidateToolIds: [
-      "seed-hashcat-crack"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "windows_enumeration",
-    name: "Windows Enumeration",
-    description: "Enumerate SMB, Active Directory, and Windows host signals to understand identity and lateral-movement surface. Use this after a Windows or SMB service is identified. Provide `target` and optional port or notes. Returns shares, users, domain, signing, and host metadata observations where available.",
-    category: "windows",
-    riskTier: "active",
-    capabilities: ["semantic-family", "windows", "enumeration", "active-recon"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "active-validation",
-      networkBehavior: "outbound-active",
-      targetKinds: ["host", "domain"],
-      supportsHostAllowlist: true,
-      supportsRateLimit: true
-    }),
-    coveredToolIds: [
-      "seed-enum4linux",
-      "seed-enum4linux-ng",
-      "seed-crackmapexec",
-      "seed-netexec"
-    ],
-    candidateToolIds: [
-      "seed-enum4linux",
-      "seed-enum4linux-ng",
-      "seed-crackmapexec",
-      "seed-netexec"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "windows_remote_access_validation",
-    name: "Windows Remote Access Validation",
-    description: "Validate whether remote Windows management access such as WinRM or SMB execution is reachable and usable on an approved target. Use only when credentialed remote-access validation is explicitly in scope. Provide target, service context, and credentials where required. Returns access validation evidence; do not use for broad Windows enumeration.",
-    category: "windows",
-    riskTier: "controlled-exploit",
-    capabilities: ["semantic-family", "windows", "remote-access", "controlled-exploit"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "exploit",
-      networkBehavior: "outbound-active",
-      targetKinds: ["host", "domain"],
-      supportsHostAllowlist: true,
-      supportsRateLimit: true
-    }),
-    coveredToolIds: [
-      "seed-evil-winrm"
-    ],
-    candidateToolIds: [
-      "seed-evil-winrm"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "windows_poisoning_and_capture",
-    name: "Windows Poisoning and Capture",
-    description: "Validate LLMNR, NBT-NS, mDNS, or similar poisoning exposure inside the controlled exploit boundary. Use only when credential-capture risk must be proven in an authorized lab or scoped network. Provide target or network context. Returns poisoning/capture evidence or failure context; do not use for passive enumeration.",
-    category: "windows",
-    riskTier: "controlled-exploit",
-    capabilities: ["semantic-family", "windows", "poisoning", "controlled-exploit"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "exploit",
-      networkBehavior: "outbound-active",
-      targetKinds: ["host", "domain"],
-      supportsHostAllowlist: true,
-      supportsRateLimit: true
-    }),
-    coveredToolIds: [
-      "seed-responder"
-    ],
-    candidateToolIds: [
-      "seed-responder"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "controlled_exploitation",
-    name: "Controlled Exploitation",
-    description: "Run an explicitly authorized exploit-framework step inside the controlled lab boundary to validate whether a specific exploit path is real. Provide module, target, and required options. Returns execution evidence and observations. Do not use for discovery, broad scanning, or targets without explicit exploit authorization.",
-    category: "exploitation",
-    riskTier: "controlled-exploit",
-    capabilities: ["semantic-family", "controlled-exploit", "framework"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "exploit",
-      networkBehavior: "outbound-active",
-      targetKinds: ["host", "domain", "url"],
-      supportsHostAllowlist: true,
-      supportsRateLimit: true
-    }),
-    coveredToolIds: [
-      "seed-metasploit-framework"
-    ],
-    candidateToolIds: [
-      "seed-metasploit-framework"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "cloud_posture_audit",
-    name: "Cloud Posture Audit",
-    description: "Audit a cloud account or target posture for configuration, identity, exposure, logging, and compliance weaknesses. Use when cloud credentials or scoped cloud context are available and authorized. Provide target/account context and notes. Returns posture observations; do not use for network exploitation.",
-    category: "cloud",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "cloud", "posture-audit", "passive"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
       networkBehavior: "outbound-read",
-      targetKinds: ["host", "domain", "url"]
-    }),
-    coveredToolIds: [
-      "seed-prowler",
-      "seed-scout-suite",
-      "seed-trivy"
-    ],
-    candidateToolIds: [
-      "seed-prowler",
-      "seed-scout-suite",
-      "seed-trivy"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "kubernetes_posture_audit",
-    name: "Kubernetes Posture Audit",
-    description: "Assess a Kubernetes cluster or deployment for configuration, RBAC, workload, API server, and exposure weaknesses. Use when Kubernetes context is in scope and available. Provide target or cluster context plus notes. Returns posture observations; do not use for generic host scanning.",
-    category: "kubernetes",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "kubernetes", "posture-audit", "passive"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
       mutationClass: "none",
-      networkBehavior: "outbound-read",
-      targetKinds: ["host", "domain", "url"]
-    }),
-    coveredToolIds: [
-      "seed-kube-bench",
-      "seed-kube-hunter"
-    ],
-    candidateToolIds: [
-      "seed-kube-bench",
-      "seed-kube-hunter"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "binary_triage",
-    name: "Binary Triage",
-    description: "Perform fast static triage of a local binary or artifact to surface strings, sections, linked libraries, architecture, and hardening metadata. Provide `filePath` and optional notes. Returns artifact observations for later reverse-engineering or vulnerability analysis; it does not execute the artifact.",
-    category: "reversing",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "reversing", "triage", "offline-analysis"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
-      networkBehavior: "none",
-      targetKinds: ["host", "domain", "url"]
-    }),
-    coveredToolIds: [
-      "seed-checksec",
-      "seed-strings",
-      "seed-objdump"
-    ],
-    candidateToolIds: [
-      "seed-checksec",
-      "seed-strings",
-      "seed-objdump"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "interactive_reverse_engineering",
-    name: "Interactive Reverse Engineering",
-    description: "Open or run an advanced reverse-engineering or debugger workflow for deeper artifact inspection. Use after static triage identifies a binary that needs manual or structured analysis. Provide `filePath`, optional module, and notes. Returns analysis output or setup evidence; do not use for basic metadata extraction.",
-    category: "reversing",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "reversing", "interactive-analysis", "offline-analysis"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
-      networkBehavior: "none",
-      targetKinds: ["host", "domain", "url"]
-    }),
-    coveredToolIds: [
-      "seed-ghidra",
-      "seed-radare2",
-      "seed-gdb"
-    ],
-    candidateToolIds: [
-      "seed-ghidra",
-      "seed-radare2",
-      "seed-gdb"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "artifact_metadata_extraction",
-    name: "Artifact Metadata Extraction",
-    description: "Extract metadata, embedded structure, timestamps, authoring hints, and format-specific signals from a local file or collected artifact. Provide `filePath`. Returns metadata observations; do not use for carving, cracking, or executing the artifact.",
-    category: "forensics",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "forensics", "metadata", "offline-analysis"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
-      networkBehavior: "none",
-      targetKinds: ["host", "domain", "url"]
-    }),
-    coveredToolIds: [
-      "seed-exiftool",
-      "seed-binwalk"
-    ],
-    candidateToolIds: [
-      "seed-exiftool",
-      "seed-binwalk"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "file_carving_and_bulk_extraction",
-    name: "File Carving and Bulk Extraction",
-    description: "Recover carved files or bulk extracted artifacts from collected forensic material such as disk images or binary blobs. Provide `filePath` and optional notes. Returns extracted-artifact summaries and observations; do not use for memory analysis or metadata-only inspection.",
-    category: "forensics",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "forensics", "carving", "offline-analysis"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
-      networkBehavior: "none",
-      targetKinds: ["host", "domain", "url"]
-    }),
-    coveredToolIds: [
-      "seed-foremost",
-      "seed-scalpel",
-      "seed-bulk-extractor"
-    ],
-    candidateToolIds: [
-      "seed-foremost",
-      "seed-scalpel",
-      "seed-bulk-extractor"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "memory_forensics",
-    name: "Memory Forensics",
-    description: "Inspect a memory image or memory-derived artifact for processes, network connections, loaded modules, credentials, and volatile compromise evidence. Provide `filePath` and optional profile or notes. Returns memory-forensics observations; do not use for disk carving or live exploitation.",
-    category: "forensics",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "forensics", "memory", "offline-analysis"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
-      networkBehavior: "none",
-      targetKinds: ["host", "domain", "url"]
-    }),
-    coveredToolIds: [
-      "seed-volatility"
-    ],
-    candidateToolIds: [
-      "seed-volatility"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "steganography_analysis",
-    name: "Steganography Analysis",
-    description: "Inspect a local artifact for embedded data, steganographic metadata, and passphrase-protected payload signals without modifying the source file. Provide `filePath` and optional passphrase or notes. Returns steganography observations; do not use for general file metadata extraction.",
-    category: "forensics",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "forensics", "steganography", "offline-analysis"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
-      networkBehavior: "none",
-      targetKinds: ["host", "domain", "url"]
-    }),
-    requiredInputFields: ["filePath"],
-    coveredToolIds: [
-      "seed-steghide-info"
-    ],
-    candidateToolIds: [
-      "seed-steghide-info"
-    ]
-  }),
-  createSemanticFamilyDefinition({
-    builtinActionKey: "local_shell_probe",
-    name: "Local Shell Probe",
-    description: "Run a deterministic local probe to verify tool wiring, argument handling, sandbox behavior, and structured JSON output. Use only for smoke tests or pipeline diagnostics. Provide any input accepted by the test harness. Returns predictable observations; it does not assess the target.",
-    category: "utility",
-    riskTier: "passive",
-    capabilities: ["semantic-family", "utility", "local-probe", "offline-analysis"],
-    timeoutMs: 10000,
-    constraintProfile: createConstraintProfile({
-      mutationClass: "none",
-      networkBehavior: "none",
-      targetKinds: ["host", "domain", "url"]
-    }),
-    coveredToolIds: [
-      "seed-bash-probe"
-    ],
-    candidateToolIds: [
-      "seed-bash-probe"
-    ]
+      supportsHostAllowlist: true,
+      supportsPathExclusions: false,
+      supportsRateLimit: true
+    },
+    requiredInputFields: ["domain"],
+    candidateToolId: "native-dns-enumeration",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        domain: { type: "string" },
+        recordTypes: { type: "array", items: { type: "string" } }
+      },
+      required: ["domain"]
+    }
   })
 ];
 
@@ -993,7 +461,11 @@ const semanticFamilyByBuiltinActionKey = new Map(
 export function getSemanticFamilyDefinitions() {
   return semanticFamilyDefinitions.map((definition) => ({
     ...definition,
-    tool: { ...definition.tool },
+    tool: {
+      ...definition.tool,
+      coveredToolIds: [...definition.coveredToolIds],
+      candidateToolIds: [...definition.candidateToolIds]
+    },
     requiredInputFields: [...definition.requiredInputFields],
     coveredToolIds: [...definition.coveredToolIds],
     candidateToolIds: [...definition.candidateToolIds]
@@ -1008,7 +480,11 @@ export function getSemanticFamilyDefinition(actionKey: ToolBuiltinActionKey) {
 
   return {
     ...definition,
-    tool: { ...definition.tool },
+    tool: {
+      ...definition.tool,
+      coveredToolIds: [...definition.coveredToolIds],
+      candidateToolIds: [...definition.candidateToolIds]
+    },
     requiredInputFields: [...definition.requiredInputFields],
     coveredToolIds: [...definition.coveredToolIds],
     candidateToolIds: [...definition.candidateToolIds]

@@ -2336,6 +2336,31 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     toolInput: Record<string, unknown>;
     justification: string;
   }): Promise<ExecutedToolResult> {
+    if (input.tool.executorType === "builtin" && input.tool.builtinActionKey) {
+      const familyDefinition = getSemanticFamilyDefinition(input.tool.builtinActionKey);
+      if (!familyDefinition) {
+        throw new RequestError(400, `Scan preamble builtin tool ${input.tool.name} has no runnable native mapping.`);
+      }
+
+      const execution = await executeSemanticFamilyTool({
+        broker: this.broker,
+        toolRuntime: this.ports.toolRuntime,
+        familyTool: input.tool,
+        familyDefinition,
+        target: {
+          baseUrl: input.target.baseUrl,
+          host: input.target.host,
+          ...(input.target.port === undefined ? {} : { port: input.target.port })
+        },
+        scan: input.scan,
+        tacticId: input.workflow.id,
+        agentId: input.agentId,
+        constraintSet: input.constraintSet
+      }, input.toolInput);
+
+      return execution.result;
+    }
+
     const executionTarget = parseExecutionTarget(input.toolInput, input.target);
     const request = await this.ports.toolRuntime.compile(input.tool.id, {
       target: executionTarget.target,

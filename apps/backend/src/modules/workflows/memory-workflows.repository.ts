@@ -99,6 +99,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       description: input.description,
       stages: input.stages.map((stage, ord) => ({
         id: stage.id ?? randomUUID(),
+        agentId: stage.agentId,
         label: stage.label,
         ord,
         ...normalizeWorkflowStageContract(stage)
@@ -126,6 +127,7 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
       description: input.description === undefined ? current.description : input.description,
       stages: (input.stages ?? current.stages).map((stage, ord) => ({
         id: stage.id ?? randomUUID(),
+        agentId: stage.agentId,
         label: stage.label,
         ord,
         ...normalizeWorkflowStageContract(stage)

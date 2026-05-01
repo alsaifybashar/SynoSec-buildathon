@@ -2,9 +2,15 @@ import type {
   ConnectorAction,
   ConnectorActionExecutionResult,
   ConnectorActionResult,
+  ConnectorDnsQueryAction,
   ConnectorHttpResponseBinding,
-  ConnectorHttpRequestAction
+  ConnectorHttpRequestAction,
+  ConnectorTcpConnectAction,
+  ConnectorTlsHandshakeAction
 } from "@synosec/contracts";
+import dns from "node:dns";
+import net from "node:net";
+import tls from "node:tls";
 
 function appendHeader(headers: Record<string, string | string[]>, key: string, value: string) {
   const current = headers[key];
@@ -68,6 +74,29 @@ function interpolateStringRecord(values: Record<string, string>, bindings: Map<s
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeCertificateName(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+  return value;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(message));
+    }, timeoutMs);
+
+    promise.then((value) => {
+      clearTimeout(timer);
+      resolve(value);
+    }, (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
 }
 
 function resolveBindingValue(
@@ -199,6 +228,245 @@ async function executeHttpRequestAction(action: ConnectorHttpRequestAction): Pro
   }
 }
 
+async function executeDnsQueryAction(action: ConnectorDnsQueryAction): Promise<ConnectorActionResult> {
+  const startedAt = Date.now();
+  const resolver = new dns.promises.Resolver();
+  if (action.resolver) {
+    resolver.setServers([action.resolver]);
+  }
+
+  try {
+    const answers = await withTimeout((async () => {
+      switch (action.recordType) {
+        case "A":
+          return (await resolver.resolve4(action.name, { ttl: true })).map((entry) => ({
+            name: action.name,
+            type: action.recordType,
+            ttl: entry.ttl,
+            data: entry.address
+          }));
+        case "AAAA":
+          return (await resolver.resolve6(action.name, { ttl: true })).map((entry) => ({
+            name: action.name,
+            type: action.recordType,
+            ttl: entry.ttl,
+            data: entry.address
+          }));
+        case "CNAME":
+        case "NS":
+          return (await resolver.resolve(action.name, action.recordType)).map((entry) => ({
+            name: action.name,
+            type: action.recordType,
+            data: String(entry)
+          }));
+        case "TXT":
+          return (await resolver.resolveTxt(action.name)).map((entry) => ({
+            name: action.name,
+            type: action.recordType,
+            data: entry.join("")
+          }));
+        case "MX":
+          return (await resolver.resolveMx(action.name)).map((entry) => ({
+            name: action.name,
+            type: action.recordType,
+            data: `${entry.priority} ${entry.exchange}`
+          }));
+        case "SOA": {
+          const entry = await resolver.resolveSoa(action.name);
+          return [{
+            name: action.name,
+            type: action.recordType,
+            data: `${entry.nsname} ${entry.hostmaster} serial=${entry.serial}`
+          }];
+        }
+        case "SRV":
+          return (await resolver.resolveSrv(action.name)).map((entry) => ({
+            name: action.name,
+            type: action.recordType,
+            data: `${entry.priority} ${entry.weight} ${entry.port} ${entry.name}`
+          }));
+        case "CAA":
+          return (await resolver.resolveCaa(action.name)).map((entry) => ({
+            name: action.name,
+            type: action.recordType,
+            data: JSON.stringify(entry)
+          }));
+      }
+    })(), action.timeoutMs, `DNS query timed out after ${action.timeoutMs}ms.`);
+
+    return {
+      kind: "dns_query",
+      actionId: action.id,
+      ok: true,
+      name: action.name,
+      recordType: action.recordType,
+      responseCode: "NOERROR",
+      answers,
+      durationMs: Date.now() - startedAt
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      kind: "dns_query",
+      actionId: action.id,
+      ok: false,
+      name: action.name,
+      recordType: action.recordType,
+      responseCode: error instanceof Error && "code" in error && typeof error.code === "string" ? error.code : "ERROR",
+      answers: [],
+      durationMs: Date.now() - startedAt,
+      networkError: message
+    };
+  }
+}
+
+async function executeTcpConnectAction(action: ConnectorTcpConnectAction): Promise<ConnectorActionResult> {
+  const startedAt = Date.now();
+
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+    let banner = "";
+
+    const finish = (result: Omit<Extract<ConnectorActionResult, { kind: "tcp_connect" }>, "kind" | "actionId" | "host" | "port" | "durationMs">) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      socket.destroy();
+      resolve({
+        kind: "tcp_connect",
+        actionId: action.id,
+        host: action.host,
+        port: action.port,
+        durationMs: Date.now() - startedAt,
+        ...result
+      });
+    };
+
+    socket.setTimeout(action.timeoutMs);
+    socket.once("connect", () => {
+      if (action.send) {
+        socket.write(action.send);
+      }
+      setTimeout(() => {
+        finish({
+          ok: true,
+          status: "connected",
+          banner,
+          ...(action.expectRegex ? { matchedExpectRegex: new RegExp(action.expectRegex, "i").test(banner) } : {})
+        });
+      }, 150);
+    });
+    socket.on("data", (chunk: Buffer) => {
+      if (banner.length >= action.maxReadBytes) {
+        return;
+      }
+      banner += chunk.toString("utf8").slice(0, action.maxReadBytes - banner.length);
+      if (action.expectRegex && new RegExp(action.expectRegex, "i").test(banner)) {
+        finish({
+          ok: true,
+          status: "connected",
+          banner,
+          matchedExpectRegex: true
+        });
+      }
+    });
+    socket.once("timeout", () => {
+      finish({
+        ok: false,
+        status: "timed_out",
+        banner,
+        ...(action.expectRegex ? { matchedExpectRegex: false } : {}),
+        networkError: `TCP connect timed out after ${action.timeoutMs}ms.`
+      });
+    });
+    socket.once("error", (error: NodeJS.ErrnoException) => {
+      const status = error.code === "ECONNREFUSED"
+        ? "refused"
+        : error.code === "ETIMEDOUT"
+          ? "timed_out"
+          : "error";
+      finish({
+        ok: false,
+        status,
+        banner,
+        ...(action.expectRegex ? { matchedExpectRegex: false } : {}),
+        networkError: error.message
+      });
+    });
+
+    socket.connect(action.port, action.host);
+  });
+}
+
+async function executeTlsHandshakeAction(action: ConnectorTlsHandshakeAction): Promise<ConnectorActionResult> {
+  const startedAt = Date.now();
+
+  return new Promise((resolve) => {
+    const socket = tls.connect({
+      host: action.host,
+      port: action.port,
+      servername: action.serverName ?? action.host,
+      rejectUnauthorized: false
+    });
+    let settled = false;
+
+    const finish = (result: Omit<Extract<ConnectorActionResult, { kind: "tls_handshake" }>, "kind" | "actionId" | "host" | "port" | "durationMs">) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      socket.destroy();
+      resolve({
+        kind: "tls_handshake",
+        actionId: action.id,
+        host: action.host,
+        port: action.port,
+        durationMs: Date.now() - startedAt,
+        ...result
+      });
+    };
+
+    socket.setTimeout(action.timeoutMs);
+    socket.once("secureConnect", () => {
+      const cert = socket.getPeerCertificate();
+      const subjectAltNames = typeof cert.subjectaltname === "string"
+        ? cert.subjectaltname.split(",").map((entry) => entry.trim()).filter(Boolean)
+        : [];
+      finish({
+        ok: true,
+        ...(action.serverName ? { serverName: action.serverName } : {}),
+        protocol: socket.getProtocol() ?? undefined,
+        cipher: socket.getCipher()?.name,
+        certSubject: normalizeCertificateName(cert.subject?.CN) ?? undefined,
+        certIssuer: normalizeCertificateName(cert.issuer?.CN) ?? undefined,
+        certSan: subjectAltNames,
+        validFrom: cert.valid_from || undefined,
+        validTo: cert.valid_to || undefined
+      });
+    });
+    socket.once("timeout", () => {
+      finish({
+        ok: false,
+        ...(action.serverName ? { serverName: action.serverName } : {}),
+        certSan: [],
+        handshakeError: `TLS handshake timed out after ${action.timeoutMs}ms.`,
+        networkError: `TLS handshake timed out after ${action.timeoutMs}ms.`
+      });
+    });
+    socket.once("error", (error) => {
+      finish({
+        ok: false,
+        ...(action.serverName ? { serverName: action.serverName } : {}),
+        certSan: [],
+        handshakeError: error.message,
+        networkError: error.message
+      });
+    });
+  });
+}
+
 export async function executeConnectorActionBatch(actions: ConnectorAction[]): Promise<ConnectorActionExecutionResult> {
   const actionResults: ConnectorActionResult[] = [];
   const capturedBindings = new Map<string, string>();
@@ -223,6 +491,21 @@ export async function executeConnectorActionBatch(actions: ConnectorAction[]): P
       continue;
     }
 
+    if (action.kind === "dns_query") {
+      actionResults.push(await executeDnsQueryAction(action));
+      continue;
+    }
+
+    if (action.kind === "tcp_connect") {
+      actionResults.push(await executeTcpConnectAction(action));
+      continue;
+    }
+
+    if (action.kind === "tls_handshake") {
+      actionResults.push(await executeTlsHandshakeAction(action));
+      continue;
+    }
+
     throw new Error(`Unsupported connector action kind: ${(action as { kind?: string }).kind ?? "unknown"}`);
   }
 
@@ -236,6 +519,19 @@ export function summarizeConnectorActionResults(actionResults: ConnectorActionEx
       return `${result.actionId} http_request status=${result.statusCode} durationMs=${result.durationMs} bodyBytes=${bodyLength}${result.networkError ? ` error=${result.networkError}` : ""}`;
     }
 
-    return `${result.actionId} ${result.kind}`;
+    if (result.kind === "dns_query") {
+      return `${result.actionId} dns_query rcode=${result.responseCode} answers=${result.answers.length} durationMs=${result.durationMs}${result.networkError ? ` error=${result.networkError}` : ""}`;
+    }
+
+    if (result.kind === "tcp_connect") {
+      return `${result.actionId} tcp_connect status=${result.status} durationMs=${result.durationMs}${result.networkError ? ` error=${result.networkError}` : ""}`;
+    }
+
+    if (result.kind === "tls_handshake") {
+      return `${result.actionId} tls_handshake ok=${result.ok} protocol=${result.protocol ?? "unknown"} durationMs=${result.durationMs}${result.networkError ? ` error=${result.networkError}` : ""}`;
+    }
+
+    const exhaustive: never = result;
+    return `${exhaustive}`;
   }).join("\n");
 }

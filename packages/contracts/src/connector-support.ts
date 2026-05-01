@@ -189,7 +189,12 @@ export interface ConnectorToolSupportResult {
   missingBinaries: string[];
 }
 
-const allowedNativeActionKinds = new Set(["http_request"]);
+const allowedNativeActionKinds = new Set([
+  "http_request",
+  "dns_query",
+  "tcp_connect",
+  "tls_handshake"
+]);
 
 export function extractRequiredBinariesFromBashSource(bashSource: string): string[] {
   const matches = [...bashSource.matchAll(commandCheckPattern)].map((match) => match[1]?.trim()).filter(Boolean) as string[];

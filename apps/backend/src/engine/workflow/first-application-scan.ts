@@ -1,7 +1,7 @@
 import type { AiTool } from "@synosec/contracts";
 import type { ExecutedToolResult, StageExecutionTarget } from "./workflow-runtime-types.js";
 
-const GENERIC_INPUT_KEYS = new Set(["target", "baseUrl", "url", "startUrl", "domain", "port"]);
+const GENERIC_INPUT_KEYS = new Set(["target", "baseUrl", "url", "startUrl", "domain", "port", "host", "candidatePorts", "ports"]);
 
 const ROLE_ORDER = ["reachability", "metadata", "content-discovery", "crawl-expansion", "network-services"] as const;
 type FirstScanRole = typeof ROLE_ORDER[number];
@@ -65,6 +65,24 @@ function isResolvableDomainTarget(target: Pick<StageExecutionTarget, "host">) {
 
 function inferFamily(tool: Pick<AiTool, "id" | "name" | "capabilities">) {
   const text = `${tool.id} ${tool.name} ${(tool.capabilities ?? []).join(" ")}`.toLowerCase();
+  if (text.includes("http-surface-assessment")) {
+    return "http-surface";
+  }
+  if (text.includes("web-crawl-mapping")) {
+    return "web-crawl";
+  }
+  if (text.includes("content-discovery")) {
+    return "content-discovery";
+  }
+  if (text.includes("network-host-discovery")) {
+    return "network-host-discovery";
+  }
+  if (text.includes("network-service-enumeration")) {
+    return "network-service-enumeration";
+  }
+  if (text.includes("tls-posture-audit")) {
+    return "tls-audit";
+  }
   if (text.includes("http-recon")) {
     return "http-recon";
   }
@@ -115,6 +133,9 @@ function inferFamily(tool: Pick<AiTool, "id" | "name" | "capabilities">) {
 
 function inferRole(tool: Pick<AiTool, "id" | "name" | "capabilities" | "category">): FirstScanRole | null {
   const family = inferFamily(tool);
+  if (family === "http-surface") {
+    return "reachability";
+  }
   if (family === "http-recon") {
     return "reachability";
   }
@@ -127,7 +148,7 @@ function inferRole(tool: Pick<AiTool, "id" | "name" | "capabilities" | "category
   if (family === "web-crawl") {
     return "crawl-expansion";
   }
-  if (family === "nmap" || family === "service-fingerprint" || family === "service-scan" || family === "netcat") {
+  if (family === "network-host-discovery" || family === "network-service-enumeration" || family === "nmap" || family === "service-fingerprint" || family === "service-scan" || family === "netcat") {
     return "network-services";
   }
   if (tool.category === "network") {
@@ -145,10 +166,13 @@ function inferRole(tool: Pick<AiTool, "id" | "name" | "capabilities" | "category
 function scoreToolPriority(tool: Pick<AiTool, "id" | "name" | "capabilities">, role: FirstScanRole, target: StageExecutionTarget) {
   const family = inferFamily(tool);
   const seededPriority: Record<string, number> = {
+    "http-surface": 104,
     "http-recon": 100,
     "http-headers": 90,
     "content-discovery": 100,
     "web-crawl": 95,
+    "network-host-discovery": 104,
+    "network-service-enumeration": 96,
     "nmap": 100,
     "service-fingerprint": 92,
     "service-scan": 88,
@@ -159,20 +183,23 @@ function scoreToolPriority(tool: Pick<AiTool, "id" | "name" | "capabilities">, r
     "netcat": 50
   };
   const roleAdjustment: Record<FirstScanRole, number> = {
-    "reachability": family === "http-recon" ? 10 : 0,
+    "reachability": family === "http-surface" ? 12 : family === "http-recon" ? 10 : 0,
     "metadata": family === "http-headers" ? 8 : 0,
     "content-discovery": family === "content-discovery" ? 8 : 0,
     "crawl-expansion": family === "web-crawl" ? 8 : 0,
-    "network-services": family === "nmap" ? 8 : 0
+    "network-services": family === "network-host-discovery" ? 12 : family === "network-service-enumeration" ? 10 : family === "nmap" ? 8 : 0
   };
   return (seededPriority[family] ?? 40) + roleAdjustment[role];
 }
 
 function isEligibleTool(tool: AiTool, target: StageExecutionTarget) {
-  if (tool.status !== "active" || tool.kind !== "raw-adapter") {
+  if (tool.status !== "active") {
     return false;
   }
-  if (tool.executorType !== "bash" || !tool.bashSource || tool.accessProfile === "shell") {
+  if (tool.executorType === "bash" && (!tool.bashSource || tool.accessProfile === "shell")) {
+    return false;
+  }
+  if (tool.executorType === "builtin" && !tool.builtinActionKey) {
     return false;
   }
   if (tool.riskTier === "controlled-exploit") {
@@ -209,10 +236,14 @@ export function buildFirstApplicationScanToolInput(tool: AiTool, target: StageEx
   };
 
   assign("target", target.host);
+  assign("host", target.host);
   assign("baseUrl", target.baseUrl);
   assign("url", target.baseUrl);
   assign("startUrl", target.baseUrl);
   assign("port", target.port);
+  if (target.port !== undefined) {
+    assign("ports", [target.port]);
+  }
   if (isResolvableDomainTarget(target)) {
     assign("domain", target.host);
   }

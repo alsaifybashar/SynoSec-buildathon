@@ -18,7 +18,7 @@ describe("builtin ai tools", () => {
     }
   });
 
-  it("defines the system builtin tools for reporting and semantic family execution", () => {
+  it("defines the system builtin tools for reporting and runnable native builtin functions", () => {
     const ids = getBuiltinAiTools().map((tool) => tool.id);
 
     expect(ids).toEqual(expect.arrayContaining([
@@ -29,9 +29,9 @@ describe("builtin ai tools", () => {
       "builtin-content-discovery",
       "builtin-auth-flow-assessment",
       "builtin-network-host-discovery",
-      "builtin-controlled-exploitation",
-      "builtin-cloud-posture-audit",
-      "builtin-memory-forensics"
+      "builtin-network-service-enumeration",
+      "builtin-dns-enumeration",
+      "builtin-subdomain-discovery"
     ]));
     expect(getBuiltinAiTool("builtin-log-progress")).toMatchObject({
       source: "system",

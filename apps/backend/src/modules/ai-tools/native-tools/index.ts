@@ -7,8 +7,10 @@ import {
   nativeAuthLoginProbeImplementation,
   nativeAuthLoginProbeTool
 } from "./auth-flow-probe.js";
+import { networkFirstNativeImplementations, networkFirstNativeTools } from "./network-first-tools.js";
 
 const nativeToolImplementations = [
+  ...networkFirstNativeImplementations,
   nativeAuthLoginProbeImplementation,
   nativeAuthArtifactValidationImplementation,
   nativeAuthFlowProbeImplementation
@@ -19,6 +21,7 @@ const nativeToolsById = new Map<string, NativeToolImplementation>(
 );
 
 export const builtinNativeAiTools = [
+  ...networkFirstNativeTools,
   nativeAuthLoginProbeTool,
   nativeAuthArtifactValidationTool,
   nativeAuthFlowProbeTool

@@ -1,6 +1,6 @@
 import type { AiTool, InternalObservation, Scan, ToolRequest, ToolRun } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
-import type { ToolRuntime } from "@/modules/ai-tools/index.js";
+import type { ResolvedAiTool, ToolRuntime } from "@/modules/ai-tools/index.js";
 import type { SemanticFamilyDefinition } from "@/modules/ai-tools/semantic-family-tools.js";
 import { applyWorkflowRuntimeTarget, compactToolExecutionResult, inferLayer, normalizeToolInput, parseExecutionTarget, truncate } from "./workflow-execution.utils.js";
 import type { ExecutedToolResult } from "./workflow-runtime-types.js";
@@ -57,10 +57,10 @@ function missingRequiredFields(requiredInputFields: readonly string[], toolInput
 }
 
 function assertCandidateRunnable(
-  candidate: { tool: AiTool; runtime: unknown } | null,
+  candidate: ResolvedAiTool | null,
   familyName: string,
   toolId: string
-): asserts candidate is { tool: AiTool; runtime: unknown } {
+): asserts candidate is ResolvedAiTool & { runtime: NonNullable<ResolvedAiTool["runtime"]> } {
   if (!candidate) {
     throw new RequestError(500, `${familyName} is missing its seeded tool dependency ${toolId}.`, {
       code: "SEMANTIC_FAMILY_TOOL_MISSING",
@@ -91,6 +91,87 @@ function createAttempt(input: {
     ...(input.toolRun.statusReason ? { statusReason: input.toolRun.statusReason } : {}),
     outputExcerpt: truncate(input.output, 400),
     selected: input.selected
+  };
+}
+
+function normalizeSemanticFamilyNativeInput(toolId: string, toolInput: Record<string, unknown>) {
+  if (toolId !== "native-auth-flow-probe") {
+    return toolInput;
+  }
+
+  const targetUrl = [toolInput["loginUrl"], toolInput["url"], toolInput["baseUrl"], toolInput["target"]]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const validationTargets = Array.isArray(toolInput["validationTargets"])
+    ? toolInput["validationTargets"]
+    : [];
+
+  if (validationTargets.length > 0) {
+    return {
+      ...toolInput,
+      mode: "artifact-validation",
+      ...(typeof targetUrl === "string" ? { targetUrl } : {}),
+      artifactValidationTargets: validationTargets
+    };
+  }
+
+  return {
+    ...toolInput,
+    mode: "login-probe",
+    ...(typeof targetUrl === "string" ? { targetUrl } : {}),
+    targetKind: typeof toolInput["loginUrl"] === "string" || typeof toolInput["url"] === "string"
+      ? "login-endpoint"
+      : "app-base"
+  };
+}
+
+function buildNativeSemanticToolRequest(input: {
+  tool: AiTool;
+  runtime: any;
+  toolInput: Record<string, unknown>;
+  executionTarget: ReturnType<typeof parseExecutionTarget>;
+}): ToolRequest {
+  const semanticInput = normalizeSemanticFamilyNativeInput(input.tool.id, input.toolInput);
+  const parsedInput = input.runtime.implementation.parseInput(semanticInput);
+  const normalizedInput = normalizeToolInput(parsedInput);
+  const actionBatch = input.runtime.implementation.plan(parsedInput, { tool: input.tool });
+  const firstAction = actionBatch.actions[0];
+  const previewTarget = firstAction?.kind === "http_request" && firstAction.url
+    ? new URL(firstAction.url).pathname || "/"
+    : firstAction?.kind === "dns_query"
+      ? `${firstAction.recordType} ${firstAction.name}`
+      : firstAction?.kind === "tcp_connect"
+        ? `${firstAction.host}:${firstAction.port}`
+        : firstAction?.kind === "tls_handshake"
+          ? `${firstAction.host}:${firstAction.port}`
+          : input.executionTarget.target;
+  const previewVerb = firstAction?.kind === "http_request"
+    ? firstAction.method
+    : firstAction?.kind === "dns_query"
+      ? "DNS"
+      : firstAction?.kind === "tcp_connect"
+        ? "TCP"
+        : firstAction?.kind === "tls_handshake"
+          ? "TLS"
+          : "EXEC";
+
+  return {
+    toolId: input.tool.id,
+    tool: input.tool.name,
+    executorType: "native-ts",
+    capabilities: input.runtime.capabilities,
+    target: input.executionTarget.target,
+    ...(input.executionTarget.port == null ? {} : { port: input.executionTarget.port }),
+    layer: inferLayer(input.tool.category),
+    riskTier: input.tool.riskTier,
+    justification: `${input.tool.name} semantic-family delegated execution.`,
+    sandboxProfile: input.runtime.sandboxProfile,
+    privilegeProfile: input.runtime.privilegeProfile,
+    parameters: {
+      timeoutMs: input.runtime.timeoutMs,
+      commandPreview: `${input.tool.id} ${previewVerb} ${previewTarget} x${actionBatch.actions.length} bounded requests`,
+      toolInput: normalizedInput,
+      actionBatch
+    }
   };
 }
 
@@ -133,14 +214,22 @@ export async function executeSemanticFamilyTool(
   for (const candidateToolId of candidateToolIds) {
     const resolvedCandidate = await context.toolRuntime.get(candidateToolId);
     assertCandidateRunnable(resolvedCandidate, context.familyTool.name, candidateToolId);
+    const runtime = resolvedCandidate.runtime;
 
-    const request = await context.toolRuntime.compile(resolvedCandidate.tool.id, {
-      target: executionTarget.target,
-      ...(executionTarget.port === undefined ? {} : { port: executionTarget.port }),
-      layer: inferLayer(resolvedCandidate.tool.category),
-      justification: `${context.familyTool.name} delegated execution to ${resolvedCandidate.tool.name}.`,
-      toolInput
-    });
+    const request = runtime.executorType === "native-ts"
+      ? buildNativeSemanticToolRequest({
+          tool: resolvedCandidate.tool,
+          runtime,
+          toolInput,
+          executionTarget
+        })
+      : await context.toolRuntime.compile(resolvedCandidate.tool.id, {
+          target: executionTarget.target,
+          ...(executionTarget.port === undefined ? {} : { port: executionTarget.port }),
+          layer: inferLayer(resolvedCandidate.tool.category),
+          justification: `${context.familyTool.name} delegated execution to ${resolvedCandidate.tool.name}.`,
+          toolInput
+        });
 
     const brokerResult = await context.broker.executeRequests({
       scan: context.scan,

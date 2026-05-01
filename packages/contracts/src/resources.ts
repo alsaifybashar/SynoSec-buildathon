@@ -168,6 +168,51 @@ export type AiToolSource = z.infer<typeof aiToolSourceSchema>;
 export const toolRegistrySourceSchema = aiToolSourceSchema;
 export type ToolRegistrySource = z.infer<typeof toolRegistrySourceSchema>;
 
+export const aiAgentStatusSchema = z.enum(["active", "inactive", "archived"]);
+export type AiAgentStatus = z.infer<typeof aiAgentStatusSchema>;
+
+export const aiAgentToolAccessModeSchema = z.enum(["system", "system_plus_custom", "custom_only"]);
+export type AiAgentToolAccessMode = z.infer<typeof aiAgentToolAccessModeSchema>;
+
+export const aiAgentSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  status: aiAgentStatusSchema,
+  description: z.string().nullable(),
+  systemPrompt: z.string().min(1),
+  toolAccessMode: aiAgentToolAccessModeSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+export type AiAgent = z.infer<typeof aiAgentSchema>;
+
+export const aiAgentsListQuerySchema = resourceListQuerySchema.extend({
+  status: aiAgentStatusSchema.optional(),
+  sortBy: z.enum(["name", "status", "createdAt", "updatedAt"]).optional()
+});
+export type AiAgentsListQuery = z.infer<typeof aiAgentsListQuerySchema>;
+
+export const listAiAgentsResponseSchema = paginatedMetaSchema.extend({
+  agents: z.array(aiAgentSchema)
+});
+export type ListAiAgentsResponse = z.infer<typeof listAiAgentsResponseSchema>;
+
+const aiAgentBodyBaseSchema = z.object({
+  name: z.string().trim().min(1),
+  status: aiAgentStatusSchema,
+  description: z.union([z.string().trim(), z.literal(""), z.null()]).transform((value) => value || null),
+  systemPrompt: z.string().min(1),
+  toolAccessMode: aiAgentToolAccessModeSchema
+});
+
+export const createAiAgentBodySchema = aiAgentBodyBaseSchema;
+export type CreateAiAgentBody = z.infer<typeof createAiAgentBodySchema>;
+
+export const updateAiAgentBodySchema = aiAgentBodyBaseSchema.partial().refine((value) => Object.keys(value).length > 0, {
+  message: "At least one field is required."
+});
+export type UpdateAiAgentBody = z.infer<typeof updateAiAgentBodySchema>;
+
 export const aiToolStatusSchema = z.enum(["active", "inactive", "missing", "manual"]);
 export type AiToolStatus = z.infer<typeof aiToolStatusSchema>;
 export const toolRegistryEntryStatusSchema = aiToolStatusSchema;
@@ -907,6 +952,7 @@ export type WorkflowStageResult = z.infer<typeof workflowStageResultSchema>;
 
 export const workflowStageSchema = z.object({
   id: z.string().uuid(),
+  agentId: z.string().uuid(),
   label: z.string().min(1),
   ord: z.number().int().min(0),
   objective: z.string().min(1),
@@ -957,6 +1003,7 @@ export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
 
 const workflowStageBodySchema = z.object({
   id: z.string().uuid().optional(),
+  agentId: z.string().uuid(),
   label: z.string().trim().min(1),
   objective: z.string().trim().min(1),
   stageSystemPrompt: z.string().trim().min(1),

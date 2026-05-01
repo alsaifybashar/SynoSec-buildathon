@@ -1,10 +1,12 @@
 import type { AiTool, AiToolRuntimeStateSummary } from "@synosec/contracts";
 import { getToolCatalog } from "@/engine/tools/tool-catalog.js";
 import { seededToolDefinitions } from "@/shared/seed-data/ai-builder-defaults.js";
+import { builtinNativeAiTools } from "./native-tools/index.js";
 import { getSemanticFamilyDefinitions } from "./semantic-family-tools.js";
 
 const catalogToolIds = new Set<string>(getToolCatalog().map((entry) => entry.id));
 const seededToolIds = new Set<string>(seededToolDefinitions.map((tool) => tool.id));
+const nativeToolIds = new Set<string>(builtinNativeAiTools.map((tool) => tool.id));
 const semanticFamiliesById = new Map(
   getSemanticFamilyDefinitions().map((definition) => [definition.tool.id, definition] as const)
 );
@@ -35,7 +37,7 @@ export function resolveWorkflowStageTools(allTools: AiTool[], allowedToolIds: st
 
 export function classifyAiToolKind(tool: AiTool): AiTool["kind"] {
   if (tool.executorType === "builtin") {
-    return isSemanticFamily(tool) ? "semantic-family" : "builtin-action";
+    return "builtin-action";
   }
 
   return "raw-adapter";
@@ -55,19 +57,25 @@ function summarizeRawTool(tool: AiTool): AiToolRuntimeStateSummary {
   };
 }
 
-function summarizeBuiltinAction(): AiToolRuntimeStateSummary {
+function summarizeBuiltinAction(tool: AiTool): AiToolRuntimeStateSummary {
+  const activeDefinition = tool.builtinActionKey ? semanticFamiliesById.get(tool.id) : undefined;
+  const candidateToolIds = activeDefinition ? activeDefinition.candidateToolIds : [];
+  const executable = activeDefinition
+    ? candidateToolIds.some((toolId) => nativeToolIds.has(toolId))
+    : true;
+
   return {
     cataloged: true,
     installed: true,
-    executable: true,
+    executable,
     granted: true
   };
 }
 
 function summarizeSemanticFamily(tool: AiTool, coveredToolIds: string[], candidateToolIds: string[]): AiToolRuntimeStateSummary {
-  const cataloged = coveredToolIds.some((toolId) => catalogToolIds.has(toolId) || seededToolIds.has(toolId));
-  const installed = candidateToolIds.some((toolId) => catalogToolIds.has(toolId));
-  const executable = candidateToolIds.some((toolId) => seededToolIds.has(toolId));
+  const cataloged = coveredToolIds.some((toolId) => catalogToolIds.has(toolId) || seededToolIds.has(toolId) || nativeToolIds.has(toolId));
+  const installed = candidateToolIds.some((toolId) => catalogToolIds.has(toolId) || nativeToolIds.has(toolId));
+  const executable = candidateToolIds.some((toolId) => seededToolIds.has(toolId) || nativeToolIds.has(toolId));
 
   return {
     cataloged,
@@ -79,7 +87,7 @@ function summarizeSemanticFamily(tool: AiTool, coveredToolIds: string[], candida
 
 export function enrichAiTool(tool: AiTool): AiTool {
   const kind = classifyAiToolKind(tool);
-  const familyDefinition = kind === "semantic-family" ? semanticFamiliesById.get(tool.id) : undefined;
+  const familyDefinition = tool.executorType === "builtin" ? semanticFamiliesById.get(tool.id) : undefined;
   const coveredToolIds = familyDefinition ? [...familyDefinition.coveredToolIds] : [];
   const candidateToolIds = familyDefinition ? [...familyDefinition.candidateToolIds] : [];
 
@@ -89,7 +97,7 @@ export function enrichAiTool(tool: AiTool): AiTool {
     coveredToolIds,
     candidateToolIds,
     runtimeStateSummary: kind === "builtin-action"
-      ? summarizeBuiltinAction()
+      ? summarizeBuiltinAction(tool)
       : kind === "semantic-family"
         ? summarizeSemanticFamily(tool, coveredToolIds, candidateToolIds)
         : summarizeRawTool(tool)

@@ -43,16 +43,16 @@ describe("ai tool surface", () => {
       bashSource: null,
       capabilities: ["workflow-control"]
     });
-    const semanticFamily = createTool({
+    const builtinMappedFunction = createTool({
       id: "builtin-http-surface-assessment",
       executorType: "builtin",
       bashSource: null,
-      capabilities: ["semantic-family"]
+      capabilities: ["http-surface"]
     });
 
     expect(classifyAiToolKind(builtinAction)).toBe("builtin-action");
     expect(isRegistryVisibleAiTool(builtinAction)).toBe(true);
-    expect(classifyAiToolKind(semanticFamily)).toBe("semantic-family");
-    expect(isRegistryVisibleAiTool(semanticFamily)).toBe(true);
+    expect(classifyAiToolKind(builtinMappedFunction)).toBe("builtin-action");
+    expect(isRegistryVisibleAiTool(builtinMappedFunction)).toBe(true);
   });
 });

@@ -120,8 +120,56 @@ export const connectorHttpRequestActionSchema = z.object({
 });
 export type ConnectorHttpRequestAction = z.infer<typeof connectorHttpRequestActionSchema>;
 
+export const connectorDnsRecordTypeSchema = z.enum([
+  "A",
+  "AAAA",
+  "CNAME",
+  "MX",
+  "NS",
+  "SOA",
+  "SRV",
+  "TXT",
+  "CAA"
+]);
+export type ConnectorDnsRecordType = z.infer<typeof connectorDnsRecordTypeSchema>;
+
+export const connectorDnsQueryActionSchema = z.object({
+  kind: z.literal("dns_query"),
+  id: z.string().min(1),
+  name: z.string().trim().min(1),
+  recordType: connectorDnsRecordTypeSchema,
+  resolver: z.string().trim().min(1).optional(),
+  timeoutMs: z.number().int().min(1).max(300000).default(10000)
+});
+export type ConnectorDnsQueryAction = z.infer<typeof connectorDnsQueryActionSchema>;
+
+export const connectorTcpConnectActionSchema = z.object({
+  kind: z.literal("tcp_connect"),
+  id: z.string().min(1),
+  host: z.string().trim().min(1),
+  port: z.number().int().min(1).max(65535),
+  timeoutMs: z.number().int().min(1).max(300000).default(5000),
+  send: z.string().optional(),
+  expectRegex: z.string().trim().min(1).optional(),
+  maxReadBytes: z.number().int().min(1).max(65536).default(1024)
+});
+export type ConnectorTcpConnectAction = z.infer<typeof connectorTcpConnectActionSchema>;
+
+export const connectorTlsHandshakeActionSchema = z.object({
+  kind: z.literal("tls_handshake"),
+  id: z.string().min(1),
+  host: z.string().trim().min(1),
+  port: z.number().int().min(1).max(65535).default(443),
+  serverName: z.string().trim().min(1).optional(),
+  timeoutMs: z.number().int().min(1).max(300000).default(10000)
+});
+export type ConnectorTlsHandshakeAction = z.infer<typeof connectorTlsHandshakeActionSchema>;
+
 export const connectorActionSchema = z.discriminatedUnion("kind", [
-  connectorHttpRequestActionSchema
+  connectorHttpRequestActionSchema,
+  connectorDnsQueryActionSchema,
+  connectorTcpConnectActionSchema,
+  connectorTlsHandshakeActionSchema
 ]);
 export type ConnectorAction = z.infer<typeof connectorActionSchema>;
 
@@ -142,8 +190,66 @@ export const connectorHttpRequestActionResultSchema = z.object({
 });
 export type ConnectorHttpRequestActionResult = z.infer<typeof connectorHttpRequestActionResultSchema>;
 
+export const connectorDnsAnswerSchema = z.object({
+  name: z.string().min(1),
+  type: connectorDnsRecordTypeSchema,
+  ttl: z.number().int().min(0).optional(),
+  data: z.string().min(1)
+});
+export type ConnectorDnsAnswer = z.infer<typeof connectorDnsAnswerSchema>;
+
+export const connectorDnsQueryActionResultSchema = z.object({
+  kind: z.literal("dns_query"),
+  actionId: z.string().min(1),
+  ok: z.boolean(),
+  name: z.string().min(1),
+  recordType: connectorDnsRecordTypeSchema,
+  responseCode: z.string().min(1),
+  answers: z.array(connectorDnsAnswerSchema).default([]),
+  durationMs: z.number().int().min(0),
+  networkError: z.string().optional()
+});
+export type ConnectorDnsQueryActionResult = z.infer<typeof connectorDnsQueryActionResultSchema>;
+
+export const connectorTcpConnectActionResultSchema = z.object({
+  kind: z.literal("tcp_connect"),
+  actionId: z.string().min(1),
+  ok: z.boolean(),
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535),
+  status: z.enum(["connected", "refused", "timed_out", "error"]),
+  banner: z.string().default(""),
+  matchedExpectRegex: z.boolean().optional(),
+  durationMs: z.number().int().min(0),
+  networkError: z.string().optional()
+});
+export type ConnectorTcpConnectActionResult = z.infer<typeof connectorTcpConnectActionResultSchema>;
+
+export const connectorTlsHandshakeActionResultSchema = z.object({
+  kind: z.literal("tls_handshake"),
+  actionId: z.string().min(1),
+  ok: z.boolean(),
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535),
+  serverName: z.string().min(1).optional(),
+  protocol: z.string().optional(),
+  cipher: z.string().optional(),
+  certSubject: z.string().optional(),
+  certIssuer: z.string().optional(),
+  certSan: z.array(z.string()).default([]),
+  validFrom: z.string().optional(),
+  validTo: z.string().optional(),
+  durationMs: z.number().int().min(0),
+  handshakeError: z.string().optional(),
+  networkError: z.string().optional()
+});
+export type ConnectorTlsHandshakeActionResult = z.infer<typeof connectorTlsHandshakeActionResultSchema>;
+
 export const connectorActionResultSchema = z.discriminatedUnion("kind", [
-  connectorHttpRequestActionResultSchema
+  connectorHttpRequestActionResultSchema,
+  connectorDnsQueryActionResultSchema,
+  connectorTcpConnectActionResultSchema,
+  connectorTlsHandshakeActionResultSchema
 ]);
 export type ConnectorActionResult = z.infer<typeof connectorActionResultSchema>;
 
