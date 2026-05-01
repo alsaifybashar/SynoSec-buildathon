@@ -1,87 +1,42 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { ListQueryState, PaginatedResource, ResourceClient } from "@/shared/lib/resource-client";
 import { parseListQueryState } from "@/shared/lib/resource-client";
-
-const MINIMUM_LOADING_MS = 300;
-const listCache = new WeakMap<object, Map<string, PaginatedResource<unknown>>>();
 
 type ResourceListState<T> =
   | { state: "loading"; data: PaginatedResource<T> | null }
   | { state: "loaded"; data: PaginatedResource<T> }
   | { state: "error"; data: PaginatedResource<T> | null; message: string };
 
-function getCachedList<TItem>(client: object, key: string) {
-  return (listCache.get(client)?.get(key) ?? null) as PaginatedResource<TItem> | null;
-}
-
-function setCachedList<TItem>(client: object, key: string, data: PaginatedResource<TItem>) {
-  const current = listCache.get(client) ?? new Map<string, PaginatedResource<unknown>>();
-  current.set(key, data as PaginatedResource<unknown>);
-  listCache.set(client, current);
+function createListQueryKey<TQuery extends ListQueryState>(client: object, pathname: string, query: TQuery) {
+  return ["resource-list", client, pathname, query] as const;
 }
 
 export function useResourceList<TItem, TQuery extends ListQueryState>(client: ResourceClient<TItem, TQuery>) {
   const location = useLocation();
   const navigate = useNavigate();
-  const getUrlCacheKey = useCallback(() => `${location.pathname}${location.search}`, [location.pathname, location.search]);
   const [query, setQuery] = useState<TQuery>(() => parseListQueryState(client.defaultQuery, location.search));
-  const initialCacheKey = getUrlCacheKey();
-  const initialCachedData = getCachedList<TItem>(client, initialCacheKey);
-  const [dataState, setDataState] = useState<ResourceListState<TItem>>(
-    initialCachedData
-      ? { state: "loaded", data: initialCachedData }
-      : { state: "loading", data: null }
-  );
-  const [reloadToken, setReloadToken] = useState(0);
-  const hasLoadedRouteRef = useRef(false);
-  const lastPathnameRef = useRef(location.pathname);
 
   useEffect(() => {
     setQuery(parseListQueryState(client.defaultQuery, location.search));
   }, [client.defaultQuery, location.search]);
 
-  useEffect(() => {
-    let active = true;
-    const currentPathname = location.pathname;
-    const cacheKey = getUrlCacheKey();
-    const cachedData = getCachedList<TItem>(client, cacheKey);
-    const shouldDelay =
-      cachedData === null && (!hasLoadedRouteRef.current || lastPathnameRef.current !== currentPathname);
+  const queryResult = useQuery({
+    queryKey: createListQueryKey(client, location.pathname, query),
+    queryFn: () => client.list(query),
+    placeholderData: keepPreviousData
+  });
 
-    lastPathnameRef.current = currentPathname;
-    setDataState((current) => ({ state: "loading", data: cachedData ?? current.data }));
-
-    const listRequest = client.list(query);
-    const loadRequest = shouldDelay
-      ? Promise.all([
-        listRequest,
-        new Promise((resolve) => window.setTimeout(resolve, MINIMUM_LOADING_MS))
-      ]).then(([data]) => data)
-      : listRequest;
-
-    loadRequest
-      .then((data) => {
-        if (active) {
-          setCachedList(client, cacheKey, data);
-          hasLoadedRouteRef.current = true;
-          setDataState({ state: "loaded", data });
+  const dataState: ResourceListState<TItem> = queryResult.isPending
+    ? { state: "loading", data: queryResult.data ?? null }
+    : queryResult.isError
+      ? {
+          state: "error",
+          data: queryResult.data ?? null,
+          message: queryResult.error instanceof Error ? queryResult.error.message : "Failed to load records."
         }
-      })
-      .catch((error) => {
-        if (active) {
-          setDataState({
-            state: "error",
-            data: null,
-            message: error instanceof Error ? error.message : "Failed to load records."
-          });
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [client, getUrlCacheKey, location.pathname, query, reloadToken]);
+      : { state: "loaded", data: queryResult.data };
 
   const updateQuery = useCallback((updater: TQuery | ((current: TQuery) => TQuery)) => {
     setQuery((current) => {
@@ -142,8 +97,8 @@ export function useResourceList<TItem, TQuery extends ListQueryState>(client: Re
   }, [updateQuery]);
 
   const refetch = useCallback(() => {
-    setReloadToken((current) => current + 1);
-  }, []);
+    void queryResult.refetch();
+  }, [queryResult]);
 
   return {
     query,

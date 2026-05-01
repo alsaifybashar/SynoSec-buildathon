@@ -1,66 +1,46 @@
+import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import { apiRoutes } from "@synosec/contracts";
 import { type NextFunction, type Request, type Response } from "express";
 import { type RateLimitConfig, type RateLimitPolicy } from "@/shared/config/backend-env.js";
 import { RequestError } from "@/shared/http/request-error.js";
-
-type RateLimitSurface = "health" | "auth" | "connector" | "api";
-
-type CounterEntry = {
-  count: number;
-  resetAt: number;
-};
-
-const authRoutes = new Set<string>([
-  apiRoutes.authSession,
-  apiRoutes.authGoogleLogin,
-  apiRoutes.authLogout
-]);
 
 function isEventStreamRequest(request: Request) {
   const accept = request.header("accept");
   return typeof accept === "string" && accept.includes("text/event-stream");
 }
 
-function classifySurface(request: Request): RateLimitSurface | null {
-  if (isEventStreamRequest(request)) {
-    return null;
-  }
-
-  const path = request.path;
-  if (path === apiRoutes.health) {
-    return "health";
-  }
-  if (authRoutes.has(path)) {
-    return "auth";
-  }
-  if (path.startsWith("/api/connectors")) {
-    return "connector";
-  }
-  if (path.startsWith("/api")) {
-    return "api";
-  }
-
-  return null;
-}
-
-function getPolicy(config: RateLimitConfig, surface: RateLimitSurface): RateLimitPolicy {
-  return config[surface];
-}
-
 function getIpKey(request: Request) {
-  return request.ip || request.socket.remoteAddress || "unknown";
+  return ipKeyGenerator(request.ip || request.socket.remoteAddress || "unknown");
 }
 
-function getRateLimitKey(request: Request, surface: RateLimitSurface) {
-  if (surface === "api" && request.auth?.user?.id) {
-    return `${surface}:user:${request.auth.user.id}`;
-  }
-
-  return `${surface}:ip:${getIpKey(request)}`;
+function buildRateLimitHandler(surface: string) {
+  return (_request: Request, _response: Response, next: NextFunction, _options: unknown) => {
+    next(new RequestError(
+      429,
+      `Rate limit exceeded for ${surface} requests.`,
+      {
+        code: "RATE_LIMITED",
+        userFriendlyMessage: "Too many requests. Try again shortly."
+      }
+    ));
+  };
 }
 
-function getResetSeconds(resetAt: number, now: number) {
-  return Math.max(1, Math.ceil((resetAt - now) / 1000));
+function createLimiter(
+  surface: "health" | "auth" | "connector" | "api",
+  policy: RateLimitPolicy,
+  keyGenerator: (request: Request) => string,
+  skip?: (request: Request) => boolean
+) {
+  return rateLimit({
+    windowMs: policy.windowMs,
+    limit: policy.max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator,
+    ...(skip ? { skip } : {}),
+    handler: buildRateLimitHandler(surface)
+  });
 }
 
 export function createRateLimitMiddleware(config: RateLimitConfig) {
@@ -70,57 +50,34 @@ export function createRateLimitMiddleware(config: RateLimitConfig) {
     };
   }
 
-  const counters = new Map<string, CounterEntry>();
-  let nextCleanupAt = 0;
+  const healthLimiter = createLimiter("health", config.health, getIpKey);
+  const authLimiter = createLimiter("auth", config.auth, getIpKey);
+  const connectorLimiter = createLimiter("connector", config.connector, getIpKey);
+  const apiLimiter = createLimiter(
+    "api",
+    config.api,
+    (request) => request.auth?.user?.id ?? getIpKey(request),
+    (request) => isEventStreamRequest(request) || /^\/api\/workflow-runs\/[^/]+\/events$/.test(request.path)
+  );
 
   return (request: Request, response: Response, next: NextFunction) => {
-    const surface = classifySurface(request);
-    if (!surface) {
-      next();
+    if (request.path === apiRoutes.health) {
+      healthLimiter(request, response, next);
       return;
     }
 
-    const now = Date.now();
-    if (now >= nextCleanupAt) {
-      for (const [key, entry] of counters.entries()) {
-        if (entry.resetAt <= now) {
-          counters.delete(key);
-        }
-      }
-      nextCleanupAt = now + config.cleanupIntervalMs;
+    if (request.path.startsWith("/auth") || request.path.startsWith("/api/auth")) {
+      authLimiter(request, response, next);
+      return;
     }
 
-    const policy = getPolicy(config, surface);
-    const key = getRateLimitKey(request, surface);
-    const currentEntry = counters.get(key);
-    const entry =
-      currentEntry && currentEntry.resetAt > now
-        ? currentEntry
-        : {
-            count: 0,
-            resetAt: now + policy.windowMs
-          };
+    if (request.path.startsWith("/api/connectors")) {
+      connectorLimiter(request, response, next);
+      return;
+    }
 
-    entry.count += 1;
-    counters.set(key, entry);
-
-    const resetSeconds = getResetSeconds(entry.resetAt, now);
-    const remaining = Math.max(policy.max - entry.count, 0);
-
-    response.setHeader("RateLimit-Limit", String(policy.max));
-    response.setHeader("RateLimit-Remaining", String(remaining));
-    response.setHeader("RateLimit-Reset", String(resetSeconds));
-
-    if (entry.count > policy.max) {
-      response.setHeader("Retry-After", String(resetSeconds));
-      next(new RequestError(
-        429,
-        `Rate limit exceeded for ${surface} requests.`,
-        {
-          code: "RATE_LIMITED",
-          userFriendlyMessage: "Too many requests. Try again shortly."
-        }
-      ));
+    if (request.path.startsWith("/api")) {
+      apiLimiter(request, response, next);
       return;
     }
 

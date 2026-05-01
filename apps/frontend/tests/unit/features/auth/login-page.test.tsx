@@ -1,4 +1,5 @@
 import { render, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LoginPage } from "@/features/auth/login-page";
 
@@ -21,14 +22,17 @@ describe("LoginPage", () => {
     };
   });
 
-  it("configures Google sign-in in redirect mode and posts back to the auth endpoint", async () => {
-    render(<LoginPage googleClientId="google-client-id" />);
+  it("configures Google sign-in with a callback handler", async () => {
+    render(
+      <MemoryRouter initialEntries={["/login?redirectTo=%2Fai-agents"]}>
+        <LoginPage googleClientId="google-client-id" />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(initialize).toHaveBeenCalledWith({
         client_id: "google-client-id",
-        ux_mode: "redirect",
-        login_uri: "http://localhost:3000/api/auth/google"
+        callback: expect.any(Function)
       });
     });
 

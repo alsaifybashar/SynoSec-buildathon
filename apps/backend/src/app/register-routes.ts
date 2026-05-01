@@ -1,10 +1,12 @@
 import { type Express } from "express";
 import {
+  createExpressAuthConfig,
   createAuthRouter,
   requireAuthenticatedApi,
   requireCsrfProtection,
   type AuthConfig
 } from "@/modules/auth/index.js";
+import { ExpressAuth } from "@auth/express";
 import { registerHealthRoutes } from "@/modules/health/index.js";
 import { registerExecutionConstraintsRoutes, type ExecutionConstraintsRepository } from "@/modules/execution-constraints/index.js";
 import {
@@ -26,9 +28,13 @@ export function registerRoutes(app: Express, dependencies: {
   workflowsRepository: WorkflowsRepository;
 }) {
   const routeServices = createRouteServices(dependencies);
+  const expressAuthConfig = createExpressAuthConfig(dependencies.authConfig);
 
   registerHealthRoutes(app);
-  app.use(createAuthRouter(dependencies.authConfig));
+  if (expressAuthConfig) {
+    app.use(/^\/auth(.*)/, ExpressAuth(expressAuthConfig));
+  }
+  app.use(createAuthRouter());
   app.use(createConnectorsRouter());
 
   app.use("/api", requireAuthenticatedApi, requireCsrfProtection);

@@ -1,3 +1,4 @@
+import { QueryClient } from "@tanstack/react-query";
 import { apiRoutes, authSessionResponseSchema, type AuthSessionResponse } from "@synosec/contracts";
 
 export type AuthStoreState =
@@ -5,50 +6,25 @@ export type AuthStoreState =
   | { status: "error"; session: null; message: string }
   | { status: "ready"; session: AuthSessionResponse; message: null };
 
-const listeners = new Set<() => void>();
+export const authSessionQueryKey = ["auth", "session"] as const;
+
 const authBootstrapRetryDelaysMs = [200, 600];
 
-let authState: AuthStoreState = {
-  status: "loading",
-  session: null,
-  message: null
-};
+let authQueryClient: QueryClient | null = null;
 
-function emit() {
-  for (const listener of listeners) {
-    listener();
+function getAuthQueryClient() {
+  if (!authQueryClient) {
+    throw new Error("Auth query client has not been initialized.");
   }
+
+  return authQueryClient;
 }
 
-function setState(nextState: AuthStoreState) {
-  authState = nextState;
-  emit();
+export function registerAuthQueryClient(queryClient: QueryClient) {
+  authQueryClient = queryClient;
 }
 
-export function subscribeAuthStore(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-export function getAuthStoreState() {
-  return authState;
-}
-
-export function getCsrfToken() {
-  return authState.status === "ready" ? authState.session.csrfToken : null;
-}
-
-function setLoadingState() {
-  setState({
-    status: "loading",
-    session: null,
-    message: null
-  });
-}
-
-async function fetchSessionPayload() {
+export async function fetchSessionPayload() {
   const response = await fetch(apiRoutes.authSession, {
     credentials: "include"
   });
@@ -60,43 +36,6 @@ async function fetchSessionPayload() {
   return authSessionResponseSchema.parse(await response.json());
 }
 
-export function markAuthUnauthorized() {
-  if (authState.status !== "ready" || !authState.session.authEnabled) {
-    return;
-  }
-
-  setState({
-    status: "ready",
-    session: {
-      authEnabled: true,
-      authenticated: false,
-      csrfToken: null,
-      googleClientId: authState.session.googleClientId,
-      user: null
-    },
-    message: null
-  });
-}
-
-export async function refreshAuthSession() {
-  try {
-    const payload = await fetchSessionPayload();
-    setState({
-      status: "ready",
-      session: payload,
-      message: null
-    });
-    return payload;
-  } catch (error) {
-    setState({
-      status: "error",
-      session: null,
-      message: error instanceof Error ? error.message : "Unable to load session state."
-    });
-    throw error;
-  }
-}
-
 function delay(ms: number) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
@@ -104,19 +43,16 @@ function delay(ms: number) {
 }
 
 export async function bootstrapAuthSession() {
-  setLoadingState();
-
+  const queryClient = getAuthQueryClient();
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt <= authBootstrapRetryDelaysMs.length; attempt += 1) {
     try {
-      const payload = await fetchSessionPayload();
-      setState({
-        status: "ready",
-        session: payload,
-        message: null
+      return await queryClient.fetchQuery({
+        queryKey: authSessionQueryKey,
+        queryFn: fetchSessionPayload,
+        staleTime: 0
       });
-      return payload;
     } catch (error) {
       lastError = error;
 
@@ -128,66 +64,86 @@ export async function bootstrapAuthSession() {
     }
   }
 
-  setState({
-    status: "error",
-    session: null,
-    message: lastError instanceof Error ? lastError.message : "Unable to load session state."
-  });
   throw lastError;
 }
 
-export async function logout() {
-  const csrfToken = getCsrfToken();
-
-  const response = await fetch(apiRoutes.authLogout, {
-    method: "POST",
-    credentials: "include",
-    headers: csrfToken ? { "x-csrf-token": csrfToken } : {}
-  });
-
-  if (!response.ok) {
-    throw new Error(`Logout failed with status ${response.status}.`);
-  }
-
-  window.google?.accounts.id.disableAutoSelect?.();
-
-  setState({
-    status: "ready",
-    session: {
-      authEnabled: true,
-      authenticated: false,
-      csrfToken: null,
-      googleClientId: authState.status === "ready" ? authState.session.googleClientId : null,
-      user: null
-    },
-    message: null
+export async function refreshAuthSession() {
+  return getAuthQueryClient().fetchQuery({
+    queryKey: authSessionQueryKey,
+    queryFn: fetchSessionPayload,
+    staleTime: 0
   });
 }
 
-export async function loginWithGoogleIdToken(idToken: string) {
-  const response = await fetch(apiRoutes.authGoogleLogin, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({ idToken })
+export function markAuthUnauthorized() {
+  const queryClient = authQueryClient;
+  if (!queryClient) {
+    return;
+  }
+
+  const current = queryClient.getQueryData<AuthSessionResponse>(authSessionQueryKey);
+  if (!current?.authEnabled) {
+    return;
+  }
+
+  queryClient.setQueryData<AuthSessionResponse>(authSessionQueryKey, {
+    authEnabled: true,
+    authenticated: false,
+    csrfToken: null,
+    googleClientId: current.googleClientId,
+    user: null
+  });
+}
+
+async function fetchAuthCsrfToken() {
+  const response = await fetch("/auth/csrf", {
+    credentials: "include"
   });
 
   if (!response.ok) {
-    let message = `Google sign-in failed with status ${response.status}.`;
-
-    try {
-      const payload = await response.json() as { message?: string };
-      if (payload.message) {
-        message = payload.message;
-      }
-    } catch {
-      // Keep the generic message when the response has no JSON body.
-    }
-
-    throw new Error(message);
+    throw new Error(`Auth CSRF request failed with status ${response.status}.`);
   }
 
-  return refreshAuthSession();
+  const payload = await response.json() as { csrfToken?: unknown };
+  if (typeof payload.csrfToken !== "string" || payload.csrfToken.length === 0) {
+    throw new Error("Auth CSRF request did not return a CSRF token.");
+  }
+
+  return payload.csrfToken;
+}
+
+function submitAuthForm(action: string, fields: Record<string, string>) {
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = action;
+  form.style.display = "none";
+
+  for (const [name, value] of Object.entries(fields)) {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = name;
+    input.value = value;
+    form.appendChild(input);
+  }
+
+  document.body.appendChild(form);
+  form.submit();
+  form.remove();
+}
+
+export async function logout(callbackUrl = "/login") {
+  const csrfToken = await fetchAuthCsrfToken();
+  submitAuthForm("/auth/signout", {
+    csrfToken,
+    callbackUrl
+  });
+}
+
+export async function loginWithGoogleIdToken(idToken: string, callbackUrl = "/targets") {
+  const csrfToken = await fetchAuthCsrfToken();
+  submitAuthForm("/auth/callback/google-id-token", {
+    csrfToken,
+    callbackUrl,
+    idToken
+  });
 }

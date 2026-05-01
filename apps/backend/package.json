@@ -18,12 +18,15 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.71",
     "@ai-sdk/openai": "^3.0.53",
+    "@auth/core": "^0.41.1",
+    "@auth/express": "^0.12.2",
     "@prisma/client": "^6.7.0",
     "@synosec/contracts": "workspace:*",
     "ai": "^6.0.168",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.4.1",
     "jose": "^6.1.0",
     "zod": "^3.24.4"
   },

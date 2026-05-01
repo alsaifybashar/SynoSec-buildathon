@@ -1,6 +1,5 @@
 import cors from "cors";
 import express, { type Express } from "express";
-import { apiRoutes } from "@synosec/contracts";
 import { loadRateLimitConfig } from "@/shared/config/backend-env.js";
 import { applySecurityHeaders } from "@/shared/http/security-headers.js";
 import { createRateLimitMiddleware } from "@/shared/http/rate-limit.js";
@@ -22,14 +21,9 @@ export type AppDependencies = {
 };
 
 function isAllowedRequestOrigin(origin: string, frontendUrl: string, path: string) {
+  void path;
   if (origin === frontendUrl) {
     return true;
-  }
-
-  // Google Identity Services redirect mode can send the credential POST with either
-  // the Google origin or the opaque "null" origin on top-level navigation form posts.
-  if (path === apiRoutes.authGoogleLogin && (origin === "https://accounts.google.com" || origin === "null")) {
-      return true;
   }
 
   return false;

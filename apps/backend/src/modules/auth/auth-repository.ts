@@ -6,6 +6,7 @@ type UpsertUserInput = {
   googleSubject: string;
   displayName: string | null;
   avatarUrl: string | null;
+  createUserId?: string;
 };
 
 type CreateSessionInput = {
@@ -26,7 +27,7 @@ export const authRepository = {
         avatarUrl: input.avatarUrl
       },
       create: {
-        id: crypto.randomUUID(),
+        id: input.createUserId ?? crypto.randomUUID(),
         email: input.email,
         googleSubject: input.googleSubject,
         displayName: input.displayName,

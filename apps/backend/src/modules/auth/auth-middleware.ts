@@ -1,25 +1,38 @@
+import { getSession, type Session } from "@auth/express";
 import { type NextFunction, type Request, type Response } from "express";
 import { authSessionResponseSchema } from "@synosec/contracts";
-import { type AuthConfig, type EnabledAuthConfig } from "@/modules/auth/auth-config.js";
-import { clearSessionCookie, parseCookies } from "@/modules/auth/auth-cookies.js";
-import { hashToken, normalizeEmail } from "@/modules/auth/auth-crypto.js";
-import { authRepository } from "@/modules/auth/auth-repository.js";
+import {
+  type AuthConfig,
+  type AuthenticatedSessionUser,
+  type EnabledAuthConfig,
+  createExpressAuthConfig
+} from "@/modules/auth/auth-config.js";
+import { normalizeEmail } from "@/modules/auth/auth-crypto.js";
 import { RequestError } from "@/shared/http/request-error.js";
 
-function isSafeMethod(method: string) {
-  return ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+function isAllowlisted(config: EnabledAuthConfig, email: string) {
+  return config.allowedEmails.includes(normalizeEmail(email));
 }
 
-function toAuthenticatedUser(session: NonNullable<Awaited<ReturnType<typeof authRepository.findSessionByHash>>>) {
+function toAuthenticatedUser(session: Session): AuthenticatedSessionUser | null {
+  const sessionUser = session.user;
+  if (
+    !sessionUser
+    || typeof sessionUser.id !== "string"
+    || typeof sessionUser.email !== "string"
+  ) {
+    return null;
+  }
+
   return {
-    id: session.user.id,
-    email: session.user.email,
-    displayName: session.user.displayName,
-    avatarUrl: session.user.avatarUrl
+    id: sessionUser.id,
+    email: sessionUser.email,
+    displayName: typeof sessionUser.name === "string" ? sessionUser.name : null,
+    avatarUrl: typeof sessionUser.image === "string" ? sessionUser.image : null
   };
 }
 
-export async function attachAuthContext(request: Request, response: Response, config: AuthConfig) {
+export async function attachAuthContext(request: Request, _response: Response, config: AuthConfig) {
   request.auth = {
     config,
     session: null,
@@ -30,35 +43,26 @@ export async function attachAuthContext(request: Request, response: Response, co
     return;
   }
 
-  const cookies = parseCookies(request.header("cookie"));
-  const sessionToken = cookies[config.cookieName];
-  if (!sessionToken) {
+  const expressAuthConfig = createExpressAuthConfig(config);
+  if (!expressAuthConfig) {
     return;
   }
 
-  const session = await authRepository.findSessionByHash(hashToken(sessionToken, config.sessionSecret));
-  if (!session || session.revokedAt || session.expiresAt.getTime() <= Date.now()) {
-    clearSessionCookie(response, config);
+  const session = await getSession(request, expressAuthConfig);
+  if (!session) {
     return;
   }
 
-  if (!config.allowedEmails.includes(normalizeEmail(session.user.email))) {
-    await authRepository.revokeSession(session.id);
-    clearSessionCookie(response, config);
+  const user = toAuthenticatedUser(session);
+  if (!user || !isAllowlisted(config, user.email)) {
     return;
   }
 
   request.auth = {
     config,
     session,
-    user: toAuthenticatedUser(session)
+    user
   };
-
-  const touchIntervalMs = config.sessionTouchIntervalSeconds * 1000;
-  const lastSeenAtMs = session.lastSeenAt.getTime();
-  if (touchIntervalMs === 0 || Date.now() - lastSeenAtMs >= touchIntervalMs) {
-    await authRepository.touchSession(session.id);
-  }
 }
 
 export function requireAuthenticatedApi(request: Request, _response: Response, next: NextFunction) {
@@ -75,23 +79,7 @@ export function requireAuthenticatedApi(request: Request, _response: Response, n
   next();
 }
 
-export function requireCsrfProtection(request: Request, _response: Response, next: NextFunction) {
-  if (!request.auth?.config.authEnabled || isSafeMethod(request.method)) {
-    next();
-    return;
-  }
-
-  if (!request.auth.session) {
-    next(new RequestError(401, "Authentication is required for this request."));
-    return;
-  }
-
-  const providedToken = request.header("x-csrf-token");
-  if (!providedToken || providedToken !== request.auth.session.csrfToken) {
-    next(new RequestError(403, "A valid CSRF token is required for this request."));
-    return;
-  }
-
+export function requireCsrfProtection(_request: Request, _response: Response, next: NextFunction) {
   next();
 }
 
@@ -104,7 +92,7 @@ export function buildAuthSessionPayload(request: Request) {
   return authSessionResponseSchema.parse({
     authEnabled: request.auth?.config.authEnabled ?? false,
     authenticated: Boolean(request.auth?.user),
-    csrfToken: request.auth?.session?.csrfToken ?? null,
+    csrfToken: null,
     googleClientId,
     user: request.auth?.user ?? null
   });

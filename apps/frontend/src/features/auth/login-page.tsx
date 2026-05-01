@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ShieldCheck } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/ui/card";
+import { loginWithGoogleIdToken } from "@/features/auth/auth-store";
 import { Spinner } from "@/shared/ui/spinner";
 
 const googleScriptId = "google-identity-services";
@@ -57,11 +59,13 @@ export function LoginPage({
 }: {
   googleClientId: string | null;
 }) {
+  const location = useLocation();
   const buttonRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "submitting" | "error">("loading");
   const [message, setMessage] = useState<string | null>(null);
   const activeTheme = useActiveTheme();
   const isDarkTheme = activeTheme === "dark";
+  const callbackUrl = new URLSearchParams(location.search).get("redirectTo") || "/targets";
 
   useEffect(() => {
     if (!googleClientId) {
@@ -78,12 +82,27 @@ export function LoginPage({
           return;
         }
 
-        const loginUri = new URL("/api/auth/google", window.location.origin);
-
         window.google.accounts.id.initialize({
           client_id: googleClientId,
-          ux_mode: "redirect",
-          login_uri: loginUri.toString()
+          callback: async ({ credential }) => {
+            if (cancelled || !credential) {
+              return;
+            }
+
+            setState("submitting");
+            setMessage(null);
+
+            try {
+              await loginWithGoogleIdToken(credential, callbackUrl);
+            } catch (error) {
+              if (cancelled) {
+                return;
+              }
+
+              setState("error");
+              setMessage(error instanceof Error ? error.message : "Google sign-in could not be completed.");
+            }
+          }
         });
 
         buttonRef.current.replaceChildren();
@@ -110,7 +129,7 @@ export function LoginPage({
       cancelled = true;
       buttonRef.current?.replaceChildren();
     };
-  }, [googleClientId, isDarkTheme]);
+  }, [callbackUrl, googleClientId, isDarkTheme]);
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-6 py-10 text-foreground">
@@ -127,11 +146,11 @@ export function LoginPage({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {state === "loading" ? (
+          {state === "loading" || state === "submitting" ? (
             <div className="flex items-center justify-center">
               <div className="flex items-center gap-3 rounded-sm border border-border/70 bg-background px-4 py-3 text-sm font-medium">
                 <Spinner className="h-4 w-4" />
-                <span>Loading Google sign-in…</span>
+                <span>{state === "submitting" ? "Signing in…" : "Loading Google sign-in…"}</span>
               </div>
             </div>
           ) : null}

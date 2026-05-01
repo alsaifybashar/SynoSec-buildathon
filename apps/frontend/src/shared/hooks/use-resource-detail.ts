@@ -1,7 +1,5 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { ListQueryState, ResourceClient } from "@/shared/lib/resource-client";
-
-const MINIMUM_LOADING_MS = 300;
 
 type ResourceDetailState<T> =
   | { state: "idle"; item: null }
@@ -9,45 +7,42 @@ type ResourceDetailState<T> =
   | { state: "loaded"; item: T }
   | { state: "error"; item: null; message: string };
 
+function createDetailQueryKey(client: object, id: string | null) {
+  return ["resource-detail", client, id] as const;
+}
+
 export function useResourceDetail<TItem, TQuery extends ListQueryState>(
   client: ResourceClient<TItem, TQuery>,
   id: string | null,
   reloadToken = 0
 ) {
-  const [state, setState] = useState<ResourceDetailState<TItem>>({ state: "idle", item: null });
+  const query = useQuery({
+    queryKey: [...createDetailQueryKey(client, id), reloadToken] as const,
+    queryFn: () => {
+      if (!id) {
+        throw new Error("Missing record id.");
+      }
 
-  useEffect(() => {
-    if (!id) {
-      setState({ state: "idle", item: null });
-      return;
-    }
+      return client.detail(id);
+    },
+    enabled: id !== null
+  });
 
-    let active = true;
-    setState({ state: "loading", item: null });
+  if (!id) {
+    return { state: "idle", item: null } satisfies ResourceDetailState<TItem>;
+  }
 
-    Promise.all([
-      client.detail(id),
-      new Promise((resolve) => window.setTimeout(resolve, MINIMUM_LOADING_MS))
-    ])
-      .then(([item]) => {
-        if (active) {
-          setState({ state: "loaded", item });
-        }
-      })
-      .catch((error) => {
-        if (active) {
-          setState({
-            state: "error",
-            item: null,
-            message: error instanceof Error ? error.message : "Failed to load record."
-          });
-        }
-      });
+  if (query.isPending) {
+    return { state: "loading", item: null } satisfies ResourceDetailState<TItem>;
+  }
 
-    return () => {
-      active = false;
-    };
-  }, [client, id, reloadToken]);
+  if (query.isError) {
+    return {
+      state: "error",
+      item: null,
+      message: query.error instanceof Error ? query.error.message : "Failed to load record."
+    } satisfies ResourceDetailState<TItem>;
+  }
 
-  return state;
+  return { state: "loaded", item: query.data } satisfies ResourceDetailState<TItem>;
 }

@@ -1,5 +1,5 @@
 import { apiRoutes } from "@synosec/contracts";
-import { getCsrfToken, markAuthUnauthorized } from "@/features/auth/auth-store";
+import { markAuthUnauthorized } from "@/features/auth/auth-store";
 
 type ErrorPayload = {
   message?: string;
@@ -138,11 +138,6 @@ function defaultMessageForStatus(status: number, context: RequestContext) {
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   const headers = new Headers(init?.headers);
-  const csrfToken = ["GET", "HEAD", "OPTIONS"].includes(method) ? null : getCsrfToken();
-
-  if (csrfToken) {
-    headers.set("x-csrf-token", csrfToken);
-  }
 
   const response = await fetch(url, {
     ...init,

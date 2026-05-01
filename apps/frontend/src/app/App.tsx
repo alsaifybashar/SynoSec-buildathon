@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Menu } from "lucide-react";
 import { BrowserRouter, useLocation } from "react-router-dom";
-import { toast } from "sonner";
 import { loginRoutePath } from "@/app/navigation";
-import { bootstrapAuthSession } from "@/features/auth/auth-store";
+import { registerAuthQueryClient } from "@/features/auth/auth-store";
 import { useAuthStore } from "@/features/auth/use-auth-store";
 import { AppSidebar } from "@/app/app-sidebar";
 import { AppContentRoutes } from "@/app/routes";
@@ -16,6 +16,8 @@ type ThemeId = "synosec" | "dark";
 
 const themeStorageKey = "synosec-theme";
 const themes = ["synosec", "dark"] as const;
+const queryClient = new QueryClient();
+registerAuthQueryClient(queryClient);
 
 function isThemeId(value: string): value is ThemeId {
   return themes.some((theme) => theme === value);
@@ -35,14 +37,6 @@ function AppShell() {
     document.documentElement.dataset["theme"] = theme;
     window.localStorage.setItem(themeStorageKey, theme);
   }, [theme]);
-
-  useEffect(() => {
-    void bootstrapAuthSession().catch((error) => {
-      toast.error("Session check failed", {
-        description: error instanceof Error ? error.message : "Unable to load session state."
-      });
-    });
-  }, []);
 
   useEffect(() => {
     setIsMobileNavOpen(false);
@@ -69,11 +63,7 @@ function AppShell() {
             type="button"
             className="mt-4 inline-flex items-center justify-center rounded-sm border border-border/70 bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
             onClick={() => {
-              void bootstrapAuthSession().catch((error) => {
-                toast.error("Session check failed", {
-                  description: error instanceof Error ? error.message : "Unable to load session state."
-                });
-              });
+              window.location.reload();
             }}
           >
             Retry session check
@@ -142,8 +132,10 @@ function AppShell() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AppShell />
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <AppShell />
+      </BrowserRouter>
+    </QueryClientProvider>
   );
 }

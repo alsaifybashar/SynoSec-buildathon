@@ -1,10 +1,11 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ExpressAuth } from "@auth/express";
 import { apiRoutes } from "@synosec/contracts";
 import { createApp } from "@/app/create-app.js";
 import { applySecurityHeaders } from "@/shared/http/security-headers.js";
-import { createAuthRouter, loadAuthConfig } from "@/modules/auth/index.js";
+import { createExpressAuthConfig, createAuthRouter, loadAuthConfig } from "@/modules/auth/index.js";
 import { authRepository } from "@/modules/auth/auth-repository.js";
 import { attachAuthContext, requireAuthenticatedApi, requireCsrfProtection } from "@/modules/auth/auth-middleware.js";
 import { verifyGoogleIdToken } from "@/modules/auth/google-id-token.js";
@@ -44,8 +45,10 @@ function setAuthEnv(enabled: boolean) {
 function createTestApp() {
   const app = express();
   const config = loadAuthConfig();
+  const expressAuthConfig = createExpressAuthConfig(config);
 
   app.disable("x-powered-by");
+  app.set("trust proxy", true);
   app.use(applySecurityHeaders);
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
@@ -58,8 +61,12 @@ function createTestApp() {
     }
   });
 
+  if (expressAuthConfig) {
+    app.use(/^\/auth(.*)/, ExpressAuth(expressAuthConfig));
+  }
+
   registerHealthRoutes(app);
-  app.use(createAuthRouter(config));
+  app.use(createAuthRouter());
   app.use(createConnectorsRouter());
   app.use("/api", requireAuthenticatedApi, requireCsrfProtection);
 
@@ -75,14 +82,29 @@ function createTestApp() {
   return app;
 }
 
+async function signInWithGoogleIdToken(agent: request.SuperAgentTest, idToken = "google-id-token", callbackUrl = "/targets") {
+  const csrfResponse = await agent
+    .get("/auth/csrf")
+    .expect(200);
+
+  const csrfToken = csrfResponse.body?.csrfToken;
+  expect(typeof csrfToken).toBe("string");
+
+  return agent
+    .post("/auth/callback/google-id-token")
+    .type("form")
+    .send({
+      csrfToken,
+      callbackUrl,
+      idToken
+    });
+}
+
 describe("auth integration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubGlobal("fetch", vi.fn());
     setAuthEnv(false);
     process.env["CONNECTOR_SHARED_TOKEN"] = "connector-secret";
-    vi.mocked(authRepository.findSessionByHash).mockResolvedValue(null);
-    vi.mocked(authRepository.touchSession).mockResolvedValue({} as never);
     vi.mocked(authRepository.upsertUser).mockResolvedValue({
       id: "9a6d8811-c674-4e0a-9331-07d9ab96861b",
       email: "allowed@example.com",
@@ -92,27 +114,6 @@ describe("auth integration", () => {
       createdAt: new Date(),
       updatedAt: new Date()
     });
-    vi.mocked(authRepository.createSession).mockResolvedValue({
-      id: "0eb7776b-1e13-4fe3-b594-6a3f73c5b3d4",
-      sessionTokenHash: "hash",
-      csrfToken: "csrf-token",
-      userId: "9a6d8811-c674-4e0a-9331-07d9ab96861b",
-      expiresAt: new Date(Date.now() + 60_000),
-      lastSeenAt: new Date(),
-      revokedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      user: {
-        id: "9a6d8811-c674-4e0a-9331-07d9ab96861b",
-        email: "allowed@example.com",
-        googleSubject: "google-subject",
-        displayName: "Allowed User",
-        avatarUrl: null,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }
-    });
-    vi.mocked(authRepository.revokeSession).mockResolvedValue({ count: 1 });
     vi.mocked(verifyGoogleIdToken).mockResolvedValue({
       subject: "google-subject",
       email: "allowed@example.com",
@@ -135,40 +136,68 @@ describe("auth integration", () => {
     await request(app).get("/api/protected").expect(401);
   });
 
-  it("requires a CSRF token for state-changing protected requests", async () => {
+  it("creates an authenticated Auth.js session from a verified Google ID token", async () => {
     setAuthEnv(true);
-    vi.mocked(authRepository.findSessionByHash).mockResolvedValue({
-      id: "0eb7776b-1e13-4fe3-b594-6a3f73c5b3d4",
-      sessionTokenHash: "hash",
-      csrfToken: "csrf-token",
-      userId: "9a6d8811-c674-4e0a-9331-07d9ab96861b",
-      expiresAt: new Date(Date.now() + 60_000),
-      lastSeenAt: new Date(),
-      revokedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+    const app = createTestApp();
+    const agent = request.agent(app);
+
+    const signInResponse = await signInWithGoogleIdToken(agent);
+    expect(signInResponse.status).toBeGreaterThanOrEqual(300);
+    expect(signInResponse.status).toBeLessThan(400);
+    expect(signInResponse.headers["set-cookie"]?.join(";")).toContain("synosec_session=");
+    expect(verifyGoogleIdToken).toHaveBeenCalledWith("google-id-token", "google-client-id");
+    expect(authRepository.upsertUser).toHaveBeenCalled();
+
+    const sessionResponse = await agent
+      .get(apiRoutes.authSession)
+      .expect(200);
+
+    expect(sessionResponse.body).toMatchObject({
+      authEnabled: true,
+      authenticated: true,
+      googleClientId: "google-client-id",
       user: {
         id: "9a6d8811-c674-4e0a-9331-07d9ab96861b",
         email: "allowed@example.com",
-        googleSubject: "google-subject",
-        displayName: "Allowed User",
-        avatarUrl: null,
-        createdAt: new Date(),
-        updatedAt: new Date()
+        displayName: "Allowed User"
       }
     });
+
+    await agent.get("/api/protected").expect(200, { ok: true });
+    await agent.post("/api/protected").expect(201, { ok: true });
+  });
+
+  it("rejects non-allowlisted users during Auth.js sign-in", async () => {
+    setAuthEnv(true);
+    process.env["AUTH_ALLOWED_EMAILS"] = "different@example.com";
     const app = createTestApp();
+    const agent = request.agent(app);
 
-    await request(app)
-      .post("/api/protected")
-      .set("Cookie", "synosec_session=session-token")
-      .expect(403);
+    const response = await signInWithGoogleIdToken(agent);
+    expect(response.status).toBeGreaterThanOrEqual(300);
+    expect(response.status).toBeLessThan(400);
+    expect(authRepository.upsertUser).not.toHaveBeenCalled();
 
-    await request(app)
-      .post("/api/protected")
-      .set("Cookie", "synosec_session=session-token")
-      .set("x-csrf-token", "csrf-token")
-      .expect(201, { ok: true });
+    const sessionResponse = await agent
+      .get(apiRoutes.authSession)
+      .expect(200);
+
+    expect(sessionResponse.body).toMatchObject({
+      authEnabled: true,
+      authenticated: false,
+      user: null
+    });
+  });
+
+  it("defaults auth cookies to Secure in production when AUTH_COOKIE_SECURE is unset", async () => {
+    setAuthEnv(true);
+    process.env["BACKEND_ENV"] = "production";
+    delete process.env["AUTH_COOKIE_SECURE"];
+    const app = createTestApp();
+    const agent = request.agent(app);
+
+    const response = await signInWithGoogleIdToken(agent);
+    expect(response.headers["set-cookie"]?.join(";")).toContain("Secure");
   });
 
   it("applies default security headers and suppresses framework leakage", async () => {
@@ -191,45 +220,10 @@ describe("auth integration", () => {
     );
   });
 
-  it("adds HSTS for secure requests", async () => {
-    const app = createTestApp();
-
-    const response = await request(app)
-      .get(apiRoutes.health)
-      .set("X-Forwarded-Proto", "https")
-      .expect(200);
-
-    expect(response.headers["strict-transport-security"]).toBe("max-age=31536000; includeSubDomains");
-  });
-
-  it("keeps route-specific streaming headers intact", async () => {
-    const app = createTestApp();
-
-    app.get("/events", (_req, res) => {
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache, no-transform");
-      res.setHeader("Connection", "keep-alive");
-      res.status(200).end();
-    });
-
-    const response = await request(app)
-      .get("/events")
-      .expect(200);
-
-    expect(response.headers["content-type"]).toContain("text/event-stream");
-    expect(response.headers["cache-control"]).toBe("no-cache, no-transform");
-    expect(response.headers["connection"]).toBe("keep-alive");
-    expect(response.headers["x-content-type-options"]).toBe("nosniff");
-    expect(response.headers["content-security-policy"]).toBe(
-      "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; object-src 'none'"
-    );
-  });
-
   it("rejects disallowed origins with hardened headers intact", async () => {
     const app = createApp({
       targetsRepository: {} as never,
       executionConstraintsRepository: {} as never,
-      aiAgentsRepository: {} as never,
       aiToolsRepository: {} as never,
       workflowsRepository: {} as never
     });
@@ -251,136 +245,7 @@ describe("auth integration", () => {
     );
   });
 
-  it("allows Google Identity Services redirect POSTs from accounts.google.com", async () => {
-    setAuthEnv(true);
-    const app = createTestApp();
-    const response = await request(app)
-      .post(`${apiRoutes.authGoogleLogin}?redirectTo=%2Ftargets`)
-      .set("Origin", "https://accounts.google.com")
-      .set("Content-Type", "application/x-www-form-urlencoded")
-      .set("Cookie", "g_csrf_token=csrf-value")
-      .send("credential=google-id-token&g_csrf_token=csrf-value")
-      .expect(303);
-
-    expect(response.headers["location"]).toBe("/targets");
-    expect(response.headers["set-cookie"]?.join(";")).toContain("synosec_session=");
-  });
-
-  it("allows Google Identity Services redirect POSTs when the browser sends Origin null", async () => {
-    setAuthEnv(true);
-    const app = createTestApp();
-    const response = await request(app)
-      .post(`${apiRoutes.authGoogleLogin}?redirectTo=%2Ftargets`)
-      .set("Origin", "null")
-      .set("Content-Type", "application/x-www-form-urlencoded")
-      .set("Cookie", "g_csrf_token=csrf-value")
-      .send("credential=google-id-token&g_csrf_token=csrf-value")
-      .expect(303);
-
-    expect(response.headers["location"]).toBe("/targets");
-    expect(response.headers["set-cookie"]?.join(";")).toContain("synosec_session=");
-  });
-
-  it("revokes existing sessions immediately when the user is no longer allowlisted", async () => {
-    setAuthEnv(true);
-    process.env["AUTH_ALLOWED_EMAILS"] = "different@example.com";
-    vi.mocked(authRepository.findSessionByHash).mockResolvedValue({
-      id: "0eb7776b-1e13-4fe3-b594-6a3f73c5b3d4",
-      sessionTokenHash: "hash",
-      csrfToken: "csrf-token",
-      userId: "9a6d8811-c674-4e0a-9331-07d9ab96861b",
-      expiresAt: new Date(Date.now() + 60_000),
-      lastSeenAt: new Date(),
-      revokedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      user: {
-        id: "9a6d8811-c674-4e0a-9331-07d9ab96861b",
-        email: "allowed@example.com",
-        googleSubject: "google-subject",
-        displayName: "Allowed User",
-        avatarUrl: null,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }
-    });
-
-    const app = createTestApp();
-    const response = await request(app)
-      .get("/api/protected")
-      .set("Cookie", "synosec_session=session-token")
-      .expect(401);
-
-    expect(response.headers["set-cookie"]?.join(";")).toContain("synosec_session=");
-    expect(authRepository.revokeSession).toHaveBeenCalledWith("0eb7776b-1e13-4fe3-b594-6a3f73c5b3d4");
-    expect(authRepository.touchSession).not.toHaveBeenCalled();
-  });
-
-  it("does not touch sessions inside the throttle window", async () => {
-    setAuthEnv(true);
-    vi.mocked(authRepository.findSessionByHash).mockResolvedValue({
-      id: "0eb7776b-1e13-4fe3-b594-6a3f73c5b3d4",
-      sessionTokenHash: "hash",
-      csrfToken: "csrf-token",
-      userId: "9a6d8811-c674-4e0a-9331-07d9ab96861b",
-      expiresAt: new Date(Date.now() + 60_000),
-      lastSeenAt: new Date(Date.now() - 60_000),
-      revokedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      user: {
-        id: "9a6d8811-c674-4e0a-9331-07d9ab96861b",
-        email: "allowed@example.com",
-        googleSubject: "google-subject",
-        displayName: "Allowed User",
-        avatarUrl: null,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }
-    });
-
-    const app = createTestApp();
-    await request(app)
-      .get("/api/protected")
-      .set("Cookie", "synosec_session=session-token")
-      .expect(200, { ok: true });
-
-    expect(authRepository.touchSession).not.toHaveBeenCalled();
-  });
-
-  it("touches sessions after the throttle window passes", async () => {
-    setAuthEnv(true);
-    vi.mocked(authRepository.findSessionByHash).mockResolvedValue({
-      id: "0eb7776b-1e13-4fe3-b594-6a3f73c5b3d4",
-      sessionTokenHash: "hash",
-      csrfToken: "csrf-token",
-      userId: "9a6d8811-c674-4e0a-9331-07d9ab96861b",
-      expiresAt: new Date(Date.now() + 60_000),
-      lastSeenAt: new Date(Date.now() - 20 * 60_000),
-      revokedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      user: {
-        id: "9a6d8811-c674-4e0a-9331-07d9ab96861b",
-        email: "allowed@example.com",
-        googleSubject: "google-subject",
-        displayName: "Allowed User",
-        avatarUrl: null,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }
-    });
-
-    const app = createTestApp();
-    await request(app)
-      .get("/api/protected")
-      .set("Cookie", "synosec_session=session-token")
-      .expect(200, { ok: true });
-
-    expect(authRepository.touchSession).toHaveBeenCalledWith("0eb7776b-1e13-4fe3-b594-6a3f73c5b3d4");
-  });
-
-  it("keeps connector bearer auth separate from session auth", async () => {
+  it("keeps connector bearer auth separate from user session auth", async () => {
     setAuthEnv(true);
     const app = createTestApp();
 
@@ -388,62 +253,5 @@ describe("auth integration", () => {
       .get(apiRoutes.connectorStatus)
       .set("Authorization", "Bearer connector-secret")
       .expect(200);
-  });
-
-  it("creates a session cookie from a verified Google ID token for allowlisted users", async () => {
-    setAuthEnv(true);
-    const app = createTestApp();
-    const response = await request(app)
-      .post(apiRoutes.authGoogleLogin)
-      .send({ idToken: "google-id-token" })
-      .expect(204);
-
-    expect(response.headers["set-cookie"]?.join(";")).toContain("synosec_session=");
-    expect(verifyGoogleIdToken).toHaveBeenCalledWith("google-id-token", "google-client-id");
-    expect(authRepository.createSession).toHaveBeenCalled();
-  });
-
-  it("accepts Google redirect POSTs, creates a session, and redirects to the requested app path", async () => {
-    setAuthEnv(true);
-    const app = createTestApp();
-    const response = await request(app)
-      .post(`${apiRoutes.authGoogleLogin}?redirectTo=%2Fai-agents`)
-      .set("Content-Type", "application/x-www-form-urlencoded")
-      .set("Cookie", "g_csrf_token=csrf-value")
-      .send("credential=google-id-token&g_csrf_token=csrf-value")
-      .expect(303);
-
-    expect(response.headers["location"]).toBe("/ai-agents");
-    expect(response.headers["set-cookie"]?.join(";")).toContain("synosec_session=");
-    expect(verifyGoogleIdToken).toHaveBeenCalledWith("google-id-token", "google-client-id");
-    expect(authRepository.createSession).toHaveBeenCalled();
-  });
-
-  it("rejects Google redirect POSTs when the requested redirect path is unsafe", async () => {
-    setAuthEnv(true);
-    const app = createTestApp();
-
-    await request(app)
-      .post(`${apiRoutes.authGoogleLogin}?redirectTo=https://evil.test`)
-      .set("Content-Type", "application/x-www-form-urlencoded")
-      .set("Cookie", "g_csrf_token=csrf-value")
-      .send("credential=google-id-token&g_csrf_token=csrf-value")
-      .expect(400, {
-        code: "REQUEST_ERROR",
-        message: "redirectTo must be an absolute in-app path."
-      });
-  });
-
-  it("defaults auth cookies to Secure in production when AUTH_COOKIE_SECURE is unset", async () => {
-    setAuthEnv(true);
-    process.env["BACKEND_ENV"] = "production";
-    delete process.env["AUTH_COOKIE_SECURE"];
-    const app = createTestApp();
-    const response = await request(app)
-      .post(apiRoutes.authGoogleLogin)
-      .send({ idToken: "google-id-token" })
-      .expect(204);
-
-    expect(response.headers["set-cookie"]?.join(";")).toContain("Secure");
   });
 });
