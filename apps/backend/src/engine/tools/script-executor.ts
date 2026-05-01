@@ -40,8 +40,31 @@ export interface ScriptExecutionResult {
   observations: InternalObservation[];
   output: string;
   exitCode: number;
+  durationMs?: number;
+  truncated?: boolean;
   statusReason?: string;
   commandPreview?: string;
+}
+
+const EXECUTOR_OUTPUT_CAP_BYTES = 8 * 1024 * 1024;
+const EXECUTOR_OUTPUT_TRUNCATION_MARKER = "\n…[output truncated by executor cap]…\n";
+
+const ACTIVE_SANDBOX_PROFILES = new Set(["active-recon", "active-validation"]);
+const ACTIVE_PRIVILEGE_PROFILES = new Set(["active-network", "privileged"]);
+const sandboxEnforcementWarned = new Set<string>();
+
+function warnIfActiveProfileUnenforced(request: ToolRequest) {
+  const sandbox = request.sandboxProfile;
+  const privilege = request.privilegeProfile;
+  const isActive = ACTIVE_SANDBOX_PROFILES.has(sandbox) || ACTIVE_PRIVILEGE_PROFILES.has(privilege);
+  if (!isActive) return;
+  const key = `${request.tool}:${sandbox}:${privilege}`;
+  if (sandboxEnforcementWarned.has(key)) return;
+  sandboxEnforcementWarned.add(key);
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[script-executor] Active sandbox/privilege profile (${sandbox}/${privilege}) requested for tool '${request.tool}' but no enforcement layer is wired; running with parent privileges.`
+  );
 }
 
 function terminateProcessGroup(pid: number | undefined) {
@@ -105,44 +128,66 @@ function normalizeObservation(
   };
 }
 
+interface BashExecutionEnvelopeExtended extends BashExecutionEnvelope {
+  exit_code?: number;
+  duration_ms?: number;
+  truncated?: boolean;
+}
+
 function parseStructuredResult(
   context: ScriptExecutionContext,
   stdout: string,
   stderr: string,
-  exitCode: number
+  exitCode: number,
+  durationMs: number
 ): ScriptExecutionResult {
   const trimmedStdout = stdout.trim();
+  const trimmedStderr = stderr.trim();
+
+  // Graceful degradation: if the tool printed nothing parseable, surface what
+  // we have (typically stderr + exit code) rather than throwing a 500. The
+  // agent can react to a non-zero exit code; an HTTP 500 is dead-end.
   if (!trimmedStdout) {
-    throw new RequestError(500, "The AI tool did not emit a structured result.", {
-      code: "AI_TOOL_INVALID_RESULT_ENVELOPE",
-      userFriendlyMessage: "This AI tool did not return a structured result."
-    });
+    return {
+      observations: [],
+      output: trimmedStderr,
+      exitCode,
+      durationMs,
+      statusReason: "Bash tool emitted no structured envelope."
+    };
   }
 
-  let parsed: BashExecutionEnvelope;
+  let parsed: BashExecutionEnvelopeExtended;
   try {
-    parsed = JSON.parse(trimmedStdout) as BashExecutionEnvelope;
-  } catch (error) {
-    throw new RequestError(500, "The AI tool emitted an invalid structured result.", {
-      code: "AI_TOOL_INVALID_RESULT_JSON",
-      userFriendlyMessage: "This AI tool returned an invalid structured result.",
-      cause: error
-    });
+    parsed = JSON.parse(trimmedStdout) as BashExecutionEnvelopeExtended;
+  } catch {
+    return {
+      observations: [],
+      output: trimmedStderr.length > 0 ? `${trimmedStdout}\n${trimmedStderr}` : trimmedStdout,
+      exitCode,
+      durationMs,
+      statusReason: "Bash tool emitted an unstructured result; raw output preserved."
+    };
   }
 
   if (typeof parsed.output !== "string") {
-    throw new RequestError(500, "The AI tool returned an incomplete structured result.", {
-      code: "AI_TOOL_INVALID_RESULT_OUTPUT",
-      userFriendlyMessage: "This AI tool returned an incomplete structured result."
-    });
+    return {
+      observations: [],
+      output: trimmedStdout,
+      exitCode,
+      durationMs,
+      statusReason: "Bash tool envelope was missing the 'output' field; raw output preserved."
+    };
   }
 
   return {
     observations: Array.isArray(parsed.observations)
       ? parsed.observations.map((item, index) => normalizeObservation(context, item, index))
       : [],
-    output: stderr.trim().length > 0 ? `${parsed.output}\n${stderr.trim()}` : parsed.output,
-    exitCode,
+    output: trimmedStderr.length > 0 ? `${parsed.output}\n${trimmedStderr}` : parsed.output,
+    exitCode: typeof parsed.exit_code === "number" ? parsed.exit_code : exitCode,
+    durationMs: typeof parsed.duration_ms === "number" ? parsed.duration_ms : durationMs,
+    ...(parsed.truncated === true ? { truncated: true } : {}),
     ...(parsed.statusReason ? { statusReason: parsed.statusReason } : {}),
     ...(parsed.commandPreview ? { commandPreview: parsed.commandPreview } : {})
   };
@@ -162,6 +207,8 @@ export async function executeScriptedTool(
     });
   }
 
+  warnIfActiveProfileUnenforced(context.request);
+
   const materialized = await materializeBashScript(context.request.tool, bashSource);
   const timeoutMs = typeof context.request.parameters["timeoutMs"] === "number"
     ? context.request.parameters["timeoutMs"]
@@ -175,7 +222,22 @@ export async function executeScriptedTool(
 
     let stdout = "";
     let stderr = "";
+    let executorTruncated = false;
     let settled = false;
+    const startedAt = Date.now();
+
+    const appendCapped = (target: "stdout" | "stderr", chunk: string) => {
+      const current = target === "stdout" ? stdout : stderr;
+      if (current.length >= EXECUTOR_OUTPUT_CAP_BYTES) {
+        executorTruncated = true;
+        return;
+      }
+      const room = EXECUTOR_OUTPUT_CAP_BYTES - current.length;
+      const slice = chunk.length <= room ? chunk : chunk.slice(0, room) + EXECUTOR_OUTPUT_TRUNCATION_MARKER;
+      if (slice.length < chunk.length || chunk.length > room) executorTruncated = true;
+      if (target === "stdout") stdout = current + slice;
+      else stderr = current + slice;
+    };
 
     const timer = setTimeout(() => {
       if (settled) {
@@ -188,15 +250,17 @@ export async function executeScriptedTool(
         observations: [],
         output: `${stdout}${stderr ? `\n${stderr}` : ""}`.trim(),
         exitCode: 124,
+        durationMs: Date.now() - startedAt,
+        ...(executorTruncated ? { truncated: true } : {}),
         statusReason: `Bash tool timed out after ${timeoutMs}ms.`
       });
     }, timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer | string) => {
-      stdout += chunk.toString();
+      appendCapped("stdout", chunk.toString());
     });
     child.stderr.on("data", (chunk: Buffer | string) => {
-      stderr += chunk.toString();
+      appendCapped("stderr", chunk.toString());
     });
     child.stdin.on("error", (error: NodeJS.ErrnoException) => {
       // Some scripts exit immediately without consuming stdin. Ignore EPIPE and let
@@ -231,7 +295,8 @@ export async function executeScriptedTool(
       clearTimeout(timer);
       void materialized.cleanup();
       try {
-        resolve(parseStructuredResult(context, stdout, stderr, code ?? 1));
+        const result = parseStructuredResult(context, stdout, stderr, code ?? 1, Date.now() - startedAt);
+        resolve(executorTruncated && !result.truncated ? { ...result, truncated: true } : result);
       } catch (error) {
         reject(error);
       }

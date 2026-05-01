@@ -51,7 +51,7 @@ afterEach(() => {
 });
 
 describe("connectorControlPlane", () => {
-  it("derives supported seeded tools from connector policy without requiring installed binaries up front", () => {
+  it("no longer advertises removed bash seed tools from connector policy alone", () => {
     connectorControlPlane.register({
       name: "test-connector",
       version: "0.1.0",
@@ -66,8 +66,8 @@ describe("connectorControlPlane", () => {
 
     const status = connectorControlPlane.getStatus();
     expect(status.connectors).toHaveLength(1);
-    expect(status.connectors[0]?.supportedToolIds).toContain("seed-http-recon");
-    expect(status.connectors[0]?.supportedToolIds).toContain("seed-nmap-scan");
+    expect(status.connectors[0]?.supportedToolIds).not.toContain("seed-http-recon");
+    expect(status.connectors[0]?.supportedToolIds).not.toContain("seed-nmap-scan");
     expect(status.connectors[0]?.supportedToolIds).not.toContain("seed-metasploit-framework");
   });
 

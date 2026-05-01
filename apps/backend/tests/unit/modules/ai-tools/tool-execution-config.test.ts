@@ -16,7 +16,7 @@ describe("resolveToolExecutionFields", () => {
     })).toThrow("missing required execution settings");
   });
 
-  it("hydrates a missing constraint profile from the seeded definition", () => {
+  it("preserves an explicit runtime constraint profile without seeded fallback", () => {
     const result = resolveToolExecutionFields({
       id: "seed-http-recon",
       name: "HTTP Surface",
@@ -34,7 +34,16 @@ describe("resolveToolExecutionFields", () => {
         sandboxProfile: "network-recon",
         privilegeProfile: "read-only-network",
         timeoutMs: 120000,
-        capabilities: ["web", "http-surface", "passive"]
+        capabilities: ["web", "http-surface", "passive"],
+        constraintProfile: {
+          enforced: true,
+          targetKinds: ["host", "domain", "url"],
+          networkBehavior: "outbound-read",
+          mutationClass: "none",
+          supportsHostAllowlist: true,
+          supportsPathExclusions: true,
+          supportsRateLimit: true
+        }
       }
     });
 

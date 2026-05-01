@@ -9,8 +9,6 @@ import {
   portfolioApplicationId,
   portfolioEvidenceGraphWorkflowId,
   securePentApplicationId,
-  seededAgentId,
-  seededRoleDefinitions as roleDefinitions,
   seededToolDefinitions as toolDefinitions
 } from "./seed-data/ai-builder-defaults.js";
 import "@/shared/config/load-env.js";
@@ -29,18 +27,6 @@ const legacySingleAgentSeedIds = {
 const deprecatedSeededWorkflowIds = [
   "0e8e3912-c48f-4c34-9ac0-c54ec70df3f6"
 ] as const;
-const deprecatedSeededAgentIds = [
-  "3d9992c0-a20b-4527-86d3-9479e86d6c3b",
-  "751d2c0b-85f1-4f7a-8ac6-2c05d0ce0f56",
-  "f1f99dd4-c2a7-47e8-946e-6a880f09001f",
-  "897204f6-2e08-4775-aae8-f233d4ec8154",
-  "fa1a0bfa-6b02-4948-8e1c-155f6b9a4ae7",
-  "fcfe30d4-9473-4e74-8836-d824ff777c88",
-  "36f56ea0-e8ce-48ca-bda8-c33ed49e67b2",
-  "72ea29f0-f780-4402-bfe4-574604830749",
-  "7115bc3d-9237-4fba-97f7-8d72966502c0"
-] as const;
-
 async function main() {
   await prisma.workflow.deleteMany({
     where: {
@@ -416,29 +402,6 @@ async function main() {
     }
   });
 
-  await Promise.all(
-    roleDefinitions.map((role) =>
-      prisma.aiAgent.upsert({
-        where: { id: seededAgentId(role.key) },
-        update: {
-          name: `Anthropic ${role.name}`,
-          status: "active",
-          description: role.description,
-          systemPrompt: role.systemPrompt,
-          toolAccessMode: role.toolAccessMode
-        },
-        create: {
-          id: seededAgentId(role.key),
-          name: `Anthropic ${role.name}`,
-          status: "active",
-          description: role.description,
-          systemPrompt: role.systemPrompt,
-          toolAccessMode: role.toolAccessMode
-        }
-      })
-    )
-  );
-
   const workflowDefinitions = getSeededWorkflowDefinitions();
   const seededWorkflowIds = workflowDefinitions.map((workflow) => workflow.id);
 
@@ -509,12 +472,6 @@ async function main() {
     })
   );
 
-  await prisma.aiAgent.deleteMany({
-    where: {
-      id: { in: [...deprecatedSeededAgentIds] }
-    }
-  });
-
   await prisma.workflowTraceEntry.deleteMany({
     where: { workflowRunId: legacySingleAgentSeedIds.runId }
   });
@@ -569,5 +526,5 @@ main()
     await prisma.$disconnect();
   });
 function resolveAccessProfile(toolId: string) {
-  return toolId === "seed-agent-bash-command" ? "shell" : "standard";
+  return "standard" as const;
 }

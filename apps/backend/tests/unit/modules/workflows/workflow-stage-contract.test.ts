@@ -16,6 +16,8 @@ describe("workflow stage contracts", () => {
       objective: "Complete the Recon stage using allowed tools and structured reporting.",
       stageSystemPrompt: defaultStageSystemPromptTemplate,
       allowedToolIds: ["builtin-http-surface-assessment", "seed-http-recon", "builtin-content-discovery"],
+      requiredCapabilities: [],
+      forbiddenCapabilities: [],
       requiredEvidenceTypes: [],
       findingPolicy: expect.objectContaining({ taxonomy: "typed-core-v1" }),
       completionRule: {
@@ -29,7 +31,8 @@ describe("workflow stage contracts", () => {
         requireChainedFindings: false
       },
       resultSchemaVersion: 1,
-      handoffSchema: null
+      handoffSchema: null,
+      tasks: []
     });
   });
 

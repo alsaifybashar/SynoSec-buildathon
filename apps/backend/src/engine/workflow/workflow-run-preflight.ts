@@ -1,7 +1,7 @@
 import type { AiTool, Workflow, WorkflowStage } from "@synosec/contracts";
 import { RequestError } from "@/shared/http/request-error.js";
 import { derivePrivilegeProfile, deriveSandboxProfile } from "@/modules/ai-tools/tool-execution-config.js";
-import { resolveWorkflowStageTools } from "@/modules/ai-tools/index.js";
+import { resolveStageToolsByCapability } from "@/modules/ai-tools/ai-tool-surface.js";
 import {
   authorizeToolAgainstConstraints,
   resolveEffectiveExecutionConstraints,
@@ -82,7 +82,11 @@ export class WorkflowRunPreflight implements WorkflowPreflightReader {
       sortBy: "name",
       sortDirection: "asc"
     });
-    const tools = resolveWorkflowStageTools(registryPage.items, stage.allowedToolIds);
+    const tools = resolveStageToolsByCapability(registryPage.items, {
+      allowedToolIds: stage.allowedToolIds,
+      requiredCapabilities: stage.requiredCapabilities,
+      forbiddenCapabilities: stage.forbiddenCapabilities
+    });
 
     const excludedTools: StageDependencies["excludedTools"] = [];
     let compatibleTools = tools;

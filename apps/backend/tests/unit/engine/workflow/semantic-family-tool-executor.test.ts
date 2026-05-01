@@ -1,10 +1,10 @@
 import http from "node:http";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { AiTool, Scan, ToolRun } from "@synosec/contracts";
-import { createToolRuntime, getSemanticFamilyDefinition } from "@/modules/ai-tools/index.js";
+import type { Scan } from "@synosec/contracts";
 import { getBuiltinAiTool } from "@/modules/ai-tools/builtin-ai-tools.js";
+import { createToolRuntime, getSemanticFamilyDefinition } from "@/modules/ai-tools/index.js";
+import { builtinNativeAiTools } from "@/modules/ai-tools/native-tools/index.js";
 import { MemoryAiToolsRepository } from "@/modules/ai-tools/memory-ai-tools.repository.js";
-import { seededToolDefinitions } from "@/shared/seed-data/ai-builder-defaults.js";
 import { ToolBroker } from "@/engine/workflow/broker/tool-broker.js";
 import { executeSemanticFamilyTool } from "@/engine/workflow/semantic-family-tool-executor.js";
 
@@ -19,105 +19,6 @@ vi.mock("@/engine/scans/index.js", () => ({
 let server: http.Server;
 let baseUrl: string;
 
-function createSeededTool(id: string): AiTool {
-  const definition = seededToolDefinitions.find((candidate) => candidate.id === id);
-  if (!definition) {
-    throw new Error(`Unknown seeded tool: ${id}`);
-  }
-
-  return {
-    ...definition,
-    status: "active",
-    source: "system",
-    description: definition.description ?? null,
-    capabilities: [...definition.capabilities],
-    inputSchema: { ...definition.inputSchema },
-    outputSchema: { ...definition.outputSchema },
-    createdAt: "2026-04-26T00:00:00.000Z",
-    updatedAt: "2026-04-26T00:00:00.000Z"
-  };
-}
-
-async function executeDirectSeededTool(input: {
-  broker: ToolBroker;
-  runtime: ReturnType<typeof createToolRuntime>;
-  tool: AiTool;
-  rawInput: Record<string, unknown>;
-  scanOverride?: Scan;
-}) {
-  const configuredBaseUrl = (
-    ["baseUrl", "url", "startUrl", "loginUrl"]
-      .map((key) => input.rawInput[key])
-      .find((value): value is string => typeof value === "string" && value.length > 0)
-    ?? null
-  );
-  const parsedBaseUrl = configuredBaseUrl ? new URL(configuredBaseUrl) : null;
-  const target = typeof input.rawInput.target === "string" && input.rawInput.target.length > 0
-    ? input.rawInput.target
-    : parsedBaseUrl?.hostname ?? "127.0.0.1";
-  const port = parsedBaseUrl?.port ? Number(parsedBaseUrl.port) : undefined;
-  const request = await input.runtime.compile(input.tool.id, {
-    target,
-    layer: "L7",
-    justification: `Direct comparison run for ${input.tool.name}.`,
-    ...(port === undefined ? {} : { port }),
-    toolInput: input.rawInput
-  });
-
-  const brokerResult = await input.broker.executeRequests({
-    scan: input.scanOverride ?? scan,
-    tacticId: "tactic-direct",
-    agentId: "agent-direct",
-    requests: [request],
-    toolLookup: {
-      [input.tool.id]: input.tool
-    }
-  });
-
-  const toolRun = brokerResult.toolRuns[0];
-  if (!toolRun) {
-    throw new Error(`Missing direct tool run for ${input.tool.name}`);
-  }
-
-  return {
-    request,
-    toolRun,
-    observations: brokerResult.observations
-  };
-}
-
-function comparableToolRunShape(toolRun: ToolRun) {
-  const normalizedOutput = normalizeVolatileHttpOutput(toolRun.output ?? null);
-  return {
-    status: toolRun.status,
-    output: normalizedOutput,
-    exitCode: toolRun.exitCode ?? null,
-    statusReason: toolRun.statusReason ?? null,
-    target: toolRun.target,
-    port: toolRun.port ?? null
-  };
-}
-
-function normalizeVolatileHttpOutput(value: string | null) {
-  return value?.replace(/^Date:\s+.+$/gmi, "Date: <redacted>") ?? null;
-}
-
-function comparableObservationShape(observation: Awaited<ReturnType<typeof executeDirectSeededTool>>["observations"][number]) {
-  return {
-    toolId: observation.toolId ?? null,
-    tool: observation.tool,
-    target: observation.target,
-    key: observation.key,
-    title: observation.title,
-    summary: observation.summary,
-    severity: observation.severity,
-    confidence: observation.confidence,
-    evidence: normalizeVolatileHttpOutput(observation.evidence) ?? observation.evidence,
-    technique: observation.technique,
-    relatedKeys: observation.relatedKeys
-  };
-}
-
 const scan: Scan = {
   id: "scan-semantic-family",
   scope: {
@@ -125,9 +26,9 @@ const scan: Scan = {
     exclusions: [],
     trustZones: [],
     connectivity: [],
-    layers: ["L4", "L7"],
-    maxDepth: 3,
-    maxDurationMinutes: 15,
+    layers: ["L7"],
+    maxDepth: 2,
+    maxDurationMinutes: 10,
     rateLimitRps: 5,
     allowActiveExploits: false,
     cyberRangeMode: "live"
@@ -136,24 +37,14 @@ const scan: Scan = {
   currentRound: 0,
   tacticsTotal: 1,
   tacticsComplete: 0,
-  createdAt: "2026-04-26T00:00:00.000Z"
+  createdAt: "2026-04-30T00:00:00.000Z"
 };
 
 beforeAll(async () => {
   server = http.createServer((req, res) => {
-    res.setHeader("Server", "Apache/2.4.58");
-    res.setHeader("X-Powered-By", "PHP/8.2");
-    if (req.url === "/" && req.method === "GET") {
+    if (req.url === "/login" && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end("<html><head><title>Semantic Family Test</title></head><body><a href=\"/search\">ok</a></body></html>");
-      return;
-    }
-
-    if (req.url?.startsWith("/search") && req.method === "GET") {
-      const url = new URL(req.url, baseUrl || "http://127.0.0.1");
-      const q = url.searchParams.get("q") || "";
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(`<html><body>${q.includes("'") ? `database error near SELECT * FROM users: ${q}` : q}</body></html>`);
+      res.end("<html><body><form method=\"post\"><input name=\"username\" /><input name=\"password\" /></form></body></html>");
       return;
     }
 
@@ -164,21 +55,14 @@ beforeAll(async () => {
         body += chunk;
       });
       req.on("end", () => {
-        if (body.includes("%27") || body.includes("'")) {
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({
-            success: true,
-            message: "Authentication bypassed via SQL injection",
-            debug: {
-              query: "SELECT * FROM users WHERE username='' OR '1'='1' AND password='test'",
-              user: { id: 1, username: "admin" }
-            }
-          }));
+        if (body.includes("username=admin") && body.includes("password=password")) {
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.end("<html><body>Welcome admin</body></html>");
           return;
         }
 
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ success: false }));
+        res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" });
+        res.end("<html><body>Invalid credentials</body></html>");
       });
       return;
     }
@@ -193,7 +77,7 @@ beforeAll(async () => {
       if (!address || typeof address === "string") {
         throw new Error("Failed to bind test server");
       }
-      baseUrl = `http://127.0.0.1:${address.port}/`;
+      baseUrl = `http://127.0.0.1:${address.port}`;
       resolve();
     });
   });
@@ -212,20 +96,14 @@ afterAll(async () => {
 });
 
 describe("executeSemanticFamilyTool", () => {
-  it("runs a semantic family builtin through seeded tool candidates and returns normalized evidence", async () => {
-    const familyTool = getBuiltinAiTool("builtin-http-surface-assessment");
-    const familyDefinition = getSemanticFamilyDefinition("http_surface_assessment");
-
+  it("runs auth flow assessment through the native auth flow probe", async () => {
+    const familyTool = getBuiltinAiTool("builtin-auth-flow-assessment");
+    const familyDefinition = getSemanticFamilyDefinition("auth_flow_assessment");
     if (!familyTool || !familyDefinition) {
-      throw new Error("Missing builtin semantic family tool definition");
+      throw new Error("Missing auth flow assessment definitions");
     }
 
-    const runtime = createToolRuntime(new MemoryAiToolsRepository([
-      createSeededTool("seed-http-recon"),
-      createSeededTool("seed-httpx"),
-      createSeededTool("seed-http-headers"),
-      createSeededTool("seed-whatweb")
-    ]));
+    const runtime = createToolRuntime(new MemoryAiToolsRepository(builtinNativeAiTools));
     const broker = new ToolBroker({ broadcast: () => undefined });
 
     const execution = await executeSemanticFamilyTool({
@@ -242,452 +120,14 @@ describe("executeSemanticFamilyTool", () => {
       agentId: "agent-family"
     }, {
       target: "127.0.0.1",
-      baseUrl
+      loginUrl: `${baseUrl}/login`,
+      knownUser: "admin"
     });
 
-    expect(Object.keys(execution.response).sort()).toEqual(["id", "summary"]);
+    expect(execution.result.status).toBe("completed");
+    expect(execution.result.usedToolId).toBe("native-auth-flow-probe");
     expect(execution.response.id).toBe(execution.result.toolRun.id);
-    expect(execution.response.summary).toBe(execution.result.outputPreview);
-    expect(familyDefinition.candidateToolIds).toContain(execution.result.usedToolId);
     expect(execution.result.observations.length).toBeGreaterThan(0);
-    expect(execution.result.fullOutput.length).toBeGreaterThan(0);
-  });
-
-  it("targets the same host and preserves the same evidence as the delegated bash tool", async () => {
-    const familyTool = getBuiltinAiTool("builtin-http-surface-assessment");
-    const familyDefinition = getSemanticFamilyDefinition("http_surface_assessment");
-    if (!familyTool || !familyDefinition) {
-      throw new Error("Missing builtin semantic family tool definition");
-    }
-
-    const runtime = createToolRuntime(new MemoryAiToolsRepository([
-      createSeededTool("seed-http-recon"),
-      createSeededTool("seed-httpx"),
-      createSeededTool("seed-http-headers"),
-      createSeededTool("seed-whatweb")
-    ]));
-    const broker = new ToolBroker({ broadcast: () => undefined });
-    const rawInput = {
-      target: "127.0.0.1",
-      baseUrl
-    };
-
-    const family = await executeSemanticFamilyTool({
-      broker,
-      toolRuntime: runtime,
-      familyTool,
-      familyDefinition,
-      target: {
-        baseUrl,
-        host: "127.0.0.1"
-      },
-      scan,
-      tacticId: "tactic-family-compare",
-      agentId: "agent-family-compare"
-    }, rawInput);
-
-    const directTool = createSeededTool(family.result.usedToolId);
-    const direct = await executeDirectSeededTool({
-      broker,
-      runtime,
-      tool: directTool,
-      rawInput
-    });
-
-    expect(family.result.usedToolId).toBe(directTool.id);
-    expect(family.result.toolRequest.target).toBe(direct.request.target);
-    expect(family.result.toolRequest.port ?? null).toBe(direct.request.port ?? null);
-    expect(family.result.toolRequest.parameters.toolInput).toEqual(direct.request.parameters.toolInput);
-    expect(comparableToolRunShape(family.result.toolRun)).toEqual(comparableToolRunShape(direct.toolRun));
-    expect(normalizeVolatileHttpOutput(family.result.fullOutput)).toBe(normalizeVolatileHttpOutput(direct.toolRun.output ?? direct.toolRun.statusReason ?? ""));
-    expect(family.result.observations.map(comparableObservationShape)).toEqual(direct.observations.map(comparableObservationShape));
-    expect(family.result.observationKeys).toEqual(direct.observations.map((observation) => observation.key));
-    expect(family.result.observationSummaries).toEqual(direct.observations.map((observation) => observation.summary));
-    expect(family.response.summary).toBe(family.result.outputPreview);
-    expect(family.result.attempts.length).toBeGreaterThan(0);
-    const selectedAttempts = family.result.attempts.filter((attempt) => attempt.selected);
-    expect(selectedAttempts).toHaveLength(1);
-    expect(selectedAttempts[0]?.toolId).toBe(family.result.usedToolId);
-    expect(selectedAttempts[0]?.status).toBe(family.result.status);
-    if (family.result.fallbackUsed) {
-      expect(family.result.attempts.length).toBeGreaterThan(1);
-      expect(family.result.attempts[0]?.selected).toBe(false);
-    } else {
-      expect(family.result.attempts).toHaveLength(1);
-      expect(family.result.attempts[0]?.selected).toBe(true);
-    }
-  });
-
-  it("falls through to later semantic candidates when the primary tool fails", async () => {
-    const familyTool = getBuiltinAiTool("builtin-http-surface-assessment");
-    const familyDefinition = getSemanticFamilyDefinition("http_surface_assessment");
-    if (!familyTool || !familyDefinition) {
-      throw new Error("Missing builtin semantic family tool definition");
-    }
-
-    const forcedPrimaryFailure: AiTool = {
-      ...createSeededTool("seed-http-recon"),
-      bashSource: "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' '{\"output\":\"forced primary failure\",\"statusReason\":\"primary candidate failed for semantic fallback test\"}'\nexit 64\n"
-    };
-    const forcedSecondarySuccess: AiTool = {
-      ...createSeededTool("seed-httpx"),
-      bashSource: "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' '{\"output\":\"forced secondary success\",\"observations\":[{\"key\":\"semantic-fallback:success\",\"title\":\"Fallback candidate succeeded\",\"summary\":\"Second candidate completed after primary failure.\",\"severity\":\"info\",\"confidence\":0.8,\"evidence\":\"forced fallback evidence\",\"technique\":\"semantic fallback test\"}],\"commandPreview\":\"seed-httpx forced fallback\"}'\n"
-    };
-
-    const runtime = createToolRuntime(new MemoryAiToolsRepository([
-      forcedPrimaryFailure,
-      forcedSecondarySuccess,
-      createSeededTool("seed-http-headers"),
-      createSeededTool("seed-whatweb")
-    ]));
-    const broker = new ToolBroker({ broadcast: () => undefined });
-
-    const family = await executeSemanticFamilyTool({
-      broker,
-      toolRuntime: runtime,
-      familyTool,
-      familyDefinition,
-      target: {
-        baseUrl,
-        host: "127.0.0.1"
-      },
-      scan,
-      tacticId: "tactic-family-fallback",
-      agentId: "agent-family-fallback"
-    }, {
-      target: "127.0.0.1",
-      baseUrl
-    });
-
-    expect(family.result.status).toBe("completed");
-    expect(family.result.usedToolId).toBe("seed-httpx");
-    expect(family.result.fallbackUsed).toBe(true);
-    expect(family.result.attempts).toHaveLength(2);
-    expect(family.result.attempts[0]).toMatchObject({
-      toolId: "seed-http-recon",
-      status: "failed",
-      selected: false
-    });
-    expect(family.result.attempts[1]).toMatchObject({
-      toolId: "seed-httpx",
-      status: "completed",
-      selected: true
-    });
-  });
-
-  it("preserves explicit path targets for SQL injection validation", async () => {
-    const familyTool = getBuiltinAiTool("builtin-sql-injection-validation");
-    const familyDefinition = getSemanticFamilyDefinition("sql_injection_validation");
-    if (!familyTool || !familyDefinition) {
-      throw new Error("Missing builtin semantic family tool definition");
-    }
-
-    const runtime = createToolRuntime(new MemoryAiToolsRepository([
-      createSeededTool("seed-sql-injection-check"),
-      createSeededTool("seed-sqlmap-scan")
-    ]));
-    const broker = new ToolBroker({ broadcast: () => undefined });
-    const exploitAllowedScan = {
-      ...scan,
-      scope: {
-        ...scan.scope,
-        allowActiveExploits: true
-      }
-    };
-    const rawInput = {
-      target: "127.0.0.1",
-      url: `${baseUrl}search`,
-      method: "GET",
-      parameters: ["q"]
-    };
-
-    const family = await executeSemanticFamilyTool({
-      broker,
-      toolRuntime: runtime,
-      familyTool,
-      familyDefinition,
-      target: {
-        baseUrl,
-        host: "127.0.0.1"
-      },
-      scan: exploitAllowedScan,
-      tacticId: "tactic-family-sqli",
-      agentId: "agent-family-sqli"
-    }, rawInput);
-
-    const directTool = createSeededTool(family.result.usedToolId);
-    const direct = await executeDirectSeededTool({
-      broker,
-      runtime,
-      tool: directTool,
-      rawInput,
-      scanOverride: exploitAllowedScan
-    });
-
-    expect(family.result.toolRequest.parameters.toolInput).toEqual(direct.request.parameters.toolInput);
-    expect(family.result.fullOutput).toContain("/search?q=%27+OR+%271%27%3D%271");
-    expect(family.result.fullOutput).not.toContain("/login");
-    expect(family.result.observations.map(comparableObservationShape)).toEqual(direct.observations.map(comparableObservationShape));
-  });
-
-  it("derives semantic family execution target from url input when target is omitted", async () => {
-    const familyTool = getBuiltinAiTool("builtin-sql-injection-validation");
-    const familyDefinition = getSemanticFamilyDefinition("sql_injection_validation");
-    if (!familyTool || !familyDefinition) {
-      throw new Error("Missing builtin semantic family tool definition");
-    }
-
-    const runtime = createToolRuntime(new MemoryAiToolsRepository([
-      createSeededTool("seed-sql-injection-check"),
-      createSeededTool("seed-sqlmap-scan")
-    ]));
-    const broker = new ToolBroker({ broadcast: () => undefined });
-    const exploitAllowedScan = {
-      ...scan,
-      scope: {
-        ...scan.scope,
-        allowActiveExploits: true
-      }
-    };
-    const rawInput = {
-      url: `${baseUrl}search`,
-      method: "GET",
-      parameters: ["q"]
-    };
-
-    const family = await executeSemanticFamilyTool({
-      broker,
-      toolRuntime: runtime,
-      familyTool,
-      familyDefinition,
-      target: {
-        baseUrl,
-        host: "127.0.0.1"
-      },
-      scan: exploitAllowedScan,
-      tacticId: "tactic-family-sqli-url-only",
-      agentId: "agent-family-sqli-url-only"
-    }, rawInput);
-
-    expect(family.result.toolRequest.target).toBe("127.0.0.1");
-    expect(family.result.toolRequest.port).toBe(new URL(baseUrl).port ? Number(new URL(baseUrl).port) : undefined);
-    expect(family.result.toolRequest.parameters.toolInput).toEqual({
-      target: "127.0.0.1",
-      port: new URL(baseUrl).port ? Number(new URL(baseUrl).port) : undefined,
-      baseUrl: `${baseUrl}search`,
-      ...rawInput
-    });
-    expect(family.result.fullOutput).toContain("/search?q=%27+OR+%271%27%3D%271");
-    expect(family.result.fullOutput).not.toContain("/login");
-  });
-
-  it("returns usable evidence for parameter discovery through the semantic family executor", async () => {
-    const familyTool = getBuiltinAiTool("builtin-parameter-discovery");
-    const familyDefinition = getSemanticFamilyDefinition("parameter_discovery");
-    if (!familyTool || !familyDefinition) {
-      throw new Error("Missing builtin semantic family tool definition");
-    }
-
-    const runtime = createToolRuntime(new MemoryAiToolsRepository([
-      createSeededTool("seed-arjun"),
-      createSeededTool("seed-paramspider")
-    ]));
-    const broker = new ToolBroker({ broadcast: () => undefined });
-    const rawInput = {
-      target: "127.0.0.1",
-      url: `${baseUrl}search`,
-      parameters: ["q", "query", "search"]
-    };
-
-    const family = await executeSemanticFamilyTool({
-      broker,
-      toolRuntime: runtime,
-      familyTool,
-      familyDefinition,
-      target: {
-        baseUrl,
-        host: "127.0.0.1"
-      },
-      scan,
-      tacticId: "tactic-family-parameter",
-      agentId: "agent-family-parameter"
-    }, rawInput);
-
-    expect(family.result.status).toBe("completed");
-    expect(family.result.observations).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        key: "parameter:q",
-        title: "Likely parameter discovered: q"
-      })
-    ]));
-  });
-
-  it("treats completed zero-observation semantic runs as negative results instead of failures", async () => {
-    const familyTool = getBuiltinAiTool("builtin-parameter-discovery");
-    const familyDefinition = getSemanticFamilyDefinition("parameter_discovery");
-    if (!familyTool || !familyDefinition) {
-      throw new Error("Missing builtin semantic family tool definition");
-    }
-
-    const runtime = createToolRuntime(new MemoryAiToolsRepository([
-      createSeededTool("seed-arjun"),
-      createSeededTool("seed-paramspider")
-    ]));
-    const broker = new ToolBroker({ broadcast: () => undefined });
-    const rawInput = {
-      target: "127.0.0.1",
-      url: `${baseUrl}health`,
-      candidateParameters: ["unlikely_parameter"],
-      maxRequests: 1
-    };
-
-    const family = await executeSemanticFamilyTool({
-      broker,
-      toolRuntime: runtime,
-      familyTool,
-      familyDefinition,
-      target: {
-        baseUrl,
-        host: "127.0.0.1"
-      },
-      scan,
-      tacticId: "tactic-family-parameter-negative",
-      agentId: "agent-family-parameter-negative"
-    }, rawInput);
-
-    expect(family.result.status).toBe("completed");
-    expect(family.result.publicObservations).toEqual([]);
-    expect(family.result.totalObservations).toBe(0);
-    expect(family.result.truncated).toBe(false);
-    expect(family.response.summary).toContain("No likely parameters were confirmed");
-  });
-
-  it("returns usable reflected-input evidence for xss validation", async () => {
-    const familyTool = getBuiltinAiTool("builtin-xss-validation");
-    const familyDefinition = getSemanticFamilyDefinition("xss_validation");
-    if (!familyTool || !familyDefinition) {
-      throw new Error("Missing builtin semantic family tool definition");
-    }
-
-    const runtime = createToolRuntime(new MemoryAiToolsRepository([
-      createSeededTool("seed-dalfox")
-    ]));
-    const broker = new ToolBroker({ broadcast: () => undefined });
-    const rawInput = {
-      target: "127.0.0.1",
-      url: `${baseUrl}search`,
-      parameters: ["q"]
-    };
-
-    const family = await executeSemanticFamilyTool({
-      broker,
-      toolRuntime: runtime,
-      familyTool,
-      familyDefinition,
-      target: {
-        baseUrl,
-        host: "127.0.0.1"
-      },
-      scan,
-      tacticId: "tactic-family-xss",
-      agentId: "agent-family-xss"
-    }, rawInput);
-
-    expect(family.result.usedToolId).toBe("seed-dalfox");
-    expect(family.result.status).toBe("completed");
-    expect(family.result.observations).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        key: "xss:/search",
-        title: "Reflected input detected on /search"
-      })
-    ]));
-  });
-
-  it("accepts hash-only input for offline password cracking", async () => {
-    const familyTool = getBuiltinAiTool("builtin-offline-password-cracking");
-    const familyDefinition = getSemanticFamilyDefinition("offline_password_cracking");
-    if (!familyTool || !familyDefinition) {
-      throw new Error("Missing builtin semantic family tool definition");
-    }
-
-    const runtime = createToolRuntime(new MemoryAiToolsRepository([
-      createSeededTool("seed-hashcat-crack")
-    ]));
-    const broker = new ToolBroker({ broadcast: () => undefined });
-    const exploitAllowedScan = {
-      ...scan,
-      scope: {
-        ...scan.scope,
-        allowActiveExploits: true
-      }
-    };
-    const rawInput = {
-      hash: "5f4dcc3b5aa765d61d8327deb882cf99",
-      hashType: "md5"
-    };
-
-    const family = await executeSemanticFamilyTool({
-      broker,
-      toolRuntime: runtime,
-      familyTool,
-      familyDefinition,
-      target: {
-        baseUrl,
-        host: "127.0.0.1"
-      },
-      scan: exploitAllowedScan,
-      tacticId: "tactic-family-hashcat",
-      agentId: "agent-family-hashcat"
-    }, rawInput);
-
-    expect(family.result.usedToolId).toBe("seed-hashcat-crack");
-    expect(family.result.status).toBe("completed");
-    expect(family.result.toolRequest.target).toBe("127.0.0.1");
-    expect(family.result.observations).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        key: "hashcat:cracked:md5",
-        title: "Offline password crack succeeded"
-      })
-    ]));
-  });
-
-  it("treats plaintext HTTP as usable TLS posture evidence instead of a dead-end failure", async () => {
-    const familyTool = getBuiltinAiTool("builtin-tls-posture-audit");
-    const familyDefinition = getSemanticFamilyDefinition("tls_posture_audit");
-    if (!familyTool || !familyDefinition) {
-      throw new Error("Missing builtin semantic family tool definition");
-    }
-
-    const runtime = createToolRuntime(new MemoryAiToolsRepository([
-      createSeededTool("seed-tls-audit")
-    ]));
-    const broker = new ToolBroker({ broadcast: () => undefined });
-    const rawInput = {
-      target: "127.0.0.1",
-      baseUrl
-    };
-
-    const family = await executeSemanticFamilyTool({
-      broker,
-      toolRuntime: runtime,
-      familyTool,
-      familyDefinition,
-      target: {
-        baseUrl,
-        host: "127.0.0.1"
-      },
-      scan,
-      tacticId: "tactic-family-tls",
-      agentId: "agent-family-tls"
-    }, rawInput);
-
-    expect(family.result.usedToolId).toBe("seed-tls-audit");
-    expect(family.result.status).toBe("completed");
-    expect(family.result.observations).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        key: expect.stringContaining("plaintext-http"),
-        title: expect.stringContaining("Plaintext HTTP endpoint")
-      })
-    ]));
+    expect(execution.result.outputPreview).toContain("weak password");
   });
 });

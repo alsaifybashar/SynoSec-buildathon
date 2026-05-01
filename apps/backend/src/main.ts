@@ -4,13 +4,10 @@ import { PrismaClient, type Prisma } from "@prisma/client";
 import { loadBackendEnv } from "@/shared/config/backend-env.js";
 import { buildBackendDependencies } from "@/app/build-backend-dependencies.js";
 import { createApp } from "@/app/create-app.js";
-import { validateSeededToolDefinitions } from "@/prisma/seed-data/ai-builder-defaults.js";
 
 const env = loadBackendEnv();
 const port = env.backendPort;
 const host = "0.0.0.0";
-
-validateSeededToolDefinitions();
 
 async function failInterruptedWorkflowRuns() {
   const prisma = new PrismaClient();

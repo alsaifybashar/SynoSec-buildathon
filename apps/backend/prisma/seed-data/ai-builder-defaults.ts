@@ -89,7 +89,6 @@ export const portfolioApplicationId = "1f92a3d7-4f70-4950-b750-9bf74c6f3591";
 export const securePentApplicationId = "4d8e9e0a-bfd4-4b24-8fb9-8656b511a2b8";
 export const osiSingleAgentWorkflowId = "8b57f0e7-1dd7-4d6a-8db5-c4ff7be80a21";
 export const attackVectorPlanningWorkflowId = "9b59b237-c956-44db-aab0-a46b9f4bf8b3";
-export const bashSingleToolWorkflowId = "6b8d087e-43bc-48d8-8e66-a167f8d9f5cb";
 export const portfolioEvidenceGraphWorkflowId = "5edb1601-27cf-4a87-b7d4-a50873f5d985";
 
 const defaultWorkflowStagePrompts = {
@@ -101,7 +100,6 @@ function buildCanonicalPrompt(sections: {
   scopeAndSafety: string[];
   evidenceAndReporting: string[];
   blockedOrFailed: string[];
-  examples?: string[];
 }) {
   return [
     "Role and goal:",
@@ -114,187 +112,44 @@ function buildCanonicalPrompt(sections: {
     ...sections.evidenceAndReporting,
     "",
     "Blocked or failed behavior:",
-    ...sections.blockedOrFailed,
-    ...(sections.examples
-      ? [
-          "",
-          "Examples:",
-          ...sections.examples
-        ]
-      : [])
+    ...sections.blockedOrFailed
   ].join("\n");
 }
 
-function buildExamplesSection(examples: Array<{ input: string[]; expectedBehavior: string[] }>) {
-  return [
-    "<examples>",
-    ...examples.flatMap((example) => [
-      "<example>",
-      "<input>",
-      ...example.input,
-      "</input>",
-      "<expected_behavior>",
-      ...example.expectedBehavior,
-      "</expected_behavior>",
-      "</example>"
-    ]),
-    "</examples>"
-  ];
-}
-
-const planningAttackPathExamples = buildExamplesSection([
-  {
-    input: [
-      "Observed artifacts: leaked `caseRef=cs-4821` and `workspace=acme-support` on a support listing page."
-    ],
-    expectedBehavior: [
-      "Prioritize the derived case-detail transition next: test `GET /api/support/cases/cs-4821?workspace=acme-support` before repeating generic crawl or audit steps.",
-      "Treat the path as confirmed only if the follow-on request succeeds with evidence."
-    ]
-  },
-  {
-    input: [
-      "Observed artifacts: leaked `email=analyst@target.test` and `nonce=884211` from a client-side auth response."
-    ],
-    expectedBehavior: [
-      "Prioritize the exact recovery transition next: test the magic-link flow with those values at `/api/auth/magic-link` instead of inventing a different login route.",
-      "Record the path as plausible until the request proves the nonce is accepted."
-    ]
-  },
-  {
-    input: [
-      "Observed artifacts: leaked `buildId=rel-202`, approval token, or session token tied to a release flow."
-    ],
-    expectedBehavior: [
-      "Prioritize the adjacent release-secrets transition next: test whether those prerequisites unlock `/api/release/secrets`.",
-      "Do not claim secret access or production impact unless that transition is validated."
-    ]
-  },
-  {
-    input: [
-      "No discovered route, script, form, or response mentions `/login`, `/approve`, or `/promote`."
-    ],
-    expectedBehavior: [
-      "Do not invent those auth or approval surfaces as the next step.",
-      "If a route-not-found response already rejected a guessed endpoint, stop expanding that unsupported route family without new evidence."
-    ]
-  },
-  {
-    input: [
-      "A page and its linked assets were already fetched, and they exposed a candidate artifact for a follow-on request."
-    ],
-    expectedBehavior: [
-      "Prefer one derived transition request using the observed artifact over repeating the same audit, crawl, or fetch with no new hypothesis."
-    ]
-  }
-]);
-
-const operationalAttackPathExamples = buildExamplesSection([
-  {
-    input: [
-      "Observed artifacts: leaked `caseRef=cs-4821` and `workspace=acme-support` on a support listing page."
-    ],
-    expectedBehavior: [
-      "Make the derived request next: `GET /api/support/cases/cs-4821?workspace=acme-support`.",
-      "Do not loop back to the same support list, crawl, or generic audit unless the follow-on request changes method, parameters, headers, or body in a way that tests a new hypothesis."
-    ]
-  },
-  {
-    input: [
-      "Observed artifacts: leaked `email=analyst@target.test` and `nonce=884211` from a client-side auth response."
-    ],
-    expectedBehavior: [
-      "Test the exact adjacent endpoint next: `POST /api/auth/magic-link` with that `email` and `nonce`.",
-      "Do not switch to invented `/login` or password-reset routes when the application has already exposed the magic-link flow."
-    ]
-  },
-  {
-    input: [
-      "Observed artifacts: leaked `buildId=rel-202` plus an approval token or session token tied to a release workflow."
-    ],
-    expectedBehavior: [
-      "Use those exact prerequisites to test `GET /api/release/secrets?buildId=rel-202` or the same endpoint with the observed approval or session artifact in the expected header or cookie position.",
-      "Only report a confirmed critical chain if the release-secrets transition is actually accepted."
-    ]
-  },
-  {
-    input: [
-      "No discovered route, script, form, or response mentions `/login`, `/approve`, or `/promote`."
-    ],
-    expectedBehavior: [
-      "Do not invent those auth or approval surfaces.",
-      "After route-not-found style failures, stop probing unsupported route families unless new source evidence exposes them."
-    ]
-  },
-  {
-    input: [
-      "A page and its linked assets were already fetched, and they exposed a candidate artifact for a follow-on request."
-    ],
-    expectedBehavior: [
-      "Prefer one derived transition request using the observed artifact over repeating the same audit, crawl, or fetch on already-seen pages."
-    ]
-  }
-]);
-
 const attackVectorPlanningStagePrompt = [
   "Role and goal:",
-  "Complete the current workflow stage by mapping plausible attack venues, attack vectors, and prioritized attack paths across the approved target surface.",
-  "",
-  "Working style:",
-  "Keep progress updates concise and action-oriented.",
+  "Map plausible attack venues, attack vectors, and prioritized attack paths across the approved target surface.",
   "",
   "Evidence expectations:",
-  "Prefer concrete, evidence-backed findings over unsupported narrative.",
-  "Use persisted tool-result quotes as evidence; do not invent evidence.",
-  "Distinguish confirmed findings from weaker hypotheses when the evidence is incomplete.",
-  "Do not describe an attack path as confirmed compromise, takeover, credential theft, or privilege escalation unless the final outcome was directly observed or the transition was validated end-to-end.",
-  "If individual findings are confirmed but the full chain lacks replay, label the path as plausible or qualified and state the missing validation explicitly.",
-  "",
-  "Finding and path requirements:",
-  "Report 1-4 supported weaknesses.",
-  "Use returned finding ids when linking findings, reporting attack vectors, and building handoff paths.",
-  "When one finding enables or supports another, submit explicit attack-vector records after both findings exist.",
-  "Each linked path must state what the venue exposes, what the vector requires, which finding ids support it, and what uncertainty remains.",
+  "Keep findings and path claims grounded in evidence.",
+  "Separate confirmed findings from unverified attack-path outcomes.",
   "",
   "Stage result expectations:",
-  "Use the handoff to summarize attackVenues, attackVectors, and prioritized attackPaths.",
-  "Every handoff attack path must reference returned finding ids.",
-  "Separate confirmed findings from unproven attack-path outcomes.",
-  "Present recommended next steps as validation work unless compromise was directly observed.",
+  "Produce attackVenues, attackVectors, and attackPaths in the handoff.",
+  "Use returned finding ids when linking findings, reporting attack vectors, and building handoff paths.",
+  "Present next steps as validation work unless end-to-end impact was directly observed.",
   "",
-  "Examples:",
-  ...planningAttackPathExamples
+  "Blocked or failed behavior:",
+  "If evidence is incomplete, state what was proven, what remains unverified, and why."
 ].join("\n");
 
 const bashAttackPathStagePrompt = buildCanonicalPrompt({
   roleAndGoal: [
-    "Evaluate the target’s cybersecurity with an attack-path-first approach.",
-    "Identify whether multiple lower-severity weaknesses can be chained to reach a protected asset, privileged action, sensitive secret, account or session, internal service, or production-impacting capability."
+    "Assess the target and complete the stage through the approved workflow surface.",
+    "Focus on evidence-backed findings and any supported attack-path relationships between them."
   ],
   scopeAndSafety: [
-    "Use only the approved workflow tools exposed for this run.",
-    "Choose the narrowest approved tool that fits the current hypothesis and do not ask for raw tool access, alternate execution paths, or brand-specific substitutions.",
-    "When the approved tool is `bash`, you may invoke installed binaries available in the execution environment through shell commands when they materially help validate the current hypothesis.",
-    "Map exposed pages, APIs, parameters, forms, linked resources, and leaked operational artifacts before escalating to higher-impact claims.",
-    "When public data exposes identifiers, tokens, emails, nonces, workspace names, case references, or build ids, derive the exact next request those artifacts are most likely to unlock before broad guessing.",
-    "Do not invent unsupported endpoint families such as `/promote` or `/validate` unless the application exposed them directly through routes, hints, forms, links, scripts, or observed responses.",
-    "Do not treat scanner-friendly issues such as missing headers, reflected input, version disclosure, or health metadata as primary findings unless you prove concrete downstream impact."
+    "Stay within the approved workflow surface for this run.",
+    "Use bash to gather or validate evidence that is directly relevant to the current task."
   ],
   evidenceAndReporting: [
-    "Validate each reported finding with concrete request and response evidence.",
-    "Validate attack vectors by proving that output from one step is accepted by the next step.",
-    "Prefer completed chains over isolated findings, but do not invent missing transitions.",
-    "Prioritize findings that act as attack-path steps, such as prerequisite leaks, weak object lookup, weak recovery or session creation flows, client-supplied authorization controls, or endpoints that unlock secrets or privileged state after chained prerequisites.",
-    "Prefer one concrete transition validation over repeated fetches of already-seen pages, and only repeat a request when a changed method, parameter, body, header, or artifact meaningfully tests the hypothesis.",
-    "For each strong finding, state the role it plays in the attack path and include attack vectors between existing finding ids when one finding enables another.",
-    "Prefer at most four strong findings and avoid inflating severity when the evidence only proves a lower-impact condition."
+    "Report only findings that were validated with concrete evidence.",
+    "Separate confirmed findings from unverified attack-path hypotheses.",
+    "When findings connect, record explicit attack-vector relationships between reported findings."
   ],
   blockedOrFailed: [
-    "If a suspected chain cannot be completed, report what was proven, what blocked completion, and what uncertainty remains without inventing missing steps.",
-    "Stop probing unsupported routes after route-not-found style errors if no source evidence points there.",
-    "Preserve original tool failures and keep unsupported vulnerability links or attack paths out of findings."
-  ],
-  examples: operationalAttackPathExamples
+    "Preserve original tool failures and state what prevented further validation."
+  ]
 });
 
 const attackPathSemanticFamilyToolIds = [
@@ -319,7 +174,7 @@ const workflowBuiltinActionToolIds = [
   "builtin-complete-run"
 ] as const;
 
-export type SeededRoleKey = "generic-pentester" | "bash-poc-agent";
+export type SeededRoleKey = "generic-pentester";
 
 function withConstraintProfile<
   T extends {
@@ -390,101 +245,14 @@ function withConstraintProfile<
   } as const;
 }
 
-const rawSeededToolDefinitions = [
-  authFlowProbeTool,
-  jwtAnalyzerTool,
-  contentDiscoveryTool,
-  dirbScanTool,
-  ffufScanTool,
-  gobusterScanTool,
-  webCrawlTool,
-  metasploitFrameworkTool,
-  binwalkTool,
-  bulkExtractorTool,
-  exifToolTool,
-  foremostTool,
-  scalpelTool,
-  steghideInfoTool,
-  volatilityTool,
-  autoreconTool,
-  masscanTool,
-  ncatProbeTool,
-  netcatProbeTool,
-  nmapScanTool,
-  rustScanTool,
-  serviceFingerprintTool,
-  serviceScanTool,
-  tlsAuditTool,
-  networkSegmentMapTool,
-  cipherIdentifierTool,
-  hashIdentifierTool,
-  hashcatCrackTool,
-  hydraTool,
-  johntheRipperTool,
-  medusaTool,
-  ophcrackTool,
-  patatorTool,
-  amassEnumTool,
-  dNSenumTool,
-  fierceTool,
-  subfinderTool,
-  sublist3rEnumTool,
-  theHarvesterTool,
-  agentBashCommandTool,
-  bashProbeTool,
-  checksecTool,
-  gDBTool,
-  ghidraTool,
-  kubebenchTool,
-  kubehunterTool,
-  objdumpTool,
-  prowlerTool,
-  radare2Tool,
-  scoutSuiteTool,
-  stringsTool,
-  trivyTool,
-  arjunTool,
-  burpSuiteTool,
-  dalfoxTool,
-  dirsearchTool,
-  feroxbusterTool,
-  gauTool,
-  hakrawlerTool,
-  httpHeadersTool,
-  httpReconTool,
-  hTTPxTool,
-  katanaTool,
-  niktoScanTool,
-  nucleiTool,
-  paramSpiderTool,
-  sqlInjectionCheckTool,
-  sqlmapScanTool,
-  vulnAuditTool,
-  waybackurlsTool,
-  whatWebTool,
-  wPScanTool,
-  crackMapExecTool,
-  enum4linuxngTool,
-  enum4linuxTool,
-  evilWinRMTool,
-  netExecTool,
-  responderTool
-] as const;
+const rawSeededToolDefinitions: Array<typeof authFlowProbeTool> = [];
 
 export const seededToolDefinitions = rawSeededToolDefinitions.map((tool) => withConstraintProfile(tool));
 
-export const directScriptToolIds = seededToolDefinitions
-  .filter((tool) => tool.executorType === "bash" && tool.bashSource.trim().length > 0)
-  .map((tool) => tool.id);
+export const directScriptToolIds: string[] = [];
 
 export function validateSeededToolDefinitions() {
-  for (const tool of seededToolDefinitions) {
-    const bashSource = tool.bashSource;
-
-    if (typeof bashSource !== "string" || bashSource.trim().length === 0) {
-      throw new Error(`Seeded tool ${tool.id} did not resolve a valid bashSource.`);
-    }
-  }
+  return;
 }
 
 export const seededRoleDefinitions = [
@@ -495,65 +263,25 @@ export const seededRoleDefinitions = [
     toolAccessMode: "system" as const,
     systemPrompt: buildCanonicalPrompt({
       roleAndGoal: [
-        "Map how weaknesses may connect, identify plausible attack paths, and keep every linked vulnerability grounded in evidence or explicitly qualified uncertainty."
+        "Map plausible attack paths and keep linked vulnerabilities grounded in evidence or clearly qualified uncertainty."
       ],
       scopeAndSafety: [
-        "Do not ask for raw tool access, brand-specific substitutions, or alternate execution paths outside the exposed workflow surface."
+        "Stay within the workflow surface exposed for the run."
       ],
       evidenceAndReporting: [
-        "Prefer structured evidence-backed findings over free-form narrative.",
-        "Focus on linking potential vulnerabilities, preconditions, and follow-on impact rather than reporting isolated observations with no attack-path context.",
-        "Distinguish confirmed findings, plausible hypotheses, and rejected leads in your reporting.",
-        "For concrete supported findings and plausible linked vulnerabilities with partial evidence, use lower confidence and validationStatus such as suspected or unverified.",
-        "When findings connect, report the findings first and then capture the relationship with explicit attack-vector records instead of implying the connection only in prose.",
-        "Use finding summaries and explicit attack vectors to explain why a weakness matters in an attack path and what uncertainty remains.",
-        "Each finding should describe the affected asset or URL, the preconditions that make the issue matter, the observed or plausible impact, and the most direct remediation.",
-        "Keep operator-visible progress updates short and action-oriented, and treat them as secondary to evidence quality."
+        "Prefer evidence-backed findings over unsupported narrative.",
+        "Separate confirmed findings from suspected or unverified conclusions.",
+        "When findings connect, capture the relationship with explicit attack-vector records."
       ],
       blockedOrFailed: [
-        "If evidence does not support a vulnerability link or attack path, keep it out of findings, preserve the original uncertainty, and close with a qualified summary of the remaining hypotheses."
+        "If evidence does not support a claim, keep it out of findings and preserve the uncertainty."
       ]
-    }),
-  },
-  {
-    key: "bash-poc-agent" as const,
-    name: "Just Bash",
-    description: "Proof-of-concept agent with a single seeded bash execution tool.",
-    toolAccessMode: "system_plus_custom" as const,
-    systemPrompt: buildCanonicalPrompt({
-      roleAndGoal: [
-        "Evaluate the target’s cybersecurity with an attack-path-first approach.",
-        "Identify whether multiple lower-severity weaknesses can be chained to reach a protected asset, privileged action, sensitive secret, account or session, internal service, or production-impacting capability."
-      ],
-      scopeAndSafety: [
-        "Use only the approved workflow tool surface and do not ask for raw tool access, alternate execution paths, or brand-specific substitutions.",
-        "Choose the narrowest approved tool that fits the current hypothesis.",
-        "When the approved tool is `bash`, you may invoke installed binaries available in the execution environment through shell commands when they materially help validate the current hypothesis.",
-        "When public data exposes identifiers, tokens, emails, nonces, workspace names, case references, or build ids, derive the exact next request those artifacts are most likely to unlock before broad guessing.",
-        "Do not invent unsupported endpoint families such as `/promote` or `/validate` unless the application exposed them directly through routes, hints, forms, links, scripts, or observed responses.",
-        "Do not treat scanner-friendly issues as the main result unless you prove concrete downstream impact."
-      ],
-      evidenceAndReporting: [
-        "Validate each reported finding with concrete request and response evidence.",
-        "Validate attack vectors by proving that output from one step is accepted by the next step.",
-        "Prefer completed chains over isolated findings, but do not invent missing transitions.",
-        "Prioritize findings that act as attack-path steps, such as prerequisite leaks, weak object lookup, weak recovery or session creation flows, client-supplied authorization controls, or endpoints that unlock secrets or privileged state after chained prerequisites.",
-        "Prefer one concrete transition validation over repeated fetches of already-seen pages, and only repeat a request when a changed method, parameter, body, header, or artifact meaningfully tests the hypothesis.",
-        "For each strong finding, include the role it plays in the attack path and include attack vectors between existing finding ids when one finding enables another.",
-        "Prefer at most four strong findings and do not inflate severity when the evidence only proves a lower-impact condition."
-      ],
-      blockedOrFailed: [
-        "If a suspected chain cannot be completed, report what was proven, what blocked completion, and what uncertainty remains without inventing missing steps.",
-        "Stop probing unsupported routes after route-not-found style errors if no source evidence points there."
-      ],
-      examples: operationalAttackPathExamples
     }),
   }
 ] as const;
 
 export const seededAgentIds = {
-  "anthropic:generic-pentester": "4c526f02-d11c-4e01-aeb4-a84f271ec3bc",
-  "anthropic:bash-poc-agent": "56e647a5-3fa2-4c52-a937-61b17f88bc9d"
+  "anthropic:generic-pentester": "4c526f02-d11c-4e01-aeb4-a84f271ec3bc"
 } as const;
 
 export function seededAgentId(roleKey: SeededRoleKey) {
@@ -610,56 +338,25 @@ export function getSeededWorkflowDefinitions() {
             requireChainedFindings: true
           },
           resultSchemaVersion: 1,
-          handoffSchema: attackPathHandoffJsonSchema
-        }
-      ]
-    },
-    {
-      id: bashSingleToolWorkflowId,
-      name: "Bash Single-Tool PoC",
-      status: "active" as const,
-      executionKind: "workflow" as const,
-      description: "Proof-of-concept workflow where agent execution is constrained to one seeded bash tool plus built-in reporting actions.",
-      stages: [
-        {
-          id: "84f366d7-638d-4403-a012-0f27d4e6e981",
-          label: "Bash Execution",
-          agentId: seededAgentId("bash-poc-agent"),
-          objective:
-            "Complete the task by calling the bash tool with structured arguments. Put bash source in `command` and keep execution metadata in dedicated fields.",
-          ...defaultWorkflowStagePrompts,
-          stageSystemPrompt: bashAttackPathStagePrompt,
-          allowedToolIds: [
-            ...workflowBuiltinActionToolIds,
-            "seed-agent-bash-command"
-          ],
-          requiredEvidenceTypes: [],
-          findingPolicy: {
-            taxonomy: "typed-core-v1",
-            allowedTypes: [
-              "service_exposure",
-              "content_discovery",
-              "missing_security_header",
-              "tls_weakness",
-              "injection_signal",
-              "auth_weakness",
-              "sensitive_data_exposure",
-              "misconfiguration",
-              "other"
-            ]
-          },
-          completionRule: {
-            requireStageResult: true,
-            requireToolCall: true,
-            allowEmptyResult: false,
-            minFindings: 0,
-            requireReachableSurface: false,
-            requireEvidenceBackedWeakness: false,
-            requireOsiCoverageStatus: false,
-            requireChainedFindings: false
-          },
-          resultSchemaVersion: 1,
-          handoffSchema: null
+          handoffSchema: attackPathHandoffJsonSchema,
+          tasks: [
+            {
+              id: "map-reachable-surface",
+              title: "Map reachable surface",
+              objective: "Confirm at least one externally reachable HTTP entry point and capture grounded evidence.",
+              suggestedCapabilities: ["http-surface"],
+              suggestedToolIds: [],
+              completionCriteria: "report_resource accepts at least one resource backed by tool evidence."
+            },
+            {
+              id: "chain-finding-paths",
+              title: "Chain plausible attack paths",
+              objective: "Identify two or more findings whose evidence supports a chained attack vector and persist the relationships.",
+              suggestedCapabilities: ["auth", "injection-detection"],
+              suggestedToolIds: [],
+              completionCriteria: "report_relationship and report_attack_path accept entries that reference prior finding IDs."
+            }
+          ]
         }
       ]
     }

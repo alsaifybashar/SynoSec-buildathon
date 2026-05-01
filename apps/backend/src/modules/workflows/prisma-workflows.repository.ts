@@ -62,23 +62,27 @@ function computeWorkflowLaunchStatus(runs: Array<{ status: WorkflowRun["status"]
 }
 
 function toWorkflowStageCreateManyInput(
-  stage: { id?: string | undefined; label: string } & Record<string, unknown>,
+  stage: { id?: string | undefined; agentId: string; label: string } & Record<string, unknown>,
   index: number
 ): Prisma.WorkflowStageCreateManyWorkflowInput {
   const contract = normalizeWorkflowStageContract(stage);
   return {
     id: stage.id ?? randomUUID(),
+    agentId: stage.agentId,
     label: stage.label,
     ord: index,
     objective: contract.objective,
     stageSystemPrompt: contract.stageSystemPrompt,
     taskPromptTemplate: null,
     allowedToolIds: contract.allowedToolIds as Prisma.InputJsonValue,
+    requiredCapabilities: contract.requiredCapabilities as Prisma.InputJsonValue,
+    forbiddenCapabilities: contract.forbiddenCapabilities as Prisma.InputJsonValue,
     requiredEvidenceTypes: contract.requiredEvidenceTypes as Prisma.InputJsonValue,
     findingPolicy: contract.findingPolicy as Prisma.InputJsonValue,
     completionRule: contract.completionRule as Prisma.InputJsonValue,
     resultSchemaVersion: contract.resultSchemaVersion,
-    handoffSchema: (contract.handoffSchema ?? Prisma.JsonNull) as Prisma.InputJsonValue
+    handoffSchema: (contract.handoffSchema ?? Prisma.JsonNull) as Prisma.InputJsonValue,
+    tasks: contract.tasks as Prisma.InputJsonValue
   } as Prisma.WorkflowStageCreateManyWorkflowInput;
 }
 
@@ -170,16 +174,26 @@ export class PrismaWorkflowsRepository implements WorkflowsRepository {
       ? input.stages
       : orderedStages.map((stage) => ({
           id: stage.id,
+          agentId: stage.agentId,
           label: stage.label,
           objective: stage.objective ?? undefined,
           stageSystemPrompt: (stage as { stageSystemPrompt?: string | null }).stageSystemPrompt ?? undefined,
           taskPromptTemplate: (stage as { taskPromptTemplate?: string | null }).taskPromptTemplate ?? undefined,
           allowedToolIds: Array.isArray(stage.allowedToolIds) ? stage.allowedToolIds.map(String) : [],
+          requiredCapabilities: Array.isArray((stage as { requiredCapabilities?: unknown }).requiredCapabilities)
+            ? ((stage as { requiredCapabilities: unknown[] }).requiredCapabilities).map(String)
+            : [],
+          forbiddenCapabilities: Array.isArray((stage as { forbiddenCapabilities?: unknown }).forbiddenCapabilities)
+            ? ((stage as { forbiddenCapabilities: unknown[] }).forbiddenCapabilities).map(String)
+            : [],
           requiredEvidenceTypes: Array.isArray(stage.requiredEvidenceTypes) ? stage.requiredEvidenceTypes.map(String) : [],
           findingPolicy: stage.findingPolicy as Record<string, unknown> | undefined,
           completionRule: stage.completionRule as Record<string, unknown> | undefined,
           resultSchemaVersion: stage.resultSchemaVersion,
-          handoffSchema: stage.handoffSchema as Record<string, unknown> | null | undefined
+          handoffSchema: stage.handoffSchema as Record<string, unknown> | null | undefined,
+          ...(Array.isArray((stage as { tasks?: unknown }).tasks)
+            ? { tasks: (stage as { tasks: unknown[] }).tasks }
+            : {})
         }));
 
     const workflow = await this.prisma.$transaction(async (transaction) => {

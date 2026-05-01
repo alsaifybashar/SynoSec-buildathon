@@ -36,6 +36,12 @@ function mapWorkflowStageRow(row: WorkflowStageRow) {
     ...(row.objective ? { objective: row.objective } : {}),
     ...(persistedStageSystemPrompt ? { stageSystemPrompt: persistedStageSystemPrompt } : {}),
     ...(Array.isArray(row.allowedToolIds) ? { allowedToolIds: row.allowedToolIds.map(String) } : {}),
+    ...(Array.isArray((row as { requiredCapabilities?: unknown }).requiredCapabilities)
+      ? { requiredCapabilities: ((row as { requiredCapabilities: unknown[] }).requiredCapabilities).map(String) }
+      : {}),
+    ...(Array.isArray((row as { forbiddenCapabilities?: unknown }).forbiddenCapabilities)
+      ? { forbiddenCapabilities: ((row as { forbiddenCapabilities: unknown[] }).forbiddenCapabilities).map(String) }
+      : {}),
     ...(Array.isArray(row.requiredEvidenceTypes) ? { requiredEvidenceTypes: row.requiredEvidenceTypes.map(String) } : {}),
     ...(row.findingPolicy && typeof row.findingPolicy === "object" && !Array.isArray(row.findingPolicy)
       ? { findingPolicy: row.findingPolicy as Record<string, unknown> }
@@ -46,11 +52,15 @@ function mapWorkflowStageRow(row: WorkflowStageRow) {
     resultSchemaVersion: row.resultSchemaVersion,
     ...(row.handoffSchema && typeof row.handoffSchema === "object" && !Array.isArray(row.handoffSchema)
       ? { handoffSchema: row.handoffSchema as Record<string, unknown> }
+      : {}),
+    ...(Array.isArray((row as { tasks?: unknown }).tasks)
+      ? { tasks: (row as { tasks: unknown[] }).tasks }
       : {})
   });
 
   return {
     id: row.id,
+    agentId: row.agentId,
     label: row.label,
     ord: row.ord,
     ...contract

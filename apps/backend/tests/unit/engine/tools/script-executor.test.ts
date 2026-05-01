@@ -76,13 +76,35 @@ describe("executeScriptedTool", () => {
     });
   });
 
-  it("rejects invalid JSON envelopes", async () => {
-    await expect(executeScriptedTool(createContext({
+  it("degrades gracefully when stdout is not valid JSON", async () => {
+    const result = await executeScriptedTool(createContext({
       bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' 'not json'"
-    }))).rejects.toMatchObject({
-      status: 500,
-      code: "AI_TOOL_INVALID_RESULT_JSON"
-    });
+    }));
+
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain("not json");
+    expect(result.statusReason).toMatch(/unstructured result/i);
+    expect(result.observations).toEqual([]);
+  });
+
+  it("degrades gracefully when stdout is empty and surfaces stderr + exit code", async () => {
+    const result = await executeScriptedTool(createContext({
+      bashSource: "#!/usr/bin/env bash\nprintf 'boom\\n' >&2\nexit 7"
+    }));
+
+    expect(result.exitCode).toBe(7);
+    expect(result.output).toBe("boom");
+    expect(result.statusReason).toMatch(/no structured envelope/i);
+  });
+
+  it("surfaces durationMs from successful runs", async () => {
+    const result = await executeScriptedTool(createContext({
+      bashSource: "#!/usr/bin/env bash\nprintf '%s\\n' '{\"output\":\"ok\"}'"
+    }));
+
+    expect(result.exitCode).toBe(0);
+    expect(typeof result.durationMs).toBe("number");
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
 
   it("returns a timeout result when the script exceeds the configured timeout", async () => {

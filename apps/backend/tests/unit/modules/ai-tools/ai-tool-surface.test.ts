@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { AiTool } from "@synosec/contracts";
-import { classifyAiToolKind, isRegistryVisibleAiTool } from "@/modules/ai-tools/ai-tool-surface.js";
+import {
+  classifyAiToolKind,
+  isRegistryVisibleAiTool,
+  resolveStageToolsByCapability,
+  resolveWorkflowStageTools
+} from "@/modules/ai-tools/ai-tool-surface.js";
 
 function createTool(overrides: Partial<AiTool> = {}): AiTool {
   return {
@@ -54,5 +59,59 @@ describe("ai tool surface", () => {
     expect(isRegistryVisibleAiTool(builtinAction)).toBe(true);
     expect(classifyAiToolKind(builtinMappedFunction)).toBe("builtin-action");
     expect(isRegistryVisibleAiTool(builtinMappedFunction)).toBe(true);
+  });
+});
+
+describe("resolveStageToolsByCapability", () => {
+  const httpTool = createTool({
+    id: "builtin-http-surface-assessment",
+    executorType: "builtin",
+    bashSource: null,
+    capabilities: ["http-surface", "web", "passive"]
+  });
+  const authTool = createTool({
+    id: "builtin-auth-flow",
+    executorType: "builtin",
+    bashSource: null,
+    capabilities: ["auth", "web", "active"]
+  });
+  const inactiveTool = createTool({
+    id: "builtin-inactive",
+    executorType: "builtin",
+    bashSource: null,
+    status: "inactive",
+    capabilities: ["http-surface"]
+  });
+  const all = [httpTool, authTool, inactiveTool];
+
+  it("returns all eligible tools when spec is empty", () => {
+    const out = resolveStageToolsByCapability(all, {});
+    expect(out.map((tool) => tool.id)).toEqual([httpTool.id, authTool.id]);
+  });
+
+  it("treats allowedToolIds as an explicit override", () => {
+    const out = resolveStageToolsByCapability(all, {
+      allowedToolIds: [authTool.id, "missing-id"],
+      requiredCapabilities: ["http-surface"]
+    });
+    expect(out.map((tool) => tool.id)).toEqual([authTool.id]);
+  });
+
+  it("filters by required capabilities", () => {
+    const out = resolveStageToolsByCapability(all, { requiredCapabilities: ["http-surface", "web"] });
+    expect(out.map((tool) => tool.id)).toEqual([httpTool.id]);
+  });
+
+  it("excludes tools matching forbidden capabilities", () => {
+    const out = resolveStageToolsByCapability(all, {
+      requiredCapabilities: ["web"],
+      forbiddenCapabilities: ["active"]
+    });
+    expect(out.map((tool) => tool.id)).toEqual([httpTool.id]);
+  });
+
+  it("resolveWorkflowStageTools delegates to the resolver for back-compat", () => {
+    const out = resolveWorkflowStageTools(all, [authTool.id]);
+    expect(out.map((tool) => tool.id)).toEqual([authTool.id]);
   });
 });

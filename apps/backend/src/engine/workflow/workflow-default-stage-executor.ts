@@ -37,6 +37,10 @@ import { createScan, getScan } from "@/engine/scans/index.js";
 import { RequestError } from "@/shared/http/request-error.js";
 import type { FixedAiRuntime } from "@/shared/config/fixed-ai-runtime.js";
 import { getSemanticFamilyDefinition } from "@/modules/ai-tools/index.js";
+import type { SemanticFamilyDefinition } from "@/modules/ai-tools/semantic-family-tools.js";
+import { formatToolCatalogForLLM } from "./tool-catalog-formatter.js";
+import { formatPriorFindingLineage } from "./prior-findings.js";
+import { expandStageTasks } from "./stage-tasks.js";
 import { ToolBroker } from "./broker/tool-broker.js";
 import { executeSemanticFamilyTool } from "./semantic-family-tool-executor.js";
 import {
@@ -167,9 +171,11 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     const executionContract = runtime.provider === "local"
       ? LOCAL_WORKFLOW_EXECUTION_CONTRACT
       : defaultWorkflowExecutionContract;
+    const stageTasksSection = expandStageTasks(stage, tools);
     const baseSystemPrompt = [
       renderedStageSystemPrompt,
       targetContextPrompt,
+      stageTasksSection,
       workflowOwnsExecutionContract ? null : executionContract
     ].filter((part): part is string => typeof part === "string" && part.trim().length > 0).join("\n\n");
     const builtinLifecycleToolNames = new Set([
@@ -191,6 +197,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       exposedName: string;
       tool: typeof tools[number];
       description: string;
+      familyDefinition?: SemanticFamilyDefinition;
       execute: (rawInput: unknown) => Promise<unknown>;
     }> = [];
     for (const tool of tools) {
@@ -303,6 +310,7 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         exposedName: tool.builtinActionKey,
         tool,
         description: tool.description ?? tool.name,
+        familyDefinition,
         execute: async (rawInput: unknown) => {
           const familyExecution = await executeSemanticFamilyTool({
             broker: this.broker,
@@ -337,29 +345,30 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
     }>();
     let acceptedReportingActionCount = 0;
 
-    const toolContext = this.formatToolContextSections([
+    const toolContext = formatToolCatalogForLLM([
       {
         title: "Evidence tools",
-        tools: evidenceToolEntries.map((entry) => ({
-            name: entry.exposedName,
-            description: entry.description
-          }))
+        entries: evidenceToolEntries.map((entry) => ({
+          exposedName: entry.exposedName,
+          tool: entry.tool,
+          ...(entry.familyDefinition ? { familyDefinition: entry.familyDefinition } : {})
+        }))
       },
       {
         title: "Built-in actions",
-        tools: [
-          { name: "log_progress", description: "Persist a short operator-visible progress update in the workflow transcript. Use this before or after meaningful tool calls to explain the current action or decision in one concise sentence. Provide `message`. Returns acceptance only; it does not create evidence, findings, or attack-path links." },
+        entries: [
+          { exposedName: "log_progress", literalDescription: "Persist a short operator-visible progress update in the workflow transcript. Use this before or after meaningful tool calls to explain the current action or decision in one concise sentence. Provide `message`. Returns acceptance only; it does not create evidence, findings, or attack-path links." },
           ...(runtime.provider === "local"
             ? [
-                { name: "report_resource", description: buildReportResourceDescription() },
-                { name: "report_finding", description: buildReportFindingDescription() },
-                { name: "report_relationship", description: buildReportRelationshipDescription(stage) },
-                { name: "report_attack_path", description: buildReportAttackPathDescription(stage) }
+                { exposedName: "report_resource", literalDescription: buildReportResourceDescription() },
+                { exposedName: "report_finding", literalDescription: buildReportFindingDescription() },
+                { exposedName: "report_relationship", literalDescription: buildReportRelationshipDescription(stage) },
+                { exposedName: "report_attack_path", literalDescription: buildReportAttackPathDescription(stage) }
               ]
             : [
-                { name: "report_system_graph_batch", description: buildReportSystemGraphBatchDescription(stage) }
+                { exposedName: "report_system_graph_batch", literalDescription: buildReportSystemGraphBatchDescription(stage) }
               ]),
-          { name: "complete_run", description: buildCompleteRunDescription(stage) }
+          { exposedName: "complete_run", literalDescription: buildCompleteRunDescription(stage) }
         ]
       }
     ]);
@@ -434,9 +443,10 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
         appendEvent
       }, preRunResults, executedResults)
       : null;
-    const systemPrompt = preRunSummary
-      ? [baseSystemPrompt, preRunSummary].filter((part) => part.trim().length > 0).join("\n\n")
-      : baseSystemPrompt;
+    const priorFindingsLineage = formatPriorFindingLineage([...reportedFindings.values()]);
+    const systemPrompt = [baseSystemPrompt, priorFindingsLineage, preRunSummary]
+      .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+      .join("\n\n");
 
     await appendEvent("system_message", "completed", {
       title: "Rendered system prompt",
@@ -2469,20 +2479,6 @@ export class DefaultWorkflowStageExecutor implements WorkflowStageRunner {
       }
       return replacement;
     });
-  }
-
-  private formatToolContextSections(sections: Array<{ title: string; tools: Array<{ name: string; description: string | null | undefined }> }>) {
-    return sections
-      .map((section) => {
-        const lines = section.tools
-          .map((tool) => `${tool.name}: ${tool.description?.trim() || "No description provided."}`);
-        if (lines.length === 0) {
-          return null;
-        }
-        return `${section.title}\n\n${lines.join("\n")}`;
-      })
-      .filter((section): section is string => Boolean(section))
-      .join("\n\n");
   }
 
   private createLanguageModel(runtime: FixedAiRuntime): LanguageModel {

@@ -2,6 +2,7 @@ import {
   defaultWorkflowStageSystemPrompt,
   workflowStageCompletionRuleSchema,
   workflowStageFindingPolicySchema,
+  workflowStageTaskSchema,
   type WorkflowStage
 } from "@synosec/contracts";
 
@@ -10,11 +11,14 @@ type WorkflowStageContractFields = Pick<
   | "objective"
   | "stageSystemPrompt"
   | "allowedToolIds"
+  | "requiredCapabilities"
+  | "forbiddenCapabilities"
   | "requiredEvidenceTypes"
   | "findingPolicy"
   | "completionRule"
   | "resultSchemaVersion"
   | "handoffSchema"
+  | "tasks"
 >;
 
 type WorkflowStageContractInput = {
@@ -22,11 +26,14 @@ type WorkflowStageContractInput = {
   objective?: unknown;
   stageSystemPrompt?: unknown;
   allowedToolIds?: unknown;
+  requiredCapabilities?: unknown;
+  forbiddenCapabilities?: unknown;
   requiredEvidenceTypes?: unknown;
   findingPolicy?: unknown;
   completionRule?: unknown;
   resultSchemaVersion?: unknown;
   handoffSchema?: unknown;
+  tasks?: unknown;
 };
 
 export const defaultStageSystemPromptTemplate = defaultWorkflowStageSystemPrompt;
@@ -51,6 +58,8 @@ export function createDefaultWorkflowStageContract(
     objective: `Complete the ${stage.label} stage using allowed tools and structured reporting.`,
     stageSystemPrompt: defaultStageSystemPromptTemplate,
     allowedToolIds: normalizeCapabilityToolIds(fallbackToolIds),
+    requiredCapabilities: [],
+    forbiddenCapabilities: [],
     requiredEvidenceTypes: [],
     findingPolicy: workflowStageFindingPolicySchema.parse({
       taxonomy: "typed-core-v1"
@@ -66,8 +75,23 @@ export function createDefaultWorkflowStageContract(
       requireChainedFindings: false
     }),
     resultSchemaVersion: 1,
-    handoffSchema: null
+    handoffSchema: null,
+    tasks: []
   };
+}
+
+function normalizeStageTasks(value: unknown): WorkflowStage["tasks"] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const parsed: WorkflowStage["tasks"] = [];
+  for (const entry of value) {
+    const result = workflowStageTaskSchema.safeParse(entry);
+    if (result.success) {
+      parsed.push(result.data);
+    }
+  }
+  return parsed;
 }
 
 export function normalizeWorkflowStageContract(
@@ -84,6 +108,8 @@ export function normalizeWorkflowStageContract(
       ? stage.stageSystemPrompt
       : defaults.stageSystemPrompt,
     allowedToolIds: normalizeCapabilityToolIds(stage.allowedToolIds ?? defaults.allowedToolIds),
+    requiredCapabilities: normalizeStringArray(stage.requiredCapabilities ?? defaults.requiredCapabilities),
+    forbiddenCapabilities: normalizeStringArray(stage.forbiddenCapabilities ?? defaults.forbiddenCapabilities),
     requiredEvidenceTypes: normalizeStringArray(stage.requiredEvidenceTypes ?? defaults.requiredEvidenceTypes),
     findingPolicy: workflowStageFindingPolicySchema.parse(stage.findingPolicy ?? defaults.findingPolicy),
     completionRule: workflowStageCompletionRuleSchema.parse(stage.completionRule ?? defaults.completionRule),
@@ -92,6 +118,7 @@ export function normalizeWorkflowStageContract(
       : defaults.resultSchemaVersion,
     handoffSchema: stage.handoffSchema && typeof stage.handoffSchema === "object" && !Array.isArray(stage.handoffSchema)
       ? stage.handoffSchema as Record<string, unknown>
-      : defaults.handoffSchema
+      : defaults.handoffSchema,
+    tasks: normalizeStageTasks(stage.tasks ?? defaults.tasks)
   };
 }

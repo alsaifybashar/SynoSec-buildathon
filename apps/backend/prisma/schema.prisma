@@ -234,17 +234,21 @@ model WorkflowLaunch {
 model WorkflowStage {
   id                    String               @id @db.Uuid
   workflowId            String               @map("workflow_id") @db.Uuid
+  agentId               String               @map("agent_id") @db.Uuid
   label                 String
   ord                   Int
   objective             String?
   stageSystemPrompt     String?              @map("stage_system_prompt")
   taskPromptTemplate    String?              @map("task_prompt_template")
   allowedToolIds        Json?                @map("allowed_tool_ids")
+  requiredCapabilities  Json?                @map("required_capabilities")
+  forbiddenCapabilities Json?                @map("forbidden_capabilities")
   requiredEvidenceTypes Json?                @map("required_evidence_types")
   findingPolicy         Json?                @map("finding_policy")
   completionRule        Json?                @map("completion_rule")
   resultSchemaVersion   Int                  @default(1) @map("result_schema_version")
   handoffSchema         Json?                @map("handoff_schema")
+  tasks                 Json?                @map("stage_tasks")
   workflow              Workflow             @relation(fields: [workflowId], references: [id], onDelete: Cascade)
   traceEntries          WorkflowTraceEntry[]
   traceEvents           WorkflowTraceEvent[]

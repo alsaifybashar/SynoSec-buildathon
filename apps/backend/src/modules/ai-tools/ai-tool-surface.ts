@@ -24,15 +24,45 @@ export function isEligibleWorkflowTool(tool: AiTool) {
 }
 
 export function resolveWorkflowStageTools(allTools: AiTool[], allowedToolIds: string[]) {
+  return resolveStageToolsByCapability(allTools, { allowedToolIds });
+}
+
+export type StageToolResolutionSpec = {
+  allowedToolIds?: string[] | null;
+  requiredCapabilities?: string[] | null;
+  forbiddenCapabilities?: string[] | null;
+};
+
+export function resolveStageToolsByCapability(
+  allTools: AiTool[],
+  spec: StageToolResolutionSpec
+): AiTool[] {
   const eligibleTools = allTools.filter(isEligibleWorkflowTool);
-  if (allowedToolIds.length === 0) {
+  const allowedToolIds = spec.allowedToolIds ?? [];
+  const requiredCapabilities = (spec.requiredCapabilities ?? []).filter((entry) => entry.length > 0);
+  const forbiddenCapabilities = (spec.forbiddenCapabilities ?? []).filter((entry) => entry.length > 0);
+
+  if (allowedToolIds.length > 0) {
+    const eligibleById = new Map(eligibleTools.map((tool) => [tool.id, tool] as const));
+    return allowedToolIds
+      .map((toolId) => eligibleById.get(toolId) ?? null)
+      .filter((tool): tool is AiTool => Boolean(tool));
+  }
+
+  if (requiredCapabilities.length === 0 && forbiddenCapabilities.length === 0) {
     return eligibleTools;
   }
 
-  const eligibleById = new Map(eligibleTools.map((tool) => [tool.id, tool] as const));
-  return allowedToolIds
-    .map((toolId) => eligibleById.get(toolId) ?? null)
-    .filter((tool): tool is AiTool => Boolean(tool));
+  return eligibleTools.filter((tool) => {
+    const capabilities = new Set(tool.capabilities);
+    if (requiredCapabilities.some((capability) => !capabilities.has(capability))) {
+      return false;
+    }
+    if (forbiddenCapabilities.some((capability) => capabilities.has(capability))) {
+      return false;
+    }
+    return true;
+  });
 }
 
 export function classifyAiToolKind(tool: AiTool): AiTool["kind"] {

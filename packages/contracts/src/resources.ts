@@ -950,6 +950,16 @@ export const workflowStageResultSchema = workflowStageResultSubmissionSchema.ext
 });
 export type WorkflowStageResult = z.infer<typeof workflowStageResultSchema>;
 
+export const workflowStageTaskSchema = z.object({
+  id: z.string().trim().min(1),
+  title: z.string().trim().min(1),
+  objective: z.string().trim().min(1),
+  suggestedCapabilities: z.array(z.string().min(1)).default([]),
+  suggestedToolIds: z.array(z.string().min(1)).default([]),
+  completionCriteria: z.string().trim().min(1).optional()
+});
+export type WorkflowStageTask = z.infer<typeof workflowStageTaskSchema>;
+
 export const workflowStageSchema = z.object({
   id: z.string().uuid(),
   agentId: z.string().uuid(),
@@ -959,6 +969,8 @@ export const workflowStageSchema = z.object({
   stageSystemPrompt: z.string().min(1),
   taskPromptTemplate: z.string().min(1).optional(),
   allowedToolIds: z.array(z.string().min(1)).default([]),
+  requiredCapabilities: z.array(z.string().min(1)).default([]),
+  forbiddenCapabilities: z.array(z.string().min(1)).default([]),
   requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
   findingPolicy: workflowStageFindingPolicySchema.default({
     taxonomy: "typed-core-v1",
@@ -975,7 +987,8 @@ export const workflowStageSchema = z.object({
     requireChainedFindings: false
   }),
   resultSchemaVersion: z.number().int().min(1).default(1),
-  handoffSchema: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
+  handoffSchema: z.union([jsonSchemaObjectSchema, z.null()]).default(null),
+  tasks: z.array(workflowStageTaskSchema).default([])
 });
 export type WorkflowStage = z.infer<typeof workflowStageSchema>;
 
@@ -1009,6 +1022,8 @@ const workflowStageBodySchema = z.object({
   stageSystemPrompt: z.string().trim().min(1),
   taskPromptTemplate: z.string().trim().min(1).optional(),
   allowedToolIds: z.array(z.string().min(1)).default([]),
+  requiredCapabilities: z.array(z.string().min(1)).default([]),
+  forbiddenCapabilities: z.array(z.string().min(1)).default([]),
   requiredEvidenceTypes: z.array(z.string().min(1)).default([]),
   findingPolicy: workflowStageFindingPolicySchema.default({
     taxonomy: "typed-core-v1",
@@ -1025,7 +1040,8 @@ const workflowStageBodySchema = z.object({
     requireChainedFindings: false
   }),
   resultSchemaVersion: z.number().int().min(1).default(1),
-  handoffSchema: z.union([jsonSchemaObjectSchema, z.null()]).default(null)
+  handoffSchema: z.union([jsonSchemaObjectSchema, z.null()]).default(null),
+  tasks: z.array(workflowStageTaskSchema).default([])
 });
 export type WorkflowStageBody = z.infer<typeof workflowStageBodySchema>;
 

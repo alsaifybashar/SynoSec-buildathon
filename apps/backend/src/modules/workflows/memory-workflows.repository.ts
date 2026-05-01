@@ -157,11 +157,14 @@ export class MemoryWorkflowsRepository implements WorkflowsRepository {
           objective: stage.objective,
           stageSystemPrompt: stage.stageSystemPrompt,
           allowedToolIds: fallbackToolIdsByAgentId[stage.id] ?? stage.allowedToolIds,
+          requiredCapabilities: stage.requiredCapabilities,
+          forbiddenCapabilities: stage.forbiddenCapabilities,
           requiredEvidenceTypes: stage.requiredEvidenceTypes,
           findingPolicy: stage.findingPolicy,
           completionRule: stage.completionRule,
           resultSchemaVersion: stage.resultSchemaVersion,
-          handoffSchema: stage.handoffSchema
+          handoffSchema: stage.handoffSchema,
+          tasks: stage.tasks
         });
 
         return {
