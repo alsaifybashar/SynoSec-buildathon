@@ -928,6 +928,13 @@ export const workflowStageResultSchema = workflowStageResultSubmissionSchema.ext
 });
 export type WorkflowStageResult = z.infer<typeof workflowStageResultSchema>;
 
+/**
+ * Workflow structure terminology:
+ *   Workflow -> Stage -> Task   (authoring/structure)
+ *   Run trace events use `step` solely as an internal counter for the
+ *   stage's agent-execution loop (start-step / finish-step), not as a
+ *   structural sibling of stage or task.
+ */
 export const workflowStageTaskSchema = z.object({
   id: z.string().trim().min(1),
   title: z.string().trim().min(1),
@@ -1040,6 +1047,12 @@ export const updateWorkflowBodySchema = workflowBodyBaseSchema.partial().refine(
 });
 export type UpdateWorkflowBody = z.infer<typeof updateWorkflowBodySchema>;
 
+/**
+ * A WorkflowRun executes a workflow against a single target and is
+ * therefore terminal in one of four states. The aggregate
+ * WorkflowLaunch (1..N runs) adds "partial" for mixed results — see
+ * {@link workflowLaunchStatusSchema}.
+ */
 export const workflowRunStatusSchema = z.enum(["pending", "running", "completed", "failed"]);
 export type WorkflowRunStatus = z.infer<typeof workflowRunStatusSchema>;
 
@@ -1059,6 +1072,20 @@ export type WorkflowRunTokenUsage = z.infer<typeof workflowRunTokenUsageSchema>;
 export const workflowTraceEntryStatusSchema = z.enum(["completed", "failed"]);
 export type WorkflowTraceEntryStatus = z.infer<typeof workflowTraceEntryStatusSchema>;
 
+/**
+ * Trace event types span two layers:
+ *   - lifecycle: stage_started, stage_completed, stage_failed,
+ *     run_completed, run_failed, error, abort, stage_result_submitted,
+ *     stage_contract_validation_failed
+ *   - model loop: start, start-step, text, reasoning, tool_call*,
+ *     tool_result, agent_input, agent_summary, model_decision,
+ *     verification, finish-step, finish, system_message
+ *   - reporting:  finding_reported, attack_vector_reported,
+ *     system_graph_reported
+ * `step` here refers to one iteration of the model's
+ * reason->act->observe loop within a stage; it does NOT correspond
+ * to WorkflowStageTask.
+ */
 export const workflowTraceEventTypeSchema = z.enum([
   "stage_started",
   "system_message",
@@ -1153,6 +1180,12 @@ export const workflowRunStreamStateSchema = workflowRunSchema.omit({
 });
 export type WorkflowRunStreamState = z.infer<typeof workflowRunStreamStateSchema>;
 
+/**
+ * A WorkflowLaunch aggregates 1..N WorkflowRuns (one per selected
+ * target). "partial" means the launch finished with a mix of completed
+ * and failed runs; individual runs only ever reach
+ * completed/failed/pending/running per {@link workflowRunStatusSchema}.
+ */
 export const workflowLaunchStatusSchema = z.enum(["pending", "running", "completed", "failed", "partial"]);
 export type WorkflowLaunchStatus = z.infer<typeof workflowLaunchStatusSchema>;
 
