@@ -1,25 +1,36 @@
-node_modules
-.pnpm-store
+# VCS / CI / agents
 .git
 .github
 .agents
 .claude
 .playwright-mcp
 .ralph
+
+# Dependencies and stores
+node_modules
+.pnpm-store
+
+# Secrets
 .env
 .env.*
-dist
+!.env.example
+!.env.local.example
+
+# Build / test output
+**/dist
+**/*.tsbuildinfo
 coverage
+playwright-report
+test-results
+apps/connector/output
+
+# Logs / OS
+*.log
+.DS_Store
+
+# Local state and docs not needed inside images
+.local
 docs
 infra
-apps/*/dist
-packages/*/dist
-apps/connector/output
-*.log
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.webp
-*.svg
-.DS_Store
+demos
+Makefile

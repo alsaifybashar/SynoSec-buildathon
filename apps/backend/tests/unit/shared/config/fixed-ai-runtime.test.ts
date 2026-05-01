@@ -37,11 +37,10 @@ describe("loadFixedAiRuntime", () => {
     }
   });
 
-  it("prefers CLAUDE_MODEL over the legacy Anthropic model env", async () => {
+  it("uses LLM_ANTHROPIC_MODEL for the Anthropic model", async () => {
     process.env["LLM_PROVIDER"] = "anthropic";
     process.env["ANTHROPIC_API_KEY"] = "test-key";
-    process.env["CLAUDE_MODEL"] = "claude-sonnet-4-6";
-    process.env["LLM_ANTHROPIC_MODEL"] = "claude-haiku-4-5";
+    process.env["LLM_ANTHROPIC_MODEL"] = "claude-sonnet-4-6";
 
     const { loadFixedAiRuntime } = await import("@/shared/config/fixed-ai-runtime.js");
     const runtime = loadFixedAiRuntime();

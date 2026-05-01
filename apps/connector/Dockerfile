@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
+# ─── Build stage: compile TS for the connector and contracts ─────────
 FROM node:22-bookworm-slim AS connector-build
 
 WORKDIR /workspace
@@ -17,6 +18,7 @@ RUN --mount=type=cache,id=synosec-pnpm-store,target=/pnpm/store \
 RUN pnpm --filter @synosec/contracts build
 RUN pnpm --filter @synosec/connector exec tsc -p tsconfig.json
 
+# ─── Runtime base shared by every tool-profile stage ─────────────────
 FROM node:22-bookworm-slim AS connector-runtime-base
 
 ARG HTTPX_VERSION=1.9.0
@@ -57,6 +59,7 @@ RUN sed -i 's/Components: main/Components: main contrib non-free non-free-firmwa
 COPY apps/connector/docker/install-tool-profile.sh /usr/local/bin/install-tool-profile
 RUN chmod 0755 /usr/local/bin/install-tool-profile
 
+# ─── Tool-profile stages (cumulative) ────────────────────────────────
 FROM connector-runtime-base AS connector-tools-core
 RUN install-tool-profile core
 
@@ -80,8 +83,10 @@ RUN install-tool-profile exploitation
 
 FROM connector-tools-exploitation AS connector-tools-full
 
-FROM connector-tools-core AS connector-dev-core
+# ─── Dev shared deps: workspace manifest + node_modules, built once ──
+FROM node:22-bookworm-slim AS connector-dev-deps
 WORKDIR /workspace
+RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/backend/package.json apps/backend/prisma.config.ts ./apps/backend/
 COPY apps/backend/prisma ./apps/backend/prisma
@@ -91,215 +96,108 @@ COPY packages/contracts/package.json ./packages/contracts/package.json
 RUN --mount=type=cache,id=synosec-pnpm-store,target=/pnpm/store \
   pnpm config set store-dir /pnpm/store \
   && pnpm install --frozen-lockfile
+
+# Each connector-dev-<profile> inherits its tool layer + the shared
+# dev-deps. Source is mounted at runtime via docker-compose;
+# ensure-pnpm-deps.sh refreshes node_modules in the named volumes.
+
+FROM connector-tools-core AS connector-dev-core
+WORKDIR /workspace
+COPY --from=connector-dev-deps /workspace /workspace
 CMD ["sh", "-c", "sh ./scripts/docker/ensure-pnpm-deps.sh && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/connector dev"]
 
 FROM connector-tools-web AS connector-dev-web
 WORKDIR /workspace
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/backend/package.json apps/backend/prisma.config.ts ./apps/backend/
-COPY apps/backend/prisma ./apps/backend/prisma
-COPY apps/frontend/package.json ./apps/frontend/package.json
-COPY apps/connector/package.json ./apps/connector/package.json
-COPY packages/contracts/package.json ./packages/contracts/package.json
-RUN --mount=type=cache,id=synosec-pnpm-store,target=/pnpm/store \
-  pnpm config set store-dir /pnpm/store \
-  && pnpm install --frozen-lockfile
+COPY --from=connector-dev-deps /workspace /workspace
 CMD ["sh", "-c", "sh ./scripts/docker/ensure-pnpm-deps.sh && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/connector dev"]
 
 FROM connector-tools-cloud AS connector-dev-cloud
 WORKDIR /workspace
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/backend/package.json apps/backend/prisma.config.ts ./apps/backend/
-COPY apps/backend/prisma ./apps/backend/prisma
-COPY apps/frontend/package.json ./apps/frontend/package.json
-COPY apps/connector/package.json ./apps/connector/package.json
-COPY packages/contracts/package.json ./packages/contracts/package.json
-RUN --mount=type=cache,id=synosec-pnpm-store,target=/pnpm/store \
-  pnpm config set store-dir /pnpm/store \
-  && pnpm install --frozen-lockfile
+COPY --from=connector-dev-deps /workspace /workspace
 CMD ["sh", "-c", "sh ./scripts/docker/ensure-pnpm-deps.sh && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/connector dev"]
 
 FROM connector-tools-windows AS connector-dev-windows
 WORKDIR /workspace
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/backend/package.json apps/backend/prisma.config.ts ./apps/backend/
-COPY apps/backend/prisma ./apps/backend/prisma
-COPY apps/frontend/package.json ./apps/frontend/package.json
-COPY apps/connector/package.json ./apps/connector/package.json
-COPY packages/contracts/package.json ./packages/contracts/package.json
-RUN --mount=type=cache,id=synosec-pnpm-store,target=/pnpm/store \
-  pnpm config set store-dir /pnpm/store \
-  && pnpm install --frozen-lockfile
+COPY --from=connector-dev-deps /workspace /workspace
 CMD ["sh", "-c", "sh ./scripts/docker/ensure-pnpm-deps.sh && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/connector dev"]
 
 FROM connector-tools-forensics AS connector-dev-forensics
 WORKDIR /workspace
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/backend/package.json apps/backend/prisma.config.ts ./apps/backend/
-COPY apps/backend/prisma ./apps/backend/prisma
-COPY apps/frontend/package.json ./apps/frontend/package.json
-COPY apps/connector/package.json ./apps/connector/package.json
-COPY packages/contracts/package.json ./packages/contracts/package.json
-RUN --mount=type=cache,id=synosec-pnpm-store,target=/pnpm/store \
-  pnpm config set store-dir /pnpm/store \
-  && pnpm install --frozen-lockfile
+COPY --from=connector-dev-deps /workspace /workspace
 CMD ["sh", "-c", "sh ./scripts/docker/ensure-pnpm-deps.sh && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/connector dev"]
 
 FROM connector-tools-reversing AS connector-dev-reversing
 WORKDIR /workspace
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/backend/package.json apps/backend/prisma.config.ts ./apps/backend/
-COPY apps/backend/prisma ./apps/backend/prisma
-COPY apps/frontend/package.json ./apps/frontend/package.json
-COPY apps/connector/package.json ./apps/connector/package.json
-COPY packages/contracts/package.json ./packages/contracts/package.json
-RUN --mount=type=cache,id=synosec-pnpm-store,target=/pnpm/store \
-  pnpm config set store-dir /pnpm/store \
-  && pnpm install --frozen-lockfile
+COPY --from=connector-dev-deps /workspace /workspace
 CMD ["sh", "-c", "sh ./scripts/docker/ensure-pnpm-deps.sh && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/connector dev"]
 
 FROM connector-tools-exploitation AS connector-dev-exploitation
 WORKDIR /workspace
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/backend/package.json apps/backend/prisma.config.ts ./apps/backend/
-COPY apps/backend/prisma ./apps/backend/prisma
-COPY apps/frontend/package.json ./apps/frontend/package.json
-COPY apps/connector/package.json ./apps/connector/package.json
-COPY packages/contracts/package.json ./packages/contracts/package.json
-RUN --mount=type=cache,id=synosec-pnpm-store,target=/pnpm/store \
-  pnpm config set store-dir /pnpm/store \
-  && pnpm install --frozen-lockfile
+COPY --from=connector-dev-deps /workspace /workspace
 CMD ["sh", "-c", "sh ./scripts/docker/ensure-pnpm-deps.sh && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/connector dev"]
 
 FROM connector-tools-full AS connector-dev-full
 WORKDIR /workspace
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/backend/package.json apps/backend/prisma.config.ts ./apps/backend/
-COPY apps/backend/prisma ./apps/backend/prisma
-COPY apps/frontend/package.json ./apps/frontend/package.json
-COPY apps/connector/package.json ./apps/connector/package.json
-COPY packages/contracts/package.json ./packages/contracts/package.json
-RUN --mount=type=cache,id=synosec-pnpm-store,target=/pnpm/store \
-  pnpm config set store-dir /pnpm/store \
-  && pnpm install --frozen-lockfile
+COPY --from=connector-dev-deps /workspace /workspace
 CMD ["sh", "-c", "sh ./scripts/docker/ensure-pnpm-deps.sh && pnpm --filter @synosec/contracts build && pnpm --filter @synosec/connector dev"]
+
+# ─── Prod shared artifacts: assembled once, copied into every prod stage ──
+FROM scratch AS connector-prod-artifacts
+COPY --from=connector-build /workspace/package.json /app/package.json
+COPY --from=connector-build /workspace/pnpm-lock.yaml /app/pnpm-lock.yaml
+COPY --from=connector-build /workspace/pnpm-workspace.yaml /app/pnpm-workspace.yaml
+COPY --from=connector-build /workspace/node_modules /app/node_modules
+COPY --from=connector-build /workspace/packages/contracts/package.json /app/packages/contracts/package.json
+COPY --from=connector-build /workspace/packages/contracts/node_modules /app/packages/contracts/node_modules
+COPY --from=connector-build /workspace/packages/contracts/dist /app/packages/contracts/dist
+COPY --from=connector-build /workspace/apps/connector/package.json /app/apps/connector/package.json
+COPY --from=connector-build /workspace/apps/connector/node_modules /app/apps/connector/node_modules
+COPY --from=connector-build /workspace/apps/connector/dist /app/apps/connector/dist
 
 FROM connector-tools-core AS connector-prod-core
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=connector-build /workspace/package.json ./package.json
-COPY --from=connector-build /workspace/pnpm-lock.yaml ./pnpm-lock.yaml
-COPY --from=connector-build /workspace/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=connector-build /workspace/node_modules ./node_modules
-COPY --from=connector-build /workspace/packages/contracts/package.json ./packages/contracts/package.json
-COPY --from=connector-build /workspace/packages/contracts/node_modules ./packages/contracts/node_modules
-COPY --from=connector-build /workspace/packages/contracts/dist ./packages/contracts/dist
-COPY --from=connector-build /workspace/apps/connector/package.json ./apps/connector/package.json
-COPY --from=connector-build /workspace/apps/connector/node_modules ./apps/connector/node_modules
-COPY --from=connector-build /workspace/apps/connector/dist ./apps/connector/dist
+COPY --from=connector-prod-artifacts /app /app
 CMD ["node", "apps/connector/dist/main.js"]
 
 FROM connector-tools-web AS connector-prod-web
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=connector-build /workspace/package.json ./package.json
-COPY --from=connector-build /workspace/pnpm-lock.yaml ./pnpm-lock.yaml
-COPY --from=connector-build /workspace/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=connector-build /workspace/node_modules ./node_modules
-COPY --from=connector-build /workspace/packages/contracts/package.json ./packages/contracts/package.json
-COPY --from=connector-build /workspace/packages/contracts/node_modules ./packages/contracts/node_modules
-COPY --from=connector-build /workspace/packages/contracts/dist ./packages/contracts/dist
-COPY --from=connector-build /workspace/apps/connector/package.json ./apps/connector/package.json
-COPY --from=connector-build /workspace/apps/connector/node_modules ./apps/connector/node_modules
-COPY --from=connector-build /workspace/apps/connector/dist ./apps/connector/dist
+COPY --from=connector-prod-artifacts /app /app
 CMD ["node", "apps/connector/dist/main.js"]
 
 FROM connector-tools-cloud AS connector-prod-cloud
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=connector-build /workspace/package.json ./package.json
-COPY --from=connector-build /workspace/pnpm-lock.yaml ./pnpm-lock.yaml
-COPY --from=connector-build /workspace/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=connector-build /workspace/node_modules ./node_modules
-COPY --from=connector-build /workspace/packages/contracts/package.json ./packages/contracts/package.json
-COPY --from=connector-build /workspace/packages/contracts/node_modules ./packages/contracts/node_modules
-COPY --from=connector-build /workspace/packages/contracts/dist ./packages/contracts/dist
-COPY --from=connector-build /workspace/apps/connector/package.json ./apps/connector/package.json
-COPY --from=connector-build /workspace/apps/connector/node_modules ./apps/connector/node_modules
-COPY --from=connector-build /workspace/apps/connector/dist ./apps/connector/dist
+COPY --from=connector-prod-artifacts /app /app
 CMD ["node", "apps/connector/dist/main.js"]
 
 FROM connector-tools-windows AS connector-prod-windows
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=connector-build /workspace/package.json ./package.json
-COPY --from=connector-build /workspace/pnpm-lock.yaml ./pnpm-lock.yaml
-COPY --from=connector-build /workspace/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=connector-build /workspace/node_modules ./node_modules
-COPY --from=connector-build /workspace/packages/contracts/package.json ./packages/contracts/package.json
-COPY --from=connector-build /workspace/packages/contracts/node_modules ./packages/contracts/node_modules
-COPY --from=connector-build /workspace/packages/contracts/dist ./packages/contracts/dist
-COPY --from=connector-build /workspace/apps/connector/package.json ./apps/connector/package.json
-COPY --from=connector-build /workspace/apps/connector/node_modules ./apps/connector/node_modules
-COPY --from=connector-build /workspace/apps/connector/dist ./apps/connector/dist
+COPY --from=connector-prod-artifacts /app /app
 CMD ["node", "apps/connector/dist/main.js"]
 
 FROM connector-tools-forensics AS connector-prod-forensics
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=connector-build /workspace/package.json ./package.json
-COPY --from=connector-build /workspace/pnpm-lock.yaml ./pnpm-lock.yaml
-COPY --from=connector-build /workspace/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=connector-build /workspace/node_modules ./node_modules
-COPY --from=connector-build /workspace/packages/contracts/package.json ./packages/contracts/package.json
-COPY --from=connector-build /workspace/packages/contracts/node_modules ./packages/contracts/node_modules
-COPY --from=connector-build /workspace/packages/contracts/dist ./packages/contracts/dist
-COPY --from=connector-build /workspace/apps/connector/package.json ./apps/connector/package.json
-COPY --from=connector-build /workspace/apps/connector/node_modules ./apps/connector/node_modules
-COPY --from=connector-build /workspace/apps/connector/dist ./apps/connector/dist
+COPY --from=connector-prod-artifacts /app /app
 CMD ["node", "apps/connector/dist/main.js"]
 
 FROM connector-tools-reversing AS connector-prod-reversing
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=connector-build /workspace/package.json ./package.json
-COPY --from=connector-build /workspace/pnpm-lock.yaml ./pnpm-lock.yaml
-COPY --from=connector-build /workspace/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=connector-build /workspace/node_modules ./node_modules
-COPY --from=connector-build /workspace/packages/contracts/package.json ./packages/contracts/package.json
-COPY --from=connector-build /workspace/packages/contracts/node_modules ./packages/contracts/node_modules
-COPY --from=connector-build /workspace/packages/contracts/dist ./packages/contracts/dist
-COPY --from=connector-build /workspace/apps/connector/package.json ./apps/connector/package.json
-COPY --from=connector-build /workspace/apps/connector/node_modules ./apps/connector/node_modules
-COPY --from=connector-build /workspace/apps/connector/dist ./apps/connector/dist
+COPY --from=connector-prod-artifacts /app /app
 CMD ["node", "apps/connector/dist/main.js"]
 
 FROM connector-tools-exploitation AS connector-prod-exploitation
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=connector-build /workspace/package.json ./package.json
-COPY --from=connector-build /workspace/pnpm-lock.yaml ./pnpm-lock.yaml
-COPY --from=connector-build /workspace/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=connector-build /workspace/node_modules ./node_modules
-COPY --from=connector-build /workspace/packages/contracts/package.json ./packages/contracts/package.json
-COPY --from=connector-build /workspace/packages/contracts/node_modules ./packages/contracts/node_modules
-COPY --from=connector-build /workspace/packages/contracts/dist ./packages/contracts/dist
-COPY --from=connector-build /workspace/apps/connector/package.json ./apps/connector/package.json
-COPY --from=connector-build /workspace/apps/connector/node_modules ./apps/connector/node_modules
-COPY --from=connector-build /workspace/apps/connector/dist ./apps/connector/dist
+COPY --from=connector-prod-artifacts /app /app
 CMD ["node", "apps/connector/dist/main.js"]
 
 FROM connector-tools-full AS connector-prod-full
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=connector-build /workspace/package.json ./package.json
-COPY --from=connector-build /workspace/pnpm-lock.yaml ./pnpm-lock.yaml
-COPY --from=connector-build /workspace/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=connector-build /workspace/node_modules ./node_modules
-COPY --from=connector-build /workspace/packages/contracts/package.json ./packages/contracts/package.json
-COPY --from=connector-build /workspace/packages/contracts/node_modules ./packages/contracts/node_modules
-COPY --from=connector-build /workspace/packages/contracts/dist ./packages/contracts/dist
-COPY --from=connector-build /workspace/apps/connector/package.json ./apps/connector/package.json
-COPY --from=connector-build /workspace/apps/connector/node_modules ./apps/connector/node_modules
-COPY --from=connector-build /workspace/apps/connector/dist ./apps/connector/dist
+COPY --from=connector-prod-artifacts /app /app
 CMD ["node", "apps/connector/dist/main.js"]

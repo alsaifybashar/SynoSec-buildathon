@@ -1,20 +1,45 @@
-node_modules
+# Dependencies
+node_modules/
 .pnpm-store/
-dist
-coverage
-*.tsbuildinfo
+
+# Build output
+dist/
+**/*.tsbuildinfo
+.turbo/
+.cache/
+
+# Test output
+coverage/
+playwright-report/
+test-results/
+
+# Logs
+*.log
+logs/
+
+# Editor / OS
 .DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+.eslintcache
+
+# Env files (keep examples)
 .env
 .env.*
 !.env.example
 !.env.local.example
-.pnpm-store
+
+# Local agent / tooling state
 .local/
 .playwright-mcp/
-*.png
-!images/*.png
 .ralph/
-.ralph/*
 .agents/
-.agents/*
+
+# App-specific
+apps/connector/output/
 apps/backend/src/platform/generated/
+
+# Root-level screenshots / scratch images
+/*.png

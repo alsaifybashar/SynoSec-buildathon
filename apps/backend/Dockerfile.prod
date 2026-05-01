@@ -42,4 +42,7 @@ COPY --from=build /workspace/apps/backend/prisma ./apps/backend/prisma
 
 EXPOSE 3001
 
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=12 \
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.BACKEND_PORT || 3001) + '/api/health').then(r => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1))"
+
 CMD ["sh", "-c", "cd apps/backend && node dist/src/main.js"]

@@ -59,8 +59,7 @@ export function loadFixedAiRuntime(): FixedAiRuntime {
     provider: process.env["LLM_PROVIDER"] ?? "anthropic",
     anthropicApiKey: normalizeOptionalEnv(process.env["ANTHROPIC_API_KEY"]),
     anthropicModel:
-      normalizeOptionalEnv(process.env["CLAUDE_MODEL"])
-      ?? normalizeOptionalEnv(process.env["LLM_ANTHROPIC_MODEL"])
+      normalizeOptionalEnv(process.env["LLM_ANTHROPIC_MODEL"])
       ?? DEFAULT_ANTHROPIC_MODEL,
     anthropicPromptCachingEnabled: parsePromptCachingEnabled(process.env["ANTHROPIC_PROMPT_CACHING_ENABLED"]),
     anthropicPromptCachingTtl: process.env["ANTHROPIC_PROMPT_CACHING_TTL"] ?? DEFAULT_ANTHROPIC_PROMPT_CACHING_TTL,

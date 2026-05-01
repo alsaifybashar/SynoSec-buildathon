@@ -228,8 +228,7 @@ export function loadBackendEnv(): BackendEnv {
     llmProvider: process.env["LLM_PROVIDER"] ?? "anthropic",
     anthropicApiKey: normalizeOptionalEnv(process.env["ANTHROPIC_API_KEY"]),
     llmAnthropicModel:
-      normalizeOptionalEnv(process.env["CLAUDE_MODEL"])
-      ?? normalizeOptionalEnv(process.env["LLM_ANTHROPIC_MODEL"])
+      normalizeOptionalEnv(process.env["LLM_ANTHROPIC_MODEL"])
       ?? "claude-haiku-4-5",
     anthropicPromptCachingEnabled: parseBoolean(process.env["ANTHROPIC_PROMPT_CACHING_ENABLED"], true),
     anthropicPromptCachingTtl: process.env["ANTHROPIC_PROMPT_CACHING_TTL"] ?? "1h",

@@ -30,4 +30,7 @@ COPY --from=build /workspace/apps/frontend/dist ./apps/frontend/dist
 
 EXPOSE 4173
 
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=12 \
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.FRONTEND_PORT || 4173)).then(r => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1))"
+
 CMD ["sh", "-c", "serve -s apps/frontend/dist -l ${FRONTEND_PORT}"]
