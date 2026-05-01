@@ -110,17 +110,8 @@ const backendEnvSchema = z.object({
   cookieName: z.string().min(1).default("synosec_session"),
   cookieSecure: z.boolean(),
   sessionTtlHours: z.coerce.number().int().min(1).max(24 * 30).default(168),
-  sessionTouchIntervalSeconds: z.coerce.number().int().min(0).max(24 * 60 * 60).default(600),
-  rateLimitEnabled: z.boolean().default(true),
-  rateLimitCleanupIntervalMs: z.coerce.number().int().min(1).default(60_000),
-  rateLimitHealthWindowMs: z.coerce.number().int().min(1).default(60_000),
-  rateLimitHealthMax: z.coerce.number().int().min(1).default(120),
-  rateLimitAuthWindowMs: z.coerce.number().int().min(1).default(60_000),
-  rateLimitAuthMax: z.coerce.number().int().min(1).default(10),
-  rateLimitConnectorWindowMs: z.coerce.number().int().min(1).default(60_000),
-  rateLimitConnectorMax: z.coerce.number().int().min(1).default(120),
-  rateLimitApiWindowMs: z.coerce.number().int().min(1).default(60_000),
-  rateLimitApiMax: z.coerce.number().int().min(1).default(60)
+  sessionTouchIntervalSeconds: z.coerce.number().int().min(0).max(24 * 60 * 60).default(600)
+  // Rate-limit config is loaded separately via loadRateLimitConfig().
 }).superRefine((env, ctx) => {
   if (env.llmProvider === "anthropic" && !env.anthropicApiKey) {
     ctx.addIssue({
@@ -245,16 +236,6 @@ export function loadBackendEnv(): BackendEnv {
     cookieName: process.env["AUTH_COOKIE_NAME"] ?? "synosec_session",
     cookieSecure: parseBoolean(process.env["AUTH_COOKIE_SECURE"], defaultCookieSecure()),
     sessionTtlHours: process.env["AUTH_SESSION_TTL_HOURS"] ?? "168",
-    sessionTouchIntervalSeconds: process.env["AUTH_SESSION_TOUCH_INTERVAL_SECONDS"] ?? "600",
-    rateLimitEnabled: parseBoolean(process.env["RATE_LIMIT_ENABLED"], true),
-    rateLimitCleanupIntervalMs: process.env["RATE_LIMIT_CLEANUP_INTERVAL_MS"] ?? "60000",
-    rateLimitHealthWindowMs: process.env["RATE_LIMIT_HEALTH_WINDOW_MS"] ?? "60000",
-    rateLimitHealthMax: process.env["RATE_LIMIT_HEALTH_MAX"] ?? String(defaultRateLimitMax("health")),
-    rateLimitAuthWindowMs: process.env["RATE_LIMIT_AUTH_WINDOW_MS"] ?? "60000",
-    rateLimitAuthMax: process.env["RATE_LIMIT_AUTH_MAX"] ?? String(defaultRateLimitMax("auth")),
-    rateLimitConnectorWindowMs: process.env["RATE_LIMIT_CONNECTOR_WINDOW_MS"] ?? "60000",
-    rateLimitConnectorMax: process.env["RATE_LIMIT_CONNECTOR_MAX"] ?? String(defaultRateLimitMax("connector")),
-    rateLimitApiWindowMs: process.env["RATE_LIMIT_API_WINDOW_MS"] ?? "60000",
-    rateLimitApiMax: process.env["RATE_LIMIT_API_MAX"] ?? String(defaultRateLimitMax("api"))
+    sessionTouchIntervalSeconds: process.env["AUTH_SESSION_TOUCH_INTERVAL_SECONDS"] ?? "600"
   });
 }
