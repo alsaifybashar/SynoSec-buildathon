@@ -37,11 +37,20 @@ services:
     environment:
       PORT: 8891
 
+  juice-shop-target:
+    build:
+      context: ./demos/juice-shop
+    container_name: target-juice-shop
+    hostname: synosec-juice-shop-target
+    ports:
+      - "3000:3000"
+
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
     profiles:
       - local-llm
+    gpus: all
     ports:
       - "11434:11434"
     volumes:
@@ -88,6 +97,8 @@ services:
       vulnerable-target:
         condition: service_started
       full-stack-target:
+        condition: service_started
+      juice-shop-target:
         condition: service_started
     environment:
       BACKEND_PORT: ${BACKEND_PORT:-3001}

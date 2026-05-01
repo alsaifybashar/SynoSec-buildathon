@@ -56,6 +56,7 @@ flowchart LR
 - `scripts/tools`: Bash-backed tool implementations used by the broker and seeded AI-tool definitions.
 - `demos/vulnerable-app`: Controlled vulnerable target used as the general cyber range for safe validation.
 - `demos/full-stack-target`: Controlled full-stack target with UI, API, SQLite data, and two chained attack tracks.
+- `demos/juice-shop`: Pinned OWASP Juice Shop container used as an additional maintained lab target for broad web testing.
 
 ## Vulnerability Discovery Method
 
@@ -197,10 +198,11 @@ Coverage is recorded as `covered`, `partially_covered`, or `not_covered`. A laye
 
 ## Cyber Range Evaluation
 
-The repository includes two safe local targets for controlled testing:
+The repository includes three safe local targets for controlled testing:
 
 - `demos/vulnerable-app`: an intentionally vulnerable Express application with standalone web flaws such as SQL injection, exposed admin access, sensitive API data, directory listing, and reflected XSS.
 - `demos/full-stack-target`: an intentionally vulnerable full-stack Express and SQLite application with browser workflows, JSON APIs, and two attack tracks that converge on the same finance export.
+- `demos/juice-shop`: an OWASP-maintained intentionally insecure application, pinned to a specific Docker image tag for broad challenge coverage in the local cyber range and backed by a local target-pack snapshot for workflow evaluation.
 
 The cyber range exists to evaluate whether agents can move from reconnaissance to evidence-backed conclusions and derived attack paths without touching a real third-party system.
 
@@ -279,6 +281,7 @@ Workflow execution now uses one backend-wide runtime selected by `LLM_PROVIDER`.
 | Backend API | `http://localhost:3001` |
 | Vulnerable target | `http://localhost:8888` |
 | Full-stack target | `http://localhost:8891` |
+| Juice Shop target | `http://localhost:3000` |
 | Ollama, when enabled | `http://localhost:11434` |
 
 ### Common Commands
@@ -470,7 +473,7 @@ The main runtime entry points are:
 The current backend also includes:
 
 - semantic-family tool definitions in `apps/backend/src/modules/ai-tools/semantic-family-tools.ts`
-- agent-to-tool resolution in `apps/backend/src/modules/ai-agents/agent-tool-resolver.ts`
+- stage-owned workflow tool resolution in `apps/backend/src/modules/ai-tools/ai-tool-surface.ts`
 - tool execution config handling in `apps/backend/src/modules/ai-tools/tool-execution-config.ts`
 
 ### Adding A New Tool
@@ -519,7 +522,7 @@ SynoSec comes with a comprehensive set of built-in security tools categorized by
 - **Windows Enumeration**: `enum4linux`
 - **Utility**: `bash-probe`
 
-These tools are pre-configured with bash scripts in `scripts/tools/` and seeded into the database for immediate use by AI agents.
+These tools are pre-configured with bash scripts in `scripts/tools/` and seeded into the database for immediate use by workflow stages.
 
 ### Key Backend Files
 
@@ -527,8 +530,8 @@ These tools are pre-configured with bash scripts in `scripts/tools/` and seeded 
   `apps/backend/src/engine/workflow/workflow-execution.service.ts`
 - Tool catalog entrypoint:
   `apps/backend/src/engine/tools/tool-catalog.ts`
-- Agent tool resolver:
-  `apps/backend/src/modules/ai-agents/agent-tool-resolver.ts`
+- Workflow tool surface:
+  `apps/backend/src/modules/ai-tools/ai-tool-surface.ts`
 - Seed assembler:
   `apps/backend/prisma/seed-data/ai-builder-defaults.ts`
 
