@@ -1,4 +1,9 @@
 import { fetchJson } from "@/shared/lib/api";
+import type {
+  AiToolsListQuery,
+  TargetsListQuery,
+  WorkflowsListQuery
+} from "@synosec/contracts";
 import {
   buildQueryString,
   listPageSizes,
@@ -31,41 +36,45 @@ export type ResourceClient<TItem, TQuery extends ListQueryState> = {
   detail: (id: string) => Promise<TItem>;
 };
 
+// UI-state form of contract list-query types: required defaults instead of
+// optional, plus an index signature so they satisfy ListQueryState.
+type UiQuery<TBase> = {
+  [K in keyof TBase]-?: undefined extends TBase[K] ? TBase[K] | undefined : TBase[K];
+} & { [key: string]: number | string | undefined };
+
 type OptionalString = string | undefined;
-export type TargetsQuery = {
-  page: number;
-  pageSize: number;
-  q: string;
-  sortBy: "name" | "status" | "environment" | "lastScannedAt" | "createdAt" | "updatedAt";
-  sortDirection: SortDirection;
-  status: OptionalString;
-  environment: OptionalString;
-  [key: string]: number | string | undefined;
-};
 
-export type AiToolsQuery = {
+export type TargetsQuery = UiQuery<{
   page: number;
   pageSize: number;
   q: string;
-  sortBy: "name" | "kind" | "source" | "category" | "status" | "riskTier" | "createdAt" | "updatedAt";
+  sortBy: NonNullable<TargetsListQuery["sortBy"]>;
   sortDirection: SortDirection;
-  accessProfile: OptionalString;
-  source: OptionalString;
-  category: OptionalString;
-  status: OptionalString;
+  status: NonNullable<TargetsListQuery["status"]> | undefined;
+  environment: NonNullable<TargetsListQuery["environment"]> | undefined;
+}>;
+
+export type AiToolsQuery = UiQuery<{
+  page: number;
+  pageSize: number;
+  q: string;
+  sortBy: NonNullable<AiToolsListQuery["sortBy"]>;
+  sortDirection: SortDirection;
+  accessProfile: NonNullable<AiToolsListQuery["accessProfile"]> | undefined;
+  source: NonNullable<AiToolsListQuery["source"]> | undefined;
+  category: NonNullable<AiToolsListQuery["category"]> | undefined;
+  status: NonNullable<AiToolsListQuery["status"]> | undefined;
   riskTier: OptionalString;
-  [key: string]: number | string | undefined;
-};
+}>;
 
-export type WorkflowsQuery = {
+export type WorkflowsQuery = UiQuery<{
   page: number;
   pageSize: number;
   q: string;
-  sortBy: "name" | "status" | "createdAt" | "updatedAt";
+  sortBy: NonNullable<WorkflowsListQuery["sortBy"]>;
   sortDirection: SortDirection;
-  status: OptionalString;
-  [key: string]: number | string | undefined;
-};
+  status: NonNullable<WorkflowsListQuery["status"]> | undefined;
+}>;
 
 export type ExecutionReportsQuery = {
   page: number;
