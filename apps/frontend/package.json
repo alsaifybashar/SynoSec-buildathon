@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "build": "pnpm --filter @synosec/contracts build && tsc -p tsconfig.app.json && vite build",
     "typecheck": "pnpm --filter @synosec/contracts build && tsc -p tsconfig.app.json --noEmit",
-    "test": "pnpm --filter @synosec/contracts build && vitest run"
+    "test": "pnpm run test:unit",
+    "test:unit": "pnpm --filter @synosec/contracts build && vitest run --config vitest.unit.config.ts"
   },
   "dependencies": {
     "@radix-ui/react-select": "^2.2.6",

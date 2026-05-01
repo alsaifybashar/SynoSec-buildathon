@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "pnpm run prisma:generate && tsx watch --include \"../../packages/contracts/dist/**/*.js\" src/main.ts",
     "start": "node dist/src/main.js",
-    "build": "pnpm --filter @synosec/contracts build && pnpm run prisma:generate && tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
+    "build": "rm -rf dist tsconfig.tsbuildinfo && pnpm --filter @synosec/contracts build && pnpm run prisma:generate && tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
     "typecheck": "pnpm --filter @synosec/contracts build && pnpm run prisma:generate && tsc -p tsconfig.json --noEmit",
-    "test": "pnpm --filter @synosec/contracts build && pnpm run prisma:generate && vitest run",
+    "test": "pnpm run test:unit && pnpm run test:integration",
+    "test:unit": "pnpm --filter @synosec/contracts build && pnpm run prisma:generate && vitest run --config vitest.unit.config.ts",
+    "test:integration": "pnpm --filter @synosec/contracts build && pnpm run prisma:generate && vitest run --config vitest.integration.config.ts",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:seed": "prisma db seed"

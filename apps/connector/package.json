@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "build": "pnpm --filter @synosec/contracts build && tsc -p tsconfig.json",
+    "build": "rm -rf dist tsconfig.tsbuildinfo && pnpm --filter @synosec/contracts build && tsc -p tsconfig.json",
     "typecheck": "pnpm --filter @synosec/contracts build && tsc -p tsconfig.json --noEmit",
-    "test": "pnpm --filter @synosec/contracts build && vitest run"
+    "test": "pnpm run test:unit && pnpm run test:integration",
+    "test:unit": "pnpm --filter @synosec/contracts build && vitest run --config vitest.unit.config.ts",
+    "test:integration": "pnpm --filter @synosec/contracts build && vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@synosec/contracts": "workspace:*",

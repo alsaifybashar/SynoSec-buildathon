@@ -7,7 +7,7 @@ WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/contracts/package.json packages/contracts/tsconfig.json ./packages/contracts/
 COPY packages/contracts/src ./packages/contracts/src
-COPY apps/connector/package.json apps/connector/tsconfig.json apps/connector/vitest.config.ts ./apps/connector/
+COPY apps/connector/package.json apps/connector/tsconfig.json ./apps/connector/
 COPY apps/connector/src ./apps/connector/src
 
 RUN corepack enable
