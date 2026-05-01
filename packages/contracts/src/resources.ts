@@ -1086,8 +1086,21 @@ export type WorkflowTraceEntryStatus = z.infer<typeof workflowTraceEntryStatusSc
  * reason->act->observe loop within a stage; it does NOT correspond
  * to WorkflowStageTask.
  */
-export const workflowTraceEventTypeSchema = z.enum([
+export const workflowLifecycleEventTypes = [
   "stage_started",
+  "stage_result_submitted",
+  "stage_contract_validation_failed",
+  "stage_completed",
+  "stage_failed",
+  "run_completed",
+  "run_failed",
+  "error",
+  "abort"
+] as const;
+export const workflowLifecycleEventTypeSchema = z.enum(workflowLifecycleEventTypes);
+export type WorkflowLifecycleEventType = z.infer<typeof workflowLifecycleEventTypeSchema>;
+
+export const workflowModelLoopEventTypes = [
   "system_message",
   "agent_input",
   "model_decision",
@@ -1100,22 +1113,41 @@ export const workflowTraceEventTypeSchema = z.enum([
   "tool_call_delta",
   "tool_result",
   "verification",
-  "system_graph_reported",
-  "finding_reported",
-  "attack_vector_reported",
-  "stage_result_submitted",
-  "stage_contract_validation_failed",
   "agent_summary",
   "finish-step",
-  "finish",
-  "stage_completed",
-  "stage_failed",
-  "run_completed",
-  "run_failed",
-  "error",
-  "abort"
+  "finish"
+] as const;
+export const workflowModelLoopEventTypeSchema = z.enum(workflowModelLoopEventTypes);
+export type WorkflowModelLoopEventType = z.infer<typeof workflowModelLoopEventTypeSchema>;
+
+export const workflowReportingEventTypes = [
+  "system_graph_reported",
+  "finding_reported",
+  "attack_vector_reported"
+] as const;
+export const workflowReportingEventTypeSchema = z.enum(workflowReportingEventTypes);
+export type WorkflowReportingEventType = z.infer<typeof workflowReportingEventTypeSchema>;
+
+export const workflowTraceEventTypeSchema = z.enum([
+  ...workflowLifecycleEventTypes,
+  ...workflowModelLoopEventTypes,
+  ...workflowReportingEventTypes
 ]);
 export type WorkflowTraceEventType = z.infer<typeof workflowTraceEventTypeSchema>;
+
+const lifecycleEventTypeSet = new Set<string>(workflowLifecycleEventTypes);
+const modelLoopEventTypeSet = new Set<string>(workflowModelLoopEventTypes);
+const reportingEventTypeSet = new Set<string>(workflowReportingEventTypes);
+
+export function isWorkflowLifecycleEventType(type: string): type is WorkflowLifecycleEventType {
+  return lifecycleEventTypeSet.has(type);
+}
+export function isWorkflowModelLoopEventType(type: string): type is WorkflowModelLoopEventType {
+  return modelLoopEventTypeSet.has(type);
+}
+export function isWorkflowReportingEventType(type: string): type is WorkflowReportingEventType {
+  return reportingEventTypeSet.has(type);
+}
 
 export const workflowTraceEventStatusSchema = z.enum(["pending", "running", "completed", "failed"]);
 export type WorkflowTraceEventStatus = z.infer<typeof workflowTraceEventStatusSchema>;
