@@ -73,8 +73,7 @@ export function registerExecutionReportsRoutes(app: Express, service: ExecutionR
 
       const removed = await service.remove(reportId);
       if (!removed) {
-        response.status(404).json({ message: "Execution report not found." });
-        return;
+        throw new RequestError(404, "Execution report not found.", "NOT_FOUND");
       }
 
       response.status(204).send();

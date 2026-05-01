@@ -18,6 +18,7 @@ import {
 } from "@synosec/contracts";
 import { type Express } from "express";
 import { registerCrudRoutes } from "@/shared/http/register-crud-routes.js";
+import { RequestError } from "@/shared/http/request-error.js";
 import type { WorkflowExecutionEngine, WorkflowRunEventStream } from "@/engine/contracts.js";
 import type { WorkflowArtifactReader } from "@/engine/workflow/index.js";
 import type { WorkflowRunEvaluationService } from "@/modules/workflow-evals/index.js";
@@ -63,14 +64,12 @@ export function registerWorkflowsRoutes(
     try {
       const workflow = await repository.getById(request.params.id);
       if (!workflow) {
-        response.status(404).json({ message: "Workflow not found." });
-        return;
+        throw new RequestError(404, "Workflow not found.", "NOT_FOUND");
       }
 
       const launch = await repository.getLatestLaunchByWorkflowId(request.params.id);
       if (!launch) {
-        response.status(404).json({ message: "Workflow launch not found." });
-        return;
+        throw new RequestError(404, "Workflow launch not found.", "NOT_FOUND");
       }
 
       response.json(workflowLaunchSchema.parse(launch));
@@ -83,8 +82,7 @@ export function registerWorkflowsRoutes(
     try {
       const run = await repository.getRunById(request.params.id);
       if (!run) {
-        response.status(404).json({ message: "Workflow run not found." });
-        return;
+        throw new RequestError(404, "Workflow run not found.", "NOT_FOUND");
       }
 
       response.json(workflowRunSchema.parse(run));
@@ -147,8 +145,7 @@ export function registerWorkflowsRoutes(
     try {
       const run = await repository.getRunById(request.params.id);
       if (!run) {
-        response.status(404).json({ message: "Workflow run not found." });
-        return;
+        throw new RequestError(404, "Workflow run not found.", "NOT_FOUND");
       }
 
       response.setHeader("Content-Type", "text/event-stream");
@@ -192,8 +189,7 @@ export function registerWorkflowsRoutes(
       await executionService.cancelRun(request.params.id);
       const run = await repository.getRunById(request.params.id);
       if (!run) {
-        response.status(404).json({ message: "Workflow run not found." });
-        return;
+        throw new RequestError(404, "Workflow run not found.", "NOT_FOUND");
       }
 
       response.json(workflowRunSchema.parse(run));

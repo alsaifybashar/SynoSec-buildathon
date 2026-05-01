@@ -94,8 +94,7 @@ export function registerAiToolsRoutes(
     try {
       const tool = await publicRepository.getById(request.params.id);
       if (!tool) {
-        response.status(404).json({ message: "AI tool not found." });
-        return;
+        throw new RequestError(404, "AI tool not found.", "NOT_FOUND");
       }
 
       const input = aiToolRunBodySchema.parse(request.body);

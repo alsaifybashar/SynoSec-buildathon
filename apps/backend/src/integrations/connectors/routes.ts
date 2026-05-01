@@ -10,6 +10,7 @@ import { ToolBroker } from "@/engine/workflow/broker/tool-broker.js";
 import { assertConnectorAuth } from "@/integrations/connectors/auth.js";
 import { connectorControlPlane } from "@/integrations/connectors/control-plane.js";
 import { ensureScanRecord } from "@/engine/scans/scan-records.js";
+import { RequestError } from "@/shared/http/request-error.js";
 
 function getSinglePathParam(value: string | string[] | undefined): string | null {
   if (typeof value === "string") {
@@ -38,8 +39,7 @@ export function createConnectorsRouter(): Router {
       assertConnectorAuth(req);
       const connectorId = getSinglePathParam(req.params["connectorId"]);
       if (!connectorId) {
-        res.status(400).json({ error: "missing_connector_id" });
-        return;
+        throw new RequestError(400, "Connector id is required.", "MISSING_CONNECTOR_ID");
       }
       const job = connectorControlPlane.pollNext(connectorId);
       res.json({
@@ -57,8 +57,7 @@ export function createConnectorsRouter(): Router {
       const connectorId = getSinglePathParam(req.params["connectorId"]);
       const jobId = getSinglePathParam(req.params["jobId"]);
       if (!connectorId || !jobId) {
-        res.status(400).json({ error: "missing_path_params" });
-        return;
+        throw new RequestError(400, "Connector id and job id are required.", "MISSING_PATH_PARAMS");
       }
       const heartbeat = connectorControlPlane.heartbeat(connectorId, jobId);
       res.json({
@@ -78,8 +77,7 @@ export function createConnectorsRouter(): Router {
       const connectorId = getSinglePathParam(req.params["connectorId"]);
       const jobId = getSinglePathParam(req.params["jobId"]);
       if (!connectorId || !jobId) {
-        res.status(400).json({ error: "missing_path_params" });
-        return;
+        throw new RequestError(400, "Connector id and job id are required.", "MISSING_PATH_PARAMS");
       }
       const result = connectorExecutionResultSchema.parse(req.body);
       const resolution = connectorControlPlane.complete(connectorId, jobId, result);

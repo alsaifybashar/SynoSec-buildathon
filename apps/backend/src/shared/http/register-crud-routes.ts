@@ -1,6 +1,7 @@
 import { type Express } from "express";
 import { type ZodType, type ZodTypeAny, z } from "zod";
 import { handlePaginatedListRoute } from "@/shared/http/paginated-list-route.js";
+import { RequestError } from "@/shared/http/request-error.js";
 
 type CrudRepository<TItem, TListQuery, TCreateBody, TUpdateBody> = {
   list(query: TListQuery): Promise<{
@@ -48,8 +49,7 @@ export function registerCrudRoutes<
     try {
       const item = await options.repository.getById(request.params.id);
       if (!item) {
-        response.status(404).json({ message: options.notFoundMessage });
-        return;
+        throw new RequestError(404, options.notFoundMessage, "NOT_FOUND");
       }
 
       response.json(options.itemSchema.parse(item));
@@ -73,8 +73,7 @@ export function registerCrudRoutes<
       const input = options.updateBodySchema.parse(request.body);
       const item = await options.repository.update(request.params.id, input);
       if (!item) {
-        response.status(404).json({ message: options.notFoundMessage });
-        return;
+        throw new RequestError(404, options.notFoundMessage, "NOT_FOUND");
       }
 
       response.json(options.itemSchema.parse(item));
@@ -87,8 +86,7 @@ export function registerCrudRoutes<
     try {
       const removed = await options.repository.remove(request.params.id);
       if (!removed) {
-        response.status(404).json({ message: options.notFoundMessage });
-        return;
+        throw new RequestError(404, options.notFoundMessage, "NOT_FOUND");
       }
 
       response.status(204).send();

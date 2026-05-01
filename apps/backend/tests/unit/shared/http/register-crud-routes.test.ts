@@ -106,9 +106,9 @@ describe("registerCrudRoutes", () => {
   it("returns 404 for missing resources on get, patch, and delete", async () => {
     const app = createTestApp();
 
-    await request(app).get("/items/missing").expect(404, { message: "Item not found." });
-    await request(app).patch("/items/missing").send({ name: "Updated" }).expect(404, { message: "Item not found." });
-    await request(app).delete("/items/missing").expect(404, { message: "Item not found." });
+    await request(app).get("/items/missing").expect(404, { code: "NOT_FOUND", message: "Item not found." });
+    await request(app).patch("/items/missing").send({ name: "Updated" }).expect(404, { code: "NOT_FOUND", message: "Item not found." });
+    await request(app).delete("/items/missing").expect(404, { code: "NOT_FOUND", message: "Item not found." });
   });
 
   it("maps RequestError instances through the shared error handler", async () => {
